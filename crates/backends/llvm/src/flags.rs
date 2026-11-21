@@ -24,6 +24,10 @@ pub fn apply(opts: &mut EmitOpts, a: &str) -> Result<bool, String> {
         // compile-time-graph OFF arm: no row-block unit kernels (tile sites
         // keep their own launches).
         "--no-row-block" => opts.gpu.row_block = false,
+        // exp (ADR-0042) OFF arms: the oracle's steps on the default face;
+        // no rescale law in `fold_combine` (a fact arm).
+        "--no-exp-hw" => opts.gpu.off.exp_hw = true,
+        "--no-exp-rescale" => opts.gpu.off.exp_rescale = true,
         // Measurement only: a row-block unit's rows (0 = derive), the rung
         // table and the cost test aside. `--gpu-on=row-block` runs the rule
         // (cost-gated) where the part's table keeps it off.

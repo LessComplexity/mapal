@@ -25,6 +25,10 @@ pub struct PrecisionPlan {
     /// product admits `tf32` (`u_t = 2⁻¹¹`, `u_a = 2⁻²³`: a tensor-core
     /// accumulator), else D2's `γ_{K+1}(2⁻²⁴)`.
     pub bound: SecondaryMap<MorphismId, f64>,
+    /// ADR-0042 D6: each `Exp` of the function with its width's form — the
+    /// oracle's constants and the default face's a-priori bound
+    /// (`|got − eˣ| ≤ rel·eˣ + abs` on `[lo, hi]`).
+    pub exp: SecondaryMap<MorphismId, crate::exp::ExpForm>,
 }
 
 /// `γ_n(u) = n·u / (1 − n·u)`.
@@ -59,6 +63,13 @@ impl CategoryIr {
             let p = self.precision(m);
             if p != Precision::F32 {
                 plan.set.insert(m, p);
+            }
+            let mm = &self.morphisms[m];
+            if mm.op == Operation::Exp
+                && let Some(Ty::Float { bits }) = self.objects.get(mm.target).map(|o| &o.ty)
+                && let Some(form) = crate::exp::ExpForm::of_bits(u32::from(*bits))
+            {
+                plan.exp.insert(m, form);
             }
         }
         // A value's readers: through the product a binary op takes (`Pair`

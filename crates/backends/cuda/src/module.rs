@@ -37,6 +37,68 @@ use crate::ty::{lower_ty, prod_shape};
 /// `const uint8_t*`), and the trap-flag + exit-102 machinery (DESIGN §3).
 /// `trap_check_after_launch` is WP3's launch-site hook; it stays
 /// `[[maybe_unused]]` because scalar-only modules have no launches.
+/// ADR-0042: `mapal_exp_f32` / `mapal_exp_f64`, the oracle's algorithm
+/// (`mapal_ir::exp`) step for step — on the device each step an explicit
+/// round-to-nearest intrinsic, so `-fmad=true` cannot contract it and the
+/// device's bits are the interpreter's. Emitted after the prelude when the
+/// program has an `Exp`.
+pub(crate) fn exp_helpers() -> String {
+    let mut s = String::from(
+        "\n#include <cstring>\n\
+         __host__ __device__ inline float mapal_f32_of(uint32_t b) { float f; memcpy(&f, &b, sizeof f); return f; }\n\
+         __host__ __device__ inline double mapal_f64_of(uint64_t b) { double f; memcpy(&f, &b, sizeof f); return f; }\n\
+         #ifdef __CUDA_ARCH__\n\
+         #define MAPAL_MUL32(a, b) __fmul_rn(a, b)\n#define MAPAL_ADD32(a, b) __fadd_rn(a, b)\n#define MAPAL_SUB32(a, b) __fsub_rn(a, b)\n\
+         #define MAPAL_MUL64(a, b) __dmul_rn(a, b)\n#define MAPAL_ADD64(a, b) __dadd_rn(a, b)\n#define MAPAL_SUB64(a, b) __dsub_rn(a, b)\n\
+         #else\n\
+         #define MAPAL_MUL32(a, b) ((a) * (b))\n#define MAPAL_ADD32(a, b) ((a) + (b))\n#define MAPAL_SUB32(a, b) ((a) - (b))\n\
+         #define MAPAL_MUL64(a, b) ((a) * (b))\n#define MAPAL_ADD64(a, b) ((a) + (b))\n#define MAPAL_SUB64(a, b) ((a) - (b))\n\
+         #endif\n",
+    );
+    for form in [mapal_ir::exp::F32, mapal_ir::exp::F64] {
+        let (t, it, ut, w, of, suf) = if form.bits == 64 {
+            ("double", "int64_t", "uint64_t", 64, "mapal_f64_of", "ull")
+        } else {
+            ("float", "int32_t", "uint32_t", 32, "mapal_f32_of", "u")
+        };
+        let c = |b: u64| format!("{of}(0x{b:x}{suf})");
+        let (mul, add, sub) = (
+            format!("MAPAL_MUL{w}"),
+            format!("MAPAL_ADD{w}"),
+            format!("MAPAL_SUB{w}"),
+        );
+        s.push_str(&format!(
+            "__host__ __device__ inline {t} mapal_exp_f{w}({t} x) {{\n\
+             \x20 const {t} hi = {hi}, lo = {lo};\n\
+             \x20 {t} xc = x > hi ? hi : x;\n  xc = xc < lo ? lo : xc;\n  xc = xc != xc ? ({t})0 : xc;\n\
+             \x20 {t} t = {add}({mul}(xc, {l2e}), {sh});\n\
+             \x20 {t} kf = {sub}(t, {sh});\n\
+             \x20 {it} k = ({it})kf;\n\
+             \x20 {t} r = {sub}({sub}(xc, {mul}(kf, {lhi})), {mul}(kf, {llo}));\n",
+            hi = c(form.hi),
+            lo = c(form.lo),
+            l2e = c(form.log2e),
+            sh = c(form.shifter),
+            lhi = c(form.ln2_hi),
+            llo = c(form.ln2_lo),
+        ));
+        let cs = form.coefs();
+        let n = form.degree as usize;
+        s.push_str(&format!("  {t} p = {};\n", c(cs[n])));
+        for i in (0..n).rev() {
+            s.push_str(&format!("  p = {add}({mul}(p, r), {});\n", c(cs[i])));
+        }
+        s.push_str(&format!(
+            "  {it} k1 = k >> 1, k2 = k - k1;\n\
+             \x20 {t} y = {mul}({mul}(p, {of}(({ut})(k1 + {b}) << {m})), {of}(({ut})(k2 + {b}) << {m}));\n\
+             \x20 if (x > hi) y = ({t})INFINITY;\n  if (x < lo) y = ({t})0;\n  if (x != x) y = x;\n  return y;\n}}\n",
+            b = form.bias,
+            m = form.mant,
+        ));
+    }
+    s
+}
+
 pub(crate) const PRELUDE: &str = r#"#include <cstdint>
 #include <cstdio>
 #include <cstdlib>

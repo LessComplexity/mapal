@@ -55,7 +55,7 @@ syn keyword flowKeyword fn type loop seq mut void
 "   time               clock read (plan-time-builtin); no CUDA seam
 "   print/println      the two effects (ADR-0015 — println appends a newline)
 syn keyword flowBuiltin map fold print println zip enumerate iota fill
-syn keyword flowBuiltin widen_i64 widen_f32 widen_f64 time
+syn keyword flowBuiltin widen_i64 widen_f32 widen_f64 exp time
 
 " Boolean literals.
 syn keyword flowBoolean true false

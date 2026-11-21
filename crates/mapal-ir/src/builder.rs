@@ -80,6 +80,8 @@ pub enum IrError {
     NonStaticCount,
     /// ADR-0029: source and target are not an allowed numeric widening pair.
     InvalidWiden,
+    /// ADR-0042: `exp` of a non-float source.
+    InvalidExp,
     /// `pack`/`pack_array` of zero components.
     EmptyProduct,
     /// `pack` of exactly one component (no 1-tuples).
@@ -1685,6 +1687,18 @@ impl FnBuilder<'_> {
         self.b.intake_ty(&target)?;
         let plan = self.dest_target(&dest, &target, loc)?;
         Ok(self.emit_to_dest(plan, src, Operation::Widen, loc))
+    }
+
+    /// `Exp` (ADR-0042): `eˣ` of a float scalar, the same width out. Rejects
+    /// any other source type (`InvalidExp`).
+    pub fn exp(&mut self, src: ObjectId, dest: Dest, loc: SourceLoc) -> Result<ObjectId, IrError> {
+        self.check_obj(src)?;
+        let ty = self.ty_of(src);
+        if !matches!(ty, Ty::Float { bits: 32 | 64 }) {
+            return Err(IrError::InvalidExp);
+        }
+        let plan = self.dest_target(&dest, &ty, loc)?;
+        Ok(self.emit_to_dest(plan, src, Operation::Exp, loc))
     }
 
     /// `Iota` (ADR-0029): `[i32; n]` of `0..n-1`. The count rides as a

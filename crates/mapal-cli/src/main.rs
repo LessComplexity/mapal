@@ -370,6 +370,11 @@ fn build(a: &Args, ir: &CategoryIr, exe: &Path) -> Res<(&'static str, Option<Pat
         remarks(&mut c, exe, "clang");
         sh(a, c, "set CC=<clang>")?;
         write(&gpu_c, include_str!("../../mapal-rt/gpu/mapal_gpu.c"))?;
+        // The runtime's `#include "mapal_choice.h"`, beside it.
+        write(
+            &gpu_c.with_file_name("mapal_choice.h"),
+            include_str!("../../mapal-rt/gpu/mapal_choice.h"),
+        )?;
         link.arg(&obj).arg(&gpu_c).arg(&rt);
         link.arg(format!("-I{}", cuda.join("include").display()));
         link.arg(format!("-L{}", cuda.join("lib64/stubs").display()));

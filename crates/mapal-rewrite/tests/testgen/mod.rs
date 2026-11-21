@@ -3598,6 +3598,9 @@ pub fn long_row_src(p: &LongRow) -> String {
     // a row; positive ones `p*`, ≥ 1).
     let mut rows_: Vec<String> = vec!["a0".into(), "b0".into()];
     let mut vals: Vec<String> = Vec::new();
+    // ADR-0042: each row fold's `(value, folded array, max: true / min:
+    // false)` — the shifts a softmax-like `exp` of a difference reads.
+    let mut extremes: Vec<(String, String, bool)> = Vec::new();
     let mut pos: Vec<String> = Vec::new();
     let mut prints: Vec<String> = Vec::new();
     let mut body = String::new();
@@ -3624,12 +3627,18 @@ pub fn long_row_src(p: &LongRow) -> String {
                 nv += 1;
                 let fold = match nd[2] % 4 {
                     0 | 3 => format!("(0.0, kl) -> fold {{ acc, j -> acc + {a}[i * {l} + j] }}"),
-                    1 => format!(
-                        "(-1000000.0, kl) -> fold {{ acc, j -> {a}[i * {l} + j] -> w; (w > acc) -> {{ -true-> w; -false-> acc; }} }}"
-                    ),
-                    _ => format!(
-                        "(1000000.0, kl) -> fold {{ acc, j -> {a}[i * {l} + j] -> w; (w < acc) -> {{ -true-> w; -false-> acc; }} }}"
-                    ),
+                    1 => {
+                        extremes.push((name.clone(), a.clone(), true));
+                        format!(
+                            "(-1000000.0, kl) -> fold {{ acc, j -> {a}[i * {l} + j] -> w; (w > acc) -> {{ -true-> w; -false-> acc; }} }}"
+                        )
+                    }
+                    _ => {
+                        extremes.push((name.clone(), a.clone(), false));
+                        format!(
+                            "(1000000.0, kl) -> fold {{ acc, j -> {a}[i * {l} + j] -> w; (w < acc) -> {{ -true-> w; -false-> acc; }} }}"
+                        )
+                    }
                 };
                 body += &format!("{ind}rr -> map {{ i -> {fold} }} -> {name};\n");
                 prints.push(format!("{name}[{}]", nd[3] as u64 % r));
@@ -3640,9 +3649,11 @@ pub fn long_row_src(p: &LongRow) -> String {
                 let a = pick(&rows_, nd[1]);
                 let v = pick(&vals, nd[2]);
                 let at = format!("{v}[e / {l}]");
-                // Mostly the law forms; a quarter of the cells relu or multiply rows.
+                // Mostly the law forms; a quarter of the cells relu or multiply
+                // rows, or take `exp` of a difference with a row's max / min.
                 let form = match nd[3] {
-                    0..192 => nd[3] % 6,
+                    0..160 => nd[3] % 6,
+                    160..224 if !extremes.is_empty() => 8 + nd[3] % 3,
                     _ => 6 + nd[3] % 2,
                 };
                 let e = match form {
@@ -3659,6 +3670,24 @@ pub fn long_row_src(p: &LongRow) -> String {
                     6 => format!(
                         "({a}[e] > 0.0) -> {{ -true-> {a}[e]; -false-> 0.0 - {a}[e] / 4.0; }}"
                     ),
+                    // ADR-0042: a softmax's exponential of the row's own max
+                    // (min) — the rescale law's form, scaled or not — and of
+                    // a difference with another row value (a rescale whose
+                    // shift is no extreme of `x`: a phase in the consumer).
+                    8 | 9 => {
+                        let (v, src, up) = extremes[nd[2] as usize % extremes.len()].clone();
+                        let d = if up {
+                            format!("{src}[e] - {v}[e / {l}]")
+                        } else {
+                            format!("{v}[e / {l}] - {src}[e]")
+                        };
+                        if form == 8 {
+                            format!("{d} -> exp")
+                        } else {
+                            format!("({d}) / 4.0 -> exp")
+                        }
+                    }
+                    10 => format!("({a}[e] - {at}) / 256.0 -> exp"),
                     _ => format!("{a}[e] * {}[e] / 2.0", pick(&rows_, nd[2])),
                 };
                 // The law forms stay as written (a squash would hide the
@@ -4290,4 +4319,122 @@ pub fn layer_prog_src(p: &LayerProg) -> String {
             s
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// exp (ADR-0042): `x -> exp` over every branch of the oracle's algorithm.
+// ---------------------------------------------------------------------------
+
+/// A program taking `exp` of values that reach every branch of the oracle's
+/// algorithm — normal results, overflow to `inf`, subnormal results, `0`,
+/// `±inf` and `NaN` arguments (a quotient by a zero difference) — in `f32`
+/// and `f64`, in a cell, in a fold body and through a row's max (a softmax);
+/// sums and cells printed. `scale` sets the range (`2^scale / 8` times the
+/// law's ±`h`).
+#[derive(Clone, Debug)]
+pub struct ExpProg {
+    pub n: u64,
+    pub rows: u64,
+    pub mul: u64,
+    pub add: u64,
+    pub m: u64,
+    pub scale: u8,
+    pub wide: bool,
+    pub nan: bool,
+    pub softmax: bool,
+    pub in_fold: bool,
+}
+
+pub fn exp_prog_strategy() -> impl Strategy<Value = ExpProg> {
+    (
+        prop::sample::select(vec![256u64, 512, 1024, 2048]),
+        prop::sample::select(vec![1u64, 2, 4]),
+        prop::sample::select(vec![7u64, 11, 13, 29]),
+        0u64..64,
+        prop::sample::select(vec![101u64, 211, 401]),
+        0u8..6,
+        any::<bool>(),
+        any::<bool>(),
+        any::<bool>(),
+        any::<bool>(),
+    )
+        .prop_map(
+            |(n, rows, mul, add, m, scale, wide, nan, softmax, in_fold)| ExpProg {
+                n,
+                rows,
+                mul,
+                add,
+                m,
+                scale,
+                wide,
+                nan,
+                softmax,
+                in_fold,
+            },
+        )
+}
+
+/// [`ExpProg`]'s source text. `x` is a tile site's output (`q · W`, `d =
+/// 8`: the cells reading it run on the device), scaled.
+pub fn exp_src(p: &ExpProg) -> String {
+    let (n, r) = (p.n, p.rows);
+    let l = n / r;
+    let sc = f64::from(1u32 << p.scale) / 8.0;
+    let mut s = format!(
+        "fn main() {{\n    {n} -> iota -> t;\n    {r} -> iota -> rr;\n    {l} -> iota -> kl;\n    8 -> iota -> kd;\n    \
+         {rq} -> iota -> tq;\n    tq -> map {{ e -> (e * {mul} + {add}) % 31 - 15 -> widen_f32 -> v; v / 4.0 }} -> q;\n    \
+         {lw} -> iota -> tw;\n    tw -> map {{ e -> (e * 7 + 13) % {m} - {h} -> widen_f32 -> v; v / 8.0 }} -> w;\n    \
+         t -> map {{ e -> e / {l} -> i; e % {l} -> j; (0.0, kd) -> fold {{ acc, d -> acc + q[i * 8 + d] * w[d * {l} + j] }} -> u; u * {sc:.3} }} -> x;\n",
+        rq = r * 8,
+        lw = l * 8,
+        mul = p.mul,
+        add = p.add,
+        m = p.m,
+        h = p.m / 2,
+    );
+    // A cell: `exp` of the value, or (every 7th cell from 0 and 1) of `NaN`
+    // and of `±inf` (a quotient by a zero difference).
+    let arg = if p.nan {
+        "x[e] - x[e] -> z; (e % 7 == 0) -> { -true-> z / z; -false-> x[e] / z; } -> a; (e % 7 < 2) -> { -true-> a; -false-> x[e]; }".to_string()
+    } else {
+        "x[e]".to_string()
+    };
+    s += &format!("    t -> map {{ e -> {arg} -> exp }} -> y;\n");
+    // `f64`: a range past f64's overflow and underflow.
+    if p.wide {
+        s += "    t -> map { e -> x[e] -> widen_f64 -> d; d * 8.0 -> exp } -> z;\n";
+        s += "    0.0 -> z0: f64;\n    (z0, z) -> fold { acc, v -> acc + v / 1000000.0 } -> zs;\n";
+    }
+    // A fold whose step reads `exp` of its element.
+    if p.in_fold {
+        s += &format!(
+            "    rr -> map {{ i -> (0.0, kl) -> fold {{ acc, j -> x[i * {l} + j] / 16.0 -> exp -> w; acc + w }} }} -> fs;\n"
+        );
+    }
+    // A softmax over the rows (the rescale law's form).
+    if p.softmax {
+        s += &format!(
+            "    rr -> map {{ i -> (-1000000000.0, kl) -> fold {{ acc, j -> x[i * {l} + j] -> w; (w > acc) -> {{ -true-> w; -false-> acc; }} }} }} -> mx;\n    \
+             t -> map {{ e -> x[e] - mx[e / {l}] -> exp }} -> ex;\n    \
+             rr -> map {{ i -> (0.0, kl) -> fold {{ acc, j -> acc + ex[i * {l} + j] }} }} -> den;\n    \
+             t -> map {{ e -> ex[e] / den[e / {l}] }} -> sm;\n    sm[{a}] -> println;\n    den[{b}] -> println;\n",
+            a = n / 3,
+            b = r - 1
+        );
+    }
+    for i in [0, 1, n / 5, n / 2 + 1, n - 1] {
+        s += &format!("    y[{i}] -> println;\n");
+    }
+    if p.wide {
+        s += &format!(
+            "    z[{}] -> println;\n    z[{}] -> println;\n    zs -> println;\n",
+            n / 7,
+            n - 2
+        );
+    }
+    if p.in_fold {
+        s += &format!("    fs[{}] -> println;\n", r - 1);
+    }
+    s += "    0.0 -> y0: f32;\n    (y0, y) -> fold { acc, v -> acc + v / 1000000.0 } -> ys;\n    ys -> println;\n}\n";
+    s
 }

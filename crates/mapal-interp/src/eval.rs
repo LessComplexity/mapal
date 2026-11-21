@@ -254,6 +254,16 @@ pub(crate) fn eval_morphism(
             write(ctx, target, RValue::Scalar(v));
             Ok(())
         }
+        Operation::Exp => {
+            // ADR-0042: the oracle's algorithm (`mapal_ir::exp`), bit for bit.
+            let v = match read(ctx, source) {
+                RValue::Scalar(Value::F32(x)) => Value::F32(mapal_ir::exp::exp_f32(*x)),
+                RValue::Scalar(Value::F64(x)) => Value::F64(mapal_ir::exp::exp_f64(*x)),
+                _ => unreachable!("Exp on a non-float passed validation"),
+            };
+            write(ctx, target, RValue::Scalar(v));
+            Ok(())
+        }
         Operation::Phi => {
             if let Some(site) = ctx.guards.get(m).cloned() {
                 // plan-s39: the condition picks the arm; only that arm's work

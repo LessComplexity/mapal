@@ -19,7 +19,8 @@ mod linear;
 mod precision;
 mod radix;
 pub use algebra::{
-    DepLaw, FmaPair, FoldCombine, FoldCombinePlan, Regroup, RowDep, StepAlgebra, StepFlags,
+    DepLaw, FmaPair, FoldCombine, FoldCombinePlan, Regroup, RescaleArg, RowDep, StepAlgebra,
+    StepFlags,
 };
 pub use bounds::BoundsProof;
 pub use linear::LinearSite;

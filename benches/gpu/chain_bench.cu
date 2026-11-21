@@ -130,12 +130,8 @@ __global__ void row_sum(float *r, const float *c, int n) {
   if (!lane) r[row] = s;
 }
 
-// softmax_rows' exp: gen_tiles.py `expo`, (1 + x/256)^256 with the base clamped at 0.
-__device__ float expo(float x) {
-  float v = fmaxf(x / 256.f + 1.f, 0.f);
-  for (int i = 0; i < 8; ++i) v = v * v;
-  return v;
-}
+// softmax_rows' exp: gen_tiles.py `expo` (the `exp` builtin, ADR-0042) — CUDA's expf.
+__device__ float expo(float x) { return expf(x); }
 
 // softmax_rows, eager: a row max and a row sum (one warp per row, as row_sum),
 // exp and the quotient one thread per cell.

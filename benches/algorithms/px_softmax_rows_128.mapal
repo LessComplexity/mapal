@@ -27,16 +27,7 @@ fn main() {
         }
     } -> mx;
     ta -> map {
-        t -> (c[t] - mx[t / 128]) / 128.0 -> x;
-        x / 256.0 + 1.0 -> u;
-        (u > 0.0) -> {
-            -true-> u;
-            -false-> 0.0;
-        } -> v0;
-        8 -> iota -> sq;
-        (v0, sq) -> fold {
-            acc, k -> acc * acc
-        }
+        t -> (c[t] - mx[t / 128]) / 128.0 -> exp
     } -> ex;
     krange -> map {
         i -> (0.0, krange) -> fold {

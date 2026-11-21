@@ -27,6 +27,7 @@
 mod access;
 mod algo;
 mod builder;
+pub mod exp;
 mod facts;
 mod graph;
 mod loc;
@@ -42,8 +43,8 @@ pub use algo::{
     ElemPlan, ElemSrc, EmissionClass, EmissionPlan, FmaPair, FoldCombine, FoldCombinePlan,
     Footprint, FootprintPlan, GuardArm, GuardSite, LastUsePlan, LinearSite, LoopPlan, LoopScc,
     MovePlan, MoveSite, Outside, PathPlan, PrecisionPlan, RadixAddr, RadixForm, RadixTile, Reach,
-    Regroup, RowDep, RowFoldOp, RowFoldSite, StepAlgebra, StepFlags, Tap, Task, TaskId, TaskKind,
-    TileKSplit, TilePlan, TilePost, TileRead, TileSite, TripPhase, TripSplit, WaitEntry,
+    Regroup, RescaleArg, RowDep, RowFoldOp, RowFoldSite, StepAlgebra, StepFlags, Tap, Task, TaskId,
+    TaskKind, TileKSplit, TilePlan, TilePost, TileRead, TileSite, TripPhase, TripSplit, WaitEntry,
     bound_coef, gamma,
 };
 pub use builder::{Dest, FnBuilder, IrBuilder, IrError, LoopHandle};

@@ -490,6 +490,14 @@ impl Walk<'_> {
                     } else if let Some(target) = crate::widen_target(text) {
                         // emit owns L1614; typing only synthesizes the target.
                         WTy::Known(target)
+                    } else if text == "exp" {
+                        // ADR-0042: `x -> exp` keeps the float width — a
+                        // literal's variable flows through, so the width is
+                        // whatever unifies with it (emit owns L1615).
+                        match &cur {
+                            WTy::Known(Ty::Float { .. }) | WTy::Var(_) => cur.clone(),
+                            _ => WTy::Unknown,
+                        }
                     } else {
                         // bind cur to a fresh name.
                         scope.bind(text, cur.clone());

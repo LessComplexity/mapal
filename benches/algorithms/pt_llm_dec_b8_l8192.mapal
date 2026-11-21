@@ -136,18 +136,7 @@ fn main() {
                     }
                 } -> mx;
                 rBHL -> map {
-                    e -> s[e] - mx[e / 8192] -> xz;
-                    (xz > -80.0) -> {
-                        -true-> {
-                            xz / 256.0 -> xy;
-                            1.0 + xy * (1.0 + xy * (0.5 + xy * (0.16666667 + xy * (0.041666668 + xy * 0.008333334)))) -> xp;
-                            8 -> iota -> xq;
-                            (xp, xq) -> fold {
-                                acc, k -> acc * acc
-                            }
-                        }
-                        -false-> 0.0;
-                    }
+                    e -> s[e] - mx[e / 8192] -> exp
                 } -> pe;
                 rBH -> map {
                     bh -> (0.0, rL) -> fold {

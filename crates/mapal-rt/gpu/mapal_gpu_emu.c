@@ -25,6 +25,7 @@
  *
  * Used by crates/backends/llvm/tests/retain_delta.rs; never shipped. */
 #include <dlfcn.h>
+#include <math.h>
 #include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -279,6 +280,10 @@ static void warp_meet(int w) {
   }
   pthread_mutex_unlock(&b_mu);
 }
+/* ADR-0042: `ex2.approx.ftz.f32` of the hardware `exp` form (its argument
+ * lies in [-1/2, 1/2]: no subnormal in or out). */
+float emu_ex2(float a) { return exp2f(a); }
+
 float emu_shfl_bfly(float v, int32_t off) {
   w_x[tid_x] = v;
   warp_meet(tid_x / 32);

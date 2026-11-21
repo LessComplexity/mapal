@@ -836,6 +836,16 @@ impl<'a> FnEmit<'a> {
                     self.store_obj(target, &format!("({ct})(0 - ({uct}){val})"));
                 }
             }
+            Operation::Exp => {
+                // ADR-0042: the oracle's algorithm (`module::exp_helpers`).
+                let (_, val) = self.load_whole(source).expect("exp operand");
+                let w = if matches!(self.obj_ty(source), Ty::Float { bits: 64 }) {
+                    64
+                } else {
+                    32
+                };
+                self.store_obj(target, &format!("mapal_exp_f{w}({val})"));
+            }
             Operation::Eq
             | Operation::Neq
             | Operation::Lt

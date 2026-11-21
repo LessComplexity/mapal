@@ -203,4 +203,21 @@ Items surfaced during this pass that are worth tracking but outside scope:
 
 ---
 
+## 9. Later changes (as implemented)
+
+### 9.1 `exp` — a pipeline builtin (ADR-0042, 2026-11-21)
+
+**Before.** Appendix A of `user-guide.md` listed `exp` as planned; programs wrote `eˣ` as a polynomial
+(`(1 + x/256)^256` by squarings), with a clamped domain and ~5·10⁻⁵ relative error, and `fold_combine` had no
+exponential law (a softmax's denominator waited for its max: a phase).
+
+**After.** `x -> exp` is a pure stage builtin like `widen_f32` (no call syntax), IR `Operation::Exp`, L1615 for a
+non-float operand. Its value is the oracle's algorithm (`mapal-ir/src/exp.rs`) on the exact faces — byte for byte on
+every backend — and within `2⁻²¹·eˣ + 2⁻¹⁴⁹` (f32) on the default face, where the device takes MUFU.EX2 after a
+Cody–Waite reduction and the host a vectorizable contracted polynomial. `fold_combine` gains `DepLaw::Rescale`
+(`exp(a − m₁) = exp(a − m)·exp(m − m₁)`), so a row-sliced softmax folds its sum beside its max. The benchmark
+programs (`benches/algorithms`, `gen_tiles.py`) use `-> exp`; editors highlight it.
+
+---
+
 **Version:** 0.2 · **Status:** Design specification.

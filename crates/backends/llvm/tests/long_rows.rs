@@ -346,6 +346,7 @@ fn row_slices_on_generated_long_rows() {
         "law",
         "law:factor",
         "law:shift",
+        "law:rescale",
         "stored fold",
         "stored row cell",
         "per-row cell",
@@ -390,6 +391,7 @@ fn check_long_row(clang: &str, p: &testgen::LongRow) -> Vec<(&'static str, u64)>
                 out.push((
                     match law {
                         "mul" | "div" => "law:factor",
+                        "rescale" => "law:rescale",
                         _ => "law:shift",
                     },
                     1,

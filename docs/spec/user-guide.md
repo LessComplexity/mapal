@@ -222,6 +222,20 @@ data * 2
 
 Shorthand stages like `+ 5` and `* 3` are syntactic sugar for `⟨·, 5⟩ ; add` and `⟨·, 3⟩ ; mul` — they take the piped value as the left operand and the literal as the right.
 
+**Builtin stages.** A builtin is a stage name the value flows into, never a call: `n -> iota`, `(x, n) -> fill`,
+`(a, b) -> zip`, `a -> enumerate`, `i -> widen_f32`, and **`x -> exp`** — `eˣ` of an `f32` or `f64`, the same width
+out (ADR-0042). It goes anywhere a value flows, a map or fold body included:
+
+```flow
+scores -> map { s -> s - row_max -> exp } -> e;          // a softmax's numerators
+(0.0, row) -> fold { acc, j -> x[j] / 4.0 -> exp -> w; acc + w } -> z;
+```
+
+On the exact faces (`--exact`, the fixed and contract faces) every backend computes the language's own algorithm
+bit for bit (the interpreter's); on the default face the compiler may take the fastest form within the stated bound
+(`|got − eˣ| ≤ 2⁻²¹·eˣ` for `f32`) — MUFU.EX2 on an NVIDIA GPU, a vectorized polynomial on the CPU. `x > 88.72`
+gives `inf`, `x < −103.97` gives `0`, `NaN` stays `NaN` (f32; f64: 709.78 / −745.13). There is no `exp(x)` form.
+
 **Explicit intermediates — useful for debugging or to make pipeline stages visible in hardware generation.**
 
 ```flow
@@ -1107,7 +1121,7 @@ data -> stage1 -> stage2 -> stage3 -> ret;
 
 ## Appendix A — standard library (planned)
 
-**Math.**
+**Math.** (`exp` exists today as a pipeline builtin, §3.3.)
 
 ```flow
 abs, sqrt, pow, exp, log

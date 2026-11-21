@@ -125,18 +125,7 @@ fn main() {
         }
     } -> mx;
     rHTT -> map {
-        e -> s[e] - mx[e / 12] -> xz;
-        (xz > -80.0) -> {
-            -true-> {
-                xz / 256.0 -> xy;
-                1.0 + xy * (1.0 + xy * (0.5 + xy * (0.16666667 + xy * (0.041666668 + xy * 0.008333334)))) -> xp;
-                8 -> iota -> xq;
-                (xp, xq) -> fold {
-                    acc, k -> acc * acc
-                }
-            }
-            -false-> 0.0;
-        }
+        e -> s[e] - mx[e / 12] -> exp
     } -> pe;
     rHT -> map {
         hi -> (0.0, rT) -> fold {
@@ -192,38 +181,8 @@ fn main() {
     } -> up;
     rRF -> map {
         e -> gt[e] -> sv;
-        (sv > 0.0) -> {
-            -true-> {
-                0.0 - sv -> nz;
-                (nz > -80.0) -> {
-                    -true-> {
-                        nz / 256.0 -> ny;
-                        1.0 + ny * (1.0 + ny * (0.5 + ny * (0.16666667 + ny * (0.041666668 + ny * 0.008333334)))) -> np;
-                        8 -> iota -> nq;
-                        (np, nq) -> fold {
-                            acc, k -> acc * acc
-                        }
-                    }
-                    -false-> 0.0;
-                } -> en;
-                sv / (1.0 + en)
-            }
-            -false-> {
-                sv -> mz;
-                (mz > -80.0) -> {
-                    -true-> {
-                        mz / 256.0 -> my;
-                        1.0 + my * (1.0 + my * (0.5 + my * (0.16666667 + my * (0.041666668 + my * 0.008333334)))) -> mp;
-                        8 -> iota -> mq;
-                        (mp, mq) -> fold {
-                            acc, k -> acc * acc
-                        }
-                    }
-                    -false-> 0.0;
-                } -> em;
-                sv * em / (1.0 + em)
-            }
-        } -> sg;
+        0.0 - sv -> exp -> en;
+        sv / (1.0 + en) -> sg;
         sg * up[e]
     } -> hh;
     rRD -> map {

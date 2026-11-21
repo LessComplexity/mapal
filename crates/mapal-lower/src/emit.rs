@@ -132,6 +132,10 @@ fn ir_err(e: IrError, span: syn::SourceLoc) -> syn::Diagnostic {
             "illegal widening pair; legal lattice: i32→i64, i32→f32, i32→f64, f32→f64"
                 .to_string(),
         ),
+        IrError::InvalidExp => (
+            LCode::InvalidExp,
+            "`exp` takes an `f32` or `f64`".to_string(),
+        ),
         other => (
             LCode::Internal,
             format!("internal lowering error: {other:?}"),
@@ -1145,6 +1149,7 @@ impl Emitter<'_> {
                         "enumerate" => self.emit_enumerate(fb, wire, dest, e.span)?,
                         "iota" => self.emit_iota_stage(fb, wire, dest, e.span)?,
                         "fill" => self.emit_fill_stage(fb, wire, dest, e.span)?,
+                        "exp" => self.emit_exp(fb, wire, dest, e.span)?,
                         _ => self.emit_widen(
                             fb,
                             wire,
@@ -2627,6 +2632,31 @@ impl Emitter<'_> {
             .map_err(|e| ir_err(e, sp))?;
         self.prop(o, &[wire]);
         Ok(self.record(o, target))
+    }
+
+    /// `x -> exp` (ADR-0042): `eˣ` of a float scalar, its width kept. Owns
+    /// L1615 (any other source type).
+    fn emit_exp(
+        &mut self,
+        fb: &mut FnBuilder,
+        wire: ObjectId,
+        dest: Dest,
+        sp: syn::SourceLoc,
+    ) -> ER<ObjectId> {
+        let source = self.ty_of(fb, wire);
+        if !matches!(source, Ty::Float { bits: 32 | 64 }) {
+            return Err(diag(
+                LCode::InvalidExp,
+                sp,
+                format!(
+                    "`exp` takes an `f32` or `f64`, got `{}`; widen an integer first (`x -> widen_f32 -> exp`)",
+                    ty_name(&source)
+                ),
+            ));
+        }
+        let o = fb.exp(wire, dest, ir_loc(sp)).map_err(|e| ir_err(e, sp))?;
+        self.prop(o, &[wire]);
+        Ok(self.record(o, source))
     }
 
     /// `n -> iota` (ADR-0031): `[i32; n]` of `0..n-1` — the count flows in and

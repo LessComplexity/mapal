@@ -155,6 +155,11 @@ pub enum Operation {
     /// Explicit numeric widening (ADR-0029): one of `i32→i64`, `i32→f32`,
     /// `i32→f64`, or `f32→f64`. Pure — no token; trap-free.
     Widen,
+    /// `eˣ` on a float scalar, `Float{b} → Float{b}` (ADR-0042): the
+    /// `x -> exp` pipeline builtin. Pure — no token; total and trap-free. Its
+    /// value is [`crate::exp`]'s algorithm on the exact faces and within that
+    /// module's bound on the default face.
+    Exp,
 }
 
 /// A directed dataflow edge (DESIGN §5). Exactly one source, one target (I1).

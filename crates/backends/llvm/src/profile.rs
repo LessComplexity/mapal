@@ -213,6 +213,13 @@ pub struct Caps {
     pub griddepcontrol: bool,
     /// `red`/`atom.add.f64` on global memory.
     pub red_f64: bool,
+    /// `ex2.approx.ftz.f32` (MUFU.EX2) and its maximum relative error over
+    /// `[−½, ½]` in units of `2⁻²⁴` (ADR-0042 D5): every NVIDIA SM has the
+    /// instruction; the error is measured exhaustively
+    /// (`benches/local/exp_calib.cu`: the RTX 5080's 2^−22.709 → 3). The
+    /// hardware `exp` form is taken where it meets the bound
+    /// ([`mapal_ir::exp::ExpForm::hw_admits`]). `None`: no such instruction.
+    pub ex2: Option<u32>,
 }
 
 /// One matrix instruction's geometry: `m × n × k` per issuing group of
@@ -250,6 +257,7 @@ pub const CAPS_WARP_MMA: Caps = Caps {
     wgmma: None,
     griddepcontrol: false,
     red_f64: true,
+    ex2: Some(EX2_UNITS),
 };
 
 /// [`CAPS_WARP_MMA`] with `griddepcontrol`: the consumer Blackwell SM (the
@@ -284,8 +292,16 @@ pub const fn caps_of_cc(cc: u64, arch_specific: bool) -> Caps {
         },
         griddepcontrol: cc >= 90,
         red_f64: cc >= 60,
+        ex2: Some(EX2_UNITS),
     }
 }
+
+/// [`Caps::ex2`] measured on the RTX 5080 (sm_120): `ex2.approx.ftz.f32` over
+/// every f32 in `[−½, ½]` against the f64 `exp2`, worst relative error
+/// 2^−22.709 = 2.45 units of `2⁻²⁴` (`benches/local/exp_calib.cu`;
+/// `exp.md`). The unit is the same SFU instruction on every profiled part;
+/// a part measured otherwise states its own.
+pub const EX2_UNITS: u32 = 3;
 
 /// **Mapal's own achieved device rates on one part (S62 `place`)** — not the
 /// silicon's peak: the honest number for a gate choosing between two Mapal

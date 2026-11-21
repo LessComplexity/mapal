@@ -204,7 +204,7 @@ fn try_fold_object(
             // Algebraic identity (integer / bool only; float is IEEE-unsound).
             try_algebraic(ir, scc, plan, o, op, l, r);
         }
-        Neg | Not => {
+        Neg | Not | Exp => {
             if let Some(a) = const_val(ir, src)
                 && let Some(v) = fold_unop(op, a)
             {
@@ -445,7 +445,7 @@ fn fold_arith(op: Operation, a: &Value, b: &Value) -> Option<Value> {
     Some(v)
 }
 
-/// `Neg`/`Not` on a constant (interp `eval::neg` + the `Not` arm).
+/// `Neg`/`Not`/`Exp` on a constant (interp `eval::neg`, the `Not` and `Exp` arms).
 fn fold_unop(op: Operation, a: &Value) -> Option<Value> {
     match (op, a) {
         (Operation::Neg, Value::I32(n)) => Some(Value::I32(n.wrapping_neg())),
@@ -454,6 +454,9 @@ fn fold_unop(op: Operation, a: &Value) -> Option<Value> {
         (Operation::Neg, Value::F32(x)) => Some(Value::F32(-x)),
         (Operation::Neg, Value::F64(x)) => Some(Value::F64(-x)),
         (Operation::Not, Value::Bool(b)) => Some(Value::Bool(!b)),
+        // ADR-0042: the oracle's algorithm, as the interpreter evaluates it.
+        (Operation::Exp, Value::F32(x)) => Some(Value::F32(mapal_ir::exp::exp_f32(*x))),
+        (Operation::Exp, Value::F64(x)) => Some(Value::F64(mapal_ir::exp::exp_f64(*x))),
         _ => None,
     }
 }

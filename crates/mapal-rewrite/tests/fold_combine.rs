@@ -47,9 +47,10 @@ fn deps(ir: &CategoryIr, plan: &FoldCombinePlan, n: &str) -> Vec<(String, DepLaw
 }
 
 /// `pt_attn_1024_64`: the row max reads the scores (a tile's output: no
-/// dep); the denominator reads `ex = poly(s − mx)` — no exponential law, a
-/// phase after `mx`; `P·V` reads `p = ex ÷ den`: `den` a quotient factor
-/// (applied once after the sum), `mx` a phase through `ex`.
+/// dep); the denominator reads `ex = exp((s − mx) ÷ 8)` — the rescale law
+/// (ADR-0042 D7); `P·V` reads `p = ex ÷ den`: `den` a quotient factor
+/// (applied once after the sum), `mx` a rescale through `ex` (`p` is a
+/// quotient path in `ex`): flash attention's laws.
 #[test]
 fn attention_softmax_laws() {
     let src = std::fs::read_to_string(concat!(
@@ -63,9 +64,28 @@ fn attention_softmax_laws() {
     assert!(matches!(mx.op, RowFoldOp::Select { .. }) && !mx.exact);
     assert_eq!((mx.rows, mx.k), (1024, 1024));
     assert!(mx.deps.is_empty());
-    assert_eq!(deps(&ir, &plan, "den"), [("mx".into(), DepLaw::Phase)]);
+    assert_eq!(deps(&ir, &plan, "den"), [("mx".into(), DepLaw::Rescale)]);
+    let den = &plan.sites[site_of(&ir, "den")].deps[0];
+    let arg = den.rescale.as_ref().expect("a rescale's exponent");
+    assert!(arg.x_first && arg.up);
+    assert_eq!(arg.steps.len(), 1);
+    assert_eq!(arg.against, Some(named(&ir, "s")));
     assert_eq!(
         deps(&ir, &plan, "o"),
+        [
+            ("mx".into(), DepLaw::Rescale),
+            ("den".into(), DepLaw::Factor { div: true })
+        ]
+    );
+    // The OFF arm (`FactArms::exp_rescale`): phases, as before the law.
+    let off = ir.refacted(mapal_ir::FactArms {
+        exp_rescale: false,
+        ..ir.fact_arms()
+    });
+    let plan_off = off.fold_combine(off.entry());
+    assert_eq!(deps(&off, &plan_off, "den"), [("mx".into(), DepLaw::Phase)]);
+    assert_eq!(
+        deps(&off, &plan_off, "o"),
         [
             ("mx".into(), DepLaw::Phase),
             ("den".into(), DepLaw::Factor { div: true })
@@ -181,7 +201,7 @@ fn every_fold_site_has_a_combine_on_generated_programs() {
             .current();
         srcs.push(p.source());
     }
-    let (mut sites, mut factor, mut shift, mut phase) = (0, 0, 0, 0);
+    let (mut sites, mut factor, mut shift, mut phase, mut rescale) = (0, 0, 0, 0, 0);
     for src in &srcs {
         let ir = lower(src);
         for (f, _) in ir.funcs() {
@@ -214,12 +234,94 @@ fn every_fold_site_has_a_combine_on_generated_programs() {
                             shift += 1;
                             assert!(matches!(c.op, RowFoldOp::Select { .. }));
                         }
-                        DepLaw::Phase => phase += 1,
+                        DepLaw::Rescale => {
+                            rescale += 1;
+                            assert!(d.rescale.is_some(), "{src}");
+                            assert!(matches!(
+                                c.op,
+                                RowFoldOp::Arith {
+                                    op: Operation::Add,
+                                    ..
+                                }
+                            ));
+                        }
+                        DepLaw::Phase => {
+                            phase += 1;
+                            assert!(d.rescale.is_none());
+                        }
                     }
                 }
             }
         }
     }
-    eprintln!("fold_combine: {sites} sites, {factor} factor / {shift} shift / {phase} phase deps");
-    assert!(sites > 100 && factor > 0 && shift > 0 && phase > 0);
+    eprintln!(
+        "fold_combine: {sites} sites, {factor} factor / {shift} shift / {rescale} rescale / {phase} phase deps"
+    );
+    assert!(sites > 100 && factor > 0 && shift > 0 && phase > 0 && rescale > 0);
+}
+
+/// ADR-0042 D7, the rescale law from the dataflow: `exp(x − m)`, `exp((x −
+/// m) · c)` and `w · exp(x − m)` with `c > 0` and `w` free of `m` rescale
+/// (`x` the max's own array: `against`); `exp(m − x)` with `m` a row min
+/// rescales downward (`up = false`); `exp(x · m)` (no difference), `exp((x −
+/// m) · x)` (a factor reading `x`) and `exp(x − m) + 1` (no product path)
+/// are phases; a max over `exp(x − m)` is no sum (a phase).
+#[test]
+fn exp_rescale_laws() {
+    let src = "fn main() {
+    4096 -> iota -> t;
+    64 -> iota -> r;
+    64 -> iota -> k;
+    t -> map { e -> (e * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 64.0 } -> x;
+    t -> map { e -> (e * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 64.0 } -> w;
+    r -> map { i -> (-1000000.0, k) -> fold { acc, j -> x[i * 64 + j] -> v; (v > acc) -> { -true-> v; -false-> acc; } } } -> m;
+    r -> map { i -> (1000000.0, k) -> fold { acc, j -> x[i * 64 + j] -> v; (v < acc) -> { -true-> v; -false-> acc; } } } -> mn;
+    t -> map { e -> x[e] - m[e / 64] -> exp } -> e1;
+    r -> map { i -> (0.0, k) -> fold { acc, j -> acc + e1[i * 64 + j] } } -> s1;
+    t -> map { e -> (x[e] - m[e / 64]) * 0.5 -> exp } -> e2;
+    r -> map { i -> (0.0, k) -> fold { acc, j -> acc + e2[i * 64 + j] } } -> s2;
+    t -> map { e -> x[e] - m[e / 64] -> exp -> q; w[e] * q } -> e3;
+    r -> map { i -> (0.0, k) -> fold { acc, j -> acc + e3[i * 64 + j] } } -> s3;
+    t -> map { e -> mn[e / 64] - x[e] -> exp } -> e4;
+    r -> map { i -> (0.0, k) -> fold { acc, j -> acc + e4[i * 64 + j] } } -> s4;
+    t -> map { e -> x[e] * m[e / 64] -> exp } -> e5;
+    r -> map { i -> (0.0, k) -> fold { acc, j -> acc + e5[i * 64 + j] } } -> s5;
+    t -> map { e -> (x[e] - m[e / 64]) * x[e] -> exp } -> e6;
+    r -> map { i -> (0.0, k) -> fold { acc, j -> acc + e6[i * 64 + j] } } -> s6;
+    t -> map { e -> x[e] - m[e / 64] -> exp -> q; q + 1.0 } -> e7;
+    r -> map { i -> (0.0, k) -> fold { acc, j -> acc + e7[i * 64 + j] } } -> s7;
+    r -> map { i -> (-1000000.0, k) -> fold { acc, j -> e1[i * 64 + j] -> v; (v > acc) -> { -true-> v; -false-> acc; } } } -> m8;
+    s1[1] -> println;
+    s2[1] -> println;
+    s3[1] -> println;
+    s4[1] -> println;
+    s5[1] -> println;
+    s6[1] -> println;
+    s7[1] -> println;
+    m8[1] -> println;
+}
+";
+    let ir = lower(src);
+    let plan = ir.fold_combine(ir.entry());
+    let arg = |n: &str| {
+        plan.sites[site_of(&ir, n)].deps[0]
+            .rescale
+            .clone()
+            .unwrap_or_else(|| panic!("{n}: no rescale"))
+    };
+    for n in ["s1", "s2", "s3"] {
+        assert_eq!(deps(&ir, &plan, n), [("m".into(), DepLaw::Rescale)], "{n}");
+        let a = arg(n);
+        assert!(a.x_first && a.up, "{n}");
+        assert_eq!(a.against, Some(named(&ir, "x")), "{n}");
+    }
+    assert!(arg("s1").steps.is_empty());
+    assert_eq!(arg("s2").steps.len(), 1);
+    assert_eq!(deps(&ir, &plan, "s4"), [("mn".into(), DepLaw::Rescale)]);
+    assert!(!arg("s4").x_first && !arg("s4").up);
+    for n in ["s5", "s6", "s7"] {
+        assert_eq!(deps(&ir, &plan, n), [("m".into(), DepLaw::Phase)], "{n}");
+        assert!(plan.sites[site_of(&ir, n)].deps[0].rescale.is_none());
+    }
+    assert_eq!(deps(&ir, &plan, "m8"), [("m".into(), DepLaw::Phase)]);
 }

@@ -293,9 +293,8 @@ def decode(T, d, rewrite=False, scaled=False, causal=False, prefill=0, gen=0):
     causal = causal or prefill > 0
     scale, ninf = repr(d ** 0.5), "-1000000000.0"
 
-    def ex(e):  # `expo`, with names that do not shadow the loop's `x`
-        return (f"{e} -> ez; ez / 256.0 + 1.0 -> eu; (eu > 0.0) -> {{ -true-> eu; -false-> 0.0; }} -> ev; "
-                f"8 -> iota -> esq; (ev, esq) -> fold {{ acc, k -> acc * acc }}")
+    def ex(e):  # `expo`
+        return f"{e} -> exp"
 
     def rmax(row):  # the max of one row's T scores
         return f"({ninf}, rrange) -> fold {{ acc, r -> {row} -> e; (e > acc) -> {{ -true-> e; -false-> acc; }} }}"
@@ -428,11 +427,9 @@ def relu(e):
 
 
 def expo(e):
-    """exp(x) for x <= 0 as its limit form (1 + x/256)^256: the base clamped
-    at 0, squared once per step of an 8-step range. `exp` is not in the Core
-    op set; chain_bench.cu's `expo` is the same function."""
-    return (f"{e} -> x; x / 256.0 + 1.0 -> u; (u > 0.0) -> {{ -true-> u; -false-> 0.0; }} -> v0; "
-            f"8 -> iota -> sq; (v0, sq) -> fold {{ acc, k -> acc * acc }}")
+    """exp(e): the `exp` pipeline builtin (ADR-0042). chain_bench.cu's `expo` and torch_bench.py's are `expf` /
+    `torch.exp`."""
+    return f"{e} -> exp"
 
 
 def row_fold(o, src, n, seed, step):
@@ -1174,8 +1171,7 @@ if "--ladder" in sys.argv:
 # `pt_llm_blkpre_t<T>`: causal prefill of T tokens. At T = 8192 the score arrays of all 32 heads (32·T² = 2³¹
 # cells: past i32, and 8 GiB each for the scores and their exponentials) do not fit, so that attention runs as a
 # loop over the 8 KV-head groups (4 query heads, T² scores each).
-# Not in the Core op set: exp (`llm_exp`: e^(z/256)'s degree-5 Taylor polynomial squared 8 times, ~5e-5 relative,
-# 0 below -80), sqrt (`llm_rms`: Heron's iteration, 16 steps from (1 + a)/2), sin / cos (the rotary tables are
+# exp is the `exp` pipeline builtin (ADR-0042). Not in the Core op set: sqrt (`llm_rms`: Heron's iteration, 16 steps from (1 + a)/2), sin / cos (the rotary tables are
 # inputs, as inference engines precompute them). Operand laws: OPS's values with `t % mod` taken first, so no
 # product leaves i32 at 2^28 cells (torch_bench.py `llm_*` builds the same tensors — change both or neither).
 # Printed: out[0], out[last], Σ out² over the last row (a cancellation-free checksum of the last token, which reads
@@ -1197,17 +1193,13 @@ def llm_div(k):
 
 
 def llm_exp(z, n):
-    """e^z for z <= 0 (`n` prefixes the names): 0 below -80 (e^-80 < 2e-35), else e^(z/256)'s degree-5 Taylor
-    polynomial raised to the 256th power by 8 squarings."""
-    return (f"{z} -> {n}z; ({n}z > -80.0) -> {{ -true-> {{ {n}z / 256.0 -> {n}y; "
-            f"1.0 + {n}y * (1.0 + {n}y * (0.5 + {n}y * (0.16666667 + {n}y * (0.041666668 + {n}y * 0.008333334)))) -> {n}p; "
-            f"8 -> iota -> {n}q; ({n}p, {n}q) -> fold {{ acc, k -> acc * acc }} }} -false-> 0.0; }}")
+    """e^z: the `exp` pipeline builtin (ADR-0042; `n` names nothing now, kept for the callers)."""
+    return f"{z} -> exp"
 
 
 def llm_silu(v):
-    """v·sigmoid(v) through e^-|v| (`llm_exp`'s domain)."""
-    return (f"{v} -> sv; (sv > 0.0) -> {{ -true-> {{ {llm_exp('0.0 - sv', 'n')} -> en; sv / (1.0 + en) }} "
-            f"-false-> {{ {llm_exp('sv', 'm')} -> em; sv * em / (1.0 + em) }} }}")
+    """v·sigmoid(v) = v / (1 + e^-v)."""
+    return f"{v} -> sv; 0.0 - sv -> exp -> en; sv / (1.0 + en)"
 
 
 def llm_rms(row, D):

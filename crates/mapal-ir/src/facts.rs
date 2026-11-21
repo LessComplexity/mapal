@@ -84,6 +84,10 @@ pub struct FactArms {
     /// `b` ([`crate::CategoryIr::tile_plan_radix`]). Off: every digit is
     /// one operand's.
     pub head_group: bool,
+    /// exp (ADR-0042 D7): `fold_combine` gives a value read only through
+    /// `exp` of a difference [`crate::DepLaw::Rescale`]. Off
+    /// (`--no-exp-rescale`): such a value is a phase.
+    pub exp_rescale: bool,
 }
 
 impl Default for FactArms {
@@ -93,6 +97,7 @@ impl Default for FactArms {
             row_tree: true,
             piece_delta: true,
             head_group: true,
+            exp_rescale: true,
         }
     }
 }

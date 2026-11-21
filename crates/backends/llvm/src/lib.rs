@@ -17,6 +17,7 @@
 //! SCC), rejected as [`EmitError::Unsupported`] — the same scope boundary as
 //! interp M1 / rewrite.
 
+mod exp;
 pub mod flags;
 mod func;
 mod loops;
@@ -677,6 +678,18 @@ pub struct GpuRungs {
     /// group's query heads. Off (`--gpu-off=head-group`): such a map is a
     /// per-cell kernel (each query head re-reads its KV head's rows).
     pub head_group: bool,
+    /// exp (ADR-0042 D5): on the default face `exp` takes the fastest form
+    /// the bound admits — the host's contracted polynomial (vectorizes), the
+    /// device's `ex2.approx` after a Cody–Waite reduction where the part's
+    /// measured `ex2` error meets the bound (`profile::Caps::ex2`). Off
+    /// (`--gpu-off=exp-hw`, `--no-exp-hw`): the oracle's steps on every face.
+    pub exp_hw: bool,
+    /// exp (ADR-0042 D7, a fact arm, `mapal_ir::FactArms`): `fold_combine`'s
+    /// rescale law — a value read only through `exp` of a difference lets a
+    /// block's partial take its own shift (online softmax in `row-slices`).
+    /// Off (`--gpu-off=exp-rescale`, `--no-exp-rescale`): such a value is a
+    /// phase.
+    pub exp_rescale: bool,
 }
 
 impl GpuRungs {
@@ -773,11 +786,13 @@ impl GpuRungs {
         row_tree: true,
         piece_delta: true,
         head_group: true,
+        exp_hw: true,
+        exp_rescale: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 91] = [
+    pub const NAMES: [&'static str; 93] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -869,6 +884,8 @@ impl GpuRungs {
         "row-tree",
         "piece-delta",
         "head-group",
+        "exp-hw",
+        "exp-rescale",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -965,6 +982,8 @@ impl GpuRungs {
             "row-tree" => &mut self.row_tree,
             "piece-delta" => &mut self.piece_delta,
             "head-group" => &mut self.head_group,
+            "exp-hw" => &mut self.exp_hw,
+            "exp-rescale" => &mut self.exp_rescale,
             _ => return None,
         })
     }
@@ -1306,6 +1325,7 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
         row_tree: !opts.gpu.off.row_tree,
         piece_delta: !opts.gpu.off.piece_delta,
         head_group: !opts.gpu.off.head_group,
+        exp_rescale: !opts.gpu.off.exp_rescale,
     };
     if arms != ir.fact_arms() {
         return emit_detailed(&ir.refacted(arms), opts);
@@ -1641,6 +1661,13 @@ fn emit_module(
         if funcs.contains(call) {
             out.push_str(decl);
         }
+    }
+    // ADR-0042: the host's `exp` definitions, for the widths a body calls.
+    {
+        let hw = crate::func::gpu::host_rungs(profile, opts.contract, opts.gpu).exp_hw;
+        let free = opts.order == Order::Free;
+        let real = crate::exp::choose(free, opts.contract, hw, None);
+        out.push_str(&crate::exp::defs(&funcs, real));
     }
     // Same rule for the SME leg: the emitted call IS the requirement, so the
     // three intrinsic declarations and the one streaming panel kernel appear

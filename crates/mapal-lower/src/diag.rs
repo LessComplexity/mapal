@@ -75,6 +75,7 @@ pub enum LCode {
     IotaArgs,              // L1612
     FillArgs,              // L1613
     InvalidWiden,          // L1614
+    InvalidExp,            // L1615
     Internal,              // L1901
 }
 
@@ -144,6 +145,7 @@ impl LCode {
             LCode::IotaArgs => "L1612",
             LCode::FillArgs => "L1613",
             LCode::InvalidWiden => "L1614",
+            LCode::InvalidExp => "L1615",
             LCode::Internal => "L1901",
         }
     }

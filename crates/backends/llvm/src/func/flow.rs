@@ -119,6 +119,11 @@ pub(crate) struct Slices {
     /// law)` — the reads its partials take as the law's identity, applied
     /// after the combine.
     pub laws: Vec<Vec<(usize, u32, DepLaw)>>,
+    /// Per fold member, beside `laws`: a [`DepLaw::Rescale`] law's exponent
+    /// (ADR-0042 D7). The partials take the per-row value's own partial over
+    /// the same slice as their shift (a running max / min of the exponent's
+    /// `x`); the combine rescales each by `exp(a(x := s_B, v := v))`.
+    pub args: Vec<Vec<Option<mapal_ir::RescaleArg>>>,
     /// The model's `(sliced, one block a row)` ns; `(0, 0)` when forced.
     pub ns: (u64, u64),
 }
@@ -1315,7 +1320,7 @@ impl<'a> FnEmit<'a> {
         if exts.is_empty() {
             return None;
         }
-        let (phase, avail, phases, laws) = self.slice_phases(members);
+        let (phase, avail, phases, laws, args) = self.slice_phases(members);
         // A sliced block's threads ([`slice_geo`]); a row's partials combine
         // one a lane, so `s` stays within them.
         let lanes_of = |s: u64| {
@@ -1331,6 +1336,7 @@ impl<'a> FnEmit<'a> {
             avail: avail.clone(),
             phases,
             laws: laws.clone(),
+            args: args.clone(),
             ns,
         };
         if force > 1 {
@@ -1469,11 +1475,46 @@ impl<'a> FnEmit<'a> {
     fn slice_phases(
         &self,
         members: &[UMember],
-    ) -> (Vec<u32>, Vec<u32>, u32, Vec<Vec<(usize, u32, DepLaw)>>) {
+    ) -> (
+        Vec<u32>,
+        Vec<u32>,
+        u32,
+        Vec<Vec<(usize, u32, DepLaw)>>,
+        Vec<Vec<Option<mapal_ir::RescaleArg>>>,
+    ) {
         let fc = self.ir.fold_combine(self.f);
         let n = members.len();
         let (mut ph, mut avail) = (vec![0u32; n], vec![0u32; n]);
         let mut laws: Vec<Vec<(usize, u32, DepLaw)>> = vec![Vec::new(); n];
+        let mut args: Vec<Vec<Option<mapal_ir::RescaleArg>>> = vec![Vec::new(); n];
+        // ADR-0042 D7: a rescale law is taken where the value is an earlier
+        // fold of the unit over the exponent's `x` (the same array, the same
+        // slices of the same row) whose step keeps the extreme that bounds
+        // every term by 1 — its partial over a slice is that slice's shift.
+        let rescale_ok = |k: usize, v: usize, arg: &mapal_ir::RescaleArg| {
+            let (UKind::Fold { site: sk, .. }, UKind::Fold { site: sv, .. }) =
+                (&members[k].kind, &members[v].kind)
+            else {
+                return false;
+            };
+            let extreme = match sv.op {
+                RowFoldOp::Select {
+                    cmp,
+                    acc_lhs,
+                    acc_if_true,
+                } => {
+                    let gt = matches!(cmp, Operation::Gt | Operation::Ge);
+                    Some(gt == (acc_lhs == acc_if_true))
+                }
+                RowFoldOp::Arith { .. } => None,
+            };
+            v < k
+                && extreme == Some(arg.up)
+                && arg.against.is_some()
+                && fc.sites.get(members[v].m).map(|c| Some(c.term)) == Some(arg.against)
+                && sv.k == sk.k
+                && (sv.a.ci, sv.a.ck, sv.a.base) == (sk.a.ci, sk.a.ck, sk.a.base)
+        };
         let src_phase = |srcs: &[USrc], skip: &[usize], avail: &[u32]| {
             srcs.iter()
                 .filter_map(|s| match s {
@@ -1500,11 +1541,24 @@ impl<'a> FnEmit<'a> {
                                 continue;
                             };
                             if members[v].out == d.value && members[v].per_row() {
+                                if d.law == DepLaw::Rescale
+                                    && !d.rescale.as_ref().is_some_and(|a| rescale_ok(k, v, a))
+                                {
+                                    continue;
+                                }
                                 skip.push(v);
                                 laws[k].push((v, d.slot, d.law));
+                                args[k].push(d.rescale.clone());
                             }
                         }
                         ph[k] = src_phase(&members[c].srcs, &skip, &avail);
+                        // A rescale's shift is its value's partial over the
+                        // same slice: computed in the same item, before.
+                        for (&(v, _, law), _) in laws[k].iter().zip(&args[k]) {
+                            if law == DepLaw::Rescale {
+                                ph[k] = ph[k].max(ph[v]);
+                            }
+                        }
                     }
                     avail[k] = laws[k]
                         .iter()
@@ -1525,7 +1579,7 @@ impl<'a> FnEmit<'a> {
             })
             .max()
             .unwrap_or(1);
-        (ph, avail, phases, laws)
+        (ph, avail, phases, laws, args)
     }
 
     /// **compile-time-graph A: how many rows a row-block unit holds.** The
@@ -2169,6 +2223,7 @@ impl<'a> FnEmit<'a> {
             fma: self.contract && self.gpu_arms.pairs,
             name: name.clone(),
             subst: Vec::new(),
+            parts: vec![None; u.members.len()],
         };
         // Each member's callee, argument type, result type and buffer types.
         let mut y = 0;
@@ -2371,6 +2426,7 @@ impl<'a> FnEmit<'a> {
                             DepLaw::Factor { div: true } => "div",
                             DepLaw::Shift { sub: false } => "add",
                             DepLaw::Shift { sub: true } => "sub",
+                            DepLaw::Rescale => "rescale",
                             DepLaw::Phase => "phase",
                         })
                         .collect::<Vec<_>>()
@@ -2541,6 +2597,9 @@ struct UnitGen<'u> {
     /// partials take as its law's identity.
     name: String,
     subst: Vec<(usize, u32, String)>,
+    /// `row-slices`: each fold member's partial over this item's slice (a
+    /// rescale law's shift for a later fold of the same item).
+    parts: Vec<Option<String>>,
 }
 
 impl UnitGen<'_> {
@@ -2968,6 +3027,7 @@ impl UnitGen<'_> {
             self.line(format!("{q} = urem i64 {it}, {}", sl.s));
             self.row = row.clone();
             self.vals = vec![None; n];
+            self.parts = vec![None; n];
             for k in 0..n {
                 let mb = &u.members[k];
                 let (ph, av) = (sl.phase[k], sl.avail[k]);
@@ -3059,14 +3119,17 @@ impl UnitGen<'_> {
             USrc::Member { k: c, .. } => Some(*c),
             _ => None,
         };
-        for &(_, slot, law) in &sl.laws[k] {
+        for &(v, slot, law) in &sl.laws[k] {
             let lit = match law {
-                DepLaw::Factor { .. } => "1.0",
-                DepLaw::Shift { sub: false } => "-0.0",
-                DepLaw::Shift { sub: true } | DepLaw::Phase => "0.0",
+                DepLaw::Factor { .. } => "1.0".to_string(),
+                DepLaw::Shift { sub: false } => "-0.0".to_string(),
+                DepLaw::Shift { sub: true } | DepLaw::Phase => "0.0".to_string(),
+                // The value's own partial over this slice: every term ≤ 1.
+                DepLaw::Rescale => self.parts[v]
+                    .clone()
+                    .expect("a rescale's shift is folded first in the item"),
             };
-            self.subst
-                .push((c.expect("a law reads a cell"), slot, lit.to_string()));
+            self.subst.push((c.expect("a law reads a cell"), slot, lit));
         }
         let kq = site.k / sl.s;
         let base = self.op("mul", q, kq);
@@ -3087,6 +3150,7 @@ impl UnitGen<'_> {
         self.subst.clear();
         let off = self.tree[k].expect("a sliced fold's tree");
         let tot = self.tree_total(&format!("r{k}"), off, &t, &p, op);
+        self.parts[k] = Some(tot.clone());
         self.lane0(&format!("f{k}w"), |g| {
             let at = g.ws_at(k, sl, &t, &row, q);
             g.line(format!("store {t} {tot}, ptr addrspace(1) {at}"));
@@ -3115,6 +3179,52 @@ impl UnitGen<'_> {
         let at = self.ws_at(k, sl, &t, &row, &r);
         let x = self.tmp();
         self.line(format!("{x} = load {t}, ptr addrspace(1) {at}"));
+        // ADR-0042 D7: partial `r` was taken against its slice's shift
+        // `s_r`; rescaled to the value's combined `v` by `exp(a(s_r, v))`.
+        let mut x = x;
+        for (&(v, _, law), arg) in sl.laws[k].iter().zip(&sl.args[k]) {
+            let (DepLaw::Rescale, Some(arg)) = (law, arg) else {
+                continue;
+            };
+            let vt = lower_ty(match &self.u.members[v].kind {
+                UKind::Fold { site, .. } => &site.elem,
+                _ => unreachable!("a rescale's value is a fold"),
+            })
+            .expect("float elem lowers");
+            let at = self.ws_at(v, sl, &vt, &row, &r);
+            let sr = self.tmp();
+            self.line(format!("{sr} = load {vt}, ptr addrspace(1) {at}"));
+            let val = self.vals[v]
+                .clone()
+                .expect("a rescale's value precedes its fold");
+            let (a, b) = if arg.x_first {
+                (&sr, &val)
+            } else {
+                (&val, &sr)
+            };
+            let mut d = self.tmp();
+            self.line(format!("{d} = fsub {t} {a}, {b}"));
+            for (sop, cst) in &arg.steps {
+                let lit = super::const_literal(cst);
+                let code = if *sop == Operation::Div {
+                    "fdiv"
+                } else {
+                    "fmul"
+                };
+                let z = self.tmp();
+                self.line(format!("{z} = {code} {t} {d}, {lit}"));
+                d = z;
+            }
+            let bits = if t == "double" { 64 } else { 32 };
+            let f = self.tmp();
+            self.line(format!(
+                "{f} = call {t} {}({t} {d})",
+                crate::exp::symbol(bits)
+            ));
+            let y = self.tmp();
+            self.line(format!("{y} = fmul {t} {x}, {f}"));
+            x = y;
+        }
         let p = self.tmp();
         self.line(format!(
             "{p} = select i1 {c}, {t} {x}, {t} {}",
@@ -3123,6 +3233,9 @@ impl UnitGen<'_> {
         let off = self.tree[k].expect("a sliced fold's tree");
         let mut tot = self.tree_total(&format!("p{phase}r{k}"), off, &t, &p, op);
         for &(v, _, law) in &sl.laws[k] {
+            if law == DepLaw::Rescale {
+                continue;
+            }
             let val = self.vals[v]
                 .clone()
                 .expect("a law's value precedes its fold");
@@ -3131,6 +3244,7 @@ impl UnitGen<'_> {
                 DepLaw::Factor { div: true } => "fdiv",
                 DepLaw::Shift { sub: false } => "fadd",
                 DepLaw::Shift { sub: true } | DepLaw::Phase => "fsub",
+                DepLaw::Rescale => unreachable!("applied to the partials"),
             };
             let z = self.tmp();
             self.line(format!("{z} = {code} {t} {tot}, {val}"));

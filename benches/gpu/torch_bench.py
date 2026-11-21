@@ -44,11 +44,8 @@ def bias(n, mod, off, div):
 
 
 def expo(x):
-    """exp(x) for x <= 0 as (1 + x/256)^256 (gen_tiles.py `expo`)."""
-    v = torch.clamp(x / 256.0 + 1.0, min=0.0)
-    for _ in range(8):
-        v = v * v
-    return v
+    """exp(x) (gen_tiles.py `expo`: the `exp` builtin, ADR-0042)."""
+    return torch.exp(x)
 
 
 def corners(*outs):

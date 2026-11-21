@@ -11,8 +11,10 @@
 //! which values constant along the axis (one per row: another fold's result)
 //! its term reads, each by the law the term's dataflow gives it: a factor
 //! applied once after the combine, a shift of a max/min applied once after
-//! it, or a phase (the partials need that value combined first). Read off the
-//! fold's step and the cell map its term reads; never a pattern name.
+//! it, a rescale (the value enters only through `exp` of a difference: each
+//! partial takes its own shift, rescaled when combined — ADR-0042 D7), or a
+//! phase (the partials need that value combined first). Read off the fold's
+//! step and the cell map its term reads; never a pattern name.
 
 use slotmap::SecondaryMap;
 
@@ -269,14 +271,44 @@ pub enum DepLaw {
     /// extreme of the shifted values is the shifted extreme. `x` is the term
     /// with `v` read as the add's identity (`−0`, `+0` under a subtract).
     Shift { sub: bool },
-    /// Any other dependence (a softmax's `exp(s − m)` written as a polynomial:
-    /// no operation of the IR is an exponential, so no rescaling law): the
-    /// partials need `v`'s final value — a phase after `v`'s own fold.
+    /// `⊕ = +` and the term is `exp(a(v)) · y` through products and
+    /// quotients whose other operand never reads `v`, with `a(v) = κ·(x − v)`
+    /// (`x` and every factor of `κ` free of `v`; [`RescaleArg`]): for any
+    /// shift `s`, `exp(a(v)) = exp(a(s)) · exp(a(v) − a(s))` and
+    /// `a(v) − a(s) = a(x := s, v)` is the same for every term — ADR-0042
+    /// D7, `exp(a − m₁) = exp(a − m) · exp(m − m₁)`. A block's partial may
+    /// take its own shift `s_B` for `v` and is rescaled by
+    /// `exp(a(x := s_B, v := s))` when combined: exact in the reals, within
+    /// the default face's bound in floats (each rescale one `exp` and one
+    /// product); the exact and fixed faces keep the phase.
+    Rescale,
+    /// Any other dependence: the partials need `v`'s final value — a phase
+    /// after `v`'s own fold.
     Phase,
 }
 
+/// [`DepLaw::Rescale`]'s exponent `a = κ·(x − v)`: where it is in the cell
+/// body and what the shift of a block may be.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RescaleArg {
+    /// The `Exp` morphism (in the cell body that reads `v`).
+    pub exp: MorphismId,
+    /// The difference is `x − v` (`false`: `v − x`).
+    pub x_first: bool,
+    /// Steps from the difference to the exponent: `Mul` / `Div` by a
+    /// positive constant (its value), in order.
+    pub steps: Vec<(Operation, crate::ty::Value)>,
+    /// `κ > 0`: the sign of `x` in the exponent — a running max of `x` as
+    /// each block's shift keeps every term at most `1` (`false`: a running
+    /// min does).
+    pub up: bool,
+    /// The array whose same-cell read is `x` (the cell map's capture read
+    /// at the cell's own index), when `x` is one.
+    pub against: Option<ObjectId>,
+}
+
 /// One value constant along a fold's axis that its term reads.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RowDep {
     /// The per-cell map whose output the fold reads, and which reads `value`.
     pub via: MorphismId,
@@ -286,6 +318,8 @@ pub struct RowDep {
     /// result, a per-row cell, an input.
     pub value: ObjectId,
     pub law: DepLaw,
+    /// [`DepLaw::Rescale`]'s exponent; `None` for every other law.
+    pub rescale: Option<RescaleArg>,
 }
 
 /// **The fold-state combine of one fold site** ([`CategoryIr::fold_combine`]):
@@ -447,8 +481,16 @@ impl CategoryIr {
             if r.foot == Footprint::Same && depth < COMBINE_DEPTH && v != term {
                 let before = deps.len();
                 self.term_deps(f, read, rows, k, v, op, tile, depth + 1, deps);
+                // A rescale holds through this cell when its output is a
+                // product / quotient path in the inner cell's read (`p =
+                // ex ÷ den` over `ex = exp(s − m)`): the term is still
+                // `exp(a(v)) · y`. Every other law needs the value first.
+                let carry = self.factor_in_slot(body, captures, r.slot, op).is_some();
                 for d in &mut deps[before..] {
-                    d.law = DepLaw::Phase;
+                    if !(carry && d.law == DepLaw::Rescale) {
+                        d.law = DepLaw::Phase;
+                        d.rescale = None;
+                    }
                 }
                 continue;
             }
@@ -456,32 +498,225 @@ impl CategoryIr {
                 continue;
             }
             seen.push(r.slot);
-            let law = match depth {
-                0 => self.dep_law(body, captures, r.slot, op, tile),
-                _ => DepLaw::Phase,
-            };
+            let (law, rescale) = self.dep_law_at(body, captures, r.slot, op, tile, depth, cm);
             deps.push(RowDep {
                 via: c,
                 slot: r.slot,
                 value: v,
                 law,
+                rescale,
             });
         }
         for &u in &site.uniform {
             let Some(v) = self.pair_slot_source(cm.source, u) else {
                 continue;
             };
-            let law = match depth {
-                0 => self.dep_law(body, captures, u, op, tile),
-                _ => DepLaw::Phase,
-            };
+            let (law, rescale) = self.dep_law_at(body, captures, u, op, tile, depth, cm);
             deps.push(RowDep {
                 via: c,
                 slot: u,
                 value: v,
                 law,
+                rescale,
             });
         }
+    }
+
+    /// [`Self::dep_law`] at `depth`: below the term's own cell only a
+    /// rescale survives (it composes through the product paths above it;
+    /// [`Self::term_deps`] checks each level).
+    #[allow(clippy::too_many_arguments)]
+    fn dep_law_at(
+        &self,
+        body: FuncId,
+        captures: u32,
+        slot: u32,
+        op: RowFoldOp,
+        tile: bool,
+        depth: u32,
+        cm: &crate::graph::Morphism,
+    ) -> (DepLaw, Option<RescaleArg>) {
+        if let Some(arg) = self.rescale_law(body, captures, slot, op, cm) {
+            return (DepLaw::Rescale, Some(arg));
+        }
+        match depth {
+            0 => (self.dep_law(body, captures, slot, op, tile), None),
+            _ => (DepLaw::Phase, None),
+        }
+    }
+
+    /// The reads of slot `s` in body `b` and the objects they reach, as the
+    /// `is_read` / `free` predicates the law paths take.
+    fn slot_taint(&self, b: FuncId, s: u32) -> (Vec<ObjectId>, SecondaryMap<ObjectId, ()>) {
+        let reads = self.slot_reads(b, s);
+        let mut tainted: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
+        let mut stack = reads.clone();
+        while let Some(o) = stack.pop() {
+            if tainted.insert(o, ()).is_some() {
+                continue;
+            }
+            for &m in self.out_edges(o) {
+                stack.push(self.morphisms[m].target);
+            }
+        }
+        (reads, tainted)
+    }
+
+    /// Body `b`'s output is a product / quotient path in its slot `s`
+    /// (`Some(div)`, [`Self::factor_path`]) and `⊕ = +`.
+    fn factor_in_slot(&self, b: FuncId, captures: u32, s: u32, op: RowFoldOp) -> Option<bool> {
+        let add = matches!(
+            op,
+            RowFoldOp::Arith {
+                op: Operation::Add,
+                ..
+            }
+        );
+        if !add || captures == 0 {
+            return None;
+        }
+        let bd = self.func(b)?;
+        let (reads, tainted) = self.slot_taint(b, s);
+        if reads.is_empty() {
+            return None;
+        }
+        let is_read = |o: ObjectId| reads.contains(&o);
+        let free = |o: ObjectId| !tainted.contains_key(o);
+        self.factor_path(bd.output, &is_read, &free)
+    }
+
+    /// [`DepLaw::Rescale`] of body `b`'s output in its slot `s` (`cm` the
+    /// cell's map): `⊕ = +`, the output a product / quotient path to an
+    /// `Exp` whose argument is `κ·(x − v)`, `v` the slot's read, `x` and the
+    /// other factors free of it. Off under `FactArms::exp_rescale`.
+    fn rescale_law(
+        &self,
+        b: FuncId,
+        captures: u32,
+        s: u32,
+        op: RowFoldOp,
+        cm: &crate::graph::Morphism,
+    ) -> Option<RescaleArg> {
+        if !self.fact_arms().exp_rescale || captures == 0 {
+            return None;
+        }
+        let add = matches!(
+            op,
+            RowFoldOp::Arith {
+                op: Operation::Add,
+                ..
+            }
+        );
+        if !add {
+            return None;
+        }
+        let bd = self.func(b)?;
+        let (reads, tainted) = self.slot_taint(b, s);
+        if reads.is_empty() {
+            return None;
+        }
+        let is_read = |o: ObjectId| reads.contains(&o);
+        let free = |o: ObjectId| !tainted.contains_key(o);
+        let exp = self.exp_factor_path(bd.output, &free)?;
+        let em = self.morphisms.get(exp)?;
+        let mut steps = Vec::new();
+        let mut a = em.source;
+        // Peel `· c` / `÷ c` (c a positive constant) back to the difference.
+        let (x, x_first) = loop {
+            let &[m] = self.in_edges(a) else {
+                return None;
+            };
+            let mm = self.morphisms.get(m)?;
+            let p = self.pair_slot_source(mm.source, 0)?;
+            let q = self.pair_slot_source(mm.source, 1)?;
+            match mm.op {
+                Operation::Sub if free(p) && is_read(q) => break (p, true),
+                Operation::Sub if is_read(p) && free(q) => break (q, false),
+                Operation::Mul if self.positive_const(q) => {
+                    steps.push((Operation::Mul, self.objects[q].value.clone()?));
+                    a = p;
+                }
+                Operation::Mul if self.positive_const(p) => {
+                    steps.push((Operation::Mul, self.objects[p].value.clone()?));
+                    a = q;
+                }
+                Operation::Div if self.positive_const(q) => {
+                    steps.push((Operation::Div, self.objects[q].value.clone()?));
+                    a = p;
+                }
+                _ => return None,
+            }
+        };
+        steps.reverse();
+        // `x` is a capture read at the cell's own index: that capture.
+        let against = self.same_read_capture(bd, captures, x, cm);
+        Some(RescaleArg {
+            exp,
+            x_first,
+            steps,
+            up: x_first,
+            against,
+        })
+    }
+
+    /// `o` is `exp(a) · y` through products and quotients whose other
+    /// operand is `free` (`exp(a)` never in a denominator): the `Exp`.
+    fn exp_factor_path(&self, o: ObjectId, free: &dyn Fn(ObjectId) -> bool) -> Option<MorphismId> {
+        let &[m] = self.in_edges(o) else {
+            return None;
+        };
+        let mm = self.morphisms.get(m)?;
+        if !self.is_float_obj(o) {
+            return None;
+        }
+        if mm.op == Operation::Exp {
+            return Some(m);
+        }
+        let x = self.pair_slot_source(mm.source, 0)?;
+        let y = self.pair_slot_source(mm.source, 1)?;
+        match mm.op {
+            Operation::Mul if free(y) => self.exp_factor_path(x, free),
+            Operation::Mul if free(x) => self.exp_factor_path(y, free),
+            Operation::Div if free(y) => self.exp_factor_path(x, free),
+            _ => None,
+        }
+    }
+
+    /// `o` is a float `Constant` greater than zero.
+    fn positive_const(&self, o: ObjectId) -> bool {
+        self.objects.get(o).is_some_and(|x| {
+            x.kind == crate::graph::ObjectKind::Constant
+                && match x.value {
+                    Some(crate::ty::Value::F32(v)) => v > 0.0,
+                    Some(crate::ty::Value::F64(v)) => v > 0.0,
+                    _ => false,
+                }
+        })
+    }
+
+    /// The capture array of map `cm` that body `bd` reads at its own element
+    /// (the mapped index) to make `x`, if `x` is such a read.
+    fn same_read_capture(
+        &self,
+        bd: &crate::graph::FuncDef,
+        captures: u32,
+        x: ObjectId,
+        cm: &crate::graph::Morphism,
+    ) -> Option<ObjectId> {
+        let &[m] = self.in_edges(x) else {
+            return None;
+        };
+        let ix = self.morphisms.get(m)?;
+        if ix.op != Operation::Index {
+            return None;
+        }
+        let arr = self.pair_slot_source(ix.source, 0)?;
+        let at = self.pair_slot_source(ix.source, 1)?;
+        let slot = self.tile_input_proj_index(arr, bd.input)?;
+        if slot >= captures || self.tile_input_proj_index(at, bd.input) != Some(captures) {
+            return None;
+        }
+        self.pair_slot_source(cm.source, slot)
     }
 
     /// The objects of cell body `b` that read its source slot `s`: the

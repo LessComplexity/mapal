@@ -121,6 +121,8 @@ pub fn host_device(dev: &str) -> String {
                 l = format!("{}@emu_cp_async({args}, i32 {n})", &l[..i]);
             }
         }
+        // ADR-0042: the hardware `exp` form's `ex2.approx` is the host's `exp2f`.
+        l = l.replace("@llvm.nvvm.ex2.approx.ftz.f(", "@emu_ex2(");
         l = l
             .replace("@llvm.nvvm.cp.async.commit.group()", "@emu_cp_commit()")
             .replace("@llvm.nvvm.cp.async.wait.group(", "@emu_cp_wait(");
@@ -164,7 +166,7 @@ pub fn host_device(dev: &str) -> String {
            declare i32 @emu_laneid()\ndeclare float @emu_shfl_bfly(float, i32)\n\
            declare void @emu_barrier()\ndeclare void @emu_barrier_n(i32)\n@emu_smem = external global [0 x i8], align 16\n\
            declare void @emu_cp_async(ptr, ptr, i32)\ndeclare void @emu_cp_commit()\n\
-           declare void @emu_cp_wait(i32)\n"
+           declare void @emu_cp_wait(i32)\ndeclare float @emu_ex2(float)\n"
 }
 
 /// Emulation runs every device thread on the host, so it gets 8x the native timeout.

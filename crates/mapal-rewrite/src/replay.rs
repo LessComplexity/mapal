@@ -560,6 +560,9 @@ fn emit_op(
         Neg | Not => fb
             .unop(op, feed(plan, remap, src), dest, loc)
             .expect("replay: unop"),
+        Exp => fb
+            .exp(feed(plan, remap, src), dest, loc)
+            .expect("replay: exp"),
         Widen => {
             let out_ty = ir.object(target).expect("replay: Widen target").ty.clone();
             fb.widen(feed(plan, remap, src), out_ty, dest, loc)

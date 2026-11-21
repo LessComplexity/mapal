@@ -166,6 +166,7 @@ fn edge_label(op: &Operation) -> String {
         Operation::LoopExit => "LoopExit".into(),
         Operation::Output => "Output".into(),
         Operation::Widen => "Widen".into(),
+        Operation::Exp => "Exp".into(),
     }
 }
 

@@ -71,16 +71,7 @@ fn main() {
                 rrange -> map {
                     r -> (r <= t) -> {
                         -true-> {
-                            (s[r] - mx) / 2.8284271247461903 -> ez;
-                            ez / 256.0 + 1.0 -> eu;
-                            (eu > 0.0) -> {
-                                -true-> eu;
-                                -false-> 0.0;
-                            } -> ev;
-                            8 -> iota -> esq;
-                            (ev, esq) -> fold {
-                                acc, k -> acc * acc
-                            }
+                            (s[r] - mx) / 2.8284271247461903 -> exp
                         }
                         -false-> 0.0;
                     }

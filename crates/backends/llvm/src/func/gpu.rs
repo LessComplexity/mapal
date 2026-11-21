@@ -3283,6 +3283,15 @@ pub(crate) fn device_module(
         out.push_str(&decls);
         out.push_str(super::calls::GSYNC);
     }
+    // ADR-0042: the device's `exp` definitions, for the widths a body calls —
+    // the hardware form where the part's measured `ex2` error meets the bound.
+    {
+        let hw = host_rungs(profile, contract, arms).exp_hw;
+        let ex2 = profile.gpu().map(|g| g.caps.ex2);
+        let real = crate::exp::choose(order == Order::Free, contract, hw, ex2);
+        let defs = crate::exp::defs(&out, real);
+        out.push_str(&defs);
+    }
     // `pdl`: the runtime launches every kernel behind a kernel as a dependent
     // launch, so every kernel waits for its producer's grid before it reads.
     if pdl(profile, contract, arms) {
