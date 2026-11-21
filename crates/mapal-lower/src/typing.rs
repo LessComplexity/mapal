@@ -374,7 +374,7 @@ impl Walk<'_> {
                 scope.bind(name_text(self.source, b.name), v);
             }
             StmtKind::Loop(l) => {
-                scope.push();
+                scope.push_loop();
                 self.block(&l.body, scope);
                 scope.pop();
             }
@@ -456,6 +456,12 @@ impl Walk<'_> {
                             Some(ExprKind::Int(n)) if *n > 0 && *n <= i32::MAX as u64 => {
                                 WTy::Array(Box::new(WTy::Known(Ty::i32())), *n)
                             }
+                            // onto-device: an extent past i32 — the count is an
+                            // `i64` literal and the elements its index type.
+                            Some(ExprKind::Int(n)) if *n <= i64::MAX as u64 && *n > 0 => {
+                                self.unify_known(&cur, &Ty::i64(), e.span);
+                                WTy::Array(Box::new(WTy::Known(Ty::index_ty(*n))), *n)
+                            }
                             _ => WTy::Unknown,
                         }
                     } else if text == "fill" {
@@ -469,6 +475,12 @@ impl Walk<'_> {
                         match prev.map(|p| &p.kind) {
                             Some(ExprKind::Tuple(xs)) if xs.len() == 2 => match &xs[1].kind {
                                 ExprKind::Int(n) if *n > 0 && *n <= i32::MAX as u64 => {
+                                    WTy::Array(Box::new(elem), *n)
+                                }
+                                ExprKind::Int(n) if *n > 0 && *n <= i64::MAX as u64 => {
+                                    if let WTy::Tuple(ws) = &cur {
+                                        self.unify_known(&ws[1], &Ty::i64(), e.span);
+                                    }
                                     WTy::Array(Box::new(elem), *n)
                                 }
                                 _ => WTy::Unknown,
@@ -565,6 +577,7 @@ impl Walk<'_> {
         // produce values that unify into a common ty.
         let mut arm_tys: Vec<WTy> = Vec::new();
         let mut is_routing = false;
+        let routing_guard = arms.iter().any(|a| arm_is_routing(&a.payload));
         for arm in arms {
             if let GuardDiscr::Int(_) = arm.discr {
                 // unify cur with i (cur is integer); we cannot construct a lit
@@ -575,9 +588,22 @@ impl Walk<'_> {
             if arm_is_routing(&arm.payload) {
                 is_routing = true;
             }
+            // A routing guard's exit arm binds its exit value in the loop's
+            // enclosing scope (DESIGN §8.5, as emission does), so a later
+            // map/fold body sees it as a capture. A bare final name binds only
+            // when it was unbound before the arm (else it is a rebind or call).
+            let exit_name = (routing_guard && !arm_is_routing(&arm.payload))
+                .then(|| arm_exit_bind(&arm.payload))
+                .flatten()
+                .map(|n| name_text(self.source, n))
+                .filter(|t| !scope.contains(t) && !self.fn_sigs.contains_key(*t));
             scope.push();
             let aty = self.arm_value(&arm.payload, cur, scope);
+            let exit_bind = exit_name.and_then(|t| scope.resolve(t).map(|(w, _)| (t, w.clone())));
             scope.pop();
+            if let Some((text, w)) = exit_bind {
+                scope.bind_loop_exit(text, w);
+            }
             arm_tys.push(aty);
         }
         if is_routing {
@@ -937,8 +963,15 @@ impl Walk<'_> {
             ExprKind::Index { base, index } => {
                 let bty = self.expr(base, scope);
                 let iv = self.expr(index, scope);
-                // index is an integer; if a lit var, leave it (defaults i32).
-                let _ = iv;
+                // index is an integer; if a lit var, leave it (defaults i32) —
+                // unless the literal itself is past i32 (an extent past 2³¹
+                // indexes in `i64`, its index type).
+                if let ExprKind::Int(n) = &index.kind
+                    && *n > i32::MAX as u64
+                    && *n <= i64::MAX as u64
+                {
+                    self.unify_known(&iv, &Ty::i64(), index.span);
+                }
                 let bt = self.wty_to_ty(&bty);
                 match bt.as_ref() {
                     Some(Ty::Array { elem, .. }) => WTy::Known((**elem).clone()),
@@ -1245,6 +1278,42 @@ fn collect_ret_chain(
             }
             _ => {}
         }
+    }
+}
+
+/// The name an exit arm's terminal binds (`… -> name`): a `Bind` stage, or a
+/// final bare name (a fresh binding when it resolves to nothing, LD1 — the
+/// caller keeps it only if the arm walk bound it).
+fn arm_exit_bind(payload: &ArmPayload) -> Option<syn::Name> {
+    match arm_final_chain(payload)?.stages.last().map(|s| &s.kind) {
+        Some(StageKind::Bind { name, .. }) => Some(*name),
+        Some(StageKind::Expr(e)) => match &e.kind {
+            ExprKind::Var(n) => Some(*n),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// The final chain of an arm payload: a block's tail, else its last chain
+/// statement.
+fn arm_final_chain(payload: &ArmPayload) -> Option<&Chain> {
+    match payload {
+        ArmPayload::Chain(c) => Some(c),
+        ArmPayload::Block(b) => match b.items.last() {
+            Some(BlockItem::Stmt(s)) => {
+                if let StmtKind::Chain(c) = &s.kind {
+                    if b.tail.is_some() {
+                        b.tail.as_ref()
+                    } else {
+                        Some(c)
+                    }
+                } else {
+                    b.tail.as_ref()
+                }
+            }
+            _ => b.tail.as_ref(),
+        },
     }
 }
 

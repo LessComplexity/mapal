@@ -452,6 +452,11 @@ pub(crate) struct FnEmit<'a> {
     root_index: std::collections::HashMap<frame::Root, Vec<ObjectId>>,
     /// The parallel entry's task order (its host and tasks).
     par: Option<std::rc::Rc<frame::ParOrder>>,
+    /// onto-device `host-par`: the split slice functions this walk
+    /// dispatched (`func/hostpar.rs`), appended after the function.
+    host_par_fns: String,
+    /// `host-par`: slice functions so far (their names' ordinal).
+    host_par_n: u32,
 }
 
 /// Should this site's `b` be packed — shape AND size.
@@ -716,6 +721,7 @@ pub(crate) mod flow;
 mod frame;
 pub(crate) mod gpu;
 pub(crate) mod horizontal;
+mod hostpar;
 mod ops;
 mod packed;
 pub(crate) mod resident;

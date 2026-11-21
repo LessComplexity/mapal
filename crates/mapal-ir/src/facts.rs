@@ -50,10 +50,30 @@ pub(crate) struct FuncFacts {
     pub(crate) bounds_proof: OnceLock<BoundsProof>,
     pub(crate) write_delta: OnceLock<SecondaryMap<ObjectId, Delta>>,
     pub(crate) guard_plan: OnceLock<Vec<GuardSite>>,
+    pub(crate) guard_structure: OnceLock<Vec<GuardSite>>,
     pub(crate) trip_split: OnceLock<Vec<TripSplit>>,
     pub(crate) unit_plan: OnceLock<crate::unit::UnitPlan>,
     pub(crate) access_plan: OnceLock<crate::access::AccessPlan>,
     pub(crate) residence_plan: OnceLock<crate::residence::ResidencePlan>,
+}
+
+/// Measurement arms of the facts themselves: each switch turns one fact rule
+/// off so a build can be compared against the facts before it (an OFF arm
+/// is a measurement flag, never a per-part setting). Default: every rule on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FactArms {
+    /// onto-device `cond-bounds`: `bounds_proof` narrows ranges by the
+    /// conditions holding where a value is used (guard arms, a loop's continue
+    /// and exit conditions, `Phi` arms) and ranges loop-carried counters from
+    /// `loop_plan`. Off: plain interval ranges over constants, iota elements
+    /// and map/fold quantification.
+    pub cond_bounds: bool,
+}
+
+impl Default for FactArms {
+    fn default() -> Self {
+        FactArms { cond_bounds: true }
+    }
 }
 
 /// The graph's fact store.
@@ -61,6 +81,7 @@ pub(crate) struct FuncFacts {
 pub(crate) struct Facts {
     per: SecondaryMap<FuncId, FuncFacts>,
     pub(crate) trap_capabilities: OnceLock<SecondaryMap<FuncId, bool>>,
+    pub(crate) arms: FactArms,
 }
 
 impl Facts {
@@ -72,11 +93,35 @@ impl Facts {
         Facts {
             per,
             trap_capabilities: OnceLock::new(),
+            arms: FactArms::default(),
         }
     }
 }
 
 impl CategoryIr {
+    /// The fact arms this graph's facts are computed under.
+    pub fn fact_arms(&self) -> FactArms {
+        self.facts.arms
+    }
+
+    /// The same graph with an empty fact store computed under `arms` (an OFF
+    /// arm's build: every fact derived afresh, none carried over).
+    pub fn refacted(&self, arms: FactArms) -> CategoryIr {
+        let mut facts = Facts::new(self.funcs.keys());
+        facts.arms = arms;
+        CategoryIr {
+            objects: self.objects.clone(),
+            morphisms: self.morphisms.clone(),
+            out_edges: self.out_edges.clone(),
+            in_edges: self.in_edges.clone(),
+            owner: self.owner.clone(),
+            funcs: self.funcs.clone(),
+            entry: self.entry,
+            facts,
+            precision: self.precision.clone(),
+        }
+    }
+
     pub(crate) fn facts_of(&self, f: FuncId) -> Option<&FuncFacts> {
         self.facts.per.get(f)
     }

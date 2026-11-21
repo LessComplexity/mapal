@@ -606,13 +606,20 @@ impl<'a> FnEmit<'a> {
         self.line(format!("{done} = icmp uge i64 {iv}, {hi}"));
         self.line(format!("br i1 {done}, label %{ld}, label %{lb}"));
         self.label_line(&lb);
-        let idx32 = self.tmp();
-        self.line(format!("{idx32} = trunc i64 {iv} to i32"));
+        // The elements are the extent's index type (`i64` past i32::MAX).
+        let wide = matches!(&tgt_ty, Ty::Array { elem, .. } if **elem == Ty::i64());
+        let (ety, ev) = if wide {
+            ("i64", iv.clone())
+        } else {
+            let idx32 = self.tmp();
+            self.line(format!("{idx32} = trunc i64 {iv} to i32"));
+            ("i32", idx32)
+        };
         let dp = self.tmp();
         self.line(format!(
             "{dp} = getelementptr {tgt_arr_llt}, ptr {tgt_slot}, i64 0, i64 {iv}"
         ));
-        self.line(format!("store i32 {idx32}, ptr {dp}"));
+        self.line(format!("store {ety} {ev}, ptr {dp}"));
         let iv1 = self.tmp();
         self.line(format!("{iv1} = add i64 {iv}, 1"));
         self.line(format!("store i64 {iv1}, ptr {ctr}"));

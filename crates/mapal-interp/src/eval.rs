@@ -432,10 +432,20 @@ pub(crate) fn eval_morphism(
             // constant source (validate ties it to the target's static size).
             let n = match read(ctx, source) {
                 RValue::Scalar(Value::I32(v)) => *v as usize,
-                _ => unreachable!("Iota on non-i32 count"),
+                RValue::Scalar(Value::I64(v)) => *v as usize,
+                RValue::Scalar(Value::U8(v)) => *v as usize,
+                _ => unreachable!("Iota on a non-integer count"),
             };
+            // The elements are the extent's index type (`i64` past i32::MAX).
+            let wide = n as u64 > i32::MAX as u64 + 1;
             let out = (0..n)
-                .map(|i| RValue::Scalar(Value::I32(i as i32)))
+                .map(|i| {
+                    RValue::Scalar(if wide {
+                        Value::I64(i as i64)
+                    } else {
+                        Value::I32(i as i32)
+                    })
+                })
                 .collect();
             write(ctx, target, RValue::array(out));
             Ok(())

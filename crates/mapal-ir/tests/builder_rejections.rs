@@ -562,7 +562,7 @@ fn iota_zero_count_rejects() {
 }
 
 #[test]
-fn iota_oversize_count_rejects() {
+fn iota_past_i32_indexes_in_i64() {
     // The i32 element pin: `n > i32::MAX` is the Enumerate bound (F4/SND-3).
     let mut b = IrBuilder::new();
     let f = b
@@ -578,10 +578,16 @@ fn iota_oversize_count_rejects() {
         )
         .unwrap();
     let mut fb = b.build_fn(f).unwrap();
-    let big = fb.constant(Value::I64(i32::MAX as i64 + 1), L).unwrap();
+    // onto-device: an extent past i32 indexes in `i64` (the extent's index
+    // type), so a count of 2³¹ + 1 builds `[i64; 2³¹ + 1]`.
+    let big = fb.constant(Value::I64(i32::MAX as i64 + 2), L).unwrap();
+    let o = fb.iota(big, Dest::Fresh(None), L).unwrap();
     assert_eq!(
-        fb.iota(big, Dest::Fresh(None), L),
-        Err(IrError::EnumerateIndexOverflow)
+        fb.ty_of(o),
+        Ty::Array {
+            elem: Box::new(Ty::i64()),
+            size: i32::MAX as u64 + 2
+        }
     );
 }
 

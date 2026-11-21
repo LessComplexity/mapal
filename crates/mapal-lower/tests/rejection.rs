@@ -1433,10 +1433,12 @@ fn l1612_iota_non_literal_count_rejects() {
 #[test]
 fn l1612_iota_zero_rejects_and_oversize_is_width_owned() {
     assert_rejects("fn main() { 0 -> iota -> t; }\n", "L1612");
-    // ADR-0031: an oversize literal never reaches iota — the literal-width
-    // system rejects it first (L1202). The IR-level oversize twin
-    // (`EnumerateIndexOverflow`) is pinned in mapal-ir's builder tests.
-    assert_rejects("fn main() { 2147483648 -> iota -> t; }\n", "L1202");
+    // onto-device: an extent past i32 is an `i64` count with `i64` elements
+    // (the extent's index type) — accepted; past i64 the literal does not fit.
+    assert_rejects(
+        "fn main() { 18446744073709551615 -> iota -> t; }\n",
+        "L1202",
+    );
 }
 
 #[test]
@@ -1449,8 +1451,12 @@ fn l1613_fill_wire_shape_rejects() {
 #[test]
 fn l1613_fill_zero_rejects_and_oversize_is_width_owned() {
     assert_rejects("fn main() { (1.0, 0) -> fill -> s; }\n", "L1613");
-    // Same width-system ownership as iota (L1202 fires on the literal).
-    assert_rejects("fn main() { (1.0, 2147483648) -> fill -> s; }\n", "L1202");
+    // Same width-system ownership as iota: an extent past i32 is an `i64`
+    // count (onto-device), past i64 the literal does not fit (L1202).
+    assert_rejects(
+        "fn main() { (1.0, 18446744073709551615) -> fill -> s; }\n",
+        "L1202",
+    );
 }
 
 #[test]

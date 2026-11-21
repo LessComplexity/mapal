@@ -65,6 +65,17 @@ impl Ty {
             signed: true,
         }
     }
+    /// The index type of an extent (onto-device, index width from the
+    /// extents): the narrowest Core signed int holding every index of
+    /// `[0, extent)` — `i32` up to `i32::MAX` cells, `i64` past it. An
+    /// `iota`'s elements are its extent's index type.
+    pub fn index_ty(extent: u64) -> Ty {
+        if extent <= i32::MAX as u64 + 1 {
+            Ty::i32()
+        } else {
+            Ty::i64()
+        }
+    }
     pub fn u8() -> Ty {
         Ty::Int {
             bits: 8,

@@ -57,6 +57,7 @@ pub(crate) fn rowfold_sites(
         &gpu::tile_plan(ir, f, profile, contract, arms),
         profile,
         rungs.window,
+        rungs.carry_made,
     );
     for (m, site) in ir.row_fold(f).iter() {
         let window = site.w > 1 || site.a.ksplit.is_some();

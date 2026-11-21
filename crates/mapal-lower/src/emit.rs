@@ -2644,7 +2644,7 @@ impl Emitter<'_> {
             IrError::NonStaticCount | IrError::EnumerateIndexOverflow => diag(
                 LCode::IotaArgs,
                 sp,
-                "the iota count must be a positive literal ≤ i32::MAX flowing in — \
+                "the iota count must be a positive literal flowing in — \
                  write `4096 -> iota` (a runtime size is out of Core, ADR-0023 territory)",
             ),
             other => ir_err(other, sp),

@@ -222,7 +222,11 @@ impl<'a> FnEmit<'a> {
                 }
             }
             Operation::Call(g) => self.emit_call(source, target, g),
-            Operation::Map { body, captures } => self.emit_map(m, source, target, body, captures),
+            Operation::Map { body, captures } => {
+                if !self.host_par_map(m) {
+                    self.emit_map(m, source, target, body, captures)
+                }
+            }
             Operation::Fold { body, captures } => self.emit_fold(source, target, body, captures),
             Operation::Index => self.emit_index(m, source, target),
             Operation::Update => self.emit_update(m, source, target),

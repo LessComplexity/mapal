@@ -4180,13 +4180,17 @@ fn main() {
         let wh = twin.find("while (true) {").unwrap();
         assert!(lit < wh, "loop-invariant literal outside the loop:\n{twin}");
         let brk = twin.find(") { break; }").unwrap();
-        let idx = twin.find("int64_t").expect("index guard temp:\n{twin}");
+        let idx = twin
+            .find("o9.f0 = o8;")
+            .expect("the Index's operand pair:\n{twin}");
         assert!(
             brk < idx,
             "guard-first: the speculative Index is post-guard:\n{twin}"
         );
-        // The device bounds guard for the in-loop Index (index_oob ⇒ 2u).
-        assert!(twin.contains("*trap = 2u;"), "{twin}");
+        // onto-device `cond-bounds`: on the advancing trips `i ∈ [0, 1]`
+        // (`loop_plan`: init 0, step 1, continue `i < 2`), so the in-loop
+        // Index is proven and carries no device bounds guard (index_oob ⇒ 2u).
+        assert!(!twin.contains("*trap = 2u;"), "{twin}");
     }
 
     // --- F6: erased-element arrays degrade gracefully (never a panic) ------

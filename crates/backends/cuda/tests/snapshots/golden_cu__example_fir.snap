@@ -98,12 +98,7 @@ struct FlowProd_float_bool {
 };
 static_assert(sizeof(FlowProd_float_bool) == 8, "FlowProd_float_bool: abi_sizeof drift (plan-smart-arenas)");
 
-__global__ void k0_0(float* result, float* arr, int64_t idx, unsigned int* trap) {
-  if (idx < 0 || idx >= (int64_t)4) { *trap = 2u; return; }
-  *result = arr[(unsigned long long)idx];
-}
-__global__ void k0_1(float* result, float* arr, int64_t idx, unsigned int* trap) {
-  if (idx < 0 || idx >= (int64_t)8) { *trap = 2u; return; }
+__global__ void k0_0(float* result, float* arr, int64_t idx) {
   *result = arr[(unsigned long long)idx];
 }
 
@@ -161,15 +156,13 @@ static float fn0(FlowProd_floatp_floatp in) {
     o18.f0 = o7;
     o23.f1 = o9;
     cu_check(cudaMalloc((void**)&t0, sizeof(float) * 1ULL), "cudaMalloc(t0)");
-    k0_0<<<1, 1>>>(t0, o3, (int64_t)o6, d_trap);
-    trap_check_after_launch();
+    k0_0<<<1, 1>>>(t0, o3, (int64_t)o6);
     cu_check(cudaMemcpy(&o11, t0, sizeof(float), cudaMemcpyDeviceToHost), "cudaMemcpy(index)");
     o16.f0 = o11;
     o13 = (int32_t)((uint32_t)o12.f0 + (uint32_t)o12.f1);
     o14.f1 = o13;
     cu_check(cudaMalloc((void**)&t1, sizeof(float) * 1ULL), "cudaMalloc(t1)");
-    k0_1<<<1, 1>>>(t1, o2, (int64_t)o13, d_trap);
-    trap_check_after_launch();
+    k0_0<<<1, 1>>>(t1, o2, (int64_t)o13);
     cu_check(cudaMemcpy(&o15, t1, sizeof(float), cudaMemcpyDeviceToHost), "cudaMemcpy(index)");
     o16.f1 = o15;
     o17 = o16.f0 * o16.f1;

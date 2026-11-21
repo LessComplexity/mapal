@@ -55,3 +55,12 @@ The arrow form was always expressible: the count IS the input.
 `flow-as-implemented.md`: the iota/fill row's surface column updates to the
 pipeline forms on ledger close (same handling as ADR-0029's pending patch).
 Level A untouched (realized-set surface delta, ADR-0018 class).
+
+## Amendment (2026-11-21, onto-device): extents past i32
+
+The static-n rule stands; the `≤ i32::MAX` bound does not. An `iota`'s
+elements are its extent's index type (`Ty::index_ty`): `i32` up to 2³¹ cells,
+`i64` past it — the count literal types as `i64` there, as does a `fill` count
+and an index literal past i32. Index width follows the extents; i64 only where
+needed (`crates/mapal-ir` builder / validate, the interpreter, the host
+emitter; a device cell over an `i64` iota stays on the host — open).

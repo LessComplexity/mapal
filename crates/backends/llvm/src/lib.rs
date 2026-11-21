@@ -622,6 +622,29 @@ pub struct GpuRungs {
     /// block a row (`func/flow.rs` `row_slices`). A part without them slices
     /// nothing. Off (`--gpu-off=row-slices`): one block a row.
     pub row_slices: bool,
+    /// onto-device `cond-bounds`: `bounds_proof` ranges an index by the
+    /// conditions that hold where it runs (a guard arm's, a loop's continue
+    /// and exit conditions, a `Phi`'s per arm) and ranges loop-carried
+    /// counters from `loop_plan` (init, affine step, continue condition), so
+    /// a guarded read (RoPE's rotate_half partner) or a counter-indexed read
+    /// (a decode step's position) carries no trap and its site is device
+    /// capable. Off (`--gpu-off=cond-bounds`): the graph's facts are rebuilt
+    /// under plain interval ranges (`mapal_ir::FactArms`), the proof before it.
+    pub cond_bounds: bool,
+    /// onto-device `carry-made`: a loop-carried value is device-made when the
+    /// next state that replaces it is (and a loop's exit value when its
+    /// payload is) — `place`'s "an operand is device-produced" rule sees
+    /// through the back edge, so a step's small maps over a device-carried
+    /// state (decode's RMSNorm) stay beside it instead of pulling the state
+    /// to the host every trip. Off (`--gpu-off=carry-made`): the rule stops at
+    /// a loop view, the placement before it.
+    pub carry_made: bool,
+    /// onto-device `host-par`: a GPU build's host map with the CPU build's
+    /// split shape (clean body, static extent, run once, no device-only
+    /// operand) runs as one split task on the pool where the host's measured
+    /// dispatch cost says it pays (`func/hostpar.rs`), the CPU build's rule.
+    /// Off (`--gpu-off=host-par`): the host walk runs it on one core.
+    pub host_par: bool,
 }
 
 impl GpuRungs {
@@ -711,11 +734,14 @@ impl GpuRungs {
         horizontal: true,
         calls: true,
         row_slices: true,
+        cond_bounds: true,
+        carry_made: true,
+        host_par: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 84] = [
+    pub const NAMES: [&'static str; 87] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -800,6 +826,9 @@ impl GpuRungs {
         "horizontal",
         "calls",
         "row-slices",
+        "cond-bounds",
+        "carry-made",
+        "host-par",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -889,6 +918,9 @@ impl GpuRungs {
             "horizontal" => &mut self.horizontal,
             "calls" => &mut self.calls,
             "row-slices" => &mut self.row_slices,
+            "cond-bounds" => &mut self.cond_bounds,
+            "carry-made" => &mut self.carry_made,
+            "host-par" => &mut self.host_par,
             _ => return None,
         })
     }
@@ -1223,6 +1255,14 @@ pub fn emit_with_opts(ir: &CategoryIr, opts: &EmitOpts) -> Result<String, EmitEr
 /// is an *input* — ambient when the target is `native`, explicit otherwise —
 /// and naming it in the output is what makes the input visible.
 pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitError> {
+    // onto-device `cond-bounds` off: the facts rebuilt under plain intervals
+    // (a fact arm, `mapal_ir::FactArms` — every fact derived afresh).
+    let arms = mapal_ir::FactArms {
+        cond_bounds: !opts.gpu.off.cond_bounds,
+    };
+    if arms != ir.fact_arms() {
+        return emit_detailed(&ir.refacted(arms), opts);
+    }
     // Machine facts, by name (plan-s31-target-profiles rule 3). An unknown name
     // is an error, never a silent fall back to `generic` — a typo that quietly
     // emits the default profile's numbers is the exact failure the table exists
@@ -1340,7 +1380,8 @@ fn host_line(
     let (mut dev, mut host) = (0, 0);
     for (f, _) in ir.funcs() {
         let plan = crate::func::gpu::tile_plan(ir, f, profile, opts.contract, opts.gpu);
-        let placed = crate::func::gpu::placement(ir, f, &plan, profile, rungs.window);
+        let placed =
+            crate::func::gpu::placement(ir, f, &plan, profile, rungs.window, rungs.carry_made);
         for (m, s) in plan.sites.iter() {
             if crate::func::gpu::gpu_site(s, profile, rungs.window) {
                 if placed.contains_key(m) {
@@ -1429,8 +1470,8 @@ fn emit_module(
         && opts.packing
         && ir.funcs().any(|(f, _)| {
             let plan = ir.tile_plan(f);
-            let window = crate::func::gpu::host_rungs(profile, opts.contract, opts.gpu).window;
-            let dev = crate::func::gpu::placement(ir, f, &plan, profile, window);
+            let r = crate::func::gpu::host_rungs(profile, opts.contract, opts.gpu);
+            let dev = crate::func::gpu::placement(ir, f, &plan, profile, r.window, r.carry_made);
             plan.sites
                 .iter()
                 .any(|(m, site)| !dev.contains_key(m) && packing_site(site, profile, opts.contract))
@@ -1522,7 +1563,8 @@ fn emit_module(
     if opts.perf_timing {
         out.push_str(PERF_DECLS);
     }
-    if parallel {
+    // onto-device `host-par`: a GPU build's walk dispatches split tasks too.
+    if parallel || funcs.contains("@mapal_par_begin(") {
         out.push_str(PAR_DECLS);
     }
     // ponytail: gate the arena declarations on the emitted call itself, not on

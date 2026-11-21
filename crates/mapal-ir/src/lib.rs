@@ -46,6 +46,7 @@ pub use algo::{
     TileKSplit, TilePlan, TileRead, TileSite, TripPhase, TripSplit, WaitEntry, bound_coef, gamma,
 };
 pub use builder::{Dest, FnBuilder, IrBuilder, IrError, LoopHandle};
+pub use facts::FactArms;
 pub use graph::{
     CategoryIr, FuncDef, FuncId, FuncKind, Morphism, MorphismId, Object, ObjectId, ObjectKind,
     Operation, Precision,

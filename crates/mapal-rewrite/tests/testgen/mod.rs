@@ -3710,3 +3710,352 @@ pub fn long_row_src(p: &LongRow) -> String {
         s + &prints + &tail + "}\n"
     }
 }
+
+// ---------------------------------------------------------------------------
+// onto-device: guarded indices, loop-carried counters as indices, loop exit
+// values read in later bodies (`bounds_proof`'s conditions and loop ranges,
+// the exit-binding capture, `carry-made`).
+// ---------------------------------------------------------------------------
+
+/// A program whose reads are in bounds only by the conditions that hold
+/// where they run: a rotate_half-style partner read under a guard on `c % m`
+/// (seven forms: both poles, swapped operands, a `Phi`-valued index, a nested
+/// guard, a conjunction, and an unprovable gather that keeps its check), a
+/// loop whose counter (`t0`, step `±s`, four continue-condition forms) indexes
+/// a table by the step's position `base + t` (optionally under a guard), and
+/// the loop's exit state and a second loop's exit counter read inside later
+/// map bodies. Every value is a small integer in `f32`, so every face and
+/// every order is exact.
+#[derive(Clone, Debug)]
+pub struct OntoProg {
+    /// The map extent (a multiple of `m`).
+    pub n: u64,
+    /// The guard modulus (a power of two).
+    pub m: u64,
+    /// The guarded read's form (0..7).
+    pub guard: u8,
+    /// Loop trips.
+    pub trips: i64,
+    /// Counter init.
+    pub t0: i64,
+    /// Counter step magnitude.
+    pub step: i64,
+    /// Counting down.
+    pub down: bool,
+    /// The continue condition's form (0..4).
+    pub cform: u8,
+    /// The position base.
+    pub base: i64,
+    /// The step's table read under a guard too.
+    pub inloop_guard: bool,
+    /// A second loop's exit counter (`K`) indexes a later body.
+    pub exit_k: i64,
+}
+
+pub fn onto_prog_strategy() -> impl Strategy<Value = OntoProg> {
+    (
+        prop::sample::select(vec![2u64, 4, 8, 16]),
+        1u64..5,
+        0u8..7,
+        1i64..5,
+        0i64..4,
+        1i64..3,
+        any::<bool>(),
+        0u8..4,
+        0i64..3,
+        any::<bool>(),
+        1i64..4,
+    )
+        .prop_map(
+            |(m, reps, guard, trips, t0, step, down, cform, base, inloop_guard, exit_k)| OntoProg {
+                n: m * reps * 4,
+                m,
+                guard,
+                trips,
+                t0,
+                step,
+                down,
+                cform,
+                base,
+                inloop_guard,
+                exit_k,
+            },
+        )
+}
+
+/// [`OntoProg`]'s source text.
+pub fn onto_src(p: &OntoProg) -> String {
+    let (n, m) = (p.n, p.m);
+    let h = m / 2;
+    // The counter's values on the advancing trips: `t0 + k·s` (up) or
+    // `t0 + (trips − 1 − k)·s` (down), k < trips.
+    let s = p.step;
+    let (lo, hi) = (p.t0, p.t0 + (p.trips - 1) * s);
+    let (init, next, cond) = if !p.down {
+        let lim = hi + 1; // the least bound that exits after `hi`
+        let cond = match p.cform {
+            0 => format!("(t < {lim})"),
+            1 => format!("({lim} > t)"),
+            2 => format!("(t <= {})", lim - 1),
+            _ => format!("(t + {s} <= {})", lim - 1 + s),
+        };
+        (lo, format!("t + {s}"), cond)
+    } else {
+        let lim = lo - 1; // the greatest bound that exits after `lo`
+        let cond = match p.cform {
+            0 => format!("(t > {lim})"),
+            1 => format!("({lim} < t)"),
+            2 => format!("(t >= {})", lim + 1),
+            _ => format!("(t - {s} >= {})", lim + 1 - s),
+        };
+        (hi, format!("t - {s}"), cond)
+    };
+    let pmax = (p.base + hi) as u64;
+    let lt = (pmax + 1) * n;
+    let k = p.exit_k;
+    let gread = match p.guard {
+        0 => format!("(i < {h}) -> {{ -true-> a[c + {h}]; -false-> a[c - {h}]; }}"),
+        1 => format!("(i >= {h}) -> {{ -true-> a[c - {h}]; -false-> a[c + {h}]; }}"),
+        2 => format!("({h} > i) -> {{ -true-> a[c + {h}]; -false-> a[c - {h}]; }}"),
+        3 => format!("(i < {h}) -> {{ -true-> c + {h}; -false-> c - {h}; }} -> kk; a[kk]"),
+        4 => format!(
+            "(i < {h}) -> {{ -true-> a[c + {h}]; -false-> (i < {}) -> {{ -true-> a[c - {h} + 1]; -false-> a[c - {h}]; }}; }}",
+            m - 1
+        ),
+        5 => format!("(c >= {m} && i < {h}) -> {{ -true-> a[c - {m} + {h}]; -false-> a[c]; }}"),
+        _ => "perm[c] -> j; a[j]".to_string(),
+    };
+    let tread = if p.inloop_guard {
+        format!(
+            "i % {m} -> u; (u < {h}) -> {{ -true-> tab[pp * {n} + i + {h}]; -false-> tab[pp * {n} + i - {h}]; }} -> tv"
+        )
+    } else {
+        format!("tab[pp * {n} + i] -> tv")
+    };
+    format!(
+        "fn main() {{
+    {n} -> iota -> r;
+    r -> map {{ t -> (t * 5 + 3) % 11 - 5 -> widen_f32 }} -> a;
+    r -> map {{ t -> (t * 3 + 1) % {n} }} -> perm;
+    {lt} -> iota -> it;
+    it -> map {{ t -> (t * 7 + 1) % 13 - 6 -> widen_f32 }} -> tab;
+    r -> map {{ c -> c % {m} -> i; {gread} }} -> g;
+    mut x: [f32; {n}] <- g;
+    mut t: i32 <- {init};
+    loop {{
+        {cond} -> {{
+            -true-> {{
+                {base} + t -> pp;
+                r -> map {{ i -> {tread}; x[i] + tv }} -> x;
+                {next} -> t;
+                -> loop;
+            }}
+            -false-> x -> out;
+        }}
+    }}
+    mut u: i32 <- 0;
+    loop {{
+        (u < {k}) -> {{
+            -true-> {{
+                u + 1 -> u;
+                -> loop;
+            }}
+            -false-> u -> un;
+        }}
+    }}
+    {nk} -> iota -> rk;
+    rk -> map {{ j -> out[j] * 2.0 + a[un + j] }} -> y;
+    y[0] -> println;
+    y[{last}] -> println;
+    out[{mid}] -> println;
+    0.0 -> zero: f32;
+    (zero, y) -> fold {{ acc, v -> acc + v }} -> total;
+    total -> println;
+}}
+",
+        base = p.base,
+        nk = n as i64 - k,
+        last = n as i64 - k - 1,
+        mid = n / 2 + 1,
+    )
+}
+
+/// `bounds_proof`'s soundness fuzz: the [`OntoProg`] shapes with every
+/// offset, threshold, comparison, step and limit drawn freely, so some reads
+/// leave their array (the program traps) and some stay inside without the
+/// condition that would prove it. A proof is sound when no proven read ever
+/// leaves its array: the native build (proven reads unchecked) traps exactly
+/// where the interpreter does.
+#[derive(Clone, Debug)]
+pub struct BoundsFuzz {
+    pub n: u64,
+    pub m: u64,
+    pub op: u8,
+    pub thr: i64,
+    pub d1: i64,
+    pub d2: i64,
+    pub t0: i64,
+    pub step: i64,
+    pub cop: u8,
+    pub lim: i64,
+    pub base: i64,
+    pub rows: u64,
+}
+
+pub fn bounds_fuzz_strategy() -> impl Strategy<Value = BoundsFuzz> {
+    (
+        prop::sample::select(vec![4u64, 8, 16]),
+        1u64..4,
+        0u8..6,
+        0i64..24,
+        0i64..24,
+        0i64..24,
+        -2i64..5,
+        prop::sample::select(vec![-2i64, -1, 1, 2, 3]),
+        0u8..6,
+        -3i64..9,
+        -1i64..3,
+        (0u8..4, 0i64..4),
+    )
+        .prop_map(
+            |(m, reps, op, thr, d1, d2, t0, step, cop, lim, base, (aligned, slack))| {
+                // Offsets and thresholds around the modulus: a read is in
+                // bounds, out by one, or in only under its condition; half
+                // the guards are rotate_half's (`i < m/2`, `±m/2`) shifted
+                // by at most one.
+                let w = m as i64;
+                let (op, thr, d1, d2) = if aligned < 2 {
+                    let h = w / 2;
+                    let e = d1 % 3 - 1;
+                    (0, h + i64::from(aligned) * e, h, h)
+                } else {
+                    (op, thr % (w + 3) - 1, d1 % (w + 3) - 1, d2 % (w + 3) - 1)
+                };
+                // The table's rows: the furthest position the trips reach
+                // (at most 6, the counter moving by `step` from `t0`), plus
+                // a slack of −1..2 (out by one, exact, or spare).
+                let far = (0..6).map(|k| base + t0 + k * step).max().unwrap_or(0);
+                let rows = (far + slack).clamp(1, 64) as u64;
+                BoundsFuzz {
+                    n: m * reps * 2,
+                    m,
+                    op,
+                    thr,
+                    d1,
+                    d2,
+                    t0,
+                    step,
+                    cop,
+                    lim,
+                    base,
+                    rows,
+                }
+            },
+        )
+}
+
+fn cmp_op(k: u8) -> &'static str {
+    ["<", "<=", ">", ">=", "==", "!="][k as usize % 6]
+}
+
+/// [`BoundsFuzz`]'s source text.
+pub fn bounds_fuzz_src(p: &BoundsFuzz) -> String {
+    let (n, m) = (p.n, p.m);
+    let op = cmp_op(p.op);
+    let cop = cmp_op(p.cop);
+    let lt = p.rows * n;
+    format!(
+        "fn main() {{
+    {n} -> iota -> r;
+    r -> map {{ t -> (t * 5 + 3) % 11 - 5 -> widen_f32 }} -> a;
+    {lt} -> iota -> it;
+    it -> map {{ t -> (t * 7 + 1) % 13 - 6 -> widen_f32 }} -> tab;
+    r -> map {{ c -> c % {m} -> i; (i {op} {thr}) -> {{ -true-> a[c + {d1}]; -false-> a[c - {d2}]; }} }} -> g;
+    mut x: [f32; {n}] <- g;
+    mut t: i32 <- {t0};
+    mut k: i32 <- 0;
+    loop {{
+        (t {cop} {lim} && k < 6) -> {{
+            -true-> {{
+                {base} + t -> pp;
+                r -> map {{ i -> x[i] + tab[pp * {n} + i] }} -> x;
+                t + {step} -> t;
+                k + 1 -> k;
+                -> loop;
+            }}
+            -false-> x -> out;
+        }}
+    }}
+    out[0] -> println;
+    0.0 -> zero: f32;
+    (zero, out) -> fold {{ acc, v -> acc + v }} -> total;
+    total -> println;
+}}
+",
+        thr = p.thr,
+        d1 = p.d1,
+        d2 = p.d2,
+        t0 = p.t0,
+        lim = p.lim,
+        base = p.base,
+        step = p.step,
+    )
+}
+
+/// onto-device `host-par`: a GPU build's host work. A device tile site `x`
+/// (`q · w`, `rows × 512`), a gather of it through an unranged permutation
+/// (trap-capable: it stays on the host, and so does everything it feeds),
+/// then a chain of clean maps over the gathered array — each reading one or
+/// two earlier arrays at shifted cells (`(c + s) % n`) and a scalar of the
+/// host's — the host-par candidates.
+#[derive(Clone, Debug)]
+pub struct HostParProg {
+    pub rows: u64,
+    pub maps: Vec<[u8; 3]>,
+}
+
+pub fn host_par_strategy() -> impl Strategy<Value = HostParProg> {
+    (
+        prop::sample::select(vec![64u64, 128, 256, 512]),
+        prop::collection::vec(prop::array::uniform3(any::<u8>()), 1..4),
+    )
+        .prop_map(|(rows, maps)| HostParProg { rows, maps })
+}
+
+/// [`HostParProg`]'s source text.
+pub fn host_par_src(p: &HostParProg) -> String {
+    let n = p.rows * 512;
+    let mut s = format!(
+        "fn main() {{
+    {n} -> iota -> r;
+    {rq} -> iota -> rq;
+    32768 -> iota -> rw;
+    64 -> iota -> kd;
+    rq -> map {{ e -> (e * 5 + 3) % 31 - 15 -> widen_f32 -> v; v / 16.0 }} -> q;
+    rw -> map {{ e -> (e * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 64.0 }} -> w;
+    r -> map {{ e -> e / 512 -> i; e % 512 -> j; (0.0, kd) -> fold {{ acc, d -> acc + q[i * 64 + d] * w[d * 512 + j] }} }} -> x;
+    r -> map {{ t -> (t * 7 + 3) % {n} }} -> perm;
+    r -> map {{ c -> x[perm[c]] }} -> h0;
+",
+        rq = p.rows * 64
+    );
+    for (k, m) in p.maps.iter().enumerate() {
+        let a = format!("h{}", m[0] as usize % (k + 1));
+        let b = format!("h{}", m[1] as usize % (k + 1));
+        let sh = 1 + m[2] as u64 % 7;
+        let body = match m[2] % 3 {
+            0 => format!("{a}[c] * 2.0 + {b}[(c + {sh}) % {n}]"),
+            1 => format!("{a}[(c + {sh}) % {n}] - {b}[c] / 4.0"),
+            _ => format!(
+                "({a}[c] > 0.0) -> {{ -true-> {a}[c]; -false-> {b}[(c + {sh}) % {n}] * 0.5; }}"
+            ),
+        };
+        s += &format!("    r -> map {{ c -> {body} }} -> h{};\n", k + 1);
+    }
+    let last = p.maps.len();
+    s += &format!(
+        "    h{last}[0] -> println;\n    h{last}[{}] -> println;\n    0.0 -> zero: f32;\n    (zero, h{last}) -> fold {{ acc, v -> acc + v }} -> total;\n    total -> println;\n}}\n",
+        n - 1
+    );
+    s
+}

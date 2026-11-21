@@ -560,7 +560,7 @@ impl<'a> FnEmit<'a> {
 
     /// The morphisms the straight-line walk emits itself — run exactly once
     /// per call (outside every loop cone and guard arm).
-    fn straight_line(&self) -> SecondaryMap<MorphismId, ()> {
+    pub(super) fn straight_line(&self) -> SecondaryMap<MorphismId, ()> {
         let mut in_scc: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
         let mut owned: SecondaryMap<MorphismId, ()> = SecondaryMap::new();
         for scc in self.ir.loop_structure(self.f) {
@@ -1380,6 +1380,12 @@ impl<'a> FnEmit<'a> {
         if !whole || !number(array_elem(&self.obj_ty(mapped))) {
             return None;
         }
+        // onto-device: the kernel forms an unloaded element from its thread
+        // index as `i32`; an extent past i32 (`i64` elements) stays on the
+        // host (open: an `i64` cell index).
+        if !loaded && *array_elem(&self.obj_ty(mapped)) != Ty::i32() {
+            return None;
+        }
         let laws = if !loaded && rungs.cell_law {
             self.laws(body, site, &caps)
         } else {
@@ -1840,7 +1846,12 @@ impl<'a> FnEmit<'a> {
         let t = self.ir.morphism(m).expect("cell").target;
         let (flops, bytes) = self.cell_roofline(m, site);
         (site.reads.is_empty() && !site.uniform.is_empty())
-            || gpu::device_made(self.ir, &self.device, t)
+            || gpu::device_made(
+                self.ir,
+                &self.device,
+                t,
+                gpu::host_rungs(self.profile, self.contract, self.gpu_arms).carry_made,
+            )
             || self.profile.device_pays(flops, bytes)
     }
 

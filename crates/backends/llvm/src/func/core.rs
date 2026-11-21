@@ -55,7 +55,7 @@ impl<'a> FnEmit<'a> {
             perf_timing: false,
             tile_plan: tiling.then(|| ir.tile_plan(f)),
             device: if tiling {
-                gpu::placement(ir, f, &ir.tile_plan(f), profile, true)
+                gpu::placement(ir, f, &ir.tile_plan(f), profile, true, true)
             } else {
                 SecondaryMap::new()
             },
@@ -105,6 +105,8 @@ impl<'a> FnEmit<'a> {
             loops: Vec::new(),
             root_index: Default::default(),
             par: None,
+            host_par_fns: String::new(),
+            host_par_n: 0,
         }
     }
 
@@ -177,7 +179,14 @@ impl<'a> FnEmit<'a> {
         let rungs = super::gpu::host_rungs(self.profile, self.contract, arms);
         if self.tile_plan.is_some() {
             let plan = super::gpu::tile_plan(self.ir, self.f, self.profile, self.contract, arms);
-            self.device = super::gpu::placement(self.ir, self.f, &plan, self.profile, rungs.window);
+            self.device = super::gpu::placement(
+                self.ir,
+                self.f,
+                &plan,
+                self.profile,
+                rungs.window,
+                rungs.carry_made,
+            );
             self.tile_plan = Some(plan);
             self.retain = retain::retained_sites(self.ir, self.f, self.profile, rungs);
         }
@@ -451,6 +460,10 @@ impl<'a> FnEmit<'a> {
             // a wider iota would need its own conversion and must not silently
             // truncate.
             ElemSrc::Index => {
+                // The extent's index type: `i64` past i32::MAX cells.
+                if *elem_ty == Ty::i64() {
+                    return Some(("i64".to_string(), iv.to_string()));
+                }
                 if *elem_ty != Ty::i32() {
                     return None;
                 }

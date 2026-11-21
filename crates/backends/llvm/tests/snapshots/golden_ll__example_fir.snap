@@ -25,7 +25,7 @@ declare void @mapal_par_watermark(i64)
 declare void @mapal_par_run_pinned(ptr, i32)
 declare void @mapal_par_finish(ptr)
 
-define internal float @fn0({ ptr, ptr } %arg) {
+define internal float @fn0({ ptr, ptr } %arg) readonly nounwind {
 entry:
   %o0 = alloca { ptr, ptr }
   %o1 = alloca float
@@ -123,95 +123,78 @@ bb8:
   %t46 = getelementptr { ptr, i32 }, ptr %o10, i32 0, i32 1
   %t47 = load i32, ptr %t46
   %t48 = sext i32 %t47 to i64
-  %t49 = icmp slt i64 %t48, 0
-  %t50 = icmp sge i64 %t48, 4
-  %t51 = or i1 %t49, %t50
-  br i1 %t51, label %bb52, label %bb53
-bb52:
-  call void @mapal_trap(i32 1)
-  unreachable
-bb53:
-  %t54 = getelementptr [4 x float], ptr %t45, i64 0, i64 %t48
-  %t55 = load float, ptr %t54
-  store float %t55, ptr %o11
-  %t56 = load float, ptr %o11
-  %t57 = getelementptr { float, float }, ptr %o16, i32 0, i32 0
-  store float %t56, ptr %t57
-  %t58 = getelementptr { i32, i32 }, ptr %o12, i32 0, i32 0
-  %t59 = load i32, ptr %t58
-  %t60 = getelementptr { i32, i32 }, ptr %o12, i32 0, i32 1
-  %t61 = load i32, ptr %t60
-  %t62 = add i32 %t59, %t61
-  store i32 %t62, ptr %o13
-  %t63 = load i32, ptr %o13
-  %t64 = getelementptr { ptr, i32 }, ptr %o14, i32 0, i32 1
-  store i32 %t63, ptr %t64
-  %t65 = load ptr, ptr %o2
-  %t66 = getelementptr { ptr, i32 }, ptr %o14, i32 0, i32 1
-  %t67 = load i32, ptr %t66
-  %t68 = sext i32 %t67 to i64
-  %t69 = icmp slt i64 %t68, 0
-  %t70 = icmp sge i64 %t68, 8
-  %t71 = or i1 %t69, %t70
-  br i1 %t71, label %bb72, label %bb73
-bb72:
-  call void @mapal_trap(i32 1)
-  unreachable
-bb73:
-  %t74 = getelementptr [8 x float], ptr %t65, i64 0, i64 %t68
-  %t75 = load float, ptr %t74
-  store float %t75, ptr %o15
-  %t76 = load float, ptr %o15
-  %t77 = getelementptr { float, float }, ptr %o16, i32 0, i32 1
-  store float %t76, ptr %t77
-  %t78 = getelementptr { float, float }, ptr %o16, i32 0, i32 0
-  %t79 = load float, ptr %t78
-  %t80 = getelementptr { float, float }, ptr %o16, i32 0, i32 1
-  %t81 = load float, ptr %t80
-  %t82 = fmul float %t79, %t81
-  store float %t82, ptr %o17
-  %t83 = load float, ptr %o17
-  %t84 = getelementptr { float, float }, ptr %o18, i32 0, i32 1
-  store float %t83, ptr %t84
-  %t85 = getelementptr { float, float }, ptr %o18, i32 0, i32 0
-  %t86 = load float, ptr %t85
-  %t87 = getelementptr { float, float }, ptr %o18, i32 0, i32 1
-  %t88 = load float, ptr %t87
-  %t89 = fadd float %t86, %t88
-  store float %t89, ptr %o19
-  %t90 = load float, ptr %o19
-  %t91 = getelementptr { i32, float }, ptr %o22, i32 0, i32 1
-  store float %t90, ptr %t91
-  %t92 = getelementptr { i32, i32 }, ptr %o20, i32 0, i32 0
-  %t93 = load i32, ptr %t92
-  %t94 = getelementptr { i32, i32 }, ptr %o20, i32 0, i32 1
-  %t95 = load i32, ptr %t94
-  %t96 = add i32 %t93, %t95
-  store i32 %t96, ptr %o21
-  %t97 = load i32, ptr %o21
-  %t98 = getelementptr { i32, float }, ptr %o22, i32 0, i32 0
-  store i32 %t97, ptr %t98
-  %t99 = load { i32, float }, ptr %o22
-  %t100 = getelementptr { { i32, float }, i1 }, ptr %o23, i32 0, i32 0
-  store { i32, float } %t99, ptr %t100
-  %t101 = getelementptr { { i32, float }, i1 }, ptr %o23, i32 0, i32 0
-  %t102 = load { i32, float }, ptr %t101
-  store { i32, float } %t102, ptr %o5
+  %t49 = getelementptr [4 x float], ptr %t45, i64 0, i64 %t48
+  %t50 = load float, ptr %t49
+  store float %t50, ptr %o11
+  %t51 = load float, ptr %o11
+  %t52 = getelementptr { float, float }, ptr %o16, i32 0, i32 0
+  store float %t51, ptr %t52
+  %t53 = getelementptr { i32, i32 }, ptr %o12, i32 0, i32 0
+  %t54 = load i32, ptr %t53
+  %t55 = getelementptr { i32, i32 }, ptr %o12, i32 0, i32 1
+  %t56 = load i32, ptr %t55
+  %t57 = add i32 %t54, %t56
+  store i32 %t57, ptr %o13
+  %t58 = load i32, ptr %o13
+  %t59 = getelementptr { ptr, i32 }, ptr %o14, i32 0, i32 1
+  store i32 %t58, ptr %t59
+  %t60 = load ptr, ptr %o2
+  %t61 = getelementptr { ptr, i32 }, ptr %o14, i32 0, i32 1
+  %t62 = load i32, ptr %t61
+  %t63 = sext i32 %t62 to i64
+  %t64 = getelementptr [8 x float], ptr %t60, i64 0, i64 %t63
+  %t65 = load float, ptr %t64
+  store float %t65, ptr %o15
+  %t66 = load float, ptr %o15
+  %t67 = getelementptr { float, float }, ptr %o16, i32 0, i32 1
+  store float %t66, ptr %t67
+  %t68 = getelementptr { float, float }, ptr %o16, i32 0, i32 0
+  %t69 = load float, ptr %t68
+  %t70 = getelementptr { float, float }, ptr %o16, i32 0, i32 1
+  %t71 = load float, ptr %t70
+  %t72 = fmul float %t69, %t71
+  store float %t72, ptr %o17
+  %t73 = load float, ptr %o17
+  %t74 = getelementptr { float, float }, ptr %o18, i32 0, i32 1
+  store float %t73, ptr %t74
+  %t75 = getelementptr { float, float }, ptr %o18, i32 0, i32 0
+  %t76 = load float, ptr %t75
+  %t77 = getelementptr { float, float }, ptr %o18, i32 0, i32 1
+  %t78 = load float, ptr %t77
+  %t79 = fadd float %t76, %t78
+  store float %t79, ptr %o19
+  %t80 = load float, ptr %o19
+  %t81 = getelementptr { i32, float }, ptr %o22, i32 0, i32 1
+  store float %t80, ptr %t81
+  %t82 = getelementptr { i32, i32 }, ptr %o20, i32 0, i32 0
+  %t83 = load i32, ptr %t82
+  %t84 = getelementptr { i32, i32 }, ptr %o20, i32 0, i32 1
+  %t85 = load i32, ptr %t84
+  %t86 = add i32 %t83, %t85
+  store i32 %t86, ptr %o21
+  %t87 = load i32, ptr %o21
+  %t88 = getelementptr { i32, float }, ptr %o22, i32 0, i32 0
+  store i32 %t87, ptr %t88
+  %t89 = load { i32, float }, ptr %o22
+  %t90 = getelementptr { { i32, float }, i1 }, ptr %o23, i32 0, i32 0
+  store { i32, float } %t89, ptr %t90
+  %t91 = getelementptr { { i32, float }, i1 }, ptr %o23, i32 0, i32 0
+  %t92 = load { i32, float }, ptr %t91
+  store { i32, float } %t92, ptr %o5
   br label %bb7
 bb9:
-  %t103 = getelementptr { float, i1 }, ptr %o24, i32 0, i32 0
-  %t104 = load float, ptr %t103
-  store float %t104, ptr %o1
+  %t93 = getelementptr { float, i1 }, ptr %o24, i32 0, i32 0
+  %t94 = load float, ptr %t93
+  store float %t94, ptr %o1
   br label %bb10
 bb10:
-  %t105 = load float, ptr %o1
-  ret float %t105
+  %t95 = load float, ptr %o1
+  ret float %t95
 }
 
 %Frame = type { [8 x float], [4 x float], { ptr, ptr }, float, float }
 
 @ckpt0_entries = private unnamed_addr constant [1 x i64] [i64 4294967295]
-@pin0_entries = private unnamed_addr constant [0 x i64] zeroinitializer
 
 define internal void @task0(i64 %lo, i64 %hi, ptr %frame) {
 entry:
@@ -268,11 +251,7 @@ entry:
   %o6 = getelementptr %Frame, ptr %frame, i32 0, i32 4
   %h = call ptr @mapal_par_begin(i32 1)
   call void @mapal_par_task(ptr %h, i32 0, i32 0, ptr @task0, i64 15, i32 1, i64 0, i32 0, i32 0)
-  call void @mapal_par_pin(ptr %h, i32 0)
   call void @mapal_par_launch(ptr %h, ptr %frame)
-  call void @mapal_par_wait(ptr %h, ptr @pin0_entries, i32 0)
-  call void @mapal_par_check(ptr %h, i64 1)
-  call void @mapal_par_run_pinned(ptr %h, i32 0)
   call void @mapal_par_wait(ptr %h, ptr @ckpt0_entries, i32 1)
   call void @mapal_par_check(ptr %h, i64 17)
   %t0 = load float, ptr %o5

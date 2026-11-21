@@ -243,6 +243,7 @@ pub(crate) fn placement(
     plan: &TilePlan,
     profile: &TargetProfile,
     window: bool,
+    carry: bool,
 ) -> SecondaryMap<MorphismId, ()> {
     let mut dev = SecondaryMap::new();
     if profile.gpu().is_none() {
@@ -253,9 +254,9 @@ pub(crate) fn placement(
             continue;
         };
         let src = ir.morphism(m).expect("site resolves").source;
-        let fed = [site.a.slot, site.b.slot]
-            .into_iter()
-            .any(|k| super::pair_source_ir(ir, src, k).is_some_and(|o| device_made(ir, &dev, o)));
+        let fed = [site.a.slot, site.b.slot].into_iter().any(|k| {
+            super::pair_source_ir(ir, src, k).is_some_and(|o| device_made(ir, &dev, o, carry))
+        });
         let flops = 2u64
             .saturating_mul(site.rows)
             .saturating_mul(site.c)
@@ -273,11 +274,35 @@ pub(crate) fn placement(
 /// runs `devmap`, `rowfold` and `epilogue` keep beside their producer).
 /// ponytail: a map that reads a device array but stays on the host counts too;
 /// that over-approximation only ever keeps a reader on the device (today).
+///
+/// `carry` (onto-device `carry-made`): a loop's carried view is made where the
+/// next state replacing it is (the back edge's slot), and a loop's exit value
+/// where its payload is — a value the device made last trip is device-made.
+/// A cycle through the back edge alone proves nothing (each object is asked
+/// once per query).
 pub(crate) fn device_made(
     ir: &CategoryIr,
     dev: &SecondaryMap<MorphismId, ()>,
     o: ObjectId,
+    carry: bool,
 ) -> bool {
+    device_made_at(ir, dev, o, carry, &mut Vec::new())
+}
+
+fn device_made_at(
+    ir: &CategoryIr,
+    dev: &SecondaryMap<MorphismId, ()>,
+    o: ObjectId,
+    carry: bool,
+    seen: &mut Vec<ObjectId>,
+) -> bool {
+    if seen.contains(&o) || seen.len() > 4096 {
+        return false;
+    }
+    seen.push(o);
+    if carry && let Some(next) = carried_from(ir, o) {
+        return device_made_at(ir, dev, next, carry, seen);
+    }
     let Some(&p) = ir.in_edges(o).first() else {
         return false;
     };
@@ -296,9 +321,39 @@ pub(crate) fn device_made(
         .map(|q| q.source)
         .collect();
     if pairs.is_empty() {
-        device_made(ir, dev, morph.source)
+        device_made_at(ir, dev, morph.source, carry, seen)
     } else {
-        pairs.into_iter().any(|x| device_made(ir, dev, x))
+        pairs
+            .into_iter()
+            .any(|x| device_made_at(ir, dev, x, carry, seen))
+    }
+}
+
+/// The value a loop view `o` carries in from the trip before (the back
+/// edge's next-state slot of a canonical loop: `Proj{k}` of its merge, or the
+/// merge of a one-value loop), or the payload a loop's exit value is.
+fn carried_from(ir: &CategoryIr, o: ObjectId) -> Option<ObjectId> {
+    let obj = ir.object(o)?;
+    let (merge, k) = if obj.kind == mapal_ir::ObjectKind::LoopMerge {
+        (o, None)
+    } else {
+        let &p = ir.in_edges(o).first()?;
+        let morph = ir.morphism(p)?;
+        match morph.op {
+            Operation::Proj { index }
+                if ir.object(morph.source)?.kind == mapal_ir::ObjectKind::LoopMerge =>
+            {
+                (morph.source, Some(index))
+            }
+            Operation::LoopExit => return super::pair_source_ir(ir, morph.source, 0),
+            _ => return None,
+        }
+    };
+    let plan = ir.loop_plan(ir.owner(merge), merge)?;
+    let next = super::pair_source_ir(ir, plan.back_route, 0)?;
+    match k {
+        Some(k) => super::pair_source_ir(ir, next, k),
+        None => Some(next),
     }
 }
 
@@ -337,7 +392,7 @@ pub(crate) fn tile_plan(
         }
     }
     // S62: an extra is a site only where it is placed on the device.
-    let dev = placement(ir, f, &plan, profile, rungs.window);
+    let dev = placement(ir, f, &plan, profile, rungs.window, rungs.carry_made);
     let extra: Vec<MorphismId> = plan
         .sites
         .iter()
@@ -2682,7 +2737,7 @@ pub(crate) fn device_module(
     for (f, _) in ir.funcs() {
         let rungs = host_rungs(profile, contract, arms);
         let plan = tile_plan(ir, f, profile, contract, arms);
-        let dev = placement(ir, f, &plan, profile, rungs.window);
+        let dev = placement(ir, f, &plan, profile, rungs.window, rungs.carry_made);
         // A retained site's restricted pass (S53) launches its one-row kernel.
         let retained = super::retain::retained_sites(ir, f, profile, rungs);
         // S54 `rowfold`: the device folds, and the sites that store for them.

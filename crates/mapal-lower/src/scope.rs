@@ -16,6 +16,9 @@ struct Scope<T> {
     /// Names poisoned in *this* scope (read → L1107). Poisoning a name does not
     /// remove its binding (the object still exists); it forbids reads.
     poisoned: BTreeMap<String, ()>,
+    /// Whether this frame is a loop body (pushed by [`ScopeStack::push_loop`]):
+    /// a routing-guard exit binding lands in the frame below it.
+    loop_frame: bool,
 }
 
 impl<T> Scope<T> {
@@ -23,6 +26,7 @@ impl<T> Scope<T> {
         Scope {
             bindings: BTreeMap::new(),
             poisoned: BTreeMap::new(),
+            loop_frame: false,
         }
     }
 }
@@ -50,6 +54,25 @@ impl<T: Clone> ScopeStack<T> {
     /// Push a fresh child scope.
     pub fn push(&mut self) {
         self.scopes.push(Scope::new());
+    }
+
+    /// Push a fresh child scope that is a loop body (see [`Self::bind_loop_exit`]).
+    pub fn push_loop(&mut self) {
+        let mut sc = Scope::new();
+        sc.loop_frame = true;
+        self.scopes.push(sc);
+    }
+
+    /// Bind `name` into the scope enclosing the innermost loop frame — where a
+    /// routing guard's exit arm binds its exit value (DESIGN §8.5), however
+    /// many arm frames sit above the loop body. Without a loop frame, binds
+    /// into the innermost scope.
+    pub fn bind_loop_exit(&mut self, name: &str, payload: T) {
+        let idx = match self.scopes.iter().rposition(|s| s.loop_frame) {
+            Some(i) => i.saturating_sub(1),
+            None => self.scopes.len() - 1,
+        };
+        self.scopes[idx].bindings.insert(name.to_string(), payload);
     }
 
     /// Pop the innermost scope.

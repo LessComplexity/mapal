@@ -427,7 +427,7 @@ fn edge_type_ok(ir: &CategoryIr, m: &crate::graph::Morphism, sty: &Ty, tty: &Ty)
         // ADR-0029. Pure typing shapes only; the `Iota` count-constant value
         // tie is the extra condition in `check_edges` (the Enumerate split).
         Operation::Iota => match tty {
-            Ty::Array { elem, .. } => sty.is_integer() && **elem == Ty::i32(),
+            Ty::Array { elem, size } => sty.is_integer() && **elem == Ty::index_ty(*size),
             _ => false,
         },
         // `(T × I) → [T; n]` — the internal 2-tuple (value, count), as Zip.

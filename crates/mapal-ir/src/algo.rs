@@ -14,12 +14,14 @@ use crate::graph::{CategoryIr, FuncId, MorphismId, ObjectId, ObjectKind, Operati
 use crate::ty::{Ty, Value, ty_contains_token};
 
 mod algebra;
+mod bounds;
 mod linear;
 mod precision;
 mod radix;
 pub use algebra::{
     DepLaw, FmaPair, FoldCombine, FoldCombinePlan, Regroup, RowDep, StepAlgebra, StepFlags,
 };
+pub use bounds::BoundsProof;
 pub use linear::LinearSite;
 pub use precision::{PrecisionPlan, bound_coef, gamma};
 pub use radix::{AxisDigit, Digit, RadixAddr, RadixForm, RadixTile};
@@ -62,27 +64,6 @@ pub struct LoopPlan {
     pub advance_order: Vec<MorphismId>,
     /// Product objects assembled by `Pair` edges across the body (reset/iter).
     pub product_targets: Vec<ObjectId>,
-}
-
-/// The per-fn bounds-proof plan (the deduced query
-/// `bounds_proof : IR × FuncId → BoundsProof` — the BL7 pattern alongside
-/// [`loop_plan`] / [`last_use_plan`]). Interval analysis over the fn's object
-/// graph, answering "is this `Index` provably in `[0, n)`?" so the backends
-/// can drop dead trap guards in counted loops (the S20 kernel-gap finding:
-/// guards inside the map/fold inner loops block unrolling/vectorization).
-/// Conservative by construction: any unknown/wraparound/unsupported shape is
-/// NOT proven, so today's guards stay (zero behavior change where unproven).
-#[derive(Clone, Debug, PartialEq)]
-pub struct BoundsProof {
-    /// The `Operation::Index` morphisms proven statically in-bounds.
-    proven: SecondaryMap<MorphismId, ()>,
-}
-
-impl BoundsProof {
-    /// Whether `m` (an `Operation::Index` morphism) is provably in-bounds.
-    pub fn proven(&self, m: MorphismId) -> bool {
-        self.proven.contains_key(m)
-    }
 }
 
 /// Which cells of a loop-carried array one iteration writes (S53 `retain-delta`,
@@ -226,6 +207,11 @@ pub struct GuardArm {
     /// costs less than branching around it, and inside a map body a branch
     /// would cost the whole element loop its vectorization.
     pub heavy: bool,
+    /// Whether [`CategoryIr::bounds_proof`] holds an `Index` in bounds only
+    /// under this arm's condition (the arm's own work, or a nested site's or
+    /// body's below it): the read is safe only while the arm runs alone, so
+    /// the arm is gated (`can_trap` stays false — no trap check is emitted).
+    pub cond_reads: bool,
 }
 
 /// A Phi-position guard site (plan-s39): the condition and the two arms'
@@ -252,7 +238,9 @@ impl GuardSite {
     /// boundary `Pair` edge, so an "empty" arm is never literally empty; this
     /// predicate, not emptiness, is the test.
     pub fn gated(&self) -> bool {
-        self.on_true.can_trap || self.on_false.can_trap || self.on_true.heavy || self.on_false.heavy
+        [&self.on_true, &self.on_false]
+            .iter()
+            .any(|a| a.can_trap || a.heavy || a.cond_reads)
     }
 }
 
@@ -803,16 +791,6 @@ struct Interval {
 enum Bound {
     Lo(Option<u32>, i64, i64),
     Hi(Option<u32>, i64, i64),
-}
-
-/// A value range in the unsigned lattice (negative-capable shapes bail to
-/// unknown — wrapping ints mean a `Sub` past zero invalidates intervals).
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Rng {
-    /// A value in `[lo, hi]`.
-    Int(u64, u64),
-    /// A `(i32, X)` enumerate element over `n`: its `.0` ∈ `[0, n)`.
-    EnumIdx(u64),
 }
 
 /// The per-element law of an array object: **what `out[i]` is, as a closed
@@ -5350,23 +5328,6 @@ impl CategoryIr {
         seen
     }
 
-    /// The bounds-proof query: which of `f`'s `Index` morphisms are provably
-    /// in-bounds (`[0, n)`)? Interval analysis over the object graph — ranges
-    /// from `Constant`s, `Iota` elements, enumerate indices, literal-ramp
-    /// arrays, and Map/Fold body quantification (the element param of a body
-    /// fn rides the site source's element range: iota ⇒ `[0, n)`, enumerate ⇒
-    /// `.0` of `(i32, X)`, a literal array of int constants ⇒ `[min, max]`).
-    /// One `topo_order` pass; anything unknown/wrapping/loop-carried is NOT
-    /// proven (consumers keep today's guards there — zero behavior change).
-    pub fn bounds_proof(&self, f: FuncId) -> BoundsProof {
-        self.fact(f, |s| &s.bounds_proof, || self.bounds_proof_compute(f))
-    }
-
-    fn bounds_proof_compute(&self, f: FuncId) -> BoundsProof {
-        let mut visited: Vec<FuncId> = Vec::new();
-        self.bounds_proof_inner(f, &mut visited).0
-    }
-
     /// The write delta of every loop-carried array in `f` (S53 `retain-delta`
     /// — the fact [`bounds_proof`](Self::bounds_proof) never had: it ranges
     /// `Index`, and `Update` stays trap-capable). Keyed by the carried array's
@@ -5631,221 +5592,6 @@ impl CategoryIr {
         }
     }
 
-    /// The recursive worker: returns the proof AND the full range map so a
-    /// nested body's site owner can harvest capture ranges from it.
-    fn bounds_proof_inner(
-        &self,
-        f: FuncId,
-        visited: &mut Vec<FuncId>,
-    ) -> (BoundsProof, SecondaryMap<ObjectId, Rng>) {
-        let mut rng: SecondaryMap<ObjectId, Rng> = SecondaryMap::new();
-        let mut proven: SecondaryMap<MorphismId, ()> = SecondaryMap::new();
-
-        // --- seed: constants (non-negative ints) ------------------------------
-        for (o, obj) in self.objects() {
-            if self.try_owner(o) != Some(f) || obj.kind != ObjectKind::Constant {
-                continue;
-            }
-            match &obj.value {
-                Some(Value::I32(x)) if *x >= 0 => {
-                    rng.insert(o, Rng::Int(*x as u64, *x as u64));
-                }
-                Some(Value::I64(x)) if *x >= 0 => {
-                    rng.insert(o, Rng::Int(*x as u64, *x as u64));
-                }
-                Some(Value::U8(x)) => {
-                    rng.insert(o, Rng::Int(*x as u64, *x as u64));
-                }
-                _ => {}
-            }
-        }
-
-        // --- seed: the Map/Fold body context (the quantified element param) ---
-        let fd = self.func(f);
-        if let Some(fd) = fd {
-            for (_, morph) in self.morphisms() {
-                let (k, is_fold) = match morph.op {
-                    Operation::Map { body, captures } if body == f => (captures, false),
-                    Operation::Fold { body, captures } if body == f => (captures, true),
-                    _ => continue,
-                };
-                let arr = if is_fold {
-                    self.pair_slot_source(morph.source, k + 1)
-                } else if k == 0 {
-                    Some(morph.source)
-                } else {
-                    self.pair_slot_source(morph.source, k)
-                };
-                if let Some(er) = arr.and_then(|a| self.element_range(a)) {
-                    if !is_fold && k == 0 {
-                        // captures=0 map: the body input IS the element.
-                        rng.insert(fd.input, er);
-                    } else {
-                        let pos = if is_fold { k + 1 } else { k };
-                        for &m in self.out_edges(fd.input) {
-                            let mm = &self.morphisms[m];
-                            if mm.op == (Operation::Proj { index: pos }) {
-                                rng.insert(mm.target, er);
-                            }
-                        }
-                    }
-                }
-                // Capture-range threading: a capture at position j rides the
-                // site's slot-j feeder, whose range is computed by the site
-                // owner's own analysis (recursing out through nested bodies —
-                // the owner encloses the capture by construction). The matmul
-                // fold's `i`/`j` thus arrive ranged from the enclosing map body.
-                if let Some(of) = self.try_owner(morph.source)
-                    && of != f
-                    && !visited.contains(&of)
-                {
-                    visited.push(of);
-                    let (_, outer_rng) = self.bounds_proof_inner(of, visited);
-                    for j in 0..k {
-                        let co = self.pair_slot_source(morph.source, j);
-                        if let Some(co) = co
-                            && let Some(r) = outer_rng.get(co).copied()
-                        {
-                            for &m in self.out_edges(fd.input) {
-                                let mm = &self.morphisms[m];
-                                if mm.op == (Operation::Proj { index: j }) {
-                                    rng.insert(mm.target, r);
-                                }
-                            }
-                        }
-                    }
-                }
-                break;
-            }
-        }
-
-        // --- one topo pass: propagate + collect proofs -------------------------
-        for m in self.topo_order(f) {
-            let morph = &self.morphisms[m];
-            match morph.op {
-                Operation::Add
-                | Operation::Sub
-                | Operation::Mul
-                | Operation::Div
-                | Operation::Mod => {
-                    let a = self.pair_slot_source(morph.source, 0);
-                    let b = self.pair_slot_source(morph.source, 1);
-                    if let (Some(ra), Some(rb)) = (
-                        a.and_then(|x| rng.get(x).copied()),
-                        b.and_then(|x| rng.get(x).copied()),
-                    ) {
-                        let wmax = width_max(&self.objects[morph.target].ty);
-                        if let Some(r) = arith_range(morph.op, ra, rb, wmax) {
-                            rng.insert(morph.target, r);
-                        }
-                    }
-                }
-                Operation::Proj { index } => {
-                    if let Some(r) = self.proj_range(&rng, morph.source, index) {
-                        rng.insert(morph.target, r);
-                    }
-                }
-                Operation::Index => {
-                    // A value read from an iota / literal-ramp array is ranged.
-                    if let Some(Rng::Int(lo, hi)) = self
-                        .pair_slot_source(morph.source, 0)
-                        .and_then(|a| self.element_range(a))
-                    {
-                        let _ = (lo, hi);
-                        rng.insert(morph.target, Rng::Int(lo, hi));
-                    }
-                    // The proof: the index's range inside the array's size.
-                    let idx = self.pair_slot_source(morph.source, 1);
-                    let arr = self.pair_slot_source(morph.source, 0);
-                    if let (Some(Rng::Int(_lo, hi)), Some(a)) =
-                        (idx.and_then(|x| rng.get(x).copied()), arr)
-                        && let Ty::Array { size, .. } = self.objects[a].ty
-                        && hi < size
-                    {
-                        proven.insert(m, ());
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        (BoundsProof { proven }, rng)
-    }
-
-    /// The element range of an array object: iota ⇒ `[0, n)`; enumerate ⇒
-    /// `(i32, X)` elements over `n`; a literal array of int constants ⇒
-    /// `[min, max]`. Anything else is unknown (None). `Proj`-of-pair
-    /// indirection and body-input capture indirection (the array rides in as a
-    /// captured value — e.g. the fold site's `krange` captured by the map
-    /// body) are resolved first.
-    fn element_range(&self, arr: ObjectId) -> Option<Rng> {
-        let mut arr = arr;
-        for _ in 0..16 {
-            if let Some(next) = self.proj_of_pair(arr) {
-                arr = next;
-                continue;
-            }
-            if let Some(next) = self.capture_proj_of_input(arr) {
-                arr = next;
-                continue;
-            }
-            break;
-        }
-        let definer = self.in_edges(arr).first().copied()?;
-        let dm = &self.morphisms[definer];
-        let size = match &self.objects[arr].ty {
-            Ty::Array { size, .. } => *size,
-            _ => return None,
-        };
-        match dm.op {
-            Operation::Iota => Some(Rng::Int(0, size.saturating_sub(1))),
-            Operation::Enumerate => Some(Rng::EnumIdx(size)),
-            Operation::Pair { .. } => {
-                // A pack_array literal: every in-edge a Pair with a Constant
-                // int source — the element range is [min, max] of the values.
-                let mut lo = u64::MAX;
-                let mut hi = 0u64;
-                for &m in self.in_edges(arr) {
-                    let pm = &self.morphisms[m];
-                    if !matches!(pm.op, Operation::Pair { .. }) {
-                        return None;
-                    }
-                    let src = &self.objects[pm.source];
-                    if src.kind != ObjectKind::Constant {
-                        return None;
-                    }
-                    let v = match &src.value {
-                        Some(Value::I32(x)) if *x >= 0 => *x as u64,
-                        Some(Value::I64(x)) if *x >= 0 => *x as u64,
-                        Some(Value::U8(x)) => *x as u64,
-                        _ => return None,
-                    };
-                    lo = lo.min(v);
-                    hi = hi.max(v);
-                }
-                Some(Rng::Int(lo, hi))
-            }
-            _ => None,
-        }
-    }
-
-    /// The range of a `Proj{index}` result: `.0` of an enumerate element, else
-    /// the pair-slot feeder's own range (Parameters/products without one bail).
-    fn proj_range(
-        &self,
-        rng: &SecondaryMap<ObjectId, Rng>,
-        source: ObjectId,
-        index: u32,
-    ) -> Option<Rng> {
-        if let Some(Rng::EnumIdx(n)) = rng.get(source).copied()
-            && index == 0
-        {
-            return Some(Rng::Int(0, n.saturating_sub(1)));
-        }
-        self.pair_slot_source(source, index)
-            .and_then(|s| rng.get(s).copied())
-    }
-
     /// If `o` is a `Proj{k}` of a pair-assembled tuple, the component object
     /// (the `Pair{k}` feeder's source) — one indirection level.
     fn proj_of_pair(&self, o: ObjectId) -> Option<ObjectId> {
@@ -6046,82 +5792,114 @@ impl CategoryIr {
             return Vec::new();
         }
 
-        // plan-s40: loop UNITS — per SCC, the whole sequential region the flat
-        // walk hands the driver (SCC-incident morphisms, machinery, and the
-        // loop_plan cones; the same construction as path_plan's loop_members).
-        // An arm owns a loop as a unit or not at all: per-morphism consumer
-        // closure provably cannot complete a cycle, so the only machinery it
-        // can reach alone is the exit boundary, and gating that fragment
-        // starves the driver ("route object built before read", S39 §4a).
-        let mut units: Vec<LoopUnit> = Vec::new();
-        let mut unit_of_machinery: SecondaryMap<MorphismId, usize> = SecondaryMap::new();
-        let mut unit_of_member: SecondaryMap<MorphismId, usize> = SecondaryMap::new();
-        for scc in self.loop_structure(f) {
-            let mut objects: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
-            for &o in &scc.objects {
-                objects.insert(o, ());
-            }
-            let mut members: SecondaryMap<MorphismId, ()> = SecondaryMap::new();
-            for &m in &topo {
-                let morph = &self.morphisms[m];
-                if objects.contains_key(morph.source) || objects.contains_key(morph.target) {
-                    members.insert(m, ());
-                }
-            }
-            let mut canonical = scc.merges.len() == 1 && self.loop_plan(f, scc.merges[0]).is_some();
-            for &merge in &scc.merges {
-                if let Some(plan) = self.loop_plan(f, merge) {
-                    for &m in plan
-                        .decide_order
-                        .iter()
-                        .chain(&plan.advance_order)
-                        .chain(&plan.exits)
-                    {
-                        members.insert(m, ());
-                    }
-                }
-            }
-            let idx = units.len();
-            let mut enters = Vec::new();
-            for (m, ()) in members.iter() {
-                if matches!(
-                    self.morphisms[m].op,
-                    Operation::LoopEnter | Operation::LoopBack | Operation::LoopExit
-                ) {
-                    if let Some(&prev) = unit_of_machinery.get(m) {
-                        // Machinery shared between two SCC regions: neither
-                        // unit is independently drivable — never join either.
-                        units[prev].canonical = false;
-                        canonical = false;
-                    }
-                    unit_of_machinery.insert(m, idx);
-                    if matches!(self.morphisms[m].op, Operation::LoopEnter) {
-                        enters.push(m);
-                    }
-                }
-                unit_of_member.insert(m, idx);
-            }
-            units.push(LoopUnit {
-                members,
-                enters,
-                canonical,
-                can_trap: false,
-            });
+        let mut sites = self.guard_structure(f);
+        if sites.is_empty() {
+            return sites;
         }
-
+        let (mut units, unit_of_machinery, _) = self.guard_units(f, &topo);
         let bounds = self.bounds_proof(f);
         let trap_capable = self.fn_trap_capabilities();
 
         // Unit trap flags: any member trap-capable (transitively, via bodies
         // and calls). Needed because unit internals never enter an own-list —
         // the LoopEnter handle must carry the whole unit's flag.
-        for i in 0..units.len() {
-            let any = units[i]
+        for unit in &mut units {
+            unit.can_trap = unit
                 .members
                 .iter()
                 .any(|(m, ())| self.path_trap_capable(m, &bounds, &trap_capable));
-            units[i].can_trap = any;
         }
+        for site in &mut sites {
+            for arm in [&mut site.on_true, &mut site.on_false] {
+                // Flags describe the FINAL list, not the raw walk. A LoopEnter
+                // handle carries its whole unit's trap flag, and a loop is
+                // heavy by definition (unbounded trip count).
+                arm.can_trap = arm.own.iter().any(|&m| {
+                    self.path_trap_capable(m, &bounds, &trap_capable)
+                        || unit_of_machinery.get(m).is_some_and(|&u| units[u].can_trap)
+                });
+                arm.heavy = arm.own.iter().any(|&m| {
+                    matches!(
+                        self.morphisms[m].op,
+                        Operation::Map { .. }
+                            | Operation::Fold { .. }
+                            | Operation::Zip
+                            | Operation::Enumerate
+                            | Operation::Iota
+                            | Operation::Fill
+                            | Operation::Call(_)
+                            | Operation::LoopEnter
+                    )
+                });
+                // An `Index` the proof holds in bounds only under this arm's
+                // condition is safe only while the arm runs alone: gate it.
+                arm.cond_reads = bounds.arm_used(arm.edge);
+            }
+        }
+
+        // TRANSITIVE flags. Subtraction moved each nested site's work out of
+        // the enclosing arm's list, so direct flags under-report: `calc`'s
+        // 5-arm match right-folds to nested Phis with `a % b` innermost, and
+        // the outer arms looked trap-free because the `Div`/`Mod` had been
+        // attributed to the innermost site. Ungated, the outer arms then ran
+        // the whole nested chain and `calc(0, 20, 0)` still trapped. An arm
+        // that gates a nested site inherits that site's flags. Sites are in
+        // topo order of their `Phi`, so nested sites are already final when an
+        // enclosing one is reached — one forward pass suffices.
+        for i in 0..sites.len() {
+            let inherited: Vec<(bool, bool, bool)> = (0..i)
+                .map(|j| {
+                    (
+                        sites[i].on_true.own.contains(&sites[j].phi),
+                        sites[j].on_true.can_trap || sites[j].on_false.can_trap,
+                        sites[j].on_true.heavy || sites[j].on_false.heavy,
+                    )
+                })
+                .collect();
+            let inherited_f: Vec<(bool, bool, bool)> = (0..i)
+                .map(|j| {
+                    (
+                        sites[i].on_false.own.contains(&sites[j].phi),
+                        sites[j].on_true.can_trap || sites[j].on_false.can_trap,
+                        sites[j].on_true.heavy || sites[j].on_false.heavy,
+                    )
+                })
+                .collect();
+            let site = &mut sites[i];
+            for (arm, src) in [
+                (&mut site.on_true, &inherited),
+                (&mut site.on_false, &inherited_f),
+            ] {
+                for &(nested_here, trap, heavy) in src {
+                    if nested_here {
+                        arm.can_trap |= trap;
+                        arm.heavy |= heavy;
+                    }
+                }
+            }
+        }
+        sites
+    }
+
+    /// The structural half of [`Self::guard_plan`]: each Phi-position guard
+    /// site with its arms' exclusive work (own-lists after hierarchy
+    /// subtraction and re-close), every flag `false`. A stored fact of its
+    /// own because [`Self::bounds_proof`] reads it (a guard's condition holds
+    /// on its arm's own work) while `guard_plan`'s flags read the proof.
+    pub(crate) fn guard_structure(&self, f: FuncId) -> Vec<GuardSite> {
+        self.fact(
+            f,
+            |s| &s.guard_structure,
+            || self.guard_structure_compute(f),
+        )
+    }
+
+    fn guard_structure_compute(&self, f: FuncId) -> Vec<GuardSite> {
+        let topo = self.topo_order(f);
+        if !topo.iter().any(|&m| self.morphisms[m].op == Operation::Phi) {
+            return Vec::new();
+        }
+        let (units, unit_of_machinery, unit_of_member) = self.guard_units(f, &topo);
 
         // Raw sites first; hierarchy subtraction below.
         let mut sites: Vec<GuardSite> = Vec::new();
@@ -6148,9 +5926,8 @@ impl CategoryIr {
             let (Some(te), Some(fe), Some(ce)) = (feeder[0], feeder[1], feeder[2]) else {
                 continue;
             };
-            let [on_true, on_false] = [te, fe].map(|e| {
-                self.guard_arm(&topo, &units, &unit_of_machinery, &bounds, &trap_capable, e)
-            });
+            let [on_true, on_false] =
+                [te, fe].map(|e| self.guard_arm(&topo, &units, &unit_of_machinery, e));
             sites.push(GuardSite {
                 phi: m,
                 cond: self.morphisms[ce].source,
@@ -6259,72 +6036,89 @@ impl CategoryIr {
                         break;
                     }
                 }
-
-                // Flags describe the FINAL list, not the raw walk. A LoopEnter
-                // handle carries its whole unit's trap flag, and a loop is
-                // heavy by definition (unbounded trip count).
-                arm.can_trap = arm.own.iter().any(|&m| {
-                    self.path_trap_capable(m, &bounds, &trap_capable)
-                        || unit_of_machinery.get(m).is_some_and(|&u| units[u].can_trap)
-                });
-                arm.heavy = arm.own.iter().any(|&m| {
-                    matches!(
-                        self.morphisms[m].op,
-                        Operation::Map { .. }
-                            | Operation::Fold { .. }
-                            | Operation::Zip
-                            | Operation::Enumerate
-                            | Operation::Iota
-                            | Operation::Fill
-                            | Operation::Call(_)
-                            | Operation::LoopEnter
-                    )
-                });
-            }
-        }
-
-        // TRANSITIVE flags. Subtraction moved each nested site's work out of
-        // the enclosing arm's list, so direct flags under-report: `calc`'s
-        // 5-arm match right-folds to nested Phis with `a % b` innermost, and
-        // the outer arms looked trap-free because the `Div`/`Mod` had been
-        // attributed to the innermost site. Ungated, the outer arms then ran
-        // the whole nested chain and `calc(0, 20, 0)` still trapped. An arm
-        // that gates a nested site inherits that site's flags. Sites are in
-        // topo order of their `Phi`, so nested sites are already final when an
-        // enclosing one is reached — one forward pass suffices.
-        for i in 0..sites.len() {
-            let inherited: Vec<(bool, bool, bool)> = (0..i)
-                .map(|j| {
-                    (
-                        sites[i].on_true.own.contains(&sites[j].phi),
-                        sites[j].on_true.can_trap || sites[j].on_false.can_trap,
-                        sites[j].on_true.heavy || sites[j].on_false.heavy,
-                    )
-                })
-                .collect();
-            let inherited_f: Vec<(bool, bool, bool)> = (0..i)
-                .map(|j| {
-                    (
-                        sites[i].on_false.own.contains(&sites[j].phi),
-                        sites[j].on_true.can_trap || sites[j].on_false.can_trap,
-                        sites[j].on_true.heavy || sites[j].on_false.heavy,
-                    )
-                })
-                .collect();
-            let site = &mut sites[i];
-            for (arm, src) in [
-                (&mut site.on_true, &inherited),
-                (&mut site.on_false, &inherited_f),
-            ] {
-                for &(nested_here, trap, heavy) in src {
-                    if nested_here {
-                        arm.can_trap |= trap;
-                        arm.heavy |= heavy;
-                    }
-                }
             }
         }
         sites
+    }
+
+    /// Loop UNITS (plan-s40) of `f` for guard ownership: per SCC, the whole
+    /// sequential region the flat walk hands the driver, by member and by
+    /// machinery morphism. `can_trap` is left `false` (flags are
+    /// [`Self::guard_plan`]'s).
+    #[allow(clippy::type_complexity)]
+    fn guard_units(
+        &self,
+        f: FuncId,
+        topo: &[MorphismId],
+    ) -> (
+        Vec<LoopUnit>,
+        SecondaryMap<MorphismId, usize>,
+        SecondaryMap<MorphismId, usize>,
+    ) {
+        // plan-s40: loop UNITS — per SCC, the whole sequential region the flat
+        // walk hands the driver (SCC-incident morphisms, machinery, and the
+        // loop_plan cones; the same construction as path_plan's loop_members).
+        // An arm owns a loop as a unit or not at all: per-morphism consumer
+        // closure provably cannot complete a cycle, so the only machinery it
+        // can reach alone is the exit boundary, and gating that fragment
+        // starves the driver ("route object built before read", S39 §4a).
+        let mut units: Vec<LoopUnit> = Vec::new();
+        let mut unit_of_machinery: SecondaryMap<MorphismId, usize> = SecondaryMap::new();
+        let mut unit_of_member: SecondaryMap<MorphismId, usize> = SecondaryMap::new();
+        for scc in self.loop_structure(f) {
+            let mut objects: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
+            for &o in &scc.objects {
+                objects.insert(o, ());
+            }
+            let mut members: SecondaryMap<MorphismId, ()> = SecondaryMap::new();
+            for &m in topo {
+                let morph = &self.morphisms[m];
+                if objects.contains_key(morph.source) || objects.contains_key(morph.target) {
+                    members.insert(m, ());
+                }
+            }
+            let mut canonical = scc.merges.len() == 1 && self.loop_plan(f, scc.merges[0]).is_some();
+            for &merge in &scc.merges {
+                if let Some(plan) = self.loop_plan(f, merge) {
+                    for &m in plan
+                        .decide_order
+                        .iter()
+                        .chain(&plan.advance_order)
+                        .chain(&plan.exits)
+                    {
+                        members.insert(m, ());
+                    }
+                }
+            }
+            let idx = units.len();
+            let mut enters = Vec::new();
+            for (m, ()) in members.iter() {
+                if matches!(
+                    self.morphisms[m].op,
+                    Operation::LoopEnter | Operation::LoopBack | Operation::LoopExit
+                ) {
+                    if let Some(&prev) = unit_of_machinery.get(m) {
+                        // Machinery shared between two SCC regions: neither
+                        // unit is independently drivable — never join either.
+                        units[prev].canonical = false;
+                        canonical = false;
+                    }
+                    unit_of_machinery.insert(m, idx);
+                    if matches!(self.morphisms[m].op, Operation::LoopEnter) {
+                        enters.push(m);
+                    }
+                }
+                unit_of_member.insert(m, idx);
+            }
+            units.push(LoopUnit {
+                members,
+                enters,
+                canonical,
+                can_trap: false,
+            });
+        }
+
+        (units, unit_of_machinery, unit_of_member)
     }
 
     /// One arm's exclusive work.
@@ -6354,8 +6148,6 @@ impl CategoryIr {
         topo: &[MorphismId],
         units: &[LoopUnit],
         unit_of_machinery: &SecondaryMap<MorphismId, usize>,
-        bounds: &BoundsProof,
-        trap_capable: &SecondaryMap<FuncId, bool>,
         edge: MorphismId,
     ) -> GuardArm {
         let value = self.morphisms[edge].source;
@@ -6431,26 +6223,11 @@ impl CategoryIr {
         }
 
         let mut own: Vec<MorphismId> = Vec::new();
-        let mut can_trap = false;
-        let mut heavy = false;
         for &m in topo {
             let morph = &self.morphisms[m];
             if !owned_set.contains_key(m) {
                 continue;
             }
-            can_trap = can_trap || self.path_trap_capable(m, bounds, trap_capable);
-            heavy = heavy
-                || matches!(
-                    morph.op,
-                    Operation::Map { .. }
-                        | Operation::Fold { .. }
-                        | Operation::Zip
-                        | Operation::Enumerate
-                        | Operation::Iota
-                        | Operation::Fill
-                        | Operation::Call(_)
-                        | Operation::LoopEnter
-                );
             if owned_via_unit.contains_key(m) {
                 // The LoopEnter handle stands for the unit in `own`; internals
                 // stay out, so subtraction, re-close and the consumers' gated
@@ -6466,8 +6243,9 @@ impl CategoryIr {
             value,
             edge,
             own,
-            can_trap,
-            heavy,
+            can_trap: false,
+            heavy: false,
+            cond_reads: false,
         }
     }
 
@@ -6526,67 +6304,5 @@ fn safe_integer_divisor(object: &crate::graph::Object) -> bool {
 fn increment(counts: &mut SecondaryMap<ObjectId, u32>, o: ObjectId) {
     if let Some(&n) = counts.get(o) {
         counts.insert(o, n + 1);
-    }
-}
-
-/// The max value of an int width (the wraparound bound for range arithmetic).
-/// Floats/products are not range-typed (None).
-fn width_max(ty: &crate::ty::Ty) -> Option<u128> {
-    use crate::ty::Ty;
-    match ty {
-        Ty::Int { bits: 32, .. } => Some(i32::MAX as u128),
-        Ty::Int { bits: 64, .. } => Some(i64::MAX as u128),
-        Ty::Int { bits: 8, .. } => Some(u8::MAX as u128),
-        _ => None,
-    }
-}
-
-/// Interval arithmetic over non-negative ranges, wrapping-width-aware: any
-/// operation whose `hi` can exceed the int width's max is unknown (None) —
-/// wrapping would invalidate the interval.
-fn arith_range(op: Operation, a: Rng, b: Rng, wmax: Option<u128>) -> Option<Rng> {
-    let (Rng::Int(al, ah), Rng::Int(bl, bh)) = (a, b) else {
-        return None;
-    };
-    let w = wmax?;
-    match op {
-        Operation::Add => {
-            let hi = ah as u128 + bh as u128;
-            if hi > w {
-                None
-            } else {
-                Some(Rng::Int(al + bl, hi as u64))
-            }
-        }
-        Operation::Sub => {
-            if al >= bh {
-                Some(Rng::Int(al - bh, ah - bl))
-            } else {
-                None // could wrap negative
-            }
-        }
-        Operation::Mul => {
-            let hi = ah as u128 * bh as u128;
-            if hi > w {
-                None
-            } else {
-                Some(Rng::Int(al * bl, hi as u64))
-            }
-        }
-        Operation::Div => {
-            if bl >= 1 {
-                Some(Rng::Int(al / bh.max(1), ah / bl))
-            } else {
-                Some(Rng::Int(0, ah))
-            }
-        }
-        Operation::Mod => {
-            if bh >= 1 {
-                Some(Rng::Int(0, ah.min(bh - 1)))
-            } else {
-                None
-            }
-        }
-        _ => None,
     }
 }

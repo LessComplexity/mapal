@@ -1700,11 +1700,13 @@ impl FnBuilder<'_> {
         loc: SourceLoc,
     ) -> Result<ObjectId, IrError> {
         let n = self.static_count(count)?;
-        if n > i32::MAX as u64 {
+        if n > i64::MAX as u64 {
             return Err(IrError::EnumerateIndexOverflow);
         }
+        // onto-device: the elements are the extent's index type (`i64` only
+        // past `i32::MAX` cells).
         let out_ty = Ty::Array {
-            elem: Box::new(Ty::i32()),
+            elem: Box::new(Ty::index_ty(n)),
             size: n,
         };
         self.b.intake_ty(&out_ty)?;
