@@ -7,20 +7,31 @@
 # SKIP_HOSTS="<host_id>..." excludes boxes: a confirm session runs on a different box.
 # CPU_NAME="<substring>" keeps only offers whose host CPU names it (S62: the host profile's
 # family — a confirm box with another CPU is another host).
+# MAX_DPH=<$/h> skips dearer offers (a budget: the next offer of a type can cost twice the first);
+# SKIP_GEO="<substring>..." skips hosts whose location names one (a slow route to the wheel index).
+# Offers: verified hosts, reliability > 0.97, a driver for CUDA >= CUDA_MIN (13.0: the CUDA 13 image's
+# nvcc and the cu130 torch wheels), >= DISK GB disk (60).
 #
 # usage: benches/gpu/vast_part.sh <profile> <sm_NN> <bundle_dir> <results_dir> <reps> <GPU_NAME>...
 #   e.g. benches/gpu/vast_part.sh a100 sm_80 $B $R 30 A100_SXM4 A100_PCIE
 PROF=$1 SM=$2 B=$3 RES=$4 REPS=$5; shift 5
-# Every rental goes through the `itur` vast account (Sapir, 2026-11-10); the default profile is not used.
-vastai() { command vastai --profile "${VAST_PROFILE:-itur}" "$@"; }
+# Every rental goes through the `itur` vast account (Sapir, 2026-11-10): a CLI with profiles selects it by
+# name; one without (vastai 1.11) has no `--profile` and uses its stored key, which must be that account's.
+case $(command vastai --help 2>&1 || true) in *--profile*)
+    vastai() { command vastai --profile "${VAST_PROFILE:-itur}" "$@"; } ;;
+esac
 HERE=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "$RES"
 offers() { # <GPU_NAME>: id dph pcie_bw cpu_ghz host machine cpu_name geo, cheapest first
-    vastai search offers "gpu_name=$1 num_gpus=1 rentable=true cuda_max_good>=12.8 reliability>0.97 inet_down>500 disk_space>=40" \
-        -o 'dph+' --limit 64 --raw 2>/dev/null | CPU_NAME="${CPU_NAME:-}" python3 -c 'import json,os,sys
+    vastai search offers "gpu_name=$1 num_gpus=1 rentable=true verified=true cuda_max_good>=${CUDA_MIN:-13.0} reliability>0.97 inet_down>500 disk_space>=${DISK:-60}" \
+        -o 'dph+' --limit 64 --raw 2>/dev/null | CPU_NAME="${CPU_NAME:-}" MAX_DPH="${MAX_DPH:-}" SKIP_GEO="${SKIP_GEO:-}" python3 -c 'import json,os,sys
 want = os.environ["CPU_NAME"]
+cap = float(os.environ["MAX_DPH"] or "inf")
+geo = os.environ["SKIP_GEO"].split()
 for o in json.load(sys.stdin):
     cpu = (o.get("cpu_name") or "").replace(" ", "_")
+    if any(g in (o.get("geolocation") or "") for g in geo) or o["dph_total"] > cap:
+        continue
     if (o.get("pcie_bw") or 0) >= 10 and want in (o.get("cpu_name") or ""):
         print(o["id"], round(o["dph_total"], 3), o.get("pcie_bw"), o.get("cpu_ghz"), o.get("host_id"), o.get("machine_id"), cpu or "?", o.get("geolocation"))'
 }

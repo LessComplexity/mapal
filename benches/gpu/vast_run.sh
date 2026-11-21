@@ -6,10 +6,14 @@
 # usage: benches/gpu/vast_run.sh <offer_id> <profile> <sm_NN> <bundle_dir> <results_dir> [reps]
 # DIFFERENTIAL_ONLY / PROBE_ARMS / PROBE_REPS / E2E_REPS / LADDER pass through to box_run.sh.
 set -euo pipefail
-# Every rental goes through the `itur` vast account (Sapir, 2026-11-10); the default profile is not used.
-vastai() { command vastai --profile "${VAST_PROFILE:-itur}" "$@"; }
+# Every rental goes through the `itur` vast account (Sapir, 2026-11-10): a CLI with profiles selects it by
+# name; one without (vastai 1.11) has no `--profile` and uses its stored key, which must be that account's.
+case $(command vastai --help 2>&1 || true) in *--profile*)
+    vastai() { command vastai --profile "${VAST_PROFILE:-itur}" "$@"; } ;;
+esac
 OFFER=$1; PROF=$2; SM=$3; BUNDLE=$4; RES=$5; REPS=${6:-30}
-IMAGE=${IMAGE:-nvidia/cuda:12.8.1-devel-ubuntu22.04}
+# CUDA 13: the library legs' nvcc matches the cu130 torch wheels (box_run.sh) and the drivers vast_part.sh filters for.
+IMAGE=${IMAGE:-nvidia/cuda:13.0.2-devel-ubuntu22.04}
 mkdir -p "$RES"
 log() { echo "[$(date +%T) $PROF] $*" | tee -a "$RES/vast-$PROF.log"; }
 # site-geometry: a bundle box_run.sh would stop on fails here, before the rental (PREFLIGHT=0 skips).
@@ -17,7 +21,7 @@ if [ "${PREFLIGHT:-1}" = 1 ] && ! python3 "$(dirname "$0")/preflight.py" "$BUNDL
     log "preflight failed ($RES/vast-$PROF.log): no rental"; exit 1
 fi
 
-id=$(vastai create instance "$OFFER" --image "$IMAGE" --disk 40 --ssh --direct --raw |
+id=$(vastai create instance "$OFFER" --image "$IMAGE" --disk "${DISK:-60}" --ssh --direct --raw |
      python3 -c 'import json,sys; print(json.load(sys.stdin)["new_contract"])')
 log "instance $id from offer $OFFER"
 echo "$id" > "$RES/instance-$PROF"
@@ -65,7 +69,7 @@ done
 log "bundle uploaded"
 # The e2e and probe sections' arms and repetitions, and box_profile's traced
 # probes, pass through (unset: their defaults).
-ENVS="DIFFERENTIAL_ONLY='${DIFFERENTIAL_ONLY:-0}' E2E_ARMS='${E2E_ARMS:-}' PROBE_ARMS='${PROBE_ARMS:-}' PROBE_REPS='${PROBE_REPS:-}' E2E_REPS='${E2E_REPS:-}' PROF_PROBES='${PROF_PROBES:-}' PROBE_TRACE_REPS='${PROBE_TRACE_REPS:-}' LANE_PROGS='${LANE_PROGS:-}' PASSES='${PASSES:-1}' FACES='${FACES:-_exact _c _tf}' WARM='${WARM:-0}' E2E='${E2E:-1}' SUBMIT='${SUBMIT:-}' TIMING='${TIMING:-1}' TORCH='${TORCH:-1}' SWEEP_PROF='${SWEEP_PROF:-0}' TORCH_MIN='${TORCH_MIN:-15}' SASS_MIN='${SASS_MIN:-12}' RETUNE='${RETUNE:-0}' PICKS='${PICKS:-0}' LOAD_ALL='${LOAD_ALL:-0}' JIT_CACHE_OK='${JIT_CACHE_OK:-0}' LADDER='${LADDER:-0}'"
+ENVS="DIFFERENTIAL_ONLY='${DIFFERENTIAL_ONLY:-0}' E2E_ARMS='${E2E_ARMS:-}' PROBE_ARMS='${PROBE_ARMS:-}' PROBE_REPS='${PROBE_REPS:-}' E2E_REPS='${E2E_REPS:-}' PROF_PROBES='${PROF_PROBES:-}' PROBE_TRACE_REPS='${PROBE_TRACE_REPS:-}' LANE_PROGS='${LANE_PROGS:-}' PASSES='${PASSES:-1}' FACES='${FACES:-_exact _c _tf}' WARM='${WARM:-0}' E2E='${E2E:-1}' SUBMIT='${SUBMIT:-}' TIMING='${TIMING:-1}' TORCH='${TORCH:-1}' SWEEP_PROF='${SWEEP_PROF:-0}' TORCH_MIN='${TORCH_MIN:-15}' SASS_MIN='${SASS_MIN:-12}' RETUNE='${RETUNE:-0}' PICKS='${PICKS:-0}' LOAD_ALL='${LOAD_ALL:-0}' JIT_CACHE_OK='${JIT_CACHE_OK:-0}' LADDER='${LADDER:-0}' CALIB='${CALIB:-1}'"
 run_rc=0
 # RUN_MIN (S62): the box run's ceiling in minutes, so a rental stays inside its time budget
 # (start + upload + run + fetch); the results so far are still fetched.
@@ -76,6 +80,8 @@ run_rc=0
 }
 "${SSH[@]}" "cat /w/results-$PROF-pass2.txt" > "$RES/results-$PROF-pass2.txt" 2>/dev/null || true
 "${SSH[@]}" "cat /w/ncu-$PROF.csv" > "$RES/ncu-$PROF.csv" 2>/dev/null || true
+# cross-arch: the device calibration (calib.cu: the native-gpu profile's measured properties).
+"${SSH[@]}" "cat /w/calib-$PROF.txt" > "$RES/calib-$PROF.txt" 2>/dev/null || rm -f "$RES/calib-$PROF.txt"
 # S64: the intent check of this run, the PyTorch install log.
 "${SSH[@]}" "cat /w/evidence-$PROF.tsv" > "$RES/evidence-$PROF.tsv" 2>/dev/null || true
 # per-site-choice B5: the box's wisdom (plancost.py --wisdom) and the tune runs' traces (--trials; raw, never in git).
@@ -84,7 +90,8 @@ run_rc=0
 "${SSH[@]}" "cat /w/torch-install.log /w/torch.err" > "$RES/torch-$PROF.log" 2>/dev/null || true
 "${SSH[@]}" "cd /w && [ -d trace ] && tar czf - trace" > "$RES/trace-$PROF.tgz" 2>/dev/null || true
 if [ "$run_rc" -eq 0 ] && [ "${PROFILE:-0}" = 1 ] && [ "${DIFFERENTIAL_ONLY:-0}" != 1 ]; then
-    "${SSH[@]}" "cd /w && $ENVS bash box_profile.sh $PROF $SM" >> "$RES/run-$PROF.out" 2>&1 || { run_rc=$?; log "box_profile exit $run_rc"; }
+    # PROF_MIN: the profile pass's ceiling in minutes (RUN_MIN's reason).
+    "${SSH[@]}" "cd /w && $ENVS timeout ${PROF_MIN:-30}m bash box_profile.sh $PROF $SM" >> "$RES/run-$PROF.out" 2>&1 || { run_rc=$?; log "box_profile exit $run_rc"; }
     "${SSH[@]}" "cat /w/prof-$PROF.tgz" > "$RES/prof-$PROF.tgz" 2>/dev/null || true
     # + the e2e rows; a box lost during the profile keeps the results already fetched.
     "${SSH[@]}" "cat /w/results-$PROF.txt" > "$RES/results-$PROF.txt.new" 2>/dev/null &&
