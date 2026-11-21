@@ -429,7 +429,7 @@ impl FnEmit<'_> {
             .map(|u| u.iter().map(|&i| shapes[i].expect("shape").blocks).sum())
             .collect();
         let barriers = u64::from(levels - 1);
-        let pdl = gpu::pdl(self.profile, self.contract, self.gpu_arms);
+        let pdl = gpu::pdl(self.ir, self.profile, self.contract, self.gpu_arms);
         let Some((per, sep)) = chain_ns(&unit_blocks, grid, barriers, gpu, pdl) else {
             return;
         };
@@ -838,11 +838,12 @@ mod tests {
         let (per, sep) = chain_ns(&[3, 128, 128], 128, 2, &g2, false).expect("priced");
         assert!(per <= sep, "{per} {sep}");
         assert!((d.gsync_at(504, g.sms).unwrap() - (553.0 + 420.0 * 1.89)).abs() < 0.5);
-        // A part without the measured costs is unpriced.
-        let p4090 = crate::profile::TargetProfile::named("rtx-4090")
+        // A part without the measured costs is unpriced (the 5090: no
+        // barrier or launch measured; the cross-arch parts have theirs).
+        let p5090 = crate::profile::TargetProfile::named("rtx-5090")
             .and_then(|p| p.gpu())
             .unwrap();
-        assert!(chain_ns(&[1, 1], 1, 1, p4090, true).is_none());
+        assert!(chain_ns(&[1, 1], 1, 1, p5090, true).is_none());
     }
 
     #[test]

@@ -1083,12 +1083,15 @@ fn a_looped_site_decides_once() {
         let trials = err.lines().filter(|l| l.contains("op=trial ")).count();
         (decisions(&err), trials, site_launches, err)
     };
-    // The trial: candidate 0 sizes it, 5 rotated reps, 3 confirming pairs,
-    // then trips 2.. launch the pick alone.
+    // The trial: candidate 0 sizes it and settles (cross-arch: five more
+    // runs on a steady clock), 5 rotated reps, 3 confirming pairs, then
+    // trips 2.. launch the pick alone.
     let (d, trials, launches, err) = run(&[]);
     assert_eq!(d, vec![("trial".into(), 1)], "one decision\n{err}");
     assert_eq!(trials, 5 * m + 6, "{err}");
-    assert_eq!(launches, 1 + trials + (trips - 1), "{err}");
+    let settle = err.lines().filter(|l| l.contains("op=settle ")).count();
+    assert_eq!(settle, 5, "{err}");
+    assert_eq!(launches, 1 + settle + trials + (trips - 1), "{err}");
     // From the wisdom file, and forced: one decision, one launch per trip.
     for (extra, want) in [
         (vec![], ("wisdom", 1)),

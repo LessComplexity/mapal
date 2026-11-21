@@ -198,6 +198,11 @@ static void choice_init(const char *dev, uint64_t module, int tune, int trace) {
 
 /* Run site `site`'s pick among its `n` candidates `c`, once. `safe` 0: the
  * runtime saw the output passed as an input too (no trial). Returns the pick. */
+/* The median of three run times. */
+static uint64_t choice_med3(uint64_t a, uint64_t b, uint64_t c) {
+  return a > b ? (b > c ? b : a > c ? c : a) : (a > c ? a : b > c ? c : b);
+}
+
 static uint32_t choice_site(uint64_t site, uint32_t flags, uint32_t n,
                             const struct mapal_cand *c, int safe,
                             const struct choice_dev *d) {
@@ -239,6 +244,32 @@ static uint32_t choice_site(uint64_t site, uint32_t flags, uint32_t n,
       d->warm(d->env);
     uint64_t best[64], t0 = d->timed(d->env, 0);
     uint32_t last = 0;
+    /* cross-arch: the steady state first. A part under a power or thermal
+     * limit slows as a trial loads it (the 250 W RTX 4090 and 270 W A100
+     * boxes: +3.5 % a trial run on their large sites), so candidate 0 runs
+     * back to back until its time settles — the median of its last three
+     * runs within 1 % of the three before — at most 1 s of it or 64 runs;
+     * a part that does not throttle settles in five. */
+    {
+      uint64_t h[64], spent = t0;
+      uint32_t k = 0;
+      h[k++] = t0;
+      while (k < 64 && spent < 1000000000ull) {
+        uint64_t ns = d->timed(d->env, 0);
+        h[k++] = ns;
+        spent += ns;
+        if (choice.trace)
+          fprintf(stderr, "mapal_gpu_trace op=settle site=%016llx run=%u ns=%llu\n",
+                  (unsigned long long)site, k - 1, (unsigned long long)ns);
+        if (k >= 6) {
+          uint64_t a = choice_med3(h[k - 1], h[k - 2], h[k - 3]);
+          uint64_t b = choice_med3(h[k - 4], h[k - 5], h[k - 6]);
+          if ((a > b ? a - b : b - a) * 100 <= a)
+            break;
+        }
+      }
+      t0 = h[k - 1];
+    }
     reps = t0 < 2000000 ? 5 : t0 < 50000000 ? 3 : t0 < 500000000 ? 2 : 1;
     uint32_t m = n < 64 ? n : 64;
     for (uint32_t i = 0; i < m; i++)
@@ -261,16 +292,24 @@ static uint32_t choice_site(uint64_t site, uint32_t flags, uint32_t n,
       if (best[i] < best[pick])
         pick = i;
     /* Candidate 0 stays unless beaten by more than max(3 %, 1 us) — in the
-     * trial, then again head to head: 3 alternating pairs (0, w), (w, 0),
-     * (0, w), their minima merged with the trial's (one disturbed trial is
-     * not stored forever). */
+     * trial (its minima screen the candidates), then head to head: 3
+     * alternating pairs (0, w), (w, 0), (0, w), decided by the pairs alone
+     * (cross-arch): each pair's two runs are adjacent, so a clock that drifts
+     * while the trial loads the part cancels in (0, w) against (w, 0) and
+     * the third pair leans against the challenger. w stays when its three
+     * runs' product is under 0.97^3 of candidate 0's and their sums differ by
+     * more than 3 us. The minima of a drifting trial picked candidates that
+     * lost in steady state (cross-arch replay: 5 of the 16 such picks
+     * reverted, 4 of 82 measured wins of 2-5 %). */
 #define CHOICE_MARGIN(t) ((t) * 3 / 100 > 1000 ? (t) * 3 / 100 : 1000)
     if (pick && !(best[pick] + CHOICE_MARGIN(best[0]) < best[0]))
       pick = 0;
+    uint64_t pr[6] = {0, 0, 0, 0, 0, 0};
     for (uint32_t r = 0; pick && r < 6; r++) {
       uint32_t i = ((r / 2 + r) & 1) ? pick : 0;
       uint64_t ns = d->timed(d->env, i);
       last = i;
+      pr[r] = ns;
       if (ns < best[i])
         best[i] = ns;
       if (choice.trace)
@@ -280,8 +319,14 @@ static uint32_t choice_site(uint64_t site, uint32_t flags, uint32_t n,
                 (unsigned long long)site, i, (unsigned long long)c[i].id, reps + r / 2,
                 (unsigned long long)ns);
     }
-    if (pick && !(best[pick] + CHOICE_MARGIN(best[0]) < best[0]))
-      pick = 0;
+    /* The order above: 0, w, w, 0, 0, w. */
+    if (pick) {
+      double z = (double)pr[0] * (double)pr[3] * (double)pr[4];
+      double w = (double)pr[1] * (double)pr[2] * (double)pr[5];
+      uint64_t zs = pr[0] + pr[3] + pr[4], ws = pr[1] + pr[2] + pr[5];
+      if (!(w < 0.912673 * z && ws + 3000 < zs))
+        pick = 0;
+    }
     ns0 = best[0];
     nsw = best[pick];
     /* The output is the winner's. */

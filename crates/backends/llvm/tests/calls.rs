@@ -201,19 +201,20 @@ fn decode_runs_its_trip_as_one_persistent_kernel() {
     let off = emit(false, true, false);
     assert!(host_line(&off).is_empty() && specs(&off).is_empty());
     assert!(!off.device.as_deref().unwrap().contains("@mapal_gsync"));
-    // A part without the measured barrier and launch costs forms no chain.
+    // A part without the measured barrier and launch costs forms no chain
+    // (the 5090: the cross-arch parts carry theirs).
     let mut gpu = GpuArms::default();
     gpu.calls_force = true;
-    let p4090 = emit_detailed(
+    let p5090 = emit_detailed(
         &ir,
         &EmitOpts {
-            target: "rtx-4090",
+            target: "rtx-5090",
             gpu,
             ..EmitOpts::default()
         },
     )
     .expect("emits");
-    assert!(host_line(&p4090).is_empty() && specs(&p4090).is_empty());
+    assert!(host_line(&p5090).is_empty() && specs(&p5090).is_empty());
 }
 
 /// A decode step small enough to emulate (16 rows of 256, 3 trips): values

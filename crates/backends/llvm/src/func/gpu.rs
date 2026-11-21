@@ -89,9 +89,60 @@ pub(crate) fn init_call(rungs: crate::GpuRungs, streams: bool, pdl: bool) -> Str
 /// S54 `pdl`: a programmatic dependent launch needs `griddepcontrol`
 /// ([`crate::profile::Caps::griddepcontrol`]). One answer for the kernel text
 /// and the runtime flag — a kernel launched dependent without the wait would
-/// race.
-pub(crate) fn pdl(profile: &TargetProfile, contract: bool, arms: crate::GpuArms) -> bool {
+/// race. cross-arch: the module's side of the price
+/// ([`crate::rules::pdl_pays`]) is whether its launches repeat
+/// ([`launches_repeat`]); a forced `--gpu-on=pdl` arm takes any module.
+pub(crate) fn pdl(
+    ir: &CategoryIr,
+    profile: &TargetProfile,
+    contract: bool,
+    arms: crate::GpuArms,
+) -> bool {
+    pdl_part(profile, contract, arms) && (arms.on.pdl || launches_repeat(ir))
+}
+
+/// The part's side of [`pdl`]: the capability and the rule over its measured
+/// launches (the tile kernel's text reads it; the module strips its waits
+/// where [`pdl`] is off).
+pub(crate) fn pdl_part(profile: &TargetProfile, contract: bool, arms: crate::GpuArms) -> bool {
     profile.gpu().is_some_and(|g| g.has_griddepcontrol()) && host_rungs(profile, contract, arms).pdl
+}
+
+/// cross-arch `pdl`: **a device site inside a canonical loop** — a tile,
+/// cell or row-fold site in the decide or advance order of a loop of any
+/// function (`loop_structure`, `loop_plan`, `tile_plan`, `cell_plan`,
+/// `row_fold`): the program's launches repeat with the loop's trips, so its
+/// chain of dependent launches grows past the head a programmatic launch
+/// pays once.
+pub(crate) fn launches_repeat(ir: &CategoryIr) -> bool {
+    ir.funcs().any(|(f, _)| {
+        let tiles = ir.tile_plan(f);
+        let cells = ir.cell_plan(f);
+        let folds = ir.row_fold(f);
+        ir.loop_structure(f).iter().any(|lscc| {
+            lscc.merges.iter().any(|&merge| {
+                ir.loop_plan(f, merge).is_some_and(|lp| {
+                    lp.decide_order.iter().chain(&lp.advance_order).any(|&m| {
+                        tiles.sites.contains_key(m)
+                            || cells.contains_key(m)
+                            || folds.contains_key(m)
+                    })
+                })
+            })
+        })
+    })
+}
+
+/// The `griddepcontrol` lines of a module whose launches are plain ([`pdl`]
+/// off where the part has it): the tile kernels' text reads the part's side
+/// ([`pdl_part`]); without a dependent launch their wait is dropped, so the
+/// module is the text it was without `pdl`.
+pub(crate) fn strip_pdl(module: &str) -> String {
+    module
+        .lines()
+        .filter(|l| !l.contains("griddepcontrol."))
+        .map(|l| format!("{l}\n"))
+        .collect()
 }
 
 /// The rungs a GPU profile ships for one decision: the rung rules over its
@@ -114,6 +165,28 @@ pub(crate) fn rungs_at(
     // [`launch_split`]) decides the k-major panel instead of `kmajor-a`'s rule.
     crate::GpuRungs {
         kmajor_a: r.kmajor_a || (r.bank_plan && !arms.off.kmajor_a),
+        ..r
+    }
+}
+
+/// [`rungs_at`] for one site: cross-arch `row-split` priced over the site's
+/// row — a retained row's pass streams its `k · c` operand
+/// ([`crate::rules::row_split_pays`]); a forced arm stays forced.
+fn site_rungs(
+    profile: &TargetProfile,
+    wps: u64,
+    face: Face,
+    arms: crate::GpuArms,
+    site: &TileSite,
+) -> crate::GpuRungs {
+    let r = rungs_at(profile, wps, face, arms);
+    let bytes = site.k * site.c * elem_bytes_of(&site.elem);
+    let priced = arms.on.row_split
+        || profile
+            .gpu()
+            .is_none_or(|g| crate::rules::row_split_pays(g, bytes));
+    crate::GpuRungs {
+        row_split: r.row_split && priced,
         ..r
     }
 }
@@ -743,7 +816,7 @@ pub(crate) fn launch_split(
         && (vector_a(site) || rx.is_some_and(|x| x.a.is_some()))
         && (vector_b(site) || rx.is_some_and(|x| x.b.is_some()))
     {
-        let rungs = rungs_at(profile, wps, Face::Tf32, arms);
+        let rungs = site_rungs(profile, wps, Face::Tf32, arms, site);
         if rungs.mma && rungs.tf32_tile && radix_ok(rungs) {
             let wgmma = (rungs.wgmma && rx.is_none())
                 .then(|| profile.gpu_wgmma_tile(site.rows, site.c, site.k))
@@ -782,7 +855,7 @@ pub(crate) fn launch_split(
         }
     }
     let arithmetic = Arithmetic::scalar(site, contract, arms.free, arms.pairs);
-    let rungs = rungs_at(profile, wps, arithmetic.face(), arms);
+    let rungs = site_rungs(profile, wps, arithmetic.face(), arms, site);
     // tile-efficiency T2: `a`'s panel rows run along `k` (`vector_a`), so it
     // can stay untransposed — where one quarter-warp's fragment read is one
     // panel row (`tx` ≥ the lanes a wavefront serves, [`Kernel::tiled`]).
@@ -3294,8 +3367,10 @@ pub(crate) fn device_module(
     }
     // `pdl`: the runtime launches every kernel behind a kernel as a dependent
     // launch, so every kernel waits for its producer's grid before it reads.
-    if pdl(profile, contract, arms) {
+    if pdl(ir, profile, contract, arms) {
         out = pdl_wait_every_kernel(&out);
+    } else if pdl_part(profile, contract, arms) {
+        out = strip_pdl(&out);
     }
     // A `wgmma` kernel's swizzle atoms start on 1024-byte boundaries.
     if out.contains("wgmma.mma_async") {
@@ -3475,7 +3550,7 @@ fn kernel<'s>(
         arithmetic: l.arithmetic,
         rungs: l.rungs,
         profile_gpu: *profile.gpu().expect("a GPU site has a GPU profile"),
-        pdl: pdl(profile, contract, arms),
+        pdl: pdl_part(profile, contract, arms),
         async_tail: None,
         sync_tail: None,
         raster: (l.gx, l.raster),
@@ -4557,7 +4632,11 @@ impl Kernel<'_> {
         // own dependent start. Both are no-ops on a plain launch.
         if self.pdl {
             self.asm("griddepcontrol.wait;");
-            self.asm("griddepcontrol.launch_dependents;");
+            // cross-arch: the dependent launches at this kernel's exit unless
+            // `pdl-early` (its blocks would wait resident beside this grid's).
+            if self.rungs.pdl_early {
+                self.asm("griddepcontrol.launch_dependents;");
+            }
         }
     }
 
@@ -7230,7 +7309,7 @@ mod tests {
                     pdl: enabled,
                     ..GpuRungs::ALL
                 });
-                let wait = pdl(p, true, arms);
+                let wait = pdl_part(p, true, arms);
                 assert_eq!(wait, enabled && p.gpu().unwrap().has_griddepcontrol());
                 let host = init_call(host_rungs(p, true, arms), false, wait);
                 let flags: u32 = host

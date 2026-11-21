@@ -15,10 +15,19 @@
 //           profile's `pageable_pm` is the median ratio at >= 4 MiB (the sizes a loop's arrays cross)
 //   ffma    the FFMA peak under load (flops per ns: 8 independent chains a thread, 8 blocks of 256 a SM, best of 5)
 //           and the SM clock it implies at the compute capability's FP32 lanes per SM (`fp32_lanes_of_cc`: 64 on
-//           sm_60 / sm_80, else 128) — the profile's `clock_khz` under load
+//           sm_60 / sm_80, else 128); then **sustained**: the same kernel back to back for 4 s, its rate per 100 ms
+//           window — `sustained_clock_khz` (median of the last second's windows: the clock a power or thermal limit
+//           holds under continuous load, the profile's `clock_khz`) and `settle_ms` (the first window from which every
+//           window is within 2 % of it: how long a measurement must load the part before its clock is the sustained one)
+//   head    `pdl`: a short chain right after a host synchronize (a tiny kernel, then `n` = 1 / 2 / 4 kernels of
+//           sms x 256 threads, host-timed from the first launch to the synchronize, median of 400, PDL and plain
+//           interleaved) — `pdl_head_ns`: what a chain launched programmatically costs beyond a plain one at its head,
+//           where the host issue, not the device, is exposed (the n = 1 difference; positive = PDL slower)
 // The `calib device=` line carries the device query's physical facts the rung rules read (`DeviceQuery`).
-// usage: calib [chase|bw|loaded|lds|gsync|copy|ffma ...]   (all when none).  Output: `<kind> k=v ...` lines, one per point.
+// usage: calib [chase|bw|loaded|lds|gsync|copy|ffma|head ...]   (all when none).  Output: `<kind> k=v ...` lines, one per point.
 // build: nvcc -O3 -arch=sm_<cc> -std=c++17 -rdc=true calib.cu -o calib -lcudadevrt   (rdc for the tail launch)
+#include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -83,6 +92,7 @@ static void bw_run() {
     size_t maxb = (size_t)1 << 30; uint4* d; unsigned* sink;
     CK(cudaMalloc(&d, maxb)); CK(cudaMemset(d, 1, maxb)); CK(cudaMalloc(&sink, 4));
     cudaEvent_t a, b; cudaEventCreate(&a); cudaEventCreate(&b);
+    double one[2] = {0, 0}; // cross-arch rules: what one SM streams alone, best point, per level
     for (int lvl = 0; lvl < 2; lvl++) {
         size_t bytes = lvl ? (8u << 20) : maxb; const char* nm = lvl ? "l2" : "dram"; int rounds = lvl ? 200 : 2;
         for (int s : {1, std::max(1, sms / 16), std::max(1, sms / 8), std::max(1, sms / 4), std::max(1, sms / 2), sms})
@@ -102,8 +112,11 @@ static void bw_run() {
                     size_t nt = (size_t)s * wps * 32; size_t per = (size_t)L * nt, n16 = bytes / 16;
                     bytes_read = (double)(n16 / per * per) * 16 * rounds;
                     printf("bw level=%s sms=%d wps=%d L=%d inflight_kb=%.1f gbs=%.1f\n", nm, s, wps, L, (double)s * wps * 32 * L * 16 / 1024, bytes_read / ms / 1e6);
+                    if (s == 1) one[lvl] = std::max(one[lvl], bytes_read / ms / 1e6);
                 }
     }
+    // `sm_bytes_per_ns` (the profile's): one SM streaming an L2-resident operand alone — a one-row pass's rate
+    printf("bw one_sm dram_gbs=%.1f l2_gbs=%.1f sm_bytes_per_ns=%.0f\n", one[0], one[1], one[1]);
 }
 
 // one chaser warp (block 0) with nstream streaming blocks; streamers run until the chaser raises the flag
@@ -357,7 +370,64 @@ static void ffma_run(int cc) {
     }
     const int lanes = (cc == 60 || cc == 80) ? 64 : 128;
     printf("ffma flops_per_ns=%.0f lanes=%d implied_clock_khz=%.0f\n", best, lanes, best / (2.0 * sms * lanes) * 1e6);
+    // sustained: back to back for 4 s; one rate per 100 ms window (whole launches, events around each window)
+    const double flops = 2.0 * 8 * iters * (double)grid * block;
+    std::vector<double> win;
+    for (double total = 0; total < 4000;) {
+        float ms = 0; int n = 0;
+        CK(cudaEventRecord(e0));
+        for (; ms < 100; n++) {
+            ffma_k<<<grid, block>>>(out, iters, 0.999f, 1e-4f, 0);
+            if (n % 4 == 3) { CK(cudaEventRecord(e1)); CK(cudaEventSynchronize(e1)); CK(cudaEventElapsedTime(&ms, e0, e1)); }
+        }
+        CK(cudaEventRecord(e1)); CK(cudaEventSynchronize(e1)); CK(cudaEventElapsedTime(&ms, e0, e1));
+        win.push_back(flops * n / (ms * 1e6)); total += ms;
+    }
+    std::vector<double> last(win.end() - std::min<size_t>(10, win.size()), win.end());
+    std::sort(last.begin(), last.end());
+    const double sus = last[last.size() / 2];
+    size_t settle = win.size();
+    while (settle > 0 && std::fabs(win[settle - 1] / sus - 1) < 0.02) settle--;
+    printf("ffma sustained_flops_per_ns=%.0f sustained_clock_khz=%.0f settle_ms=%zu windows=%zu first=%.0f\n", sus,
+           sus / (2.0 * sms * lanes) * 1e6, settle * 100, win.size(), win[0]);
     CK(cudaFree(out));
+}
+// head: a tiny kernel, then n kernels of sms x 256 threads, right after a synchronize; host wall to the next synchronize
+__global__ void tiny_k(float* o) { if (threadIdx.x == 0) o[blockIdx.x] += 1.f; }
+__global__ void work_k(float* o, int pdl) {
+#if __CUDA_ARCH__ >= 900
+    if (pdl) asm volatile("griddepcontrol.wait;" ::: "memory");
+#endif
+    o[blockIdx.x * blockDim.x + threadIdx.x] += 1.f;
+}
+static void head_run() {
+    int major = 0; CK(cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, 0));
+    if (major < 9) { printf("head pdl_head_ns=0 (no griddepcontrol)\n"); return; }
+    float* o; CK(cudaMalloc(&o, (size_t)sms * 256 * 4)); CK(cudaMemset(o, 0, (size_t)sms * 256 * 4));
+    for (int n : {1, 2, 4}) {
+        std::vector<double> t[2];
+        for (int rep = 0; rep < 420; rep++) {
+            for (int pdl = 0; pdl < 2; pdl++) {
+                CK(cudaDeviceSynchronize());
+                auto a = std::chrono::steady_clock::now();
+                tiny_k<<<1, 32>>>(o);
+                for (int i = 0; i < n; i++) {
+                    cudaLaunchAttribute at[1];
+                    at[0].id = cudaLaunchAttributeProgrammaticStreamSerialization;
+                    at[0].val.programmaticStreamSerializationAllowed = pdl;
+                    cudaLaunchConfig_t cfg = {};
+                    cfg.gridDim = sms; cfg.blockDim = 256; cfg.attrs = at; cfg.numAttrs = 1;
+                    CK(cudaLaunchKernelEx(&cfg, work_k, o, pdl));
+                }
+                CK(cudaDeviceSynchronize());
+                if (rep >= 20) t[pdl].push_back(std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - a).count());
+            }
+        }
+        for (auto& v : t) std::sort(v.begin(), v.end());
+        printf("head n=%d plain_ns=%.0f pdl_ns=%.0f diff_ns=%.0f\n", n, t[0][t[0].size() / 2], t[1][t[1].size() / 2],
+               t[1][t[1].size() / 2] - t[0][t[0].size() / 2]);
+    }
+    CK(cudaFree(o));
 }
 int main(int argc, char** argv) {
     cudaDeviceProp p; CK(cudaGetDeviceProperties(&p, 0)); sms = p.multiProcessorCount;
@@ -380,5 +450,6 @@ int main(int argc, char** argv) {
     if (on("gsync")) gsync_run();
     if (on("copy")) copy_run();
     if (on("ffma")) ffma_run(p.major * 10 + p.minor);
+    if (on("head")) head_run();
     return 0;
 }

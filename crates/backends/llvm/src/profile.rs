@@ -167,8 +167,11 @@ pub struct Gpu {
     /// file's measured FFMA peak over `sms · 2 · clock`. Plan cost and the
     /// FFMA-per-byte balance ([`Self::ffma_per_dram_byte`]) read it.
     pub fp32_lanes: u64,
-    /// The SM clock, kHz: under load where measured (calibration), else the
-    /// device query's `CU_DEVICE_ATTRIBUTE_CLOCK_RATE`.
+    /// The SM clock, kHz: the **sustained** clock under continuous FFMA load
+    /// where measured (`calib.cu ffma`'s `sustained_clock_khz`: what a power
+    /// or thermal limit holds — the 250 W RTX 4090 box 1.96 GHz against its
+    /// 2.52 GHz boost), else the device query's `CU_DEVICE_ATTRIBUTE_CLOCK_RATE`.
+    /// Rates read it (FFMA peak, plan cost); no rung rule reads it alone.
     pub clock_khz: u64,
     /// hardware-properties: the DRAM interface clock, kHz
     /// (`CU_DEVICE_ATTRIBUTE_MEMORY_CLOCK_RATE`); with [`Self::mem_bus_bits`]
@@ -400,6 +403,12 @@ pub struct DeviceCost {
     /// later ones cost a plain launch), in ns. A cooperative launch the
     /// program issues once pays all of it. 0 = not measured: not priced.
     pub coop_first_ns: u64,
+    /// cross-arch `row-split`: what one SM streams alone from an L2-resident
+    /// operand, bytes per ns — the rate of a retained row's unsplit pass
+    /// (one block walks the row; `calib.cu bw`, the best `sms=1` L2 point:
+    /// H100 SXM 147, A100 81, RTX 4090 77, RTX 3090 62, RTX 5080 94). 0 = not
+    /// measured: the split is not priced (the property rule alone).
+    pub sm_bytes_per_ns: u64,
 }
 
 /// A [`DeviceCost`] without the plan-cost rates: the parts that keep the
@@ -429,6 +438,7 @@ pub const NO_PLAN: DeviceCost = DeviceCost {
     pageable_pm: 0,
     row_iter_ns: 0,
     coop_first_ns: 0,
+    sm_bytes_per_ns: 0,
 };
 
 impl DeviceCost {
@@ -437,7 +447,7 @@ impl DeviceCost {
     /// overrides by name ([`Gpu::fp32_lanes`], [`Gpu::clock_khz`], and the
     /// hardware-properties the rung rules read: SMs, L2, shared memory,
     /// threads, registers and blocks per SM, the DRAM interface).
-    pub const NAMES: [&'static str; 34] = [
+    pub const NAMES: [&'static str; 35] = [
         "flops_per_ns",
         "bytes_per_ns",
         "launch_ns",
@@ -462,6 +472,7 @@ impl DeviceCost {
         "pageable_pm",
         "row_iter_ns",
         "coop_first_ns",
+        "sm_bytes_per_ns",
         "fp32_lanes",
         "clock_khz",
         "sms",
@@ -519,7 +530,7 @@ pub type CostOver = [Option<u64>; DeviceCost::NAMES.len()];
 impl Gpu {
     /// [`DeviceCost::NAMES`] that name a [`DeviceCost`] field (those before
     /// `fp32_lanes`).
-    const NAMES_COST: usize = 24;
+    const NAMES_COST: usize = 25;
 
     /// This part with the overrides in `over` applied (a part without a
     /// [`DeviceCost`] takes one from [`NO_PLAN`]).
@@ -552,6 +563,7 @@ impl Gpu {
                 "pageable_pm" => &mut d.pageable_pm,
                 "row_iter_ns" => &mut d.row_iter_ns,
                 "coop_first_ns" => &mut d.coop_first_ns,
+                "sm_bytes_per_ns" => &mut d.sm_bytes_per_ns,
                 "fp32_lanes" => &mut self.fp32_lanes,
                 "clock_khz" => &mut self.clock_khz,
                 "sms" => &mut self.sms,
@@ -599,6 +611,7 @@ impl Gpu {
             "pageable_pm" => d.pageable_pm,
             "row_iter_ns" => d.row_iter_ns,
             "coop_first_ns" => d.coop_first_ns,
+            "sm_bytes_per_ns" => d.sm_bytes_per_ns,
             "fp32_lanes" => self.fp32_lanes,
             "clock_khz" => self.clock_khz,
             "sms" => self.sms,
@@ -1073,8 +1086,8 @@ pub fn wave_full(blocks: u64, sms: u64) -> bool {
 /// hand-written spellings of rented parts, each carrying its physical
 /// properties. A list for tests that sweep parts — no decision reads it.
 #[cfg(test)]
-pub const GPU_PARTS: [&TargetProfile; 6] = [
-    &RTX_4090, &H100_PCIE, &RTX_5090, &RTX_3090, &A100, &RTX_5080,
+pub const GPU_PARTS: [&TargetProfile; 7] = [
+    &RTX_4090, &H100_PCIE, &RTX_5090, &RTX_3090, &A100, &RTX_5080, &H100,
 ];
 
 /// The tensor-core tile geometry for one tile site on the TF32 face (S52):
@@ -3499,17 +3512,26 @@ pub const RTX_4090: TargetProfile = TargetProfile {
             // zero-fold: not measured on this part (no fold: unpriced).
             fill_bytes_per_ns: 0,
             tail_bytes_per_ns: 0,
-            gsync_ns: 0,
+            // cross-arch (`benches/results/evidence/cross-arch/README.md`, `calib.cu gsync` / `bw` on the
+            // vast box, 2026-11-21): grid barrier 502 ns, dependent launch
+            // 1440 ns, cooperative 2660 ns (block 256, grid <= sms); one SM
+            // alone streams 77 B/ns from L2.
+            gsync_ns: 502,
             gsync_block_ps: 0,
-            dep_launch_ns: 0,
+            dep_launch_ns: 1440,
             dep_launch_block_ps: 0,
             pdl_launch_ns: 0,
-            coop_launch_ns: 0,
+            coop_launch_ns: 2660,
             pageable_pm: 0,
             row_iter_ns: 0,
             coop_first_ns: 0,
+            sm_bytes_per_ns: 77,
         }),
-        // E1 header: 128 FP32 lanes per SM (sm_89), 2.52 GHz under load.
+        // E1 header: 128 FP32 lanes per SM (sm_89), 2.52 GHz under load. The
+        // cross-arch box (power limit 250 W of the part's 450) sustained
+        // 1.955 GHz (`calib.cu ffma`): a box's limit, carried by its
+        // calibration line (`native-gpu`), not the part's rating; no rung rule
+        // reads the clock alone (`rules.rs` `DRAM_PER_SM_LOW`).
         fp32_lanes: 128,
         clock_khz: 2_520_000,
         // GDDR6X at 21 Gb/s on 384 bits: 1008 GB/s (device query
@@ -3535,8 +3557,25 @@ pub const H100: TargetProfile = TargetProfile {
         max_blocks_per_sm: 32,
         // 50 MB (H100 whitepaper; unmeasured on the SXM part).
         l2_bytes: 50 * 1024 * 1024,
-        // Datasheet: HBM3 3.35 TB/s on 5120 bits, 1.98 GHz boost.
-        clock_khz: 1_980_000,
+        // cross-arch (`benches/results/evidence/cross-arch/README.md`, `calib.cu` on the vast SXM box at
+        // its 700 W limit, 2026-11-21): DRAM 3186 / L2 3990 GB/s read, one SM
+        // alone 147 B/ns (L2); grid barrier 910 ns, dependent launch 1722 ns,
+        // programmatic dependent launch 734 ns, cooperative 1839 ns (block
+        // 256, grid <= sms). Every device-query fact equals this spelling.
+        cost: Some(DeviceCost {
+            l2_bytes_per_ns: 3990,
+            dram_bytes_per_ns: 3186,
+            gsync_ns: 910,
+            dep_launch_ns: 1722,
+            pdl_launch_ns: 734,
+            coop_launch_ns: 1839,
+            sm_bytes_per_ns: 147,
+            ..NO_PLAN
+        }),
+        // HBM3 3.35 TB/s on 5120 bits (datasheet; query `mem=2619000x5120`);
+        // the FFMA peak under load 61.07 Tflop/s = 1.807 GHz at 128 lanes
+        // (`calib.cu ffma`; boost 1.98 GHz).
+        clock_khz: 1_807_000,
         mem_clock_khz: 2_619_000,
         mem_bus_bits: 5120,
         caps: CAPS_WARPGROUP_MMA,
@@ -3640,6 +3679,7 @@ pub const RTX_5090: TargetProfile = TargetProfile {
             pageable_pm: 0,
             row_iter_ns: 0,
             coop_first_ns: 0,
+            sm_bytes_per_ns: 0,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_120), 2.41 GHz under load.
         fp32_lanes: 128,
@@ -3741,6 +3781,9 @@ pub const RTX_5080: TargetProfile = TargetProfile {
             // 44.8 us median [39.4-52.7] against `cuLaunchKernelEx` 6.7 us;
             // the next ones of a process 3-7 us (a looped program).
             coop_first_ns: 38_000,
+            // cross-arch `row-split`: one SM alone streams 94 B/ns from L2
+            // (`calib.cu bw`, the best `sms=1` point, 2026-11-21).
+            sm_bytes_per_ns: 94,
         }),
         // 128 FP32 lanes per SM (sm_120); E1 peak FFMA median 52.7 Tflop/s
         // [50.3–57.6] / (84 SMs · 128 · 2) = 2.45 GHz under load.
@@ -3773,11 +3816,22 @@ pub const RTX_3090: TargetProfile = TargetProfile {
             flops_per_ns: 22325,
             bytes_per_ns: 161,
             launch_ns: 18217,
+            // cross-arch (`benches/results/evidence/cross-arch/README.md`, `calib.cu` on the vast box at
+            // its stock 350 W, 2026-11-21): DRAM 891 / L2 2447 GB/s read, one
+            // SM alone 62 B/ns; grid barrier 514 ns, dependent launch 1472 ns,
+            // cooperative 2866 ns.
+            l2_bytes_per_ns: 2447,
+            dram_bytes_per_ns: 891,
+            gsync_ns: 514,
+            dep_launch_ns: 1472,
+            coop_launch_ns: 2866,
+            sm_bytes_per_ns: 62,
             ..NO_PLAN
         }),
-        // Datasheet: GDDR6X at 19.5 Gb/s on 384 bits (936 GB/s), 1.695 GHz
-        // boost.
-        clock_khz: 1_695_000,
+        // GDDR6X at 19.5 Gb/s on 384 bits (936 GB/s); the FFMA peak under
+        // load 32.77 Tflop/s = 1.561 GHz at 128 lanes (`calib.cu ffma`,
+        // cross-arch; boost 1.695 GHz).
+        clock_khz: 1_561_000,
         mem_clock_khz: 9_751_000,
         mem_bus_bits: 384,
         ..ADA_SM
@@ -3803,8 +3857,22 @@ pub const A100: TargetProfile = TargetProfile {
         max_blocks_per_sm: 32,
         // `facts l2_bytes=41943040` (base-a100*.txt, PCIe 40GB and SXM4).
         l2_bytes: 40 * 1024 * 1024,
-        // Datasheet (A100 40 GB): 64 FP32 lanes per SM, 1.41 GHz boost, HBM2
-        // 1.555 TB/s on 5120 bits.
+        // cross-arch (`benches/results/evidence/cross-arch/README.md`, `calib.cu` on the vast SXM4 40 GB
+        // box, 2026-11-21): DRAM 1488 / L2 2793 GB/s read, one SM alone
+        // 81 B/ns; grid barrier 1113 ns, dependent launch 2050 ns,
+        // cooperative 4714 ns.
+        cost: Some(DeviceCost {
+            l2_bytes_per_ns: 2793,
+            dram_bytes_per_ns: 1488,
+            gsync_ns: 1113,
+            dep_launch_ns: 2050,
+            coop_launch_ns: 4714,
+            sm_bytes_per_ns: 81,
+            ..NO_PLAN
+        }),
+        // Datasheet (A100 40 GB): 64 FP32 lanes per SM, 1.41 GHz boost (the
+        // FFMA peak under load measured 1.409 GHz), HBM2 1.555 TB/s on 5120
+        // bits.
         fp32_lanes: 64,
         clock_khz: 1_410_000,
         mem_clock_khz: 1_215_000,
@@ -6157,7 +6225,11 @@ mod tests {
     #[test]
     fn knobs_json_lists_every_knob_table_value_first() {
         let json = include_str!("../../../../benches/gpu/knobs.json");
-        for p in GPU_PARTS.into_iter().filter(|p| p.name != "rtx-5080") {
+        // The SXM H100 (cross-arch replay) never ran the offline search.
+        for p in GPU_PARTS
+            .into_iter()
+            .filter(|p| p.name != "rtx-5080" && p.name != "h100")
+        {
             let mut g = p.gpu().expect("a GPU part").geom;
             let row = json
                 .split(&format!("\"{}\":", p.name))

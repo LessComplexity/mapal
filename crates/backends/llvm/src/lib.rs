@@ -302,8 +302,15 @@ pub struct GpuRungs {
     /// Where the part has `griddepcontrol` and its measured programmatic
     /// launch is cheaper than a plain dependent one (`rules.rs`): a site
     /// launched right behind another kernel on its stream is a programmatic
-    /// dependent launch (`griddepcontrol.wait` at kernel entry).
+    /// dependent launch (`griddepcontrol.wait` at kernel entry) — in a module
+    /// whose launches repeat in a loop ([`rules::pdl_pays`]).
     pub pdl: bool,
+    /// cross-arch: under `pdl`, a tile kernel triggers its dependent's launch
+    /// at its entry (`griddepcontrol.launch_dependents`), so the dependent's
+    /// blocks wait resident beside it. Off: the trigger is the kernel's exit
+    /// (the launch still overlaps the drain). Off on every part (its ON arm
+    /// measures it).
+    pub pdl_early: bool,
     /// S62 `row-fit`: a thread grid taller than the site's rows (`ty·tm >
     /// rows`, `TileSite::rows`) trades rows of threads for columns until the
     /// block fits, keeping the thread count. Off: such a site takes the
@@ -731,6 +738,7 @@ impl GpuRungs {
         stream_gate: true,
         pinned: true,
         pdl: true,
+        pdl_early: true,
         row_fit: true,
         wave_gate: true,
         grid_share: true,
@@ -792,7 +800,7 @@ impl GpuRungs {
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 93] = [
+    pub const NAMES: [&'static str; 94] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -829,6 +837,7 @@ impl GpuRungs {
         "stream-gate",
         "pinned",
         "pdl",
+        "pdl-early",
         "row-fit",
         "wave-gate",
         "grid-share",
@@ -927,6 +936,7 @@ impl GpuRungs {
             "stream-gate" => &mut self.stream_gate,
             "pinned" => &mut self.pinned,
             "pdl" => &mut self.pdl,
+            "pdl-early" => &mut self.pdl_early,
             "row-fit" => &mut self.row_fit,
             "wave-gate" => &mut self.wave_gate,
             "grid-share" => &mut self.grid_share,
@@ -1765,7 +1775,7 @@ fn emit_module(
                 .split("@mapal_gpu_launchv(i64 ")
                 .skip(1)
                 .any(|t| t.split(", ").nth(1).is_some_and(|s| s != "i32 0")),
-            crate::func::gpu::pdl(profile, opts.contract, opts.gpu),
+            crate::func::gpu::pdl(ir, profile, opts.contract, opts.gpu),
         )
     } else {
         String::new()

@@ -20,13 +20,20 @@
 use crate::GpuRungs;
 use crate::profile::{Face, GPU_RESIDENT_BLOCKS, Gpu};
 
-/// FFMA flops per DRAM byte, per mille ([`Gpu::ffma_per_dram_byte_pm`]), at
-/// and above which a tile's operand stream is cheap against its arithmetic:
-/// the bigger register tile (`wide-fma`) and the `cp.async` panel under-filled
-/// (`async`, `kmajor-a`) pay. Between the rtx-4090 (81.9, both measured
-/// winning) and the rtx-5090 (58.5, both measured losing); the A100 (12.5),
-/// H100 PCIe (25.1) and RTX 3090 (38.0) lost too.
-pub const BALANCE_PM: u64 = 70_000;
+/// DRAM bytes per µs per SM ([`Gpu::dram_bytes_per_us_per_sm`]) below which
+/// each SM's share of the operand stream is scarce enough that more FFMA per
+/// loaded byte pays: the bigger register tile (`wide-fma`) and, under-filled,
+/// the `cp.async` panel (`async`, `kmajor-a`). Between the rtx-4090 (7 875,
+/// all three measured winning — at its 2.52 GHz rating and again on the
+/// cross-arch box capped to a sustained 1.96 GHz: wide-fma 17 W / 0 L,
+/// kmajor-a 10 / 0, async 3 / 0) and the rtx-5090 (10 541, async / kmajor-a
+/// lost, wide-fma mixed); the RTX 3090 / 5080 (11 414), A100 (14 398), H100
+/// PCIe (17 885) and SXM (25 393) lost or ship off. It replaces the FFMA per
+/// DRAM byte (`BALANCE_PM` 70 ‰): the capped 4090's measured clock put it
+/// at 63.6 ‰, under that threshold, while every rung still won — the clock
+/// is not what separates the parts; the DRAM rate an SM shares is (both are
+/// the same per-SM FFMA rate on every part but the A100).
+pub const DRAM_PER_SM_LOW: u64 = 9_200;
 
 /// FFMA flops per DRAM byte, per mille, at and above which `warp-fill`'s
 /// shrunk tile pays at one warp per scheduler on a contract face: the
@@ -65,6 +72,52 @@ pub const DRAM_PER_SM: u64 = 14_600;
 /// 0.35–0.84 of pinned won, boxes at 0.98–1.0 lost or were null.
 pub const PAGEABLE_PM: u64 = 900;
 
+/// cross-arch `row-split`: the dependent operations a split adds to a
+/// retained row's pass — the zero pass before it, and its own launch where
+/// the unsplit pass rides in a merged grid (kernel-merging `horizontal`; a
+/// split never merges). The H100 SXM's decode: 6144 launches against 4098
+/// unsplit, one more a site and trip, beside its memset.
+pub const ROW_SPLIT_OPS: u64 = 2;
+
+/// **cross-arch `row-split`, priced at the site**: whether splitting a
+/// retained row's pass over the part saves more than the operations it adds.
+/// The unsplit pass is one SM streaming the row's `row_bytes` (its `k · c`
+/// operand, L2-resident: [`crate::profile::DeviceCost::sm_bytes_per_ns`]);
+/// split, the part's DRAM rate streams it; the split adds [`ROW_SPLIT_OPS`]
+/// dependent launches ([`crate::profile::DeviceCost::dep_launch_ns`]).
+/// Unmeasured (either rate or the launch 0): not priced — the property rule
+/// ([`DRAM_PER_SM`]) alone. The H100 SXM's decode rows (256 × 256 floats,
+/// 1.7 µs a pass alone) against 3.4 µs of launches lost 0.81–0.87; the
+/// H100 PCIe's 1.41–1.56 wins predate the merged grids and its launches
+/// are unmeasured.
+pub fn row_split_pays(g: &Gpu, row_bytes: u64) -> bool {
+    let d = g.cost.unwrap_or(crate::profile::NO_PLAN);
+    if d.sm_bytes_per_ns == 0 || d.dep_launch_ns == 0 {
+        return true;
+    }
+    let all = d.dram_bytes_per_ns.max(g.dram_peak_bytes_per_ns()).max(1);
+    let saved = (row_bytes / d.sm_bytes_per_ns).saturating_sub(row_bytes / all);
+    saved > ROW_SPLIT_OPS * d.dep_launch_ns
+}
+
+/// **cross-arch `pdl`: whether a module's launches form a chain a
+/// programmatic launch pays on.** Each dependent launch saves
+/// `dep_launch_ns − pdl_launch_ns` (H100 SXM 988 ns, rtx-5080 164 ns); a
+/// program pays a fixed cost at the head of its chain (the waits it opens
+/// every kernel with, the launch path: rtx-5080 mlp_512 / convmc / fir
+/// +2.0 / +1.2 / +0.7 µs, H100 fir / pj_m1_n4096 / mlp_512 +1.5 / +1.4 /
+/// +3.4 µs; `calib.cu head`'s empty chains show none, so it is not the
+/// launch call). Straight-line programs issue one to four launches: at most
+/// a few saves against that head, and they lost on both parts (5080 0 W /
+/// 3 L, H100 0 W / 6 L beyond null). Launches repeated by a loop (`repeats`:
+/// a device site inside a canonical loop — the program's chain grows with
+/// its trips) won on both (5080 decode / causal / gen / prefill 0.91–0.92;
+/// H100 the same four 0.79–0.93, the model decodes, loopmm, rt_mlp2_2048).
+pub fn pdl_pays(g: &Gpu, repeats: bool) -> bool {
+    let d = g.cost.unwrap_or(crate::profile::NO_PLAN);
+    g.has_griddepcontrol() && d.pdl_launch_ns > 0 && d.pdl_launch_ns < d.dep_launch_ns && repeats
+}
+
 /// FP32 lanes per SM below which the exact face's fully unrolled panel loop
 /// costs (`unroll`): the A100's 64-lane SM lost on the exact face.
 pub const FULL_FP32_LANES: u64 = 128;
@@ -77,17 +130,17 @@ pub fn rungs(g: &Gpu, wps: u64, face: Face) -> GpuRungs {
     let exact = face == Face::Exact;
     let contract = !exact;
     let tf32 = face == Face::Tf32;
-    let balance = g.ffma_per_dram_byte_pm().is_some_and(|b| b >= BALANCE_PM);
+    let scarce = g.dram_peak_bytes_per_ns() > 0 && g.dram_bytes_per_us_per_sm() < DRAM_PER_SM_LOW;
     let fill_balance = g
         .ffma_per_dram_byte_pm()
         .is_some_and(|b| b >= FILL_BALANCE_PM);
     let regs_tight = g.regs_per_resident_thread() <= REGS_PER_RESIDENT_THREAD;
     let small_l2 = g.l2_bytes_per_sm() < L2_PER_SM;
     let cost = g.cost.unwrap_or(crate::profile::NO_PLAN);
-    // `cp.async` panels: under-filled on a compute-rich part (the S53 4090
-    // 1024 cell 0.070 vs 0.101 ms; tile-efficiency 22 W / 0 L on the async
-    // path); filled, register staging wins on every measured part.
-    let cp_async = under && balance;
+    // `cp.async` panels: under-filled where an SM's DRAM share is scarce (the
+    // S53 4090 1024 cell 0.070 vs 0.101 ms; tile-efficiency 22 W / 0 L on the
+    // async path); filled, register staging wins on every measured part.
+    let cp_async = under && scarce;
     GpuRungs {
         affine: (exact && under) || (contract && filled),
         cp_async,
@@ -95,7 +148,7 @@ pub fn rungs(g: &Gpu, wps: u64, face: Face) -> GpuRungs {
         // and loses on a register-staged copy (3090 / H100 / 5090, the
         // 4090 filled) — the panel the async rule picks.
         kmajor_a: cp_async,
-        wide_fma: balance,
+        wide_fma: scarce,
         min_blocks: match (tf32, filled) {
             (true, false) => false,
             (_, true) => !regs_tight,
@@ -127,9 +180,14 @@ pub fn rungs(g: &Gpu, wps: u64, face: Face) -> GpuRungs {
         splitk: !(exact && small_l2),
         unroll: !(exact && g.fp32_lanes < FULL_FP32_LANES),
         row_split: g.dram_bytes_per_us_per_sm() >= DRAM_PER_SM,
-        pdl: g.has_griddepcontrol()
-            && cost.pdl_launch_ns > 0
-            && cost.pdl_launch_ns < cost.dep_launch_ns,
+        // The part's side of `pdl` ([`pdl_pays`] adds the module's chain).
+        pdl: pdl_pays(g, true),
+        // cross-arch: a tile kernel lets its dependent launch at its entry
+        // (`griddepcontrol.launch_dependents`) only under this arm: the
+        // dependent's blocks then sit resident beside the producer's; the
+        // exit trigger keeps the launch overlap (rtx-5080 decode 0.905 exit
+        // vs 0.918 entry, the rest within 1 %).
+        pdl_early: false,
         pinned: cost.pageable_pm > 0 && cost.pageable_pm < PAGEABLE_PM,
         // stream-K: filled (its forgone filled cells won on the H100 and the
         // 3090); under-filled it lost on the 5080's skinny projections and
@@ -157,7 +215,7 @@ pub fn rungs(g: &Gpu, wps: u64, face: Face) -> GpuRungs {
 mod tests {
     use super::*;
     use crate::profile::{
-        GPU_PARTS, Machine, NO_PLAN, RTX_4090, RTX_5080, RTX_5090, TargetProfile, resolve,
+        DeviceCost, GPU_PARTS, Machine, RTX_4090, RTX_5080, RTX_5090, TargetProfile, resolve,
         wave_full,
     };
     use mapal_ir::Ty;
@@ -187,7 +245,7 @@ mod tests {
     /// `local-rtx-5080/hardware-properties.md`. The replay must find exactly
     /// these: a rule change that fixes one moves it out, one that breaks a
     /// measurement fails here.
-    const OPEN: [(&str, &str, &str, &str); 13] = [
+    const OPEN: [(&str, &str, &str, &str); 16] = [
         // The launch does not read whether its operands are in L2 (flushed
         // L2 wins, warm L2 and the composed MLP lose): `residence_plan`.
         ("asyncstage", "h100-pcie", "on", "l2-flushed"),
@@ -218,6 +276,13 @@ mod tests {
         // yields the 8-block grid to the cell tile, which the row-fit line
         // measured 4x faster: re-measure the gate against the cell tile.
         ("wave-gate", "h100-pcie", "off", "blocks=8"),
+        // cross-arch: `min-blocks` won filled on the H100 SXM and the A100
+        // (32 registers a resident thread, where the H100 PCIe's cap spilled
+        // 8-16 B and lost) — the derived residency's register cap against
+        // the tile's own registers, per site, is the open fact (`rules.md`).
+        ("min-blocks", "h100", "on", "-"),
+        ("min-blocks", "h100", "on", "-"),
+        ("min-blocks", "a100", "on", "-"),
     ];
 
     /// **hardware-properties: every cited measurement, replayed.** For each
@@ -252,10 +317,30 @@ mod tests {
                 .find(|p| p.name == part)
                 .unwrap_or_else(|| panic!("{line}: not a replayed part"));
             let mut g = *p.gpu().expect("gpu");
-            if let Some(v) = cond.strip_prefix("pageable_pm=") {
-                let mut d = g.cost.unwrap_or(NO_PLAN);
-                d.pageable_pm = v.parse().expect("pageable_pm");
-                g.cost = Some(d);
+            // A condition the part's profile does not carry: a measured
+            // property of the box (`name=value`, a `--cost=` name: the host's
+            // pageable rate, a capped clock), or a site's geometry
+            // (`row_bytes=`, `repeats=`), comma-separated.
+            let mut row_bytes = None;
+            let mut repeats = None;
+            for kv in cond.split(',') {
+                let Some((k, v)) = kv.split_once('=') else {
+                    continue;
+                };
+                match k {
+                    "row_bytes" => row_bytes = Some(v.parse::<u64>().expect("row_bytes")),
+                    "repeats" => repeats = Some(v == "1"),
+                    "blocks" => {}
+                    _ => {
+                        let n: u64 = v.parse().expect(line);
+                        let mut over = [None; DeviceCost::NAMES.len()];
+                        over[DeviceCost::NAMES
+                            .iter()
+                            .position(|x| *x == k)
+                            .unwrap_or_else(|| panic!("{line}: {k}"))] = Some(n);
+                        g = g.with_cost(&over);
+                    }
+                }
             }
             let fills: Vec<u64> = match fill {
                 "U0" => vec![0],
@@ -300,6 +385,13 @@ mod tests {
                     let guard = !(e.rung == "fold-lanes" && e.cond == "colmajor");
                     let r = rungs(&g, wps, fc);
                     let mut v = r.get(e.rung) && guard;
+                    // The site's side of the priced rules.
+                    if let (Some(b), "row-split") = (row_bytes, e.rung) {
+                        v = v && row_split_pays(&g, b);
+                    }
+                    if let (Some(rep), "pdl") = (repeats, e.rung) {
+                        v = pdl_pays(&g, rep);
+                    }
                     // A row-fitted grid's blocks: where `wave-gate` gates,
                     // its fact decides whether the fitted grid runs
                     // (`row-fit`) or yields (`wave-gate`).
@@ -330,7 +422,7 @@ mod tests {
         }
         assert_eq!(open, OPEN.to_vec(), "measurements the rules do not pick");
         // The counts the evidence file reports.
-        assert_eq!((picked, null, mixed, open.len()), (95, 67, 4, 13));
+        assert_eq!((picked, null, mixed, open.len()), (102, 67, 9, 16));
     }
 
     /// No rule reads a name, an architecture string or a version: a part
@@ -355,9 +447,28 @@ mod tests {
         // The 5080 and 5090 share an SM; the rules see their properties.
         let b = RTX_5090.gpu().expect("gpu");
         let f = RTX_5080.gpu().expect("gpu");
-        assert!(b.ffma_per_dram_byte_pm() < Some(BALANCE_PM));
-        assert!(f.ffma_per_dram_byte_pm() < Some(BALANCE_PM));
-        assert!(RTX_4090.gpu().unwrap().ffma_per_dram_byte_pm() >= Some(BALANCE_PM));
+        assert!(b.dram_bytes_per_us_per_sm() >= DRAM_PER_SM_LOW);
+        assert!(f.dram_bytes_per_us_per_sm() >= DRAM_PER_SM_LOW);
+        assert!(RTX_4090.gpu().unwrap().dram_bytes_per_us_per_sm() < DRAM_PER_SM_LOW);
+        // cross-arch: the 4090 box capped to a sustained 1.96 GHz takes the
+        // same rungs as the part at its 2.52 GHz rating — no rule reads the
+        // clock alone.
+        let capped = crate::profile::Gpu {
+            clock_khz: 1_955_131,
+            ..*RTX_4090.gpu().unwrap()
+        };
+        for wps in [0, 1, 2, 4, 64] {
+            for face in [Face::Exact, Face::Contract, Face::Tf32] {
+                let (a, c) = (
+                    rungs(RTX_4090.gpu().unwrap(), wps, face),
+                    rungs(&capped, wps, face),
+                );
+                assert_eq!(
+                    (a.wide_fma, a.cp_async, a.kmajor_a),
+                    (c.wide_fma, c.cp_async, c.kmajor_a)
+                );
+            }
+        }
         // pdl reads the measured launches: the 5080's programmatic launch
         // (486 ns) is cheaper than its plain one (650 ns); the 5090 has
         // none measured.

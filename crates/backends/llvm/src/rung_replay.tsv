@@ -6,6 +6,10 @@
 # condition the part's profile does not carry (pageable_pm=<host ratio>, colmajor: the fold's operand stored
 # column-major, blocks=<the row-fitted grid's blocks>, l2-flushed, free-order, conv-site), and the source (results files under benches/results/gpu/ and
 # benches/results/evidence/; the former GPU_RUNGS_OFF rows' cites, f3a9e792).
+# A cond may name a measured property of the box the part's profile does not carry (`<cost name>=<value>`, e.g. a
+# power-capped clock) or the site's side of a priced rule (`row_bytes=`: a retained row's k x c operand bytes;
+# `repeats=1|0`: the module's launches repeat in a loop or not), comma-separated. cross-arch lines: the round on
+# 8bba2a50 (benches/results/evidence/cross-arch/README.md, rules.md; raw .claude/raw-evidence/cross-arch/<part>/).
 # rung	part	fill	face	winner	cond	source
 affine	a100	A	E	null	-	base-a100 / -confirm _exact OFF/ON 1.004/1.006/0.991 vs 1.019/1.012/0.986, n=1024 0.997 vs 0.993
 affine	h100-pcie	F	E	off	-	integrated-h100-pcie-confirm _exact 2048/4096/8192 off 1.08x/1.20x/1.23x faster (S64 judge row 9: explained)
@@ -180,9 +184,24 @@ wide-fma	h100-pcie	A	EC	off	-	fma-regs-h100-pcie staging _c on 0.795/4.054/33.09
 wide-fma	rtx-3090	F	E	off	-	base-rtx-3090 / -confirm _exact OFF/ON 0.959/0.936/0.991 vs 0.956/0.904/0.961
 wide-fma	rtx-4090	F	C	on	-	fma-regs-effects rtx-4090 _c sync wide-fma 2048/4096/8192 ON 0.304/2.509/22.072 vs OFF 0.324/2.698/23.258 ms
 wide-fma	rtx-5090	F	C	mixed	-	fma-regs-rtx-5090 staging 2048/4096/8192 on 0.344/3.194/26.885 vs off 0.348/2.947/28.434 ms (4096 disjoint loss, 8192 gain)
-pdl	rtx-5080	A	EC	on	-	hardware-properties ABBA (16 processes an arm) no-pdl / rules: decode_1024_256 0.921, causal_1024_256 0.906, gen_1024_512_256 0.919, prefill_1024_512_256 0.910 (iteration ms 9.64 / 8.88, 16.80 / 15.22, 8.51 / 7.82, 8.96 / 8.15)
+pdl	rtx-5080	A	EC	on	repeats=1	hardware-properties ABBA (16 processes an arm) no-pdl / rules: decode_1024_256 0.921, causal_1024_256 0.906, gen_1024_512_256 0.919, prefill_1024_512_256 0.910 (iteration ms 9.64 / 8.88, 16.80 / 15.22, 8.51 / 7.82, 8.96 / 8.15)
 warp-fill	rtx-5080	U1	C	on	-	hardware-properties suite (two ON runs): without the shrink at one warp a scheduler loopmm_1024_8 0.810 / 0.809 vs 0.651 ms, smlp_4096_256_1024 0.193 / 0.192 vs 0.167 ms; with it (the rule) ABBA 1.003 / 1.003 of the f3a9e792 emission
 warp-fill	rtx-5080	F	C	off	-	hardware-properties first ON session: pj_m16_n18432_k7168 shrunk to 4 x 4 (576 blocks) 0.672 vs 0.611 ms unshrunk (that session's other programs raced: pdl without waits)
 wave-gate	rtx-5080	F	C	off	blocks=16	hardware-properties suite (two ON runs): pj_m16_n2048_k7168 gated (cell tile + stream-K) 0.0809 / 0.0755 vs kept (16 fitted blocks x splitk 4) 0.0486 ms; tile_bench 16x2048x7168 default 0.1495 vs 0.1126 ms
 linear	rtx-5080	A	EC	off	-	hardware-properties first ON session: indep_512 as one linear launch 0.0475 vs the two site tables 0.0401 ms (that session's other programs raced: pdl without waits)
-pdl	rtx-5080	A	EC	mixed	-	hardware-properties ABBA no-pdl / rules on short programs: fir_4194304_16 1.022, convmc_8_64_56_3 1.015, mlp_512 1.026 (spreads 7-31 %); suite mlp_512 1.06 / 1.09 — the loops above gain 8-9 %
+pdl	rtx-5080	A	EC	off	repeats=0	hardware-properties ABBA no-pdl / rules on short programs: fir_4194304_16 1.022, convmc_8_64_56_3 1.015, mlp_512 1.026 (spreads 7-31 %); suite mlp_512 1.06 / 1.09 — the loops above gain 8-9 %; cross-arch 3-arm run (rules / exit trigger / no pdl, 10 rounds): mlp_512 1.043 / 1.040, convmc_8_64_56_3 1.015 / 1.017, fir_4194304_16 1.013 / 1.013 of no-pdl
+wide-fma	rtx-4090	F	C	on	clock_khz=1955131	cross-arch off-wide-fma on the 250 W box (sustained 1.955 GHz: 63.6 flop/B): 17 W / 9 null / 0 L, geomean OFF/ON 1.032 (pj_m2048_n4096_k14336 4.498 vs 4.221, loop_4096 20.18 vs 19.16 ms)
+kmajor-a	rtx-4090	U	C	on	clock_khz=1955131	cross-arch off-kmajor-a: 10 W / 16 null / 0 L (indep_512 0.04792 vs 0.04096, pj_m128_n6144_k4096 0.2989 vs 0.2582 ms)
+async	rtx-4090	U	C	on	clock_khz=1955131	cross-arch off-async: 3 W / 17 null / 0 L (pj_m128_n6144_k4096 0.2981 vs 0.2582, indep_512 0.04469 vs 0.04096 ms)
+row-split	h100	A	C	off	row_bytes=262144	cross-arch off-row-split (the 256 x 256 retained rows; 6144 vs 4098 launches, kernel 51.1 vs 38.3 ms): decode 0.811, gen 0.860, causal 0.866, prefill 0.869
+pdl	h100	A	C	off	repeats=0	cross-arch on-pdl (734 < 1722 ns), straight-line programs: smlp 1.489, indep_512 1.293, mlp_512 1.069, fir 1.040, pj_m1_n4096_k4096 1.034 (0 W)
+pdl	h100	A	C	mixed	repeats=1	cross-arch on-pdl, loops: gen 0.788, causal 0.790, prefill 0.796, decode 0.922, llm_dec_b1_l2048 0.972 won; rt_mlp2_1024 1.189, llm_blkpre_t2048_tf32 1.120, llm_blkdec_b1_l4096 1.099 lost (tile-kernel chains, measured with the entry trigger)
+min-blocks	h100	F	EC	on	-	cross-arch on-min-blocks: 17 filled programs 0.946-0.979 of off (epi_4096, loop_4096, pj_m2048 x4, mlp_2048, softmax_rows_4096, rowsum_4096 ...); off won m1 / m16 projections and mlp_512 1.02-1.03
+min-blocks	h100	U	C	on	-	cross-arch on-min-blocks: llm_blkdec_b1_l4096 0.696 (its under-filled 112-block row-fitted tiles), pj_m128_n6144_k4096 1.101 (off won)
+min-blocks	a100	F	C	on	-	cross-arch on-min-blocks: pj_m16 x5 0.948-0.971, pj_m2048_n4096_k14336 0.967; off won mlp2_2048 1.023, llm_dec_b32_l8192 1.069
+warp-fill	rtx-3090	U1	C	mixed	-	cross-arch on-warp-fill: attn 0.675, llm_dec_b8 0.859 / 0.946, pj_m16_n2048 0.860 lost by the rule; pj_m128_n6144 1.390, rt_mlp2_1024 1.107, loopmm 1.054 won
+warp-fill	a100	A	C	mixed	-	cross-arch on-warp-fill: pj_m16_n4096_k14336 0.613, pj_m16_n6144 0.684, convmc 0.730 / 0.727, attn 0.812 lost by the rule; loopmm 1.167, pj_m16_n28672 1.124, smlp 1.092 won
+warp-fill	h100	A	C	mixed	-	cross-arch on-warp-fill: pj_m16_n6144 0.712, pj_m16_n4096 0.818, pj_m16_n2048 0.913, convmc 0.949 lost by the rule; pj_m16_n28672 1.086 won
+grid-share	rtx-3090	F	C	off	-	cross-arch on-grid-share: pj_m16_n4096_k14336 2.195, pj_m16_n6144 1.654, pj_m16_n2048 1.448, pj_m16_n4096 1.353, pj_m16_n18432 1.221 (the rule's off won); 12 W / 35 null / 6 L
+grid-share	rtx-3090	U	C	mixed	-	cross-arch on-grid-share at the 1024 x 256 x 256 site (wps 0, 128 blocks): gen 1.290, causal 1.299 won by off, decode 0.864 (null 11 %) lost; convmc (wps 2) 0.909 / 0.869 lost
+panel-regs	rtx-3090	A	C	mixed	-	cross-arch on-panel-regs: 1 W / 47 null / 3 L (indep_512 0.940, pj_m16_n2048 0.957, pj_m1_n2048 0.967; pj_m1_n6144 1.028)
