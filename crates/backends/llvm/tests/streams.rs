@@ -3,7 +3,7 @@
 //! sm_90+. Each test reads the placement off the emitted `mapal_gpu_*` calls;
 //! the values are the box differential's job.
 
-use mapal_backend_llvm::{Emission, EmitOpts, GpuArms, emit_detailed};
+use mapal_backend_llvm::{emit_detailed, Emission, EmitOpts, GpuArms};
 use mapal_ir::CategoryIr;
 
 fn lower_src(src: &str) -> CategoryIr {
@@ -412,14 +412,15 @@ fn a_one_element_read_is_not_pinned() {
 }
 
 #[test]
-fn pdl_is_hopper_and_later_only() {
+fn pdl_needs_the_capability_and_a_repeating_chain() {
     let src = diamond(64);
-    // Shipped: `pdl` where the part has `griddepcontrol` and a measured
-    // programmatic launch cheaper than a plain one — the rtx-5080 (486 vs
-    // 650 ns); the H100 / 5090 measured none (their arms had no stable sign).
-    let e = emit(&src, "rtx-5080", on());
-    assert_eq!(init_flags(&e.text) & 4, 4);
-    for part in [H100, "rtx-5090"] {
+    // Shipped (`rules::pdl_pays`): `pdl` where the part has `griddepcontrol`, a
+    // measured programmatic launch cheaper than a plain one, AND the module's
+    // device launches repeat (a loop trip). The diamond is straight-line, so no
+    // part ships it here — not the rtx-5080 (486 vs 650 ns) nor the H100 SXM
+    // (734 vs 1722 ns); the loop case is covered on generated programs by
+    // hardware_properties.rs `pdl_rides_loops_and_row_split_is_priced_on_unseen_programs`.
+    for part in ["rtx-5080", H100, "rtx-5090"] {
         let e = emit(&src, part, on());
         assert!(
             !e.device.expect("device").contains("griddepcontrol"),
@@ -435,6 +436,7 @@ fn pdl_is_hopper_and_later_only() {
     assert!(kernels > 0);
     assert_eq!(dev.matches("griddepcontrol.wait;").count(), kernels);
     assert_eq!(init_flags(&h.text) & 4, 4);
+    // Parts without the `griddepcontrol` capability never take it, even forced.
     for part in ["rtx-4090", "rtx-3090", "a100"] {
         let e = emit(&src, part, forced(&["pdl"]));
         assert!(
@@ -680,11 +682,9 @@ fn grouped_member_row_fold_keeps_its_ordered_whole_copy() {
         let t = calls(&e.text);
         let first = t.iter().position(|x| x == "launchv 1").expect("producer");
         assert_eq!(t[first + 1], "d2h_on 1", "{t:?}");
-        assert!(
-            mapal_main(&e.text)
-                .lines()
-                .any(|l| l.contains("@mapal_gpu_d2h_on(i32 1,") && l.contains("i64 16384)"))
-        );
+        assert!(mapal_main(&e.text)
+            .lines()
+            .any(|l| l.contains("@mapal_gpu_d2h_on(i32 1,") && l.contains("i64 16384)")));
         // The existing base-output row-fold veto also remains conservative.
         let raw = GROUPED_ROW_FOLD.replace("acc + h1[i * 64 + j]", "acc + c1[i * 64 + j]");
         let e = s64(&raw, contract);
