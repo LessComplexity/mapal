@@ -117,9 +117,12 @@ picks unchanged but for two marginal sites (rt_mlp2_1024 9dccf0 4 → 0 once, ml
 | rtx-5080 | one SM 94 (`calib/rtx-5080.calib` too) | clock 2.45 GHz (E1) |
 
 Hosts' pageable ratios stay replay conditions (a property of the box, not the part). The H100 SXM joins `GPU_PARTS`.
-Consequence: the 3090 and 4090 now price `calls` (kernel-merging persistent chains) with their measured barrier and
-launch costs — 32 of 208 candidate-0 hashes moved (4090 18, 3090 14: decode, attn, mlp_2048_tf32, rq_mlp2_512, smlp,
-twin_512, px_mlp2_64_f64), unmeasured in time on those parts (the final round).
+Consequence: the 3090, 4090 and a100 priced `calls` (kernel-merging persistent chains) with their measured barrier
+and launch costs alone — 32 of 208 candidate-0 hashes moved (4090 18, 3090 14: decode, attn, mlp_2048_tf32,
+rq_mlp2_512, smlp, twin_512, px_mlp2_64_f64; the a100 formed causal / gen / prefill), unmeasured in time on those parts.
+Reverted by the review fix (`../local-rtx-5080/review-fixes.md` §3): the rule also prices the bodies' measured change
+inside one kernel (`coop_body_ns`), which none of them has yet — no chain forms there until their forced suite chains
+measure it.
 
 ## RTX 5080 — this step's emission against HEAD (faa1f06f)
 

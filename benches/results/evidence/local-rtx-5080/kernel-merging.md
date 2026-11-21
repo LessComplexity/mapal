@@ -333,8 +333,10 @@ persistent kernel: each launch's body is a device function called over its own b
 fact (`access_plan`) orders. The host issues one cooperative launch instead of `k`. No runtime graph: the chain, its
 levels, its barriers and the kernel text are compile-time.
 
-**Result on the rtx-5080: the rule refuses every chain of the suite, and the forced persistent kernels measure slower
-(ABBA 1.03–1.32×), so the shipped emission equals the OFF arm's code.** The barrier is cheap (385–553 ns), but a
+**Result on the rtx-5080: the rule refuses every chain of the suite on this part, and the forced persistent kernels
+measure slower (ABBA 1.03–1.32×), so the shipped emission equals the OFF arm's code.** (Review fix, `review-fixes.md`
+§3: the boundaries alone priced chains as wins on the rtx-4090 / 3090 / a100, untimed; the rule now also prices the
+bodies' measured change inside one kernel, `coop_body_ns`, and a part without it forms no chain.) The barrier is cheap (385–553 ns), but a
 cooperative launch costs 2044 ns of device time against 650 for a plain dependent launch; the first version also lost
 load batching in member bodies inside the grid-stride loop (fixed: each level's first block straight-line).
 
@@ -484,4 +486,6 @@ its own evidence pass (plan-cost holdout refit, suite), not inside this step.
    The measured properties say a programmatic dependent launch is 164 ns cheaper than a plain one (486 vs 650): its
    default should be that rule, not the row — the same removal as `row-block`'s, next.
 9. The persistent kernel's bodies still differ from their own kernels: rows + q 5.0 us against 4.22 (the dispatch
-   and barriers around them), `s` + `o` 2.66 against 3.97 (no launch ramp). Unpriced (the rule refuses before).
+   and barriers around them), `s` + `o` 2.66 against 3.97 (no launch ramp). Priced since `review-fixes.md` §3 as a
+   measured bound (`coop_body_ns`, 2500 ns a chain on this part); the mechanism stays open (not the barrier's poll,
+   not the non-coherent load path).

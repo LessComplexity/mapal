@@ -117,11 +117,11 @@ Probe value gate: 0 programs failed in every run. Evidence checker: 2436 checks,
    (conservative: it under-states the one-block-a-row time). Only the rtx-5080 has it; other parts slice nothing.
 3. `coop_first_ns` is charged to a unit outside every loop whatever other cooperative launch the program makes (the
    `calls` step's persistent kernels pay it too, unpriced there); a loop's units are charged none (its trips share it).
-4. No `evidence.py` intent for `row-slices` yet (realized checked by hand above: launch entry, barrier count, slices).
+4. ~~No `evidence.py` intent for `row-slices`~~ — added (`review-fixes.md` §4: barrier arrivals = phases − 1, the
+   cooperative launch, stored partials; 16 checks ok on the bundle).
 5. Split-row parallelism covers flow units; row folds outside a unit (`rowfold`, one warp or thread a row), whole folds
    (a cell that reads a number capture runs alone) and per-row cells with a nested fold (model-scale's RMSNorm `rinv`)
    do not slice.
-6. **Pre-existing bug the generator found** (not this step's code; `fc56a298` emits the same): a loop whose carried
-   array's next value does not read the array returns the initial value on the device (`.claude/raw-evidence/…/tests/
-   fail1b.mapal`: `mut x <- b0; loop { x = b0 / 2 + a0 }` prints `b0`; the interpreter `b0 / 2 + a0`). The long-row
-   generator's next state reads the state.
+6. ~~**Pre-existing bug the generator found**: a loop whose carried array's next value does not read the array
+   returns the initial value on the device~~ — fixed (`review-fixes.md` §2: such a next value is made once, outside the
+   trip, and is no device carry). A masked row (`−∞` scores) under the rescale law gave NaN — fixed too (§1).

@@ -100,6 +100,10 @@ bf16 4·10⁻³). Evidence checker: 7724 checks, ON 326 / OFF 328 mismatches (th
 
 ## Open
 
+- Fixed after review (`review-fixes.md`): a slice whose scores are all `−∞` (a mask) made the rescale law's terms
+  `exp(−∞ − (−∞))` = NaN — the slice now takes the stand-in shift 0 (generated long rows: a third masked); `exp-hw`,
+  `exp-rescale` and `row-slices` have `intent.py` entries (44 checks ok).
+
 1. **Flash-style attention.** The fact gives attention exactly flash's laws (`P·V`: `mx` Rescale, `den` Factor ÷),
    but no consumer streams a row-block unit over key blocks (long-rows open 1): at 1024–2048 keys the scores are
    L2-resident and the row-block unit stays refused by its model; at model scale the attention tile sites are not one
