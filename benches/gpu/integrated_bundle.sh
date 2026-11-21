@@ -245,6 +245,8 @@ for spec in "$@"; do
         case $stem in pt_rm_*) [ "$face" = _c ] || [ "$face" = _x ] && python3 "$ROOT/benches/gpu/mlp_k.py" "$s.host.ll" >/dev/null ;; esac
     done
     EMIT=$MAIN_EMIT
+    # cross-arch: an arm equal to the shipped build up to kernel names (the hash covers the rung set) is dropped too.
+    [ -n "$ARMS" ] && python3 "$ROOT/benches/gpu/armdedup.py" "$d"
     # hardware-properties: the rungs the rules ship on this part (the intent check's `table.rungs_on`).
     "$MAIN_EMIT" --rungs "--target=$prof" > "$d/rungs.tsv"
     # S64: the evidence — ptxas -v / SASS of every distinct PTX (cudatool.sh), the facts, the intent check.
@@ -259,7 +261,7 @@ cp "$ROOT/crates/mapal-rt/gpu/mapal_gpu.c" "$ROOT/crates/mapal-rt/gpu/mapal_choi
     "$ROOT/benches/gpu/mlp_bench.cu" "$ROOT/benches/gpu/gemm_lib.cu" "$ROOT/benches/gpu/value_gate.py" \
     "$ROOT/benches/gpu/box_run.sh" "$ROOT/benches/gpu/box_profile.sh" "$OUT/"
 # cross-arch: the device calibration box_run.sh runs before the timed sections (the native-gpu profile's properties).
-cp "$ROOT/benches/gpu/calib.cu" "$OUT/"
+cp "$ROOT/benches/gpu/calib.cu" "$ROOT/benches/local/exp_calib.cu" "$OUT/"
 # S64: the checker and its inputs, for the box's `exec` / `jit` checks; the torch legs.
 cp "$ROOT/benches/gpu/"{evidence.py,intent.py,sass_stats.py,occ.py,ptx_static.py,cudatool.sh,torch_bench.py} "$OUT/"
 cp "$ROOT/benches/gpu/capture_images/capture.cpp" "$OUT/"

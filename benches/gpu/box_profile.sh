@@ -125,7 +125,14 @@ if [ "${SWEEP_PROF:-0}" = 1 ] && command -v nsys >/dev/null && [ -d vals ]; then
         nsys stats -q --format csv -r cuda_gpu_trace "prof/sweep/$t.nsys-rep" 2>/dev/null | gzip > "prof/sweep/$t.trace.csv.gz"
         rm -f "prof/sweep/$t.nsys-rep" "prof/sweep/$t.sqlite"
     }
-    for v in vals/*.txt; do
+    # cross-arch: SWEEP_PROGS="<stem>..." (without `pt_`) narrows the sweep to those programs, in that order;
+    # SWEEP_MIN=<minutes> stops starting programs past that budget (the archive below is always written).
+    sweep_end=$(( $(date +%s) + ${SWEEP_MIN:-100000} * 60 ))
+    sweep_vals=(vals/*.txt)
+    if [ -n "${SWEEP_PROGS:-}" ]; then sweep_vals=(); for b in $SWEEP_PROGS; do sweep_vals+=("vals/$b.txt"); done; fi
+    for v in "${sweep_vals[@]}"; do
+        [ "$(date +%s)" -ge "$sweep_end" ] && { echo "sweep: SWEEP_MIN reached before $v" >> prof/sweep/skipped.txt; break; }
+        [ -f "$v" ] || continue
         b=$(basename "$v" .txt)
         [ -x "pt_$b" ] || continue
         MAPAL_PTX="$PROF/$b.ptx" nst "mapal_$b" "./pt_$b"

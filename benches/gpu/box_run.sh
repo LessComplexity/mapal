@@ -190,6 +190,17 @@ if [ "${CALIB:-1}" = 1 ] && [ -f calib.cu ]; then
     else
         say "CALIB BUILD FAILED"
     fi
+    # exp (ADR-0042 D5): the part's `ex2.approx.ftz.f32` error (`Caps::ex2`) and the hardware form's ulp,
+    # exhaustively (exp_calib.cu), appended to the calibration as `exp ` lines.
+    if [ -f exp_calib.cu ]; then
+        nvcc -O3 -arch="${SM%a}" exp_calib.cu -o exp_calib 2>&1 | grep -v Wno | tail -5 | tee -a "$LOG"
+        if [ -x exp_calib ]; then
+            timeout 10m ./exp_calib 2>&1 | sed 's/^/exp /' >> "calib-$PROF.txt"
+            say "exp_calib: $(grep '^exp ' "calib-$PROF.txt" | tr '\n' ' ')"
+        else
+            say "EXP_CALIB BUILD FAILED"
+        fi
+    fi
 fi
 # S63: the residual MLP's kernels vs cuBLAS, cuBLASLt and CUTLASS (mlp_bench.cu).
 if [ -f mlp_bench.cu ]; then
