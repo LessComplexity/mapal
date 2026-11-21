@@ -119,6 +119,7 @@ mod tests {
             add_acc_first: true,
             radix: None,
             tf32: false,
+            post: None,
         }
     }
 

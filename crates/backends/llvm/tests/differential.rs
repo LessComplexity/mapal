@@ -3534,14 +3534,19 @@ fn differential_device_loops_values_and_movement() {
             // fires when its arm launches more cells than its OFF arm, and a
             // uniform cell takes an `i64` kernel parameter.
             let launches = |t: &str| t.matches("call void @mapal_gpu_launchv(").count();
-            let fires = |rung: &str| {
-                let mut o = opts;
+            let fires = |rung: &str, base: &mapal_backend_llvm::EmitOpts| {
+                let mut o = *base;
                 *o.gpu.off.rung(rung).expect("rung") = true;
+                let at = mapal_backend_llvm::emit_detailed(&ir, base).map(|e| launches(&e.text));
                 mapal_backend_llvm::emit_detailed(&ir, &o)
-                    .is_ok_and(|e| launches(&em.text) > launches(&e.text))
+                    .is_ok_and(|e| at.is_ok_and(|n| n > launches(&e.text)))
             };
-            uniform += usize::from(dev.contains("i64 %c") && fires("uniform"));
-            nests += usize::from(fires("nest-cell"));
+            uniform += usize::from(dev.contains("i64 %c") && fires("uniform", &opts));
+            // A nest whose body goes on past its fold is a `tile-post` site
+            // where that rung is on: the nest cell is counted beside it.
+            let mut no_post = opts;
+            *no_post.gpu.off.rung("tile-post").expect("rung") = true;
+            nests += usize::from(fires("nest-cell", &no_post));
             let need = required_trip_copies(&ir, ir.entry());
             let loops = gpu_trip_moves(&em.text);
             carried += loops
@@ -3640,7 +3645,7 @@ fn differential_natural_twins_values_and_movement() {
             .values()
             .map(|d| match *d {
                 mapal_ir::Delta::Rows { stride, start, .. } => Some((stride, start.a, start.b)),
-                mapal_ir::Delta::Top => None,
+                _ => None,
             })
             .collect();
         v.sort();

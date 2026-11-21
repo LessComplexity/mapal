@@ -168,6 +168,34 @@ fn merged(mut ds: Vec<AxisDigit>) -> Vec<AxisDigit> {
     out
 }
 
+/// `d ÷ c` as one digit (`radix_plan`'s `Div` rule), `None` where it is none.
+fn digit_div(d: Digit, c: u64) -> Option<Digit> {
+    match c {
+        0 => None,
+        1 => Some(d),
+        _ if d.radix == 0 => Some(Digit {
+            stride: d.stride.checked_mul(c)?,
+            ..d
+        }),
+        _ if d.radix.is_multiple_of(c) => Some(Digit {
+            stride: d.stride.checked_mul(c)?,
+            radix: d.radix / c,
+            ..d
+        }),
+        _ => None,
+    }
+}
+
+/// `d % c` as one digit (`radix_plan`'s `Mod` rule).
+fn digit_mod(d: Digit, c: u64) -> Option<Digit> {
+    match c {
+        0 => None,
+        _ if d.radix == 0 || d.radix.is_multiple_of(c) => Some(Digit { radix: c, ..d }),
+        _ if d.radix <= c => Some(d),
+        _ => None,
+    }
+}
+
 /// The plain coefficient of an axis: none (0) or one digit over the whole extent.
 fn plain(ds: &[AxisDigit], extent: u64) -> Option<u64> {
     match ds {
@@ -286,12 +314,13 @@ impl CategoryIr {
             || {
                 let mut out = SecondaryMap::new();
                 let strided = self.tile_plan_strided(f);
+                let post = self.tile_plan_post(f);
                 for &m in self
                     .func(f)
                     .map(|fd| fd.morphisms.as_slice())
                     .unwrap_or(&[])
                 {
-                    if strided.sites.contains_key(m) {
+                    if strided.sites.contains_key(m) || post.sites.contains_key(m) {
                         continue;
                     }
                     if let Some(s) = self.radix_site(m) {
@@ -342,11 +371,15 @@ impl CategoryIr {
         else {
             return None;
         };
-        if fold.target != body_def.output {
-            return None;
-        }
+        // device-geometry `tile-post`: the body may go on past its fold.
+        let post = match fold.target != body_def.output {
+            true => Some(self.tile_post(map.source, body, fold_id, map_captures)?),
+            false => None,
+        };
         let kn = self.tile_iota_size(self.pair_slot_source(fold.source, fc.checked_add(1)?)?)?;
-        let seed_obj = self.objects.get(self.pair_slot_source(fold.source, fc)?)?;
+        let seed_obj = self
+            .objects
+            .get(self.through_pairs(self.pair_slot_source(fold.source, fc)?))?;
         if seed_obj.kind != ObjectKind::Constant || kn == 0 {
             return None;
         }
@@ -394,11 +427,27 @@ impl CategoryIr {
                     continue;
                 }
                 // A captured value enters linearly: substitute its map-body form.
-                if d.slot >= fc || d.stride != 1 || d.radix != 0 {
+                if d.slot >= fc {
                     return None;
                 }
                 let cap = self.pair_slot_source(fold.source, d.slot)?;
-                let cf = map_forms.get(cap)?.scale(d.coef)?;
+                let cf = if d.stride == 1 && d.radix == 0 {
+                    map_forms.get(cap)?.scale(d.coef)?
+                } else {
+                    // device-geometry `head-group`: a digit of a captured
+                    // digit (`h / 4` of `h = t ÷ L % 32`) is a digit of `t`.
+                    let one = map_forms.get(cap)?.digit()?;
+                    let q = digit_div(one, d.stride)?;
+                    let q = match d.radix {
+                        0 => q,
+                        r => digit_mod(q, r)?,
+                    };
+                    RadixForm {
+                        base: 0,
+                        digits: vec![q],
+                    }
+                    .scale(d.coef)?
+                };
                 base = base.checked_add(cf.base)?;
                 for e in &cf.digits {
                     if e.slot != map_captures {
@@ -430,31 +479,49 @@ impl CategoryIr {
         };
         let (xt, yt) = (coefs(&tcuts, n, &x.2)?, coefs(&tcuts, n, &y.2)?);
         let (xk, yk) = (coefs(&kcuts, kn, &x.3)?, coefs(&kcuts, kn, &y.3)?);
-        // Every digit of `t` belongs to exactly one operand (no batch axis).
-        if xt.iter().zip(&yt).any(|(&p, &q)| (p == 0) == (q == 0)) {
+        // Every digit of `t` is read by an operand. One read by both is a
+        // batch digit (device-geometry `head-group`: a KV head's group of
+        // query heads, a sequence): it is a row digit of `a`'s and a
+        // block-uniform row digit of `b`'s, numbered above every digit only
+        // `a` reads, so a block of rows within one batch reads one `b` panel.
+        if xt.iter().zip(&yt).any(|(&p, &q)| p == 0 && q == 0)
+            || (!self.fact_arms().head_group && xt.iter().zip(&yt).any(|(&p, &q)| p != 0 && q != 0))
+        {
             return None;
         }
-        // `b` reads `t`'s unit digit: the lanes run along the output's fast axis.
+        // `b` reads `t`'s unit digit — and only `b`: the lanes run along the
+        // output's fast axis.
         let ((a, at, ak), (b, bt, bk), mul_a_first) = if yt[0] != 0 {
             ((&x, &xt, &xk), (&y, &yt, &yk), true)
         } else {
             ((&y, &yt, &yk), (&x, &xt, &xk), false)
         };
-        // Axis digits: `t`'s basis digits owned by one operand, renumbered.
-        let axis = |own: &[u64]| -> (Vec<(usize, u64, u64)>, u64) {
+        if at[0] != 0 {
+            return None;
+        }
+        // Axis digits: `t`'s basis digits by owner, renumbered — the rows the
+        // digits only `a` reads, then the batch digits; the lanes `b`'s own.
+        let axis = |picks: &[usize]| -> (Vec<(usize, u64, u64)>, u64) {
             let mut stride = 1;
             let mut ds = Vec::new();
-            for j in 0..own.len() {
-                if own[j] != 0 {
-                    let radix = tcuts[j + 1] / tcuts[j];
-                    ds.push((j, stride, radix));
-                    stride *= radix;
-                }
+            for &j in picks {
+                let radix = tcuts[j + 1] / tcuts[j];
+                ds.push((j, stride, radix));
+                stride *= radix;
             }
             (ds, stride)
         };
-        let (rows_d, rows) = axis(at);
-        let (lanes_d, c) = axis(bt);
+        let nd = at.len();
+        let a_only: Vec<usize> = (0..nd).filter(|&j| at[j] != 0 && bt[j] == 0).collect();
+        let batch: Vec<usize> = (0..nd).filter(|&j| at[j] != 0 && bt[j] != 0).collect();
+        let b_only: Vec<usize> = (0..nd).filter(|&j| at[j] == 0 && bt[j] != 0).collect();
+        let (rows_d, rows) = axis(&[a_only, batch.clone()].concat());
+        let (lanes_d, c) = axis(&b_only);
+        let batch_d: Vec<(usize, u64, u64)> = rows_d
+            .iter()
+            .copied()
+            .filter(|(j, _, _)| batch.contains(j))
+            .collect();
         let kdig = |cs: &[u64]| -> Vec<AxisDigit> {
             merged(
                 cs.iter()
@@ -487,7 +554,7 @@ impl CategoryIr {
         };
         let addr_b = RadixAddr {
             base: b.1,
-            i: Vec::new(),
+            i: tdig(&batch_d, bt),
             lane: tdig(&lanes_d, bt),
             k: kdig(bk),
         };
@@ -529,7 +596,22 @@ impl CategoryIr {
             }
         };
         let (ra, ma) = tile_read(a.0, &addr_a);
-        let (rb, mb) = tile_read(b.0, &addr_b);
+        // A `b` that reads row digits is never plain: its rows are the
+        // batch's, block-uniform only through the digit form.
+        let (rb, mb) = match addr_b.i.is_empty() {
+            true => tile_read(b.0, &addr_b),
+            false => (
+                TileRead {
+                    slot: b.0,
+                    base: addr_b.base,
+                    ci: 0,
+                    ck: 0,
+                    clane: 0,
+                    ksplit: None,
+                },
+                Some(addr_b.clone()),
+            ),
+        };
         let row_major = plain(&out.i, rows) == Some(c) && plain(&out.lane, c) == Some(1);
         let radix = RadixTile {
             a: ma,
@@ -550,6 +632,7 @@ impl CategoryIr {
             add_acc_first,
             radix: Some(Box::new(radix)),
             tf32: self.precision(mul.id).admits_tf32(),
+            post,
         })
     }
 }

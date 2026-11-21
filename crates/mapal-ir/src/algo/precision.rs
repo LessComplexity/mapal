@@ -88,7 +88,13 @@ impl CategoryIr {
         }
         let strided = self.tile_plan_strided(f);
         let radix = self.tile_plan_radix(f);
-        for (m, s) in strided.sites.iter().chain(radix.iter()) {
+        let post = self.tile_plan_post(f);
+        for (m, s) in strided
+            .sites
+            .iter()
+            .chain(radix.iter())
+            .chain(post.sites.iter())
+        {
             plan.bound.insert(m, bound_coef(s.k, s.tf32));
         }
         plan

@@ -285,7 +285,7 @@ fn natural_decode_moves_what_the_unrolled_one_moves() {
             .values()
             .map(|d| match *d {
                 Delta::Rows { stride, start, .. } => Some((stride, start.a, start.b)),
-                Delta::Top => None,
+                _ => None,
             })
             .collect()
     };
@@ -630,7 +630,7 @@ fn write_delta_passes_through_a_same_map() {
                 start,
                 next,
             } => Some((stride, start.a, start.b, next == k)),
-            Delta::Top => None,
+            _ => None,
         })
         .collect();
     assert_eq!(rows.len(), 2, "{wd:?}");

@@ -104,8 +104,10 @@ impl<'a> FnEmit<'a> {
         if let Some(&ou) = self.outside_memo.borrow().get(m) {
             return ou;
         }
+        // ponytail: the host loop walks one cell per position; a piecewise
+        // set of `w > 1` cell pieces (`piece-delta`) runs whole on the host.
         let ou = match self.ir.map_law(m) {
-            Some(ElemSrc::Apply { outside, .. }) => outside,
+            Some(ElemSrc::Apply { outside, .. }) => outside.filter(|o| o.w <= 1),
             _ => None,
         };
         self.outside_memo.borrow_mut().insert(m, ou);

@@ -83,6 +83,17 @@ pub enum Delta {
         start: Affine,
         next: ObjectId,
     },
+    /// device-geometry `piece-delta`: only the pieces `[start + step·j,
+    /// start + step·j + w)`, `j ≥ 0`, within the array can differ — one row
+    /// of each sequence of a `[B][L][…]` cache ([`Outside`] with `w > 1`).
+    /// `next` as in [`Delta::Rows`]. `start` may lie before the array (a
+    /// trip that writes nothing), as a row's may.
+    Pieces {
+        w: u64,
+        step: u64,
+        start: Affine,
+        next: ObjectId,
+    },
     /// Anything else: the whole array may differ (the status quo).
     Top,
 }
@@ -453,11 +464,13 @@ pub struct CellSite {
     /// Element steps one cell takes: 1, plus each nested `Map`/`Fold`'s
     /// extent times its own body's steps (a dot product over `k`: `1 + k`).
     pub work: u64,
-    /// recurrence-precision item 2: the body's one nested fold, when it is
-    /// its only `Map`/`Fold` and its step is `acc ⊕ g(…)` with `⊕` a `+`, `×`
-    /// or running max/min and `g` blind to `acc` ([`CategoryIr::fold_tree_step`])
-    /// — `(fold, step, extent)`: where the order is free its steps may be
-    /// split across lanes and combined as a tree.
+    /// recurrence-precision item 2: the body's one nested fold that reads the
+    /// map's captured arrays, when every other nested `Map`/`Fold` reads none
+    /// (device-geometry `row-tree`: a norm's root after its sum of squares)
+    /// and its step is `acc ⊕ g(…)` with `⊕` a `+`, `×` or running max/min
+    /// and `g` blind to `acc` ([`CategoryIr::fold_tree_step`]) — `(fold,
+    /// step, extent)`: where the order is free its steps may be split across
+    /// lanes and combined as a tree.
     pub tree: Option<(MorphismId, RowFoldOp, u64)>,
 }
 
@@ -611,6 +624,36 @@ pub struct TileSite {
     pub radix: Option<Box<RadixTile>>,
     /// ADR-0041 D1: the site's product admits `tf32` (`precision_plan.set`).
     pub tf32: bool,
+    /// device-geometry `tile-post`: the map body goes on past its fold — the
+    /// cell's other terms (a residual, a scale, a mask) computed from the
+    /// fold's value, the cell index and captured arrays ([`TilePost`]).
+    /// `None` on every [`CategoryIr::tile_plan`] / `tile_plan_strided` site;
+    /// [`CategoryIr::tile_plan_post`] holds the sites that carry one.
+    pub post: Option<TilePost>,
+}
+
+/// **The cell work after a tile site's fold** (device-geometry `tile-post`,
+/// [`CategoryIr::tile_plan_post`]): the map body `out[t] = g(fold(t), t,
+/// caps)` — a sum of products followed by elementwise terms of the same cell
+/// (`x[t] + y`, `y / s`, `(j ≤ i) ? y : −∞`). The epilogue is derived from
+/// the dataflow, not matched: the body itself with its fold's value given is
+/// the function a store evaluates per cell. Geometry only, like
+/// [`TileSite`]: which captured slots the epilogue reads, and whether the
+/// fold sits in a guard arm (then the site folds every cell and the arm
+/// decides per cell; every read of the fold is in bounds over the whole
+/// iteration space, checked on the site's affine reads).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TilePost {
+    /// The body's one fold, whose value the epilogue takes.
+    pub fold: MorphismId,
+    /// Capture slots (`< captures`) holding arrays the work after the fold
+    /// reads, ascending.
+    pub reads: Vec<u32>,
+    /// Capture slots holding a number (not an array) the body reads, ascending.
+    pub uniform: Vec<u32>,
+    /// The fold runs under a guard arm of the body (a mask): the site
+    /// computes it for every cell.
+    pub guarded: bool,
 }
 
 /// **A row-local in-order fold (S54 `rowfold`):** a `map` over `rows` whose
@@ -784,6 +827,7 @@ struct Interval {
     b: i64,
     step: u64,
     len: u64,
+    w: u64,
 }
 
 /// One side of an index interval: `t ≥ a·e + b` or `t < a·e + b`.
@@ -874,6 +918,12 @@ pub enum ElemSrc {
 /// Only those cells within `[0, n)` are computed; every other cell is the
 /// capture's — which is what lets a row write run in place over its row
 /// ([`CategoryIr::write_delta`]'s map step, the emitter's range map).
+///
+/// device-geometry `piece-delta`: `w > 1` makes each of those positions a
+/// piece of `w` consecutive cells — a row every `s` rows, `((t ÷ d) % s ==
+/// r) ? new(t) : x[t]` (`lo = d·r`, `step = d·s`, `w = d`, `len = u64::MAX`):
+/// one sequence's row of a `[B][L][…]` cache at position `r`, B pieces. Every
+/// piece lies inside `[0, n)` (`n % d == 0`). `w = 1` on every other form.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Outside {
     pub slot: u32,
@@ -883,6 +933,7 @@ pub struct Outside {
     pub b: i64,
     pub step: u64,
     pub len: u64,
+    pub w: u64,
 }
 
 /// The per-fn element-law plan — the deduced query
@@ -1277,11 +1328,34 @@ impl CategoryIr {
             return TilePlan { sites };
         };
         for &m in &fd.morphisms {
-            if let Some(site) = self.tile_site(m, strided) {
+            if let Some(site) = self.tile_site(m, strided).filter(|s| s.post.is_none()) {
                 sites.insert(m, site);
             }
         }
         TilePlan { sites }
+    }
+
+    /// **Tile sites whose map body goes on past the fold** (device-geometry
+    /// `tile-post`): the sum of products is a [`TileSite`] (strided lanes
+    /// admitted, as [`Self::tile_plan_strided`]) and the cell's other terms
+    /// its [`TilePost`] epilogue. Disjoint from [`Self::tile_plan`] and
+    /// [`Self::tile_plan_strided`], which keep only sites whose body IS the
+    /// fold, so every consumer of those reads what it always read; a backend
+    /// that evaluates the epilogue in the site's store asks for these.
+    pub fn tile_plan_post(&self, f: FuncId) -> TilePlan {
+        self.fact(
+            f,
+            |s| &s.tile_plan_post,
+            || {
+                let mut sites = SecondaryMap::new();
+                for &m in self.func(f).map(|d| d.morphisms.as_slice()).unwrap_or(&[]) {
+                    if let Some(site) = self.tile_site(m, true).filter(|s| s.post.is_some()) {
+                        sites.insert(m, site);
+                    }
+                }
+                TilePlan { sites }
+            },
+        )
     }
 
     /// Recognize fold-less [`MoveSite`]s — maps that only move data, whose read
@@ -2308,7 +2382,19 @@ impl CategoryIr {
                 )
             })
             .collect();
-        let tree = match bulk[..] {
+        // device-geometry `row-tree`: the one nested `Map`/`Fold` that loads
+        // array elements — the others load none (a Heron root over a constant
+        // range, an exponent's squarings: a few steps) and every lane runs
+        // them alike.
+        let reading: Vec<MorphismId> = match self.fact_arms().row_tree {
+            true => bulk
+                .iter()
+                .copied()
+                .filter(|&g| self.nest_reads_memory(g, 0))
+                .collect(),
+            false => bulk.clone(),
+        };
+        let tree = match reading[..] {
             [g] if !nested.is_empty() => self.fold_tree_step(g).and_then(|op| {
                 let Operation::Fold { captures: fc, .. } = self.morphisms[g].op else {
                     return None;
@@ -2428,6 +2514,37 @@ impl CategoryIr {
     /// `input`'s components, and its body (and theirs) holds no `Index` — so
     /// the cell's reads are exactly its own `Index`es (generic-fusion natural
     /// forms: a fold over a range the body makes). Depth-guarded (J1).
+    /// Nested `Map`/`Fold` `g` loads array elements: it walks an array that
+    /// is no `iota` (whose element is its index), or its body (any depth)
+    /// indexes one. A Heron root folded over a constant range loads nothing.
+    fn nest_reads_memory(&self, g: MorphismId, depth: u32) -> bool {
+        let Some(x) = self.morphisms.get(g) else {
+            return true;
+        };
+        let (walked, body) = match x.op {
+            Operation::Fold { body, captures } => {
+                (self.pair_slot_source(x.source, captures + 1), body)
+            }
+            Operation::Map { body, captures: 0 } => (Some(x.source), body),
+            Operation::Map { body, captures } => (self.pair_slot_source(x.source, captures), body),
+            _ => return false,
+        };
+        if depth > 8 || walked.is_none_or(|a| self.tile_iota_size(a).is_none()) {
+            return true;
+        }
+        self.func(body).is_none_or(|fd| {
+            fd.morphisms
+                .iter()
+                .any(|&h| match self.morphisms.get(h).map(|y| y.op) {
+                    Some(Operation::Index | Operation::Call(_)) | None => true,
+                    Some(Operation::Map { .. } | Operation::Fold { .. }) => {
+                        self.nest_reads_memory(h, depth + 1)
+                    }
+                    _ => false,
+                })
+        })
+    }
+
     fn local_nest(&self, g: MorphismId, input: ObjectId, depth: u32) -> bool {
         let Some(x) = self.morphisms.get(g) else {
             return false;
@@ -2883,9 +3000,44 @@ impl CategoryIr {
         }
         let fold_id = fold_id?;
         let fold = self.morphisms.get(fold_id)?;
-        if fold.target != body_def.output {
-            return None;
-        }
+        let post = if fold.target != body_def.output {
+            Some(self.tile_post(map.source, body, fold_id, map_captures)?)
+        } else {
+            None
+        };
+        let with_post = |mut site: TileSite| -> Option<TileSite> {
+            if let Some(p) = &post {
+                // The site folds every cell: each read in bounds over the
+                // whole iteration space, whatever arm the cell takes.
+                let fits = |r: &TileRead| -> Option<bool> {
+                    let arr = self.pair_slot_source(map.source, r.slot)?;
+                    let Ty::Array { size, .. } = self.objects.get(arr)?.ty else {
+                        return None;
+                    };
+                    let top = |c: u64, n: u64| c.checked_mul(n.saturating_sub(1));
+                    let kpart = match r.ksplit {
+                        Some(ks) => {
+                            top(ks.cq, site.k / ks.div)?.checked_add(top(ks.cr, ks.div)?)?
+                        }
+                        None => top(r.ck, site.k)?,
+                    };
+                    let max = r
+                        .base
+                        .checked_add(top(r.ci, site.rows)?)?
+                        .checked_add(top(r.clane, site.c)?)?
+                        .checked_add(kpart)?;
+                    Some(max < size)
+                };
+                if site.rows == 0 || site.c == 0 || site.k == 0 {
+                    return None;
+                }
+                if fits(&site.a) != Some(true) || fits(&site.b) != Some(true) {
+                    return None;
+                }
+                site.post = Some(p.clone());
+            }
+            Some(site)
+        };
         let Operation::Fold {
             body: fold_body,
             captures: fold_captures,
@@ -2897,7 +3049,7 @@ impl CategoryIr {
             .tile_iota_size(self.pair_slot_source(fold.source, fold_captures.checked_add(1)?)?)?;
         let seed_object = self
             .objects
-            .get(self.pair_slot_source(fold.source, fold_captures)?)?;
+            .get(self.through_pairs(self.pair_slot_source(fold.source, fold_captures)?))?;
         if seed_object.kind != ObjectKind::Constant {
             return None;
         }
@@ -2949,7 +3101,7 @@ impl CategoryIr {
                 ) else {
                     continue;
                 };
-                return Some(site);
+                return with_post(site);
             }
         }
         if has_split {
@@ -2977,6 +3129,77 @@ impl CategoryIr {
             seed,
             strided,
         )
+        .and_then(with_post)
+    }
+
+    /// [`TilePost`] of a map over `source` with body `body` whose one fold
+    /// `fold` does not produce the body's output: every other morphism is
+    /// pure cell work (no `Map`, loop, call or effect; `classifiable`), and
+    /// the slots it reads are recorded. The fold's own operands reach it
+    /// through the `Pair`s that assemble its source; any other use of a
+    /// captured slot is the epilogue's.
+    fn tile_post(
+        &self,
+        source: ObjectId,
+        body: FuncId,
+        fold: MorphismId,
+        captures: u32,
+    ) -> Option<TilePost> {
+        let bd = self.func(body)?;
+        if !self.body_is_classifiable(body) {
+            return None;
+        }
+        for &m in &bd.morphisms {
+            match self.morphisms.get(m)?.op {
+                Operation::Fold { .. } if m == fold => {}
+                Operation::Map { .. }
+                | Operation::Fold { .. }
+                | Operation::Call(_)
+                | Operation::LoopEnter
+                | Operation::LoopBack
+                | Operation::LoopExit => return None,
+                _ => {}
+            }
+        }
+        // The fold's operands reach it through the `Pair`s into its source.
+        let fsrc = self.morphisms.get(fold)?.source;
+        let mut reads = Vec::new();
+        let mut uniform = Vec::new();
+        for &p in self.out_edges(bd.input) {
+            let pm = self.morphisms.get(p)?;
+            let Operation::Proj { index: slot } = pm.op else {
+                continue;
+            };
+            if slot >= captures {
+                continue;
+            }
+            let arr = self.pair_slot_source(source, slot)?;
+            match self.objects.get(arr)?.ty {
+                Ty::Array { .. } => {
+                    if !self.feeds_only(pm.target, fsrc, 0) && !reads.contains(&slot) {
+                        reads.push(slot);
+                    }
+                }
+                Ty::Int { .. } | Ty::Float { .. } => {
+                    if !uniform.contains(&slot) {
+                        uniform.push(slot);
+                    }
+                }
+                _ => return None,
+            }
+        }
+        reads.sort_unstable();
+        uniform.sort_unstable();
+        let guarded = self
+            .guard_structure(body)
+            .iter()
+            .any(|g| g.on_true.own.contains(&fold) || g.on_false.own.contains(&fold));
+        Some(TilePost {
+            fold,
+            reads,
+            uniform,
+            guarded,
+        })
     }
 
     fn tile_split(
@@ -3136,6 +3359,7 @@ impl CategoryIr {
             add_acc_first,
             radix: None,
             tf32: self.precision(mul.id).admits_tf32(),
+            post: None,
         })
     }
 
@@ -3496,6 +3720,10 @@ impl CategoryIr {
         {
             return None;
         }
+        // A piece never straddles the array's end.
+        if iv.w > 1 && !n.is_multiple_of(iv.w) {
+            return None;
+        }
         let e = match iv.e {
             Some(k) => Some(self.pair_slot_source(morph.source, k)?),
             None => None,
@@ -3508,6 +3736,7 @@ impl CategoryIr {
             b: iv.b,
             step: iv.step,
             len: iv.len,
+            w: iv.w,
         })
     }
 
@@ -3555,26 +3784,33 @@ impl CategoryIr {
                 // `t` (one cell), `t ÷ d` (a row: `d` cells from `d·X`) or
                 // `t % s` (a column: every `s`-th cell from `X`), `d`, `s`
                 // literals.
+                let lit = |o: ObjectId| self.tile_literal_u64(o).filter(|&k| k > 0);
                 let split_of_t = |o: ObjectId| {
                     if is_t(o) {
-                        return Some((1, 1, 1));
+                        return Some((1, 1, 1, 1));
                     }
                     let (op, g) = [Operation::Div, Operation::Mod]
                         .into_iter()
                         .find_map(|op| Some((op, self.tile_definer(o, op)?)))?;
-                    if !is_t(self.pair_slot_source(g.source, 0)?) {
-                        return None;
+                    let k = lit(self.pair_slot_source(g.source, 1)?)?;
+                    let inner = self.pair_slot_source(g.source, 0)?;
+                    if !is_t(inner) {
+                        // `piece-delta`: `(t ÷ d) % s` — a row of `d` cells
+                        // every `s` rows (pieces of `w = d`).
+                        let dv = self.tile_definer(inner, Operation::Div)?;
+                        let d = lit(self.pair_slot_source(dv.source, 1)?)?;
+                        let ok = op == Operation::Mod
+                            && self.fact_arms().piece_delta
+                            && is_t(self.pair_slot_source(dv.source, 0)?);
+                        return ok.then_some((d, d.checked_mul(k)?, u64::MAX, d));
                     }
-                    let k = self
-                        .tile_literal_u64(self.pair_slot_source(g.source, 1)?)
-                        .filter(|&k| k > 0)?;
                     Some(if op == Operation::Div {
-                        (k, 1, k)
+                        (k, 1, k, 1)
                     } else {
-                        (1, k, u64::MAX)
+                        (1, k, u64::MAX, 1)
                     })
                 };
-                let ((d, step, len), other) = match split_of_t(x) {
+                let ((d, step, len, w), other) = match split_of_t(x) {
                     Some(s) => (s, y),
                     None => (split_of_t(y)?, x),
                 };
@@ -3588,6 +3824,7 @@ impl CategoryIr {
                         b,
                         step,
                         len,
+                        w,
                     },
                     c.op == Operation::Eq,
                 ))
@@ -3613,6 +3850,7 @@ impl CategoryIr {
                         b: b1,
                         step: 1,
                         len,
+                        w: 1,
                     },
                     true,
                 ))
@@ -5420,6 +5658,7 @@ impl CategoryIr {
                                 b: 0,
                                 step: 1,
                                 len: 1,
+                                w: 1,
                             });
                             self.pair_slot_source(mm.source, 0)
                         }),
@@ -5452,7 +5691,10 @@ impl CategoryIr {
                     continue;
                 };
                 let delta = view
-                    .and_then(|_| self.rows_of(&idxs, merge, nk))
+                    .and_then(|_| {
+                        self.rows_of(&idxs, merge, nk)
+                            .or_else(|| self.pieces_of(&idxs, merge, nk))
+                    })
                     .unwrap_or(Delta::Top);
                 out.insert(key, delta);
                 let Delta::Rows { stride, start, .. } = delta else {
@@ -5486,6 +5728,35 @@ impl CategoryIr {
             }
         }
         out
+    }
+
+    /// `piece-delta`: the [`Delta::Pieces`] of one iteration's writes, or
+    /// `None` — the walk met exactly one write, a piecewise map whose pieces
+    /// are `w > 1` cells (`(t ÷ d) % s == r`), `r` affine in the counter.
+    fn pieces_of(&self, idxs: &[Outside], merge: ObjectId, next: ObjectId) -> Option<Delta> {
+        let [p] = idxs else { return None };
+        if p.w <= 1 {
+            return None;
+        }
+        let mut var = None;
+        let (ae, be) = match p.e {
+            Some(e) => self.affine_in(e, merge, &mut var, 0)?,
+            None => return None,
+        };
+        let var = var?;
+        let d = i128::from(p.d);
+        let a = d.checked_mul(i128::from(p.a).checked_mul(ae)?)?;
+        let b = d.checked_mul(i128::from(p.a).checked_mul(be)?.checked_add(p.b.into())?)?;
+        Some(Delta::Pieces {
+            w: p.w,
+            step: p.step,
+            start: Affine {
+                var,
+                a: i64::try_from(a).ok()?,
+                b: i64::try_from(b).ok()?,
+            },
+            next,
+        })
     }
 
     /// The [`Delta::Rows`] of one iteration's writes, or `None`: each the
@@ -5594,6 +5865,40 @@ impl CategoryIr {
 
     /// If `o` is a `Proj{k}` of a pair-assembled tuple, the component object
     /// (the `Pair{k}` feeder's source) — one indirection level.
+    /// Every use of `o` assembles `into` — a `Pair` into it, or into a
+    /// product whose every use is a `Proj` whose value does the same (a guard
+    /// arm's routed captures). Depth-guarded (J1).
+    fn feeds_only(&self, o: ObjectId, into: ObjectId, depth: u32) -> bool {
+        depth < 16
+            && self.out_edges(o).iter().all(|&u| {
+                let um = &self.morphisms[u];
+                if !matches!(um.op, Operation::Pair { .. }) {
+                    return false;
+                }
+                um.target == into
+                    || self.out_edges(um.target).iter().all(|&v| {
+                        let vm = &self.morphisms[v];
+                        match vm.op {
+                            Operation::Proj { .. } => self.feeds_only(vm.target, into, depth + 1),
+                            Operation::Pair { .. } => vm.target == into,
+                            _ => false,
+                        }
+                    })
+            })
+    }
+
+    /// `o` through its `Proj`-of-`Pair` hops (a guard arm's routed values):
+    /// the object the value was made as. Depth-guarded (J1).
+    pub(crate) fn through_pairs(&self, mut o: ObjectId) -> ObjectId {
+        for _ in 0..16 {
+            match self.proj_of_pair(o) {
+                Some(x) if x != o => o = x,
+                _ => break,
+            }
+        }
+        o
+    }
+
     fn proj_of_pair(&self, o: ObjectId) -> Option<ObjectId> {
         let m = self.in_edges(o).first().copied()?;
         let pm = &self.morphisms[m];

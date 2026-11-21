@@ -940,8 +940,18 @@ static void site_run(void *e, uint32_t i) {
   }
   launch_on(k, c->id, args, c->gx, c->gy, c->block, c->smem);
   if (c->ws) {
-    CUdeviceptr r[3] = {d[x->out], 0, x->ptrs[x->out]};
-    void *ra[3] = {&r[0], &r[1], &r[2]};
+    /* The reduce launch: `(ws, b, out, …)` — a group's reduce (`tile-post`)
+     * evaluates its epilogue over the table's other pointers too. */
+    CUdeviceptr r[32];
+    void *ra[32];
+    for (uint32_t p = 0; p < x->nptr; p++) {
+      r[p] = x->ptrs[p];
+      ra[p] = &r[p];
+    }
+    r[0] = d[x->out];
+    r[x->out] = x->ptrs[x->out];
+    if (x->nptr == 3)
+      r[1] = 0;
     launch_on(k, c->rid, ra, c->rgx, 1, c->rblock, 0);
   }
 }

@@ -100,7 +100,7 @@ def arm_of(stem):
 I64 = re.compile(r'^(add|sub|mul\.lo|mul\.wide|mad\.lo|mad\.wide|shl|shr)\.[usb]?(64|32)\b|^cvt\.[us]64\.[us]32')
 EXTRA = [('atom_add', r'^atom\.(?:\w+\.)*?add\.f'), ('red_add', r'^red\.(?:\w+\.)*?add\.f'), ('mma', r'^mma\.sync'),  # (newer llc: .relaxed.gpu.global)
          ('ldmatrix', r'^ldmatrix'), ('wgmma', r'^wgmma\.mma_async'), ('wait_n', r'^cp\.async\.wait_group'),
-         ('div_rem', r'^(div|rem)\.'), ('call', r'^call'),
+         ('div_rem', r'^(div|rem)\.[us]\d+'), ('call', r'^call'),  # integer only (a float `div.rn` is the program's)
          # kernel-merging `calls`: a grid barrier's release arrival; a non-coherent (read-only path) load.
          ('gsync_arrive', r'^atom\.add\.release\.gpu'), ('ld_nc', r'^ld\.global\.nc')]
 
@@ -1036,6 +1036,23 @@ def check(d, results=None, out=sys.stdout):
         lanes = [kf for kf in cells if int(kf['plan'].get('lanes', 1) or 1) > 1]
         dev['cell_lanes'] = len(lanes)
         dev['cell_lanes_shfl'] = sum(kf.get('ptx', {}).get('shfl', 0) >= 5 for kf in lanes)
+        # device-geometry: post sites (`post=1`: tile kernels and their split reduce), row groups (`group=`; the
+        # block's rows inside one group: one `b` panel a group), piece cells, lane cells beside local folds.
+        tiles = [kf for kf in e['kernels'].values() if kf.get('plan', {}).get('kind') in ('tile', 'mma', 'naive')]
+        dev['post'] = sum(kf['plan'].get('post', 0) == 1 for kf in tiles)
+        dev['post_epi'] = sum(kf['plan'].get('post', 0) == 1 and kf['plan'].get('epi', 0) == 1 for kf in tiles)
+        dev['post_split'] = sum(kf['plan'].get('post', 0) == 1 and kf['plan'].get('combine') == 'splitk' for kf in tiles)
+        dev['post_red'] = sum(kf.get('plan', {}).get('kind') == 'reduce' and kf['plan'].get('epi', 0) == 1
+                              for kf in e['kernels'].values())
+        grp = [kf for kf in tiles if int(kf['plan'].get('group', 0) or 0) > 0]
+        dev['group'] = len(grp)
+        dev['group_whole'] = sum(kf['plan'].get('kind') == 'tile'
+                                 and int(kf['plan']['group']) % (kf['plan'].get('ty', 1) * kf['plan'].get('tm', 1)) == 0
+                                 for kf in grp)
+        dev['cell_piece'] = sum(has(kf, 'piece') for kf in cells)
+        multi = [kf for kf in lanes if kf['plan'].get('nested', 0) > 1]
+        dev['cell_lanes_multi'] = len(multi)
+        dev['cell_lanes_multi_shfl'] = sum(kf.get('ptx', {}).get('shfl', 0) >= 5 for kf in multi)
         flanes = [kf for kf in e['kernels'].values()
                   if kf.get('plan', {}).get('kind') == 'rowfold' and int(kf['plan'].get('lanes', 1) or 1) > 1]
         dev['rowfold_lanes'] = len(flanes)

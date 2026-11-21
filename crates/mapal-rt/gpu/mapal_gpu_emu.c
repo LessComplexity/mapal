@@ -685,7 +685,14 @@ static void site_run(void *e, uint32_t i) {
     mapal_gpu_launch(c->id, p[0], p[1], p[2], c->gx, c->gy, c->block, c->smem);
   else
     mapal_gpu_launchv(c->id, x->stream, x->nptr, p, c->gx, c->gy, c->block, c->smem);
-  if (c->ws) mapal_gpu_launch(c->rid, p[x->out], 0, x->ptrs[x->out], c->rgx, 1, c->rblock, 0);
+  if (c->ws && x->nptr == 3) mapal_gpu_launch(c->rid, p[x->out], 0, x->ptrs[x->out], c->rgx, 1, c->rblock, 0);
+  if (c->ws && x->nptr != 3) {
+    /* A group's reduce (`tile-post`): `(ws, b, out, …)`. */
+    uint64_t r[32];
+    memcpy(r, x->ptrs, x->nptr * sizeof *r);
+    r[0] = p[x->out];
+    mapal_gpu_launchv(c->rid, x->stream, x->nptr, r, c->rgx, 1, c->rblock, 0);
+  }
 }
 static uint64_t site_timed(void *e, uint32_t i) {
   ((struct site_env *)e)->trialed = 1;

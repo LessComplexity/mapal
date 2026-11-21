@@ -4059,3 +4059,235 @@ pub fn host_par_src(p: &HostParProg) -> String {
     );
     s
 }
+
+/// **device-geometry generated programs** (`crates/backends/llvm/tests/device_geometry.rs`):
+/// the four shapes the model-scale layer showed as device gaps, at sizes and
+/// forms drawn freely — a sum of products whose map body goes on past its
+/// fold (`tile-post`), attention over grouped query heads (`head-group`), a
+/// per-sequence row append to a loop-carried `[B][S][W]` state
+/// (`piece-delta`), and a row norm whose root is a second fold (`row-tree`).
+/// Every value is a small integer in `f32` (or a quotient the host and the
+/// device compute with the same body text from an exact sum), so every face
+/// and every fold order agrees with the interpreter.
+#[derive(Clone, Debug)]
+pub struct LayerProg {
+    /// 0 epilogue GEMM, 1 grouped heads, 2 append loop, 3 row norm.
+    pub kind: u8,
+    /// GEMM rows (1: a GEMV, the split-K reduce's epilogue), lanes, depth.
+    pub m: u64,
+    pub n: u64,
+    pub k: u64,
+    /// The epilogue's form (`kind` 0: 0..6; `kind` 1: the mask / divisor).
+    pub epi: u8,
+    /// Grouped heads: sequences, KV heads, query heads per KV head,
+    /// positions, head width; QKᵀ (`true`) or P·V.
+    pub b: u64,
+    pub g: u64,
+    pub per: u64,
+    pub l: u64,
+    pub d: u64,
+    pub qk: bool,
+    /// Append loop: sequences `b`, positions `l`, row width `d`, trips, the
+    /// first position.
+    pub trips: i64,
+    pub p0: i64,
+    /// Grouped heads: K/V shared by every `bb` (a prefill's query tokens).
+    /// Row norm: rows `m`, width `n`, Heron steps `k`, a third local fold;
+    /// its reader scales each cell by its row's factor.
+    pub extra: bool,
+}
+
+pub fn layer_strategy() -> impl Strategy<Value = LayerProg> {
+    (
+        0u8..4,
+        prop::sample::select(vec![1u64, 4, 8, 16, 32]),
+        prop::sample::select(vec![8u64, 16, 32, 64, 128]),
+        prop::sample::select(vec![4u64, 8, 16, 32, 64, 256]),
+        0u8..7,
+        (1u64..3, 1u64..3, prop::sample::select(vec![1u64, 2, 4, 4])),
+        // Positions and head widths up to a staged tile's lane block (128).
+        (
+            prop::sample::select(vec![8u64, 16, 64, 128, 256]),
+            prop::sample::select(vec![4u64, 8, 32, 128]),
+        ),
+        any::<bool>(),
+        (1i64..4, 0i64..3),
+        any::<bool>(),
+    )
+        .prop_map(
+            |(kind, m, n, k, epi, (b, g, per), (l, d), qk, (trips, p0), extra)| LayerProg {
+                kind,
+                m,
+                n,
+                k,
+                epi,
+                b,
+                g,
+                per,
+                l,
+                d,
+                qk,
+                trips,
+                p0,
+                extra,
+            },
+        )
+}
+
+/// [`LayerProg`]'s source text.
+pub fn layer_prog_src(p: &LayerProg) -> String {
+    let data = |name: &str, len: u64, a: u64, c: u64, md: u64| {
+        let h = md / 2;
+        format!(
+            "    {len} -> iota -> i_{name};\n    i_{name} -> map {{ t -> (t * {a} + {c}) % {md} - {h} -> widen_f32 }} -> {name};\n"
+        )
+    };
+    match p.kind {
+        // A sum of products, then elementwise terms of the same cell.
+        0 => {
+            let (m, n, k) = (p.m, p.n, p.k);
+            let mut s = String::from("fn main() {\n");
+            s += &data("a", m * k, 5, 3, 7);
+            s += &data("w", k * n, 3, 1, 5);
+            s += &data("x", m * n, 7, 2, 9);
+            s += &data("bias", n, 2, 1, 5);
+            s += &format!(
+                "    {m} -> iota -> i_dv;\n    i_dv -> map {{ t -> t % 3 + 1 -> widen_f32 }} -> dv;\n"
+            );
+            s += &format!("    {k} -> iota -> rk;\n    {} -> iota -> o;\n", m * n);
+            // A number the map captures: a whole fold of the residual.
+            s += "    0.0 -> z0: f32;\n    (z0, bias) -> fold { acc, v -> acc + v } -> sc;\n";
+            let fold = format!(
+                "(0.0, rk) -> fold {{ acc, kk -> acc + a[i * {k} + kk] * w[kk * {n} + j] }}"
+            );
+            let body = match p.epi {
+                0 => format!("{fold} -> y;\n        x[e] + y"),
+                1 => format!("{fold} -> y;\n        y * 0.5 + bias[j]"),
+                2 => format!(
+                    "(j <= i + 2) -> {{\n            -true-> {{ {fold} -> y; y + 1.0 }}\n            -false-> -7.0;\n        }}"
+                ),
+                3 => format!("{fold} -> y;\n        y / dv[i]"),
+                4 => format!("{fold} -> y;\n        y * 2.0 + sc"),
+                5 => format!(
+                    "{fold} -> y;\n        (y > 0.0) -> {{ -true-> y; -false-> x[e] * 0.25; }}"
+                ),
+                _ => format!("{fold} -> y;\n        x[e] + y * bias[j] - sc"),
+            };
+            s += &format!(
+                "    o -> map {{\n        e -> e / {n} -> i;\n        e % {n} -> j;\n        {body}\n    }} -> c;\n"
+            );
+            s += &format!(
+                "    c[0] -> println;\n    c[{}] -> println;\n    c[{}] -> println;\n    0.0 -> zero: f32;\n    (zero, c) -> fold {{ acc, v -> acc + v }} -> total;\n    total -> println;\n}}\n",
+                m * n - 1,
+                (m * n) / 2 + 1
+            );
+            s
+        }
+        // Attention over grouped query heads: QKᵀ (masked at a position the
+        // program computes: a uniform) or P·V (divided by a per-row sum).
+        1 => {
+            let (b, g, per, l, d) = (p.b, p.g, p.per, p.l, p.d);
+            let h = g * per;
+            let mut s = String::from("fn main() {\n");
+            s += &data("q", b * h * d, 5, 3, 7);
+            // `extra`: one K/V for every `bb` — `bb` a query position (a
+            // prefill's token), read by `q`/`pe` alone: the output's token
+            // digit is then above the heads' (a digit-affine output).
+            let (kn, kb) = match p.extra {
+                true => (l * g * d, String::new()),
+                false => (b * l * g * d, format!("bb * {l} + ")),
+            };
+            s += &data("kc", kn, 3, 1, 5);
+            s += &data("pe", b * h * l, 7, 2, 5);
+            s += &format!(
+                "    {} -> iota -> i_den;\n    i_den -> map {{ t -> t % 4 + 1 -> widen_f32 }} -> den;\n",
+                b * h
+            );
+            s += &format!("    {d} -> iota -> rd;\n    {l} -> iota -> rl;\n");
+            // The mask position: a number computed from data (a uniform).
+            s += &format!(
+                "    0 -> z0: i32;\n    (z0, rd) -> fold {{ acc, v -> acc + v % 2 }} -> pp0;\n    pp0 % {l} -> pos;\n"
+            );
+            if p.qk {
+                let post = match p.epi % 3 {
+                    0 => "dt * 0.5".to_string(),
+                    1 => "(r <= pos) -> { -true-> dt * 0.5; -false-> -1000.0; }".to_string(),
+                    _ => "(r <= hh) -> { -true-> dt; -false-> 0.0 - dt; }".to_string(),
+                };
+                s += &format!(
+                    "    {} -> iota -> o;\n    o -> map {{\n        e -> e / {} -> bb;\n        e / {l} % {h} -> hh;\n        e % {l} -> r;\n        (0.0, rd) -> fold {{\n            acc, u -> acc + q[(bb * {h} + hh) * {d} + u] * kc[(({kb}r) * {g} + hh / {per}) * {d} + u]\n        }} -> dt;\n        {post}\n    }} -> s;\n",
+                    b * h * l,
+                    h * l
+                );
+            } else {
+                let post = match p.epi % 2 {
+                    0 => "av / den[bb * {h} + hh]".replace("{h}", &h.to_string()),
+                    _ => "av".to_string(),
+                };
+                s += &format!(
+                    "    {} -> iota -> o;\n    o -> map {{\n        e -> e / {} -> bb;\n        e / {d} % {h} -> hh;\n        e % {d} -> u;\n        (0.0, rl) -> fold {{\n            acc, r -> acc + pe[(bb * {h} + hh) * {l} + r] * kc[(({kb}r) * {g} + hh / {per}) * {d} + u]\n        }} -> av;\n        {post}\n    }} -> s;\n",
+                    b * h * d,
+                    h * d
+                );
+            }
+            let n = if p.qk { b * h * l } else { b * h * d };
+            s += &format!(
+                "    s[0] -> println;\n    s[{}] -> println;\n    s[{}] -> println;\n    0.0 -> zero: f32;\n    (zero, s) -> fold {{ acc, v -> acc + v }} -> total;\n    total -> println;\n}}\n",
+                n - 1,
+                n / 2 + 1
+            );
+            s
+        }
+        // A per-sequence row append to a carried `[B][S][W]` state.
+        2 => {
+            let (b, l, w) = (p.b, p.l.max(p.trips as u64 + p.p0 as u64 + 1), p.d);
+            let n = b * l * w;
+            let mut s = String::from("fn main() {\n");
+            s += &data("kc0", n, 3, 1, 5);
+            s += &data("nw", b * w, 5, 2, 7);
+            s += &format!("    {n} -> iota -> rc;\n    {} -> iota -> rbw;\n", b * w);
+            s += &format!(
+                "    mut kc: [f32; {n}] <- kc0;\n    mut acc: [f32; {}] <- nw;\n    mut t: i32 <- 0;\n",
+                b * w
+            );
+            s += &format!(
+                "    loop {{\n        (t < {}) -> {{\n            -true-> {{\n                {} + t -> p;\n                rbw -> map {{ e -> acc[e] + 1.0 }} -> acc;\n                rc -> map {{\n                    c -> c / {} -> bb;\n                    c / {w} % {l} -> r;\n                    (r == p) -> {{\n                        -true-> acc[bb * {w} + c % {w}] * 2.0;\n                        -false-> kc[c];\n                    }}\n                }} -> kc;\n                t + 1 -> t;\n                -> loop;\n            }}\n            -false-> kc -> out;\n        }}\n    }}\n",
+                p.trips,
+                p.p0,
+                l * w
+            );
+            s += &format!(
+                "    out[0] -> println;\n    out[{}] -> println;\n    out[{}] -> println;\n    0.0 -> zero: f32;\n    (zero, out) -> fold {{ a2, v -> a2 + v }} -> total;\n    total -> println;\n}}\n",
+                n - 1,
+                (p.p0 as u64) * w + 1
+            );
+            s
+        }
+        // A row norm: the sum of squares of a row, then a Heron root (a
+        // second fold that loads nothing).
+        _ => {
+            let (rows, width) = (p.m.max(1), p.n.max(32));
+            let steps = 4 + p.k % 8;
+            let mut s = String::from("fn main() {\n");
+            s += &data("x", rows * width, 5, 3, 7);
+            s += &format!(
+                "    {rows} -> iota -> rr;\n    {width} -> iota -> rw;\n    {steps} -> iota -> rh;\n"
+            );
+            let extra = if p.extra {
+                "        4 -> iota -> r4;\n        (sd, r4) -> fold { a2, kk -> a2 * 1.0 } -> sd2;\n        1.0 / sd2"
+            } else {
+                "        1.0 / sd"
+            };
+            s += &format!(
+                "    rr -> map {{\n        b -> (0.0, rw) -> fold {{\n            a1, i -> x[b * {width} + i] -> v;\n            a1 + v * v\n        }} -> ss;\n        ss / {width}.0 + 1.0 -> ra;\n        0.5 + 0.5 * ra -> s0;\n        (s0, rh) -> fold {{ a3, kk -> 0.5 * (a3 + ra / a3) }} -> sd;\n{extra}\n    }} -> rinv;\n"
+            );
+            // The norm's reader: each cell scaled by its row's factor.
+            s += &format!(
+                "    i_x -> map {{ e -> x[e] * rinv[e / {width}] }} -> xn;\n    rinv[0] -> println;\n    rinv[{}] -> println;\n    xn[{}] -> println;\n    0.0 -> zero: f32;\n    (zero, xn) -> fold {{ acc, v -> acc + v }} -> total;\n    total -> println;\n}}\n",
+                rows - 1,
+                rows * width - 1
+            );
+            s
+        }
+    }
+}

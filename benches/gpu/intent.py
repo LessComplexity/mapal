@@ -376,6 +376,34 @@ INTENT = {
         ('PTX: each lane row fold combines by >= 5 butterfly shuffles (log2 32)',
          'dev.rowfold_lanes_shfl == dev.rowfold_lanes')],
         applies_off='dev.rowfold > 0', off=[('every row fold one thread a row', 'dev.rowfold_lanes == 0')]),
+    # device-geometry `tile-post`: a sum of products whose map body goes on past its fold (a residual, a scale, a
+    # mask, a per-row divisor, a number capture) is a tile site (`post=1`) whose store evaluates the body after the
+    # fold; a workspace split's reduce launch does (`kind=reduce … epi=1`). `.off-tile-post`: a per-cell kernel.
+    'tile-post': dict(host=True, applies='dev.post > 0', on=[
+        ('each post kernel stores through its epilogue group, or is a workspace split partial (its reduce does)',
+         'dev.post_epi + dev.post_split == dev.post'),
+        ('a workspace split of a post site has a reduce that evaluates the epilogue', 'dev.post_split == 0 or dev.post_red > 0')],
+        applies_off='dev.cell > 0', off=[('no post site', 'dev.post == 0 and dev.post_red == 0')]),
+    # device-geometry `head-group`: a mixed-radix site's batch digits (a KV head's query heads, a sequence) are row
+    # digits of `a` and block-uniform row digits of `b` (`group=`): a block's rows lie in one group, so its `b`
+    # panel (one KV head's rows) is staged once for the group's query heads. `.off-head-group`: a per-cell kernel,
+    # each query head re-reading its KV head's rows.
+    'head-group': dict(host=True, applies='dev.group > 0', on=[
+        ("each grouped tile's block rows divide its group (one b panel a group)", 'dev.group_whole == dev.group')],
+        applies_off='dev.cell > 0', off=[('no grouped tile', 'dev.group == 0')]),
+    # device-geometry `piece-delta`: a per-sequence row append to a carried `[B][S][W]` state (`((t / W) % S == p)`)
+    # is a range cell over its B pieces of W cells in the state's buffer (`piece=W`): bytes written per step B·W·e,
+    # not the whole state. `.off-piece-delta`: the update map rewrites the whole state each trip.
+    'piece-delta': dict(host=True, applies='dev.cell_piece > 0', on=[
+        ('each piece cell is launched (its first piece and count by value)', 'host.calls.launchv >= dev.cell_piece'),
+        ("per-trip uploads are the facts' (no written row crosses)", 'host.move.h2d_b == host.move.intent_h2d')],
+        applies_off='dev.cell > 0', off=[('no piece cell', 'dev.cell_piece == 0')]),
+    # device-geometry `row-tree`: a row fold beside local folds that load nothing (RMSNorm's sum of squares, then
+    # its Heron root) takes a warp's lanes (`cell-lanes`): lane l every 32nd element, a butterfly of shuffles.
+    # `.off-row-tree`: such a row is one thread's serial fold.
+    'row-tree': dict(host=True, applies='dev.cell_lanes_multi > 0', on=[
+        ('PTX: each such lane cell combines by >= 5 butterfly shuffles', 'dev.cell_lanes_multi_shfl == dev.cell_lanes_multi')],
+        applies_off='dev.cell_nest > 0', off=[('no lane cell with local folds beside its row', 'dev.cell_lanes_multi == 0')]),
     # site-geometry `fill-wave` (C9, C10, C6c): a tile site whose grid holds fewer warps than the fill rule's target
     # (`Geom::resident` = 2 a scheduler) cuts its free fold into the fewest partitions that reach it, inside the blocks
     # the part holds at the tile's own registers and threads; the split kernel's panels are sized for the split grid.

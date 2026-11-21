@@ -392,6 +392,10 @@ pub(crate) struct FnEmit<'a> {
     /// whose target is the first field walks every `lanes`-th step from the
     /// lane and combines the lanes' partials by `step` (a warp shuffle tree).
     lanes: Option<(ObjectId, mapal_ir::RowFoldOp, u64)>,
+    /// device-geometry `tile-post`: this body is a tile site's epilogue
+    /// variant (`<name>_post`) — its fold's value arrives as `%fv` after
+    /// `%arg` (the site's accumulator) instead of being folded here.
+    post_fold: Option<MorphismId>,
     /// Object → its device slot (`alloca i64`, 0 = no buffer).
     dslots: SecondaryMap<ObjectId, String>,
     /// Objects whose device copy is current at this point of the walk.

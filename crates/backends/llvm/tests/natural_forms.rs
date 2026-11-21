@@ -159,7 +159,7 @@ fn deltas(ir: &CategoryIr) -> Vec<Option<(u64, i64, i64)>> {
         .values()
         .map(|d| match *d {
             Delta::Rows { stride, start, .. } => Some((stride, start.a, start.b)),
-            Delta::Top => None,
+            _ => None,
         })
         .collect()
 }

@@ -383,13 +383,22 @@ pub(crate) fn tile_plan(
     // tile takes it (its kernels address digits; the naive kernel too, but a
     // site the tile refuses keeps the `nest-cell` it had).
     if rungs.radix_tile {
-        for (m, s) in ir.tile_plan_radix(f) {
+        for (m, s) in ir
+            .tile_plan_radix(f)
+            .into_iter()
+            .filter(|(_, s)| s.post.is_none())
+        {
             let l = launch(&s, profile, contract, arms);
             let staged = l.tiled.is_some() || l.mma.is_some();
             if staged && gpu_site(&s, profile, rungs.window) {
                 plan.sites.insert(m, s);
             }
         }
+    }
+    // device-geometry `tile-post`: a sum of products whose body goes on past
+    // its fold is a site whose store evaluates the rest (`post_sites`).
+    for (m, s) in post_sites(ir, f, profile, contract, arms) {
+        plan.sites.insert(m, s);
     }
     // S62: an extra is a site only where it is placed on the device.
     let dev = placement(ir, f, &plan, profile, rungs.window, rungs.carry_made);
@@ -403,6 +412,157 @@ pub(crate) fn tile_plan(
         plan.sites.remove(m);
     }
     plan
+}
+
+/// A mixed-radix site whose `k` is not cut: every one but a `tile-post`
+/// group's, whose partitions the staged and one-thread kernels offset
+/// through its `k` digits (`z·kext` added before them) and whose
+/// candidates are the ordered kernel and the workspace split
+/// ([`group_order`]: no atomic, no stream-K).
+fn radix_whole(site: &TileSite) -> bool {
+    site.radix.is_some() && site.post.is_none()
+}
+
+/// device-geometry `head-group`: the rows a tile block may span — a batch's
+/// (the least stride of `b`'s row digits, which every block-row start then
+/// leaves unchanged within the block), else all of them.
+pub(crate) fn row_group(site: &TileSite) -> u64 {
+    site.radix
+        .as_deref()
+        .and_then(|r| r.b.as_ref())
+        .and_then(|b| b.i.iter().map(|d| d.stride).min())
+        .unwrap_or(site.rows)
+}
+
+/// device-geometry `tile-post`: `b` walks the fold contiguously (its unit
+/// `k` step is one element) and its lanes not — the k-major layout a warp
+/// folding one cell across its lanes reads coalesced (`cell-lanes`), where a
+/// tile's lanes read it one element a row.
+fn b_k_major(site: &TileSite) -> bool {
+    let unit = |ds: &[mapal_ir::AxisDigit]| ds.iter().any(|d| d.stride == 1 && d.coef == 1);
+    match site.radix.as_deref().and_then(|r| r.b.as_ref()) {
+        Some(b) => unit(&b.k) && !unit(&b.lane),
+        None => site.b.ck == 1 && site.b.clane != 1,
+    }
+}
+
+/// device-geometry `tile-post`: the [`CategoryIr::tile_plan_post`] sites a
+/// GPU build realizes — each one's epilogue evaluated in its store, which
+/// exists exactly where an epilogue group can (`resident.rs:epilogues`): a
+/// resident function (no retained site unless `retain-resident`), the
+/// `epilogue` rung at the site's fill, the map outside every gated guard
+/// arm, an `i32` cell index, numbers read by value that are the host's
+/// (none a whole fold makes), a `b` panel shared by more than one row or
+/// read along its lanes ([`b_k_major`]), a body the device runs with the host's text,
+/// and its operand pointers within one launch's arguments. A site one of
+/// these refuses stays the per-cell kernel it was.
+pub(crate) fn post_sites(
+    ir: &CategoryIr,
+    f: FuncId,
+    profile: &TargetProfile,
+    contract: bool,
+    arms: crate::GpuArms,
+) -> Vec<(MorphismId, TileSite)> {
+    let rungs = host_rungs(profile, contract, arms);
+    if profile.gpu().is_none()
+        || !rungs.tile_post
+        || !rungs.resident
+        || !rungs.epilogue
+        || !(rungs.retain_resident
+            || super::retain::retained_sites(ir, f, profile, rungs).is_empty())
+    {
+        return Vec::new();
+    }
+    let gated: Vec<MorphismId> = ir
+        .guard_plan(f)
+        .into_iter()
+        .filter(mapal_ir::GuardSite::gated)
+        .flat_map(|g| g.on_true.own.into_iter().chain(g.on_false.own))
+        .collect();
+    let mut out = Vec::new();
+    // A mixed-radix post site (`head-group` attention) where the staged tile
+    // takes it, as `radix-tile`'s sites.
+    let radix: Vec<(MorphismId, TileSite)> = match rungs.radix_tile {
+        true => ir
+            .tile_plan_radix(f)
+            .into_iter()
+            .filter(|(_, s)| s.post.is_some())
+            .filter(|(_, s)| {
+                let l = launch(s, profile, contract, arms);
+                l.tiled.is_some() || l.mma.is_some()
+            })
+            .collect(),
+        false => Vec::new(),
+    };
+    let posts = ir.tile_plan_post(f);
+    let whole = ir.whole_fold(f);
+    for (m, s) in posts.sites.iter().chain(radix.iter().map(|(m, s)| (*m, s))) {
+        let Some(p) = &s.post else { continue };
+        let morph = ir.morphism(m).expect("site resolves");
+        let Operation::Map { body, captures } = morph.op else {
+            continue;
+        };
+        let strided = s.a.clane > 1 || s.b.clane > 1;
+        // A number the epilogue reads by value is the host's: one a whole
+        // fold makes stays in its device buffer (`scalar-fold`), read by the
+        // per-cell kernel there — a by-value read would wait on the device
+        // each trip.
+        let dev_number = p.uniform.iter().any(|&slot| {
+            super::pair_source_ir(ir, morph.source, slot)
+                .and_then(|o| ir.in_edges(o).first().copied())
+                .is_some_and(|q| whole.contains_key(q))
+        });
+        let index_i32 = super::pair_source_ir(ir, morph.source, captures)
+            .and_then(|o| ir.object(o))
+            .is_some_and(|o| matches!(&o.ty, Ty::Array { elem, .. } if **elem == Ty::i32()));
+        // One row a `b` panel (nothing to share it with) over a k-major `b`:
+        // the per-cell kernel's warp a cell reads `b` coalesced and skips the
+        // cells a guard masks; the tile would read it a row an element.
+        let lone_k_major = row_group(s) == 1 && b_k_major(s);
+        if gated.contains(&m)
+            || dev_number
+            || lone_k_major
+            || (strided && !rungs.lane_stride)
+            || !index_i32
+            || !device_body(ir, body, 0)
+            || 3 + p.reads.len() + 1 + p.uniform.len() > LAUNCHV_MAX
+            || !gpu_site(s, profile, rungs.window)
+            || !launch(s, profile, contract, arms).rungs.epilogue
+        {
+            continue;
+        }
+        out.push((m, s.clone()));
+    }
+    out
+}
+
+/// A body the device runs with the host's text, as far as the graph tells:
+/// no `Call`, no float `%` (NVPTX's `frem` is not the host's `fmodf`), every
+/// nested body the same. The emitter's `device_leaf` adds the function
+/// attributes (clean) it alone knows.
+fn device_body(ir: &CategoryIr, body: FuncId, depth: u32) -> bool {
+    let Some(fd) = ir.func(body) else {
+        return false;
+    };
+    depth < 8
+        && fd.morphisms.iter().all(|&g| {
+            let Some(x) = ir.morphism(g) else {
+                return false;
+            };
+            let float_mod = x.op == Operation::Mod
+                && ir
+                    .object(x.source)
+                    .and_then(|o| o.ty.component_ty(0).cloned())
+                    .is_some_and(|t| is_float(&t));
+            !float_mod
+                && match x.op {
+                    Operation::Call(_) => false,
+                    Operation::Map { body, .. } | Operation::Fold { body, .. } => {
+                        device_body(ir, body, depth + 1)
+                    }
+                    _ => true,
+                }
+        })
 }
 
 /// The arithmetic the selected kernel actually emits, distinct from the
@@ -550,6 +710,9 @@ pub(crate) fn launch_split(
     let e = elem_bytes_of(&site.elem);
     let gpu = profile.gpu().expect("a GPU site has a GPU profile");
     let shaped = site.a.clane == 0 && site.b.ci == 0;
+    // `head-group`: a block's rows within one batch (its `b` panel's rows):
+    // the tile is chosen over one batch's rows.
+    let grows = row_group(site);
     let (blocks, threads) = fill_grid(site, profile);
     let wps = gpu.warps_per_scheduler(blocks, threads);
     let raster = |rungs: crate::GpuRungs, bm: u64, bn: u64, per_sm: u64| match rungs.raster {
@@ -600,7 +763,7 @@ pub(crate) fn launch_split(
                     combine: Combine::None,
                 };
             }
-            let mma = profile.gpu_mma_tile(site.rows, site.c, site.k, rungs.wide, rungs.fill);
+            let mma = profile.gpu_mma_tile(grows, site.c, site.k, rungs.wide, rungs.fill);
             if let Some(m) = mma {
                 return Launch {
                     arithmetic: Arithmetic::Tf32Mma,
@@ -640,7 +803,7 @@ pub(crate) fn launch_split(
     let tiled = shaped
         .then(|| {
             profile.gpu_tile_split(
-                site.rows,
+                grows,
                 site.c,
                 site.k,
                 &site.elem,
@@ -650,11 +813,18 @@ pub(crate) fn launch_split(
             )
         })
         .flatten()
+        // device-geometry `head-group`: a row group below every derived
+        // tile's rows — one block a group, `tm` its rows.
+        .or_else(|| {
+            (shaped && grows < site.rows)
+                .then(|| profile.gpu_group_tile(grows, site.c, site.k, &site.elem))
+                .flatten()
+        })
         // S62 `cell-fill`: no register tile divides the site — one output per
         // thread, still staged ([`TargetProfile::gpu_cell_tile`]).
         .or_else(|| {
             (shaped && rungs.cell_fill)
-                .then(|| profile.gpu_cell_tile(site.rows, site.c, site.k, &site.elem))
+                .then(|| profile.gpu_cell_tile(grows, site.c, site.k, &site.elem))
                 .flatten()
         })
         .map(|g| GpuTile {
@@ -897,6 +1067,15 @@ fn plan_line(
             .collect();
         f += &format!(" radix={}", on.join(","));
     }
+    // device-geometry `head-group`: the rows one `b` panel serves (a KV
+    // head's query heads), where fewer than the site's (intent.py
+    // `head-group`); `tile-post`: the store evaluates the body after the fold.
+    if row_group(site) < site.rows {
+        f += &format!(" group={}", row_group(site));
+    }
+    if site.post.is_some() {
+        f += " post=1";
+    }
     // recurrence-precision `tf32-tile`: the site's product set when it admits
     // TF32 (ADR-0041 D5 `set`, intent.py `tf32-tile`); f32-only lines unchanged.
     if site.tf32 {
@@ -1029,7 +1208,7 @@ pub(crate) fn plan_cands(
     arms: crate::GpuArms,
     order: Order,
 ) -> Vec<Cand> {
-    let window = site.a.ksplit.is_some() || site.b.ksplit.is_some() || site.radix.is_some();
+    let window = site.a.ksplit.is_some() || site.b.ksplit.is_some() || radix_whole(site);
     let rungs = l.rungs;
     if order != Order::Free
         || profile.plan_rates().is_none()
@@ -1485,6 +1664,28 @@ pub(crate) fn site_cands(
     out
 }
 
+/// The arms and order an epilogue group's candidates are realized under. A
+/// `tile-post` group's fold may split into a workspace, whose reduce launch
+/// evaluates the epilogue once every cell's sum is whole (the one combine
+/// whose last pass sees whole sums: the atomic and stream-K splits are off);
+/// any other group keeps the ordered kernel it measured with (S54).
+pub(crate) fn group_order(
+    epi: Option<&EpiKernel>,
+    arms: crate::GpuArms,
+    order: Order,
+) -> (crate::GpuArms, Order) {
+    match epi {
+        Some(e) if e.post.is_some() => {
+            let mut a = arms;
+            *a.off.rung("splitk-atomic").expect("a rung") = true;
+            *a.off.rung("streamk").expect("a rung") = true;
+            (a, order)
+        }
+        Some(_) => (arms, Order::Sequential),
+        None => (arms, order),
+    }
+}
+
 /// per-site-choice B2: no buffer a launch writes is one it reads, under the
 /// residency plan's `alias` (the slot an object shares): `RERUN`.
 fn apart<T: Copy + PartialEq>(reads: &[T], writes: &[T], alias: impl Fn(T) -> T) -> bool {
@@ -1534,7 +1735,15 @@ fn cand_ids(
         Combine::None => (kernel_id_with(site, profile, contract, epi), 0),
         Combine::Atomic { .. } => (split("atomic"), 0),
         Combine::StreamK { .. } => (split("streamk"), 0),
-        Combine::Workspace { .. } => (split("splitk"), split("reduce")),
+        // `tile-post`: the reduce launch evaluates the epilogue (its id
+        // names the group, as an ordered group kernel's does).
+        Combine::Workspace { .. } => match epi {
+            Some(e) => (
+                split("splitk"),
+                fnv(&format!("{:016x}|{e:?}", split("reduce"))),
+            ),
+            None => (split("splitk"), split("reduce")),
+        },
     };
     if first {
         return (main, rid);
@@ -1600,25 +1809,38 @@ fn cand_kernels(
         .enumerate()
         .map(|(i, c)| cand_ids(site, profile, contract, epi, &c.launch, i == 0))
         .collect();
-    if !ids[1..]
+    // `tile-post`: candidate 0 of a post group may be a split, whose kernels
+    // the plain group emission does not make: every candidate here.
+    let first = usize::from(!epi.is_some_and(|e| e.post.is_some()));
+    if !ids[first..]
         .iter()
         .any(|(i, _)| live.contains(&kernel_name(*i)))
     {
         return;
     }
-    for (c, &(id, rid)) in cands.iter().zip(&ids).skip(1) {
+    for (c, &(id, rid)) in cands.iter().zip(&ids).skip(first) {
         let name = kernel_name(id);
         let comb = c.launch.combine;
+        // A workspace split's partials are plain sums: the epilogue runs in
+        // its reduce launch.
+        let main_epi = match comb {
+            Combine::Workspace { .. } => None,
+            _ => epi,
+        };
         kernels.entry(name.clone()).or_insert_with(|| {
-            kernel_text(&name, site, profile, contract, c.arms, false, epi, comb)
+            kernel_text(
+                &name, site, profile, contract, c.arms, false, main_epi, comb,
+            )
         });
         if let Combine::Workspace { s } = comb {
             let red = kernel_name(rid);
             kernels.entry(red.clone()).or_insert_with(|| {
                 format!(
-                    "; mapal.plan kernel={red} kind=reduce rows={} c={} S={s}\n",
-                    site.rows, site.c
-                ) + &reduce_kernel_text(&red, site, profile, contract, c.arms, s)
+                    "; mapal.plan kernel={red} kind=reduce rows={} c={} S={s}{}\n",
+                    site.rows,
+                    site.c,
+                    if epi.is_some() { " epi=1" } else { "" }
+                ) + &reduce_kernel_text(&red, site, profile, contract, c.arms, s, epi)
             });
         }
     }
@@ -1724,7 +1946,7 @@ fn combine(
     arms: crate::GpuArms,
 ) -> Combine {
     // A window's taps (`window`) are walked in order: its `k` is not cut.
-    let window = site.a.ksplit.is_some() || site.b.ksplit.is_some() || site.radix.is_some();
+    let window = site.a.ksplit.is_some() || site.b.ksplit.is_some() || radix_whole(site);
     if order == Order::Sequential || l.mma.is_some() || l.wgmma.is_some() || window {
         return Combine::None;
     }
@@ -1863,6 +2085,7 @@ fn site_key(site: &TileSite) -> String {
     format!("{site:?}")
         .replace(", radix: None", "")
         .replace(", tf32: false", "")
+        .replace(", post: None", "")
 }
 
 /// ADR-0041 D6: the reduced realization a site's products admit — `tf32` in
@@ -1965,13 +2188,37 @@ pub(crate) fn col_store(l: &Launch, site: &TileSite) -> bool {
 /// **S54 R1, the device half: the per-cell consumers a site's store
 /// evaluates** (`resident.rs:Epi`), in the terms the kernel needs. Group value
 /// 0 is the site's accumulator, `k + 1` call `k`'s result.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) struct EpiKernel {
     /// The site's own output is stored (a reader outside the group).
     pub store_out: bool,
     /// Device pointers to complete operands, after `a, b, out` (`%x<i>`).
     pub caps: usize,
     pub calls: Vec<EpiCall>,
+    /// device-geometry `tile-post`: the site's own body after its fold,
+    /// `ret @callee(arg, acc)` — its result is group value 0.
+    pub post: Option<EpiCall>,
+    /// `tile-post`: the LLVM types of the numbers the epilogue reads by
+    /// value (`%u<j>`, 8-byte arguments after the stored pointers).
+    pub uniforms: Vec<String>,
+}
+
+// The kernel id hashes this text: a group without a post keeps the id it
+// had before `tile-post` existed.
+impl std::fmt::Debug for EpiKernel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut d = f.debug_struct("EpiKernel");
+        d.field("store_out", &self.store_out)
+            .field("caps", &self.caps)
+            .field("calls", &self.calls);
+        if let Some(p) = &self.post {
+            d.field("post", p);
+        }
+        if !self.uniforms.is_empty() {
+            d.field("uniforms", &self.uniforms);
+        }
+        d.finish()
+    }
 }
 
 /// One member: `ret @callee(arg)`, its input assembled field by field.
@@ -1997,6 +2244,11 @@ pub(crate) enum EpiArg {
     Cap(usize),
     /// The cell index `t`, `i32`.
     Index,
+    /// `tile-post`: an array only the site's fold reads — the epilogue
+    /// variant never touches it (`ptr null`).
+    Null,
+    /// `tile-post`: uniform `j` (`%uv<j>`), by value.
+    Uniform(usize),
 }
 
 /// A grouped site for the device unit: its function and morphism (its plain
@@ -2416,6 +2668,11 @@ pub(crate) fn cell_variant(name: &str) -> String {
     format!("{name}_cell")
 }
 
+/// `tile-post`'s epilogue variant of map body `name` (`FnEmit::post_fold`).
+pub(crate) fn post_variant(name: &str) -> String {
+    format!("{name}_post")
+}
+
 /// `cell-lanes`' device variant of body `name` (`FnEmit::lanes`).
 pub(crate) fn lanes_variant(name: &str) -> String {
     format!("{name}_lanes")
@@ -2516,18 +2773,21 @@ pub(crate) fn cell_kernel_text(
         None => ("%i", n.to_string()),
         Some(_) => ("%k", "%rn".to_string()),
     };
+    // `piece-delta`: cell `k` of the range is `(k ÷ w)·step + k % w` past `rs`.
+    let offset = |step: u64| match g.piece {
+        0 | 1 => format!("  %ks = mul i64 %k, {step}\n  %i = add i64 %rs, %ks\n"),
+        w => format!(
+            "  %kq = udiv i64 %k, {w}\n  %kr = urem i64 %k, {w}\n  %kqs = mul i64 %kq, {step}\n  \
+             %ks = add i64 %kqs, %kr\n  %i = add i64 %rs, %ks\n"
+        ),
+    };
     let (gid, at) = match (g.lanes, g.range) {
         (1, None) => ("%i".to_string(), String::new()),
-        (1, Some(step)) => (
-            "%k".to_string(),
-            format!("  %ks = mul i64 %k, {step}\n  %i = add i64 %rs, %ks\n"),
-        ),
+        (1, Some(step)) => ("%k".to_string(), offset(step)),
         (l, None) => ("%g".to_string(), format!("  %i = udiv i64 %g, {l}\n")),
         (l, Some(step)) => (
             "%g".to_string(),
-            format!(
-                "  %k = udiv i64 %g, {l}\n  %ks = mul i64 %k, {step}\n  %i = add i64 %rs, %ks\n"
-            ),
+            format!("  %k = udiv i64 %g, {l}\n{}", offset(step)),
         ),
     };
     // Lanes: the bound test is on the cell, after the division.
@@ -2599,6 +2859,9 @@ pub(crate) struct CellGeo {
     /// `range-cell`: the interval's step; the kernel takes its start and
     /// count by value (`%rs`, `%rn`).
     pub range: Option<u64>,
+    /// `piece-delta`: each `step` position is a piece of this many cells
+    /// (0 or 1: one cell). Thread `k` is cell `rs + (k ÷ w)·step + k % w`.
+    pub piece: u64,
     /// `cell-lanes`: threads a cell (1: one thread a cell).
     pub lanes: u64,
     /// kernel-merging `zero-fold`: the later sites' outputs this kernel
@@ -2610,6 +2873,7 @@ impl CellGeo {
     #[cfg(test)]
     pub(crate) const ONE: CellGeo = CellGeo {
         range: None,
+        piece: 0,
         lanes: 1,
         zero: 0,
     };
@@ -2820,7 +3084,7 @@ pub(crate) fn device_module(
                         format!(
                             "; mapal.plan kernel={red} kind=reduce rows={} c={} S={s}\n",
                             site.rows, site.c
-                        ) + &reduce_kernel_text(&red, site, profile, contract, arms, s)
+                        ) + &reduce_kernel_text(&red, site, profile, contract, arms, s, None)
                     });
                 }
             }
@@ -2872,7 +3136,9 @@ pub(crate) fn device_module(
                 Combine::None,
             )
         });
-        // An epilogue group's kernel is ordered: its candidates are too.
+        // An epilogue group's kernel is ordered: its candidates are too — a
+        // `tile-post` group's may split into a workspace (`group_order`).
+        let (garms, gorder) = group_order(Some(&e.k), arms, order);
         cand_kernels(
             &mut kernels,
             &mut site_lines,
@@ -2880,8 +3146,8 @@ pub(crate) fn device_module(
             &e.site,
             profile,
             contract,
-            arms,
-            Order::Sequential,
+            garms,
+            gorder,
             false,
             Some(&e.k),
         );
@@ -3119,6 +3385,7 @@ fn reduce_kernel_text(
     contract: bool,
     arms: crate::GpuArms,
     s: u64,
+    epi: Option<&EpiKernel>,
 ) -> String {
     let mut k = kernel(
         site,
@@ -3126,11 +3393,13 @@ fn reduce_kernel_text(
         contract,
         arms,
         false,
-        None,
+        epi,
         Combine::Workspace { s },
     );
     let (t, ix, cells) = (k.t.clone(), k.idx, site.rows * site.c);
     let e = elem_bytes_of(&site.elem);
+    // `tile-post`: the header takes the group's pointers; the whole sum goes
+    // through its store.
     k.header(name, NAIVE_THREADS, e, 0);
     let tid = k.sreg("tid.x");
     let bx = k.sreg("ctaid.x");
@@ -3154,8 +3423,12 @@ fn reduce_kernel_text(
             r
         };
     }
-    let p = k.gep(1, "%o", &cell);
-    k.line(format!("store {t} {acc}, ptr addrspace(1) {p}, align {e}"));
+    if epi.is_some() {
+        k.store_cells(std::slice::from_ref(&acc), &cell);
+    } else {
+        let p = k.gep(1, "%o", &cell);
+        k.line(format!("store {t} {acc}, ptr addrspace(1) {p}, align {e}"));
+    }
     k.line("br label %done");
     k.out.push_str("done:\n  ret void\n}\n");
     k.out
@@ -3862,6 +4135,9 @@ impl Kernel<'_> {
         for j in 0..stored {
             s.push_str(&format!(", ptr addrspace(1) noalias align {align} %y{j}"));
         }
+        for j in 0..epi.uniforms.len() {
+            s.push_str(&format!(", i64 %u{j}"));
+        }
         s
     }
 
@@ -3876,6 +4152,10 @@ impl Kernel<'_> {
             self.line(format!(
                 "%xg{i} = addrspacecast ptr addrspace(1) %x{i} to ptr"
             ));
+        }
+        for (j, t) in epi.uniforms.iter().enumerate() {
+            let conv = uniform_from_i64(&format!("%uv{j}"), &format!("%u{j}"), t);
+            self.out.push_str(&conv);
         }
         let tys = self.epi_tys(epi);
         for (k, c) in epi.calls.iter().enumerate() {
@@ -3901,7 +4181,34 @@ impl Kernel<'_> {
             x
         };
         let tys = self.epi_tys(epi);
-        let mut vals = vec![acc.to_string()];
+        // `tile-post`: value 0 is the site's body after its fold.
+        let acc = match &epi.post {
+            Some(p) => {
+                let mut agg = "poison".to_string();
+                for (f, a) in p.fields.iter().enumerate() {
+                    let (ty, v) = match *a {
+                        EpiArg::Cap(i) => ("ptr".to_string(), format!("%xg{i}")),
+                        EpiArg::Index => ("i32".to_string(), t32.clone()),
+                        EpiArg::Null => ("ptr".to_string(), "null".to_string()),
+                        EpiArg::Uniform(j) => (epi.uniforms[j].clone(), format!("%uv{j}")),
+                        EpiArg::Value(_) | EpiArg::Cell(_) => {
+                            unreachable!("an epilogue body reads no group value")
+                        }
+                    };
+                    let n = self.tmp();
+                    self.line(format!("{n} = insertvalue {} {agg}, {ty} {v}, {f}", p.arg));
+                    agg = n;
+                }
+                let r = self.tmp();
+                self.line(format!(
+                    "{r} = call {} @{}({} {agg}, {} {acc})",
+                    p.ret, p.callee, p.arg, self.t
+                ));
+                r
+            }
+            None => acc.to_string(),
+        };
+        let mut vals = vec![acc];
         for (k, c) in epi.calls.iter().enumerate() {
             let arg = if c.arg.starts_with('{') {
                 let mut agg = "poison".to_string();
@@ -3915,6 +4222,8 @@ impl Kernel<'_> {
                         }
                         EpiArg::Cap(i) => ("ptr".to_string(), format!("%xg{i}")),
                         EpiArg::Index => ("i32".to_string(), t32.clone()),
+                        EpiArg::Null => ("ptr".to_string(), "null".to_string()),
+                        EpiArg::Uniform(j) => (epi.uniforms[j].clone(), format!("%uv{j}")),
                     };
                     let n = self.tmp();
                     self.line(format!("{n} = insertvalue {} {agg}, {ty} {v}, {f}", c.arg));
@@ -3934,7 +4243,7 @@ impl Kernel<'_> {
             ));
             vals.push(r);
         }
-        vals.split_off(1)
+        vals
     }
 
     /// Store `accs`, the accumulators of the consecutive output cells from
@@ -3943,7 +4252,9 @@ impl Kernel<'_> {
     /// `accs.len() > 1`, as the plain store.
     fn store_cells(&mut self, accs: &[String], oi: &str) {
         let epi = self.epi.expect("an epilogue");
-        let mut per: Vec<Vec<String>> = vec![Vec::new(); epi.calls.len()];
+        // Value 0 (the site's: its accumulator, through a `tile-post` body),
+        // then each call's.
+        let mut per: Vec<Vec<String>> = vec![Vec::new(); epi.calls.len() + 1];
         for (j, acc) in accs.iter().enumerate() {
             let cell = self.plus(oi.to_string(), j as u64);
             for (k, v) in self.epi_values(acc, &cell).into_iter().enumerate() {
@@ -3952,12 +4263,20 @@ impl Kernel<'_> {
         }
         let mut outs: Vec<(String, String, Vec<String>)> = Vec::new();
         if epi.store_out {
-            outs.push(("%o".to_string(), self.t.clone(), accs.to_vec()));
+            outs.push((
+                "%o".to_string(),
+                self.t.clone(),
+                std::mem::take(&mut per[0]),
+            ));
         }
         let mut y = 0;
         for (k, c) in epi.calls.iter().enumerate() {
             if c.store {
-                outs.push((format!("%y{y}"), c.ret.clone(), std::mem::take(&mut per[k])));
+                outs.push((
+                    format!("%y{y}"),
+                    c.ret.clone(),
+                    std::mem::take(&mut per[k + 1]),
+                ));
                 y += 1;
             }
         }
@@ -4294,7 +4613,11 @@ impl Kernel<'_> {
         let load = |k: &mut Self, arr: &str, base: &str, r: &mapal_ir::TileRead| {
             let m = if std::ptr::eq(r, &s.a) { ra } else { rb };
             let off = match r.ksplit {
-                _ if m.is_some() => k.digits(&m.expect("radix").k, &kv),
+                // A split partition's `k` starts `z·kc` along the fold.
+                _ if m.is_some() => {
+                    let kz = k.at_z(kv.clone(), kc);
+                    k.digits(&m.expect("radix").k, &kz)
+                }
                 Some(ks) => {
                     let q = k.op("udiv", &kv, ks.div);
                     let m = k.op("urem", &kv, ks.div);
@@ -4757,7 +5080,8 @@ impl Kernel<'_> {
                 let kr = self.op("udiv", &li, bn);
                 let nc = self.op("urem", &li, bn);
                 let gc = self.op("add", &col0, &nc);
-                let g = self.radix_at(m, "0", &gc);
+                // `head-group`: `b`'s row digits are the block's batch.
+                let g = self.radix_at(m, &row0, &gc);
                 let sk = self.op("mul", &kr, ldb);
                 let sn = self.op("add", &sk, &nc);
                 radix.push((false, g, self.op("add", &sn, bm * lda), kr));
@@ -5180,7 +5504,8 @@ impl Kernel<'_> {
                     let gc = k.op("add", &col0, nc);
                     let sk = k.op("mul", kr, bn);
                     let sn = k.op("add", &sk, nc);
-                    return (k.radix_at(m, "0", &gc), k.op("add", &sn, bs_off));
+                    // `head-group`: `b`'s row digits are the block's batch.
+                    return (k.radix_at(m, &row0, &gc), k.op("add", &sn, bs_off));
                 }
                 let gk = k.op("mul", kr, s.b.ck);
                 let gc = k.op("add", &col0, nc);
@@ -5222,6 +5547,8 @@ impl Kernel<'_> {
                     kd: &str| {
             if let Some(m) = m {
                 let kk = k.op("add", k0, &kcs[p]);
+                // A split partition's `k` starts `z·kext` along the fold.
+                let kk = k.at_z(kk, kext);
                 let kx = k.digits(&m.k, &kk);
                 return k.op("add", gsrc, &kx);
             }
@@ -5645,7 +5972,18 @@ impl Kernel<'_> {
                         self.line(format!("{x} = load {t}, ptr {p}, align {e}"));
                         xs.push(x);
                     }
-                    let oi = self.op("add", &c0, v * b_chunk);
+                    // A digit-affine output (`tile-post` on a radix site): its
+                    // cell index is its address, `lanes` consecutive cells
+                    // (in slab `z` of a split's workspace, as `c0`).
+                    let oi = match (ro, &rrow) {
+                        (Some(o), Some(r)) => {
+                            let cc = self.op("add", &col0, &b_frag0);
+                            let cc = self.op("add", &cc, v * b_chunk);
+                            let a = self.radix_at(o, r, &cc);
+                            self.slab(a)
+                        }
+                        _ => self.op("add", &c0, v * b_chunk),
+                    };
                     self.store_cells(&xs, &oi);
                     continue;
                 }
@@ -5656,11 +5994,14 @@ impl Kernel<'_> {
                     self.line(format!("{x} = load {t}, ptr {p}, align {e}"));
                     xs.push(x);
                 }
+                // A split partition's partials go to its workspace slab `z`
+                // at the digit-affine address too (`c0` is slabbed above).
                 let oi = match (ro, &rrow) {
                     (Some(o), Some(r)) => {
                         let cc = self.op("add", &col0, &b_frag0);
                         let cc = self.op("add", &cc, v * b_chunk);
-                        self.radix_at(o, r, &cc)
+                        let a = self.radix_at(o, r, &cc);
+                        self.slab(a)
                     }
                     _ => self.op("add", &c0, v * b_chunk),
                 };
@@ -5935,11 +6276,7 @@ impl<'a> FnEmit<'a> {
             // the rules' ordered launch under an L2 window. An epilogue
             // group's kernel is ordered, so are its candidates.
             if !col && !streams {
-                let order = match epi {
-                    Some(_) => Order::Sequential,
-                    None => self.order,
-                };
-                let arms = self.gpu_arms;
+                let (arms, order) = group_order(epi.as_ref(), self.gpu_arms, self.order);
                 let cands = site_cands(site, self.profile, self.contract, arms, order, false);
                 let c0 = cands[0].launch;
                 let windowed = epi.is_none()
@@ -6154,6 +6491,7 @@ impl<'a> FnEmit<'a> {
                             EpiArg::Cap(caps.iter().position(|&x| x == o).expect("an operand"))
                         }
                         resident::EpiSrc::Index => EpiArg::Index,
+                        resident::EpiSrc::Uniform(_) => unreachable!("a member takes no uniform"),
                     })
                     .collect();
                 let cell = fields.iter().any(|a| matches!(a, EpiArg::Cell(_)));
@@ -6171,17 +6509,70 @@ impl<'a> FnEmit<'a> {
                 }
             })
             .collect();
+        // `tile-post`: the site's body after its fold, slot by slot.
+        let post = g.post.as_ref().map(|p| {
+            let captures = match self.ir.morphism(m).expect("site").op {
+                Operation::Map { captures, .. } => captures,
+                _ => unreachable!("a tile site is a map"),
+            };
+            let in_ty = self.obj_ty(self.ir.func(p.body).expect("body").input);
+            let arg = crate::ty::lower_body_input_ty(&in_ty, captures)
+                .expect("a site body's input lowers");
+            let fields = p
+                .srcs
+                .iter()
+                .map(|s| match *s {
+                    Some(resident::EpiSrc::Gmem(o)) => {
+                        EpiArg::Cap(caps.iter().position(|&x| x == o).expect("an operand"))
+                    }
+                    Some(resident::EpiSrc::Index) => EpiArg::Index,
+                    Some(resident::EpiSrc::Uniform(j)) => EpiArg::Uniform(j as usize),
+                    Some(resident::EpiSrc::Value(_)) => unreachable!("no group value"),
+                    None => EpiArg::Null,
+                })
+                .collect();
+            let (ret, _) = array_parts(&self.obj_ty(self.ir.morphism(m).expect("site").target));
+            EpiCall {
+                callee: post_variant(&self.fnames[p.body]),
+                arg,
+                ret,
+                fields,
+                store: false,
+            }
+        });
+        // `tile-post`: each uniform's type, from the site's source product.
+        let source = self.ir.morphism(m).expect("site").source;
+        let uniforms = g
+            .uniforms()
+            .into_iter()
+            .map(|slot| {
+                let t = self
+                    .obj_ty(source)
+                    .component_ty(slot)
+                    .cloned()
+                    .expect("a uniform");
+                crate::ty::lower_ty(&t).expect("a number lowers")
+            })
+            .collect();
         Some(EpiKernel {
             store_out: g.store_out,
             caps: caps.len(),
             calls,
+            post,
+            uniforms,
         })
     }
 
     /// This function's grouped sites for the device unit, and the bodies
     /// their kernels call: `(callee, body, captured slots read at the cell)`
     /// — an empty slot list is the host's own text.
-    pub(crate) fn epi_sites(&self) -> (Vec<EpiSite>, Vec<(String, FuncId, Vec<u32>)>) {
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn epi_sites(
+        &self,
+    ) -> (
+        Vec<EpiSite>,
+        Vec<(String, FuncId, Vec<u32>, Option<MorphismId>)>,
+    ) {
         let mut sites = Vec::new();
         let mut bodies = Vec::new();
         for (m, g) in self.groups.iter() {
@@ -6200,6 +6591,8 @@ impl<'a> FnEmit<'a> {
                         store_out: false,
                         caps: 0,
                         calls: Vec::new(),
+                        post: None,
+                        uniforms: Vec::new(),
                     },
                     terms: g.terms.len() as u64 + 1,
                     s: g.split,
@@ -6207,6 +6600,9 @@ impl<'a> FnEmit<'a> {
                 continue;
             }
             let k = self.epi_kernel(m).expect("a group");
+            if let (Some(p), Some(c)) = (&g.post, &k.post) {
+                bodies.push((c.callee.clone(), p.body, Vec::new(), Some(p.fold)));
+            }
             for (mb, c) in g.chain.iter().zip(&k.calls) {
                 let slots = c
                     .fields
@@ -6215,7 +6611,7 @@ impl<'a> FnEmit<'a> {
                     .filter(|(_, a)| matches!(a, EpiArg::Cell(_)))
                     .map(|(s, _)| s as u32)
                     .collect();
-                bodies.push((c.callee.clone(), mb.body, slots));
+                bodies.push((c.callee.clone(), mb.body, slots, None));
             }
             sites.push(EpiSite {
                 f: self.f,
@@ -6476,6 +6872,7 @@ mod tests {
             add_acc_first: true,
             radix: None,
             tf32: false,
+            post: None,
         }
     }
 

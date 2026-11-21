@@ -2049,6 +2049,70 @@ impl TargetProfile {
         Some(GpuTile { stages, ..geom })
     }
 
+    /// **device-geometry `head-group`: the FMA tile of a row group** — a
+    /// block that holds all `group` rows of one batch (a KV head's query
+    /// heads) as one thread's `tm = group` register rows, and a warp (or the
+    /// widest power of two up to one whose vectors tile `c`) over the lanes,
+    /// `tn` = one vector each: its `b` panel (the KV head's rows)
+    /// is staged once for the group. The accumulators and fragments
+    /// ([`fma_held_regs`]) fit half of `regs_per_thread`, as
+    /// [`Self::gpu_tile`]'s step 1. The panel depth: the deepest `bk` up to a
+    /// warp's steps dividing `k` whose panels every thread loads whole and
+    /// the block's share holds. `None` where the group is no power of two,
+    /// its rows outgrow the registers, or `c` is no whole number of vectors.
+    pub fn gpu_group_tile(&self, group: u64, c: u64, k: u64, elem: &Ty) -> Option<GpuTile> {
+        let g = self.gpu()?;
+        let e = elem_bytes(elem);
+        let lanes = (GPU_VEC_BYTES / e).max(1);
+        if !group.is_power_of_two()
+            || fma_held_regs(group, lanes, e) > g.regs_per_thread / 2
+            || !c.is_multiple_of(lanes)
+        {
+            return None;
+        }
+        let (tm, tn) = (group, lanes);
+        // One warp over the lanes — the widest power of two up to a warp
+        // whose vectors tile `c` (a 64-wide head: half a warp).
+        let vecs = c / tn;
+        let tx = 1u64 << vecs.trailing_zeros().min(g.warp.ilog2());
+        let held = fma_held_regs(tm, tn, e);
+        let (bm, bn) = (tm, tx * tn);
+        let loads_whole =
+            |bk: u64| (bm * bk / lanes).is_multiple_of(tx) && (bk * bn / lanes).is_multiple_of(tx);
+        // The deepest panel up to one warp's steps — or the shallowest whose
+        // `a` panel every thread loads whole, for a group of fewer rows than
+        // a warp's vectors: the group's rows are few, so the panel is mostly
+        // `b`'s, and its residency follows from it.
+        let fits = |bk: u64| {
+            bk >= lanes
+                && k.is_multiple_of(bk)
+                && (bm + bn) * bk * e + g.smem_reserved_per_block <= g.smem_per_block
+                && loads_whole(bk)
+        };
+        let depths = || {
+            (0..=k.max(1).ilog2())
+                .map(|p| 1u64 << p)
+                .filter(|&bk| fits(bk))
+        };
+        let cap = depths().min()?.max(g.warp.max(lanes));
+        let bk = depths().filter(|&bk| bk <= cap).max()?;
+        let panel = (bm + bn) * bk * e + g.smem_reserved_per_block;
+        let blocks_per_sm = residency(g, held, tx).min(g.smem_per_sm / panel).max(1);
+        Some(GpuTile {
+            tm,
+            tn,
+            tx,
+            ty: 1,
+            bk,
+            blocks_per_sm,
+            stages: 1,
+            pad_a: 0,
+            a_row_lanes: 0,
+            held: 0,
+            kmajor: false,
+        })
+    }
+
     /// **One output per thread as a staged tile (S62 rung `cell-fill`)**, for
     /// a shaped `rows × c × k` site [`Self::gpu_tile`] does not divide (its
     /// thread grid, halved to fill the SMs, outgrows `rows`). The fold of each

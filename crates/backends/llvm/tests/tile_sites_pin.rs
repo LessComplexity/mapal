@@ -67,12 +67,14 @@ const SOURCES: &[&str] = &[
 
 /// `source  raw=<n>  rewritten=<n>` — the rewritten column is the governing one.
 ///
-/// **`raw` is 0 for every source**, and that is a real fact rather than an
-/// accident of this table: no tile site is recognized before `rewrite` runs,
-/// because the kernels arrive as `Call`s or loops that `Inline` and `LiftLoops`
-/// have to fold first. The entire tiled path is downstream of the rewriter. It
-/// is pinned so that a future change making raw recognition possible shows up
-/// as a signal instead of passing unnoticed.
+/// **`raw` equals `rewritten` for every source** since device-geometry: the
+/// lowered fold's seed reaches it through `Pair` routing, which tile
+/// recognition now sees through (`through_pairs`, a guard arm's routed
+/// seed), so the sites are recognized before `rewrite` runs too. Every
+/// emission rewrites first, so the governing column — and every emitted
+/// kernel — is unchanged (no time to re-measure). Before, `raw` was 0
+/// everywhere. Pinned so that a future change to raw recognition shows up as
+/// a signal instead of passing unnoticed.
 ///
 /// `attn_256` is 2 because it chains two matmuls (S25) — the one row here that
 /// is not 0 or 1.
@@ -81,17 +83,17 @@ benches/shapes/saxpy_1048576.mapal        raw=0 rewritten=0
 benches/shapes/reduce_1048576.mapal       raw=0 rewritten=0
 benches/shapes/transpose_1024.mapal       raw=0 rewritten=0
 benches/shapes/gather_1048576.mapal       raw=0 rewritten=0
-benches/shapes/fir_1048576.mapal          raw=0 rewritten=1
-benches/shapes/fir_65536.mapal            raw=0 rewritten=1
-benches/shapes/conv2d_1024.mapal          raw=0 rewritten=1
-benches/shapes/conv2d_512.mapal           raw=0 rewritten=1
-benches/shapes/attn_256.mapal             raw=0 rewritten=2
-benches/shapes/attn_256_rowmajor.mapal    raw=0 rewritten=1
-benches/matmul/matmul1024_cap_f32.mapal   raw=0 rewritten=1
-benches/matmul/matmul1024_cap.mapal       raw=0 rewritten=1
-benches/matmul/matmul512_cap_f32.mapal    raw=0 rewritten=1
-benches/matmul/matmul256_cap_f32.mapal    raw=0 rewritten=1
-benches/matmul/matmul128_cap_f32.mapal    raw=0 rewritten=1
+benches/shapes/fir_1048576.mapal          raw=1 rewritten=1
+benches/shapes/fir_65536.mapal            raw=1 rewritten=1
+benches/shapes/conv2d_1024.mapal          raw=1 rewritten=1
+benches/shapes/conv2d_512.mapal           raw=1 rewritten=1
+benches/shapes/attn_256.mapal             raw=2 rewritten=2
+benches/shapes/attn_256_rowmajor.mapal    raw=1 rewritten=1
+benches/matmul/matmul1024_cap_f32.mapal   raw=1 rewritten=1
+benches/matmul/matmul1024_cap.mapal       raw=1 rewritten=1
+benches/matmul/matmul512_cap_f32.mapal    raw=1 rewritten=1
+benches/matmul/matmul256_cap_f32.mapal    raw=1 rewritten=1
+benches/matmul/matmul128_cap_f32.mapal    raw=1 rewritten=1
 ";
 
 fn observed() -> String {

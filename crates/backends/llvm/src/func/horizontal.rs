@@ -465,6 +465,7 @@ impl FnEmit<'_> {
             }
             let (gx, block) = gpu::CellGeo {
                 range: None,
+                piece: 0,
                 lanes: c.lanes,
                 zero: 0,
             }
@@ -544,7 +545,7 @@ impl FnEmit<'_> {
             }
         }
         let args = 3 + epi.map_or(0, |g| {
-            g.caps().len() + g.chain.iter().filter(|mb| mb.store).count()
+            g.caps().len() + g.chain.iter().filter(|mb| mb.store).count() + g.uniforms().len()
         });
         // An atomic split's partitions are blocks along `y` (the recipe's `gy · s`).
         let split = match c0.combine {

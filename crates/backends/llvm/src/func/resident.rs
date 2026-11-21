@@ -119,10 +119,14 @@ pub(crate) enum DevSite {
 }
 
 impl DevSite {
-    /// The source slots the kernel loads.
+    /// The source slots the kernel loads (a `tile-post` epilogue's reads too).
     fn reads(&self) -> Vec<u32> {
         match self {
-            DevSite::Tile(s) => vec![s.a.slot, s.b.slot],
+            DevSite::Tile(s) => {
+                let mut r = vec![s.a.slot, s.b.slot];
+                r.extend(s.post.iter().flat_map(|p| p.reads.iter().copied()));
+                r
+            }
             DevSite::RowFold(r) => vec![r.site.a.slot],
         }
     }
@@ -140,6 +144,9 @@ pub(crate) enum EpiSrc {
     Gmem(ObjectId),
     /// The cell index `t` (the mapped `iota`).
     Index,
+    /// `tile-post`: a number capture (a loop's position), by value — the
+    /// `j`-th of the group's uniforms ([`Epi::uniforms`]).
+    Uniform(u32),
 }
 
 /// One per-cell morphism evaluated in a site's store.
@@ -154,9 +161,23 @@ pub(crate) struct Member {
     pub srcs: Vec<EpiSrc>,
 }
 
+/// device-geometry `tile-post`: the site's own map body after its fold,
+/// evaluated on the accumulator before any member — the site's value.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Post {
+    pub body: FuncId,
+    pub fold: MorphismId,
+    /// One per body input slot: `Gmem` for an array the epilogue reads,
+    /// `Index` for the element, `None` for an array only the fold reads (a
+    /// null pointer: the variant never touches it).
+    pub srcs: Vec<Option<EpiSrc>>,
+}
+
 /// A device site's epilogue group (R1): its members in chain order.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Epi {
+    /// `tile-post`: the site's own body after its fold (value 0 is its result).
+    pub post: Option<Post>,
     /// A reader outside the group exists: the site's own output is stored.
     pub store_out: bool,
     pub chain: Vec<Member>,
@@ -170,9 +191,21 @@ pub(crate) struct Epi {
 impl Epi {
     /// The distinct `Gmem` operands, in first-use order (the kernel's
     /// pointer parameters after `a, b, out`).
+    /// `tile-post`: the number captures the epilogue reads, by capture slot,
+    /// in order (`EpiSrc::Uniform(j)` is the `j`-th): one 8-byte argument
+    /// each, after the stored members' pointers.
+    pub(crate) fn uniforms(&self) -> Vec<u32> {
+        self.post
+            .iter()
+            .flat_map(|p| p.srcs.iter().enumerate())
+            .filter_map(|(slot, s)| matches!(s, Some(EpiSrc::Uniform(_))).then_some(slot as u32))
+            .collect()
+    }
+
     pub(crate) fn caps(&self) -> Vec<ObjectId> {
         let mut out = Vec::new();
-        for s in self.chain.iter().flat_map(|mb| &mb.srcs) {
+        let post = self.post.iter().flat_map(|p| p.srcs.iter().flatten());
+        for s in post.chain(self.chain.iter().flat_map(|mb| &mb.srcs)) {
             if let EpiSrc::Gmem(o) = *s
                 && !out.contains(&o)
             {
@@ -835,6 +868,12 @@ impl<'a> FnEmit<'a> {
         self.cell_slots = slots;
     }
 
+    /// `tile-post`: emit this map body as a tile site's epilogue variant —
+    /// fold `fold`'s value arrives as `%fv` (`<name>_post`).
+    pub(crate) fn set_post_fold(&mut self, fold: Option<MorphismId>) {
+        self.post_fold = fold;
+    }
+
     /// Does the `Index` over product `source` read a one-cell buffer?
     pub(super) fn cell_read(&self, source: ObjectId) -> bool {
         if self.cell_slots.is_empty() {
@@ -979,13 +1018,26 @@ impl<'a> FnEmit<'a> {
             // A retained output (S53) updates one row a trip: its group's
             // members would keep the full launch's stale rows. A mixed-radix
             // site stores digit by digit: no epilogue (`radix-tile`).
-            if !l.rungs.epilogue || self.retain.contains_key(target(s)) || site.radix.is_some() {
+            // A `tile-post` radix site's store evaluates its epilogue at each
+            // cell's address (its index `t`).
+            if !l.rungs.epilogue
+                || self.retain.contains_key(target(s))
+                || (site.radix.is_some() && site.post.is_none())
+            {
                 continue;
             }
             let c = target(s);
             let n = array_len(&self.obj_ty(c));
             let before = |p: MorphismId| {
                 pos(p) < pos(s) && region.get(p).is_some_and(|&r| r == rs || r.0.is_none())
+            };
+            // `tile-post`: the site's body after its fold is the site's value.
+            let post = match &site.post {
+                Some(p) => match self.post_of(s, p) {
+                    Some(x) => Some(x),
+                    None => continue,
+                },
+                None => None,
             };
             let mut values = vec![c];
             let mut chain: Vec<Member> = Vec::new();
@@ -1069,13 +1121,16 @@ impl<'a> FnEmit<'a> {
                 };
                 // `a, b, out`, every operand and every member's output.
                 let mut trial = Epi {
+                    post: post.clone(),
                     store_out: true,
                     chain: chain.clone(),
                     terms: Vec::new(),
                     split: 1,
                 };
                 trial.chain.push(mb.clone());
-                if 3 + trial.caps().len() + trial.chain.len() > gpu::LAUNCHV_MAX {
+                if 3 + trial.caps().len() + trial.chain.len() + trial.uniforms().len()
+                    > gpu::LAUNCHV_MAX
+                {
                     break;
                 }
                 taken.insert(mb.m, ());
@@ -1083,23 +1138,28 @@ impl<'a> FnEmit<'a> {
                 made.insert(mb.out, s);
                 chain.push(mb);
             }
-            if chain.is_empty() {
+            if chain.is_empty() && post.is_none() {
                 continue;
             }
             // plan-cost (design #10): absorbing the members keeps the site
             // unsplit; leaving them their own cell launches frees its fold to
             // split. The cheaper by `site_ns` and `op_ns` (D1); the absorbed
-            // group where the part has no plan rates (D8).
-            if !self.absorb_pays(site, &l, n, &chain) {
+            // group where the part has no plan rates (D8). A `tile-post`
+            // site's group stands either way (its value is the epilogue's).
+            if !chain.is_empty() && !self.absorb_pays(site, &l, n, &chain) {
                 for mb in &chain {
                     taken.remove(mb.m);
                     made.remove(mb.out);
                 }
-                continue;
+                chain.clear();
+                if post.is_none() {
+                    continue;
+                }
             }
             out.insert(
                 s,
                 Epi {
+                    post,
                     store_out: true,
                     chain,
                     terms: Vec::new(),
@@ -1121,6 +1181,42 @@ impl<'a> FnEmit<'a> {
             }
         }
         out
+    }
+
+    /// `tile-post`: the epilogue of tile site `s` — its map body after the
+    /// fold, fed slot by slot (`Post::srcs`): `None` when the body is no
+    /// device leaf or its input erases a slot.
+    fn post_of(&self, s: MorphismId, p: &mapal_ir::TilePost) -> Option<Post> {
+        let morph = self.ir.morphism(s)?;
+        let Operation::Map { body, captures } = morph.op else {
+            return None;
+        };
+        let in_ty = self.obj_ty(self.ir.func(body)?.input);
+        if !self.device_leaf(body) {
+            return None;
+        }
+        let mut srcs = Vec::new();
+        let mut u = 0;
+        for slot in 0..=captures {
+            if crate::ty::erased_index(&in_ty, slot) != Some(slot) {
+                return None;
+            }
+            srcs.push(if slot == captures {
+                Some(EpiSrc::Index)
+            } else if p.uniform.contains(&slot) {
+                u += 1;
+                Some(EpiSrc::Uniform(u - 1))
+            } else if p.reads.contains(&slot) {
+                Some(EpiSrc::Gmem(self.pair_source(morph.source, slot)?))
+            } else {
+                None
+            });
+        }
+        Some(Post {
+            body,
+            fold: p.fold,
+            srcs,
+        })
     }
 
     /// plan-cost `linear`: the site table of linear site `ls` (summing map
@@ -1203,6 +1299,7 @@ impl<'a> FnEmit<'a> {
         Some((
             anchor,
             Epi {
+                post: None,
                 store_out: false,
                 chain: vec![Member {
                     m: sum,
@@ -2721,6 +2818,15 @@ impl<'a> FnEmit<'a> {
             self.line(format!("{span} = sub i64 {hi}, {lo}"));
             self.line(format!("{up} = add i64 {span}, {}", ou.step - 1));
             self.line(format!("{cnt} = udiv i64 {up}, {}", ou.step));
+            // `piece-delta`: each position a piece of `w` cells.
+            let cnt = match ou.w {
+                0 | 1 => cnt,
+                w => {
+                    let c = self.tmp();
+                    self.line(format!("{c} = mul i64 {cnt}, {w}"));
+                    c
+                }
+            };
             ptrs.push(lo);
             ptrs.push(cnt.clone());
             let (thr, blk, b1, z, one, gx) = (
@@ -2741,6 +2847,7 @@ impl<'a> FnEmit<'a> {
         });
         let (gx, block) = gpu::CellGeo {
             range: None,
+            piece: 0,
             lanes: c.lanes,
             zero: 0,
         }
@@ -2860,12 +2967,16 @@ impl<'a> FnEmit<'a> {
                 let work = self.ir.cell_plan(self.f).get(m).map_or(1, |x| x.work);
                 let geo = gpu::CellGeo {
                     range: c.range.map(|ou| ou.step),
+                    piece: c.range.map_or(0, |ou| ou.w),
                     lanes: c.lanes,
                     zero: plan.zero_by.get(m).map_or(0, Vec::len),
                 };
                 let mut facts = format!("nested={} work={work}", c.nested.len());
                 if let Some(ou) = c.range {
                     facts.push_str(&format!(" range={}x{}", ou.step, ou.len.min(c.n)));
+                    if ou.w > 1 {
+                        facts.push_str(&format!(" piece={}", ou.w));
+                    }
                 }
                 if c.lanes > 1 {
                     facts.push_str(&format!(" lanes={}", c.lanes));
@@ -2909,6 +3020,7 @@ impl<'a> FnEmit<'a> {
                             &caps,
                             gpu::CellGeo {
                                 range: Some(1),
+                                piece: 0,
                                 lanes: 1,
                                 zero: 0,
                             },
@@ -3229,6 +3341,17 @@ impl<'a> FnEmit<'a> {
             (Some((_, g)), _) => {
                 let mut ptrs = vec![ops[0].clone(), ops[1].clone(), dout.clone()];
                 for o in g.caps() {
+                    // `tile-post`: the site's own operand, as `a` and `b` are.
+                    let own = g.post.as_ref().and_then(|p| {
+                        p.srcs
+                            .iter()
+                            .position(|x| *x == Some(EpiSrc::Gmem(o)))
+                            .map(|k| k as u32)
+                    });
+                    if let Some(slot) = own {
+                        ptrs.push(self.dev_operand(source, slot, ms, &mut temps));
+                        continue;
+                    }
                     debug_assert!(
                         self.dvalid.contains_key(plan.alias(o)),
                         "epilogue operand in Gmem"
@@ -3240,6 +3363,13 @@ impl<'a> FnEmit<'a> {
                     let d = self.dalloc(mb.out, bytes);
                     ptrs.push(d.clone());
                     stored.push((mb.out, d));
+                }
+                // `tile-post`: each number the epilogue reads, by value.
+                for slot in g.uniforms() {
+                    let (t, v) = self.load_component(source, slot).expect("uniform loads");
+                    let w = self.tmp();
+                    self.line(gpu::uniform_to_i64(&w, &v, &t));
+                    ptrs.push(w);
                 }
                 Some(ptrs)
             }
@@ -3752,6 +3882,7 @@ mod tests {
         groups.insert(
             site,
             Epi {
+                post: None,
                 terms: Vec::new(),
                 split: 1,
                 store_out: false,

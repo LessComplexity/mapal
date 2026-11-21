@@ -223,6 +223,15 @@ impl<'a> FnEmit<'a> {
             .cell_vals
             .iter()
             .fold(param, |p, (s, t)| format!("{p}, {t} %cv{s}"));
+        // `tile-post`: the epilogue variant, its fold's value after `%arg`.
+        let (fname, param) = match self.post_fold {
+            Some(fold) => {
+                let t = self.ir.morphism(fold).expect("fold resolves").target;
+                let llt = lower_ty(&self.obj_ty(t)).expect("a fold value lowers");
+                (gpu::post_variant(&fname), format!("{param}, {llt} %fv"))
+            }
+            None => (fname, param),
+        };
         let text = format!(
             "define internal {sig_ret} @{fname}({param}){fn_attrs} {{\nentry:\n{}{}{}}}\n{}{}",
             perf_begin, self.allocas, self.body, self.cand_tables, self.host_par_fns

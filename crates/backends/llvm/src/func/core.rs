@@ -91,6 +91,7 @@ impl<'a> FnEmit<'a> {
             cell_suffix: "_cell".into(),
             cell_vals: Vec::new(),
             lanes: None,
+            post_fold: None,
             path_plan: None,
             split_slots: Vec::new(),
             dallocs: Vec::new(),
@@ -199,6 +200,37 @@ impl<'a> FnEmit<'a> {
         // S54 `epilogue`: the per-cell groups, before the plan that reads them.
         if resident {
             self.groups = self.epilogues();
+        }
+        // `tile-post`: a site's value is its epilogue's, so a post site with
+        // no group (`gpu::post_sites` admits only where one forms) is no site:
+        // it stays the per-cell map it was.
+        let orphans: Vec<MorphismId> = self
+            .tile_plan
+            .as_ref()
+            .map(|p| {
+                p.sites
+                    .iter()
+                    .filter(|&(m, s)| s.post.is_some() && !self.groups.contains_key(m))
+                    .map(|(m, _)| m)
+                    .collect()
+            })
+            .unwrap_or_default();
+        if !orphans.is_empty() {
+            let plan = self.tile_plan.as_mut().expect("a plan");
+            for m in orphans {
+                plan.sites.remove(m);
+            }
+            self.device = super::gpu::placement(
+                self.ir,
+                self.f,
+                plan,
+                self.profile,
+                rungs.window,
+                rungs.carry_made,
+            );
+            if resident {
+                self.groups = self.epilogues();
+            }
         }
         self.resident = resident.then(|| self.resident_plan(rungs)).flatten();
         // generic-fusion: the host intent line, in the entry block.

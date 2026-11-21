@@ -389,9 +389,11 @@ fn lanes_on_unseen_programs() {
         }
         let want = nums(&rr.output);
         // `fold-lanes` takes the row folds `flow` leaves (its tree gate):
-        // with `flow` off every generated row fold is one.
+        // with `flow` off every generated row fold is one. `cell-lanes` takes
+        // the nest cells `tile-post` leaves (a fold whose body goes on past
+        // it is a post tile site): with `tile-post` off every one is a cell.
         for (n, (rung, kind, base)) in [
-            ("cell-lanes", "cell", &[][..]),
+            ("cell-lanes", "cell", &["tile-post"][..]),
             ("fold-lanes", "rowfold", &["flow"][..]),
         ]
         .into_iter()

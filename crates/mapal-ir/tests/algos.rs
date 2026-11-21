@@ -1690,6 +1690,7 @@ fn tile_matmul_site_recognized() {
             add_acc_first: true,
             radix: None,
             tf32: false,
+            post: None,
         }
     );
 }
@@ -1883,6 +1884,7 @@ fn tile_fir_site_recognized() {
             add_acc_first: true,
             radix: None,
             tf32: false,
+            post: None,
         }
     );
 }
@@ -2191,6 +2193,7 @@ fn tile_conv2d_site_recognized() {
             add_acc_first: true,
             radix: None,
             tf32: false,
+            post: None,
         }
     );
 }
@@ -4382,7 +4385,7 @@ fn affine_ix(fb: &mut mapal_ir::FnBuilder<'_>, t: ObjectId, c: i32, k: i32) -> O
 fn rows(d: mapal_ir::Delta) -> Option<(u64, ObjectId, i64, i64)> {
     match d {
         mapal_ir::Delta::Rows { stride, start, .. } => Some((stride, start.var, start.a, start.b)),
-        mapal_ir::Delta::Top => None,
+        _ => None,
     }
 }
 

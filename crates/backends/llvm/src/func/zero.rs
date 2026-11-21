@@ -260,6 +260,7 @@ impl<'a> FnEmit<'a> {
                 return None;
             }
             let cells = match c.range {
+                Some(ou) if ou.w > 1 => c.n.div_ceil(ou.step).saturating_mul(ou.w).min(c.n),
                 Some(ou) => ou.len.min(c.n),
                 None => c.n,
             };

@@ -227,6 +227,11 @@ impl<'a> FnEmit<'a> {
                     self.emit_map(m, source, target, body, captures)
                 }
             }
+            // `tile-post`: the epilogue variant takes the site's fold value.
+            Operation::Fold { .. } if self.post_fold == Some(m) => {
+                let llt = lower_ty(&self.obj_ty(target)).expect("a fold value lowers");
+                self.store_obj(target, &llt, "%fv");
+            }
             Operation::Fold { body, captures } => self.emit_fold(source, target, body, captures),
             Operation::Index => self.emit_index(m, source, target),
             Operation::Update => self.emit_update(m, source, target),

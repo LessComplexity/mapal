@@ -27,6 +27,7 @@ pub(crate) struct FuncFacts {
     pub(crate) emission_plan: OnceLock<EmissionPlan>,
     pub(crate) tile_plan: OnceLock<TilePlan>,
     pub(crate) tile_plan_strided: OnceLock<TilePlan>,
+    pub(crate) tile_plan_post: OnceLock<TilePlan>,
     pub(crate) radix_plan: OnceLock<SecondaryMap<ObjectId, RadixForm>>,
     pub(crate) tile_plan_radix: OnceLock<SecondaryMap<MorphismId, TileSite>>,
     pub(crate) precision_plan: OnceLock<PrecisionPlan>,
@@ -68,11 +69,31 @@ pub struct FactArms {
     /// `loop_plan`. Off: plain interval ranges over constants, iota elements
     /// and map/fold quantification.
     pub cond_bounds: bool,
+    /// device-geometry `row-tree`: a cell's tree fold ([`crate::CellSite::tree`])
+    /// is its one nested `Map`/`Fold` that loads array elements, beside any
+    /// that load none (a norm's Heron root). Off: only a body whose one
+    /// nested `Map`/`Fold` it is.
+    pub row_tree: bool,
+    /// device-geometry `piece-delta`: a piecewise map's set may be a row
+    /// every `s` rows (`(t ÷ d) % s == r`: [`crate::Outside`] `w > 1`), and
+    /// [`crate::Delta::Pieces`] its carried write. Off: no such set.
+    pub piece_delta: bool,
+    /// device-geometry `head-group`: a mixed-radix tile site may have batch
+    /// digits — map-index digits both operands read (a KV head's query-head
+    /// group, a sequence), row digits of `a` and block-uniform row digits of
+    /// `b` ([`crate::CategoryIr::tile_plan_radix`]). Off: every digit is
+    /// one operand's.
+    pub head_group: bool,
 }
 
 impl Default for FactArms {
     fn default() -> Self {
-        FactArms { cond_bounds: true }
+        FactArms {
+            cond_bounds: true,
+            row_tree: true,
+            piece_delta: true,
+            head_group: true,
+        }
     }
 }
 

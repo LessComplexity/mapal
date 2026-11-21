@@ -645,6 +645,38 @@ pub struct GpuRungs {
     /// dispatch cost says it pays (`func/hostpar.rs`), the CPU build's rule.
     /// Off (`--gpu-off=host-par`): the host walk runs it on one core.
     pub host_par: bool,
+    /// device-geometry `tile-post`: a map whose body is a sum of products
+    /// followed by elementwise terms of the same cell (a residual, a scale, a
+    /// mask: [`mapal_ir::TilePost`]) is a tile site whose store evaluates the
+    /// body after its fold (the epilogue, `func/resident.rs:epilogues`) —
+    /// where its `b` panel serves more than one row or is read along its
+    /// lanes: a lone row over a k-major `b` (a decode step's masked scores)
+    /// stays the warp-a-cell kernel (`func/gpu.rs:post_sites`).
+    /// Off (`--gpu-off=tile-post`): the map is a per-cell kernel (one thread
+    /// a cell, its fold serial).
+    pub tile_post: bool,
+    /// device-geometry `row-tree` (a fact arm, `mapal_ir::FactArms`): a
+    /// per-cell map whose body folds one row of an array beside folds that
+    /// load nothing (RMSNorm's sum of squares, then its Heron root) splits
+    /// that fold over a warp's lanes (`cell-lanes`). Off
+    /// (`--gpu-off=row-tree`): only a body with one nested fold does; such a
+    /// row is one thread's serial fold.
+    pub row_tree: bool,
+    /// device-geometry `piece-delta` (a fact arm, `mapal_ir::FactArms`): a
+    /// map writing one row of each sequence of a `[B][L][…]` state,
+    /// `((t ÷ d) % s == r) ? new : x[t]`, is piecewise ([`mapal_ir::Outside`]
+    /// `w > 1`, [`mapal_ir::Delta::Pieces`]): on the device a range cell
+    /// over its B pieces, in the state's buffer (`range-cell`). Off
+    /// (`--gpu-off=piece-delta`): the map rewrites the whole state each trip.
+    pub piece_delta: bool,
+    /// device-geometry `head-group` (a fact arm, `mapal_ir::FactArms`): a
+    /// mixed-radix tile site may have batch digits — digits of the map index
+    /// both operands read (the query heads of one KV head, a sequence) —
+    /// as the most significant row digits; a block's rows lie in one batch,
+    /// so its `b` panel (one KV head's K or V rows) is loaded once for the
+    /// group's query heads. Off (`--gpu-off=head-group`): such a map is a
+    /// per-cell kernel (each query head re-reads its KV head's rows).
+    pub head_group: bool,
 }
 
 impl GpuRungs {
@@ -737,11 +769,15 @@ impl GpuRungs {
         cond_bounds: true,
         carry_made: true,
         host_par: true,
+        tile_post: true,
+        row_tree: true,
+        piece_delta: true,
+        head_group: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 87] = [
+    pub const NAMES: [&'static str; 91] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -829,6 +865,10 @@ impl GpuRungs {
         "cond-bounds",
         "carry-made",
         "host-par",
+        "tile-post",
+        "row-tree",
+        "piece-delta",
+        "head-group",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -921,6 +961,10 @@ impl GpuRungs {
             "cond-bounds" => &mut self.cond_bounds,
             "carry-made" => &mut self.carry_made,
             "host-par" => &mut self.host_par,
+            "tile-post" => &mut self.tile_post,
+            "row-tree" => &mut self.row_tree,
+            "piece-delta" => &mut self.piece_delta,
+            "head-group" => &mut self.head_group,
             _ => return None,
         })
     }
@@ -1259,6 +1303,9 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     // (a fact arm, `mapal_ir::FactArms` — every fact derived afresh).
     let arms = mapal_ir::FactArms {
         cond_bounds: !opts.gpu.off.cond_bounds,
+        row_tree: !opts.gpu.off.row_tree,
+        piece_delta: !opts.gpu.off.piece_delta,
+        head_group: !opts.gpu.off.head_group,
     };
     if arms != ir.fact_arms() {
         return emit_detailed(&ir.refacted(arms), opts);
@@ -1486,7 +1533,13 @@ fn emit_module(
     let mut gens: Vec<(u64, mapal_ir::FuncId, String)> = Vec::new();
     // `epilogue` (S54): the grouped sites, and the bodies their kernels call.
     let mut epis: Vec<crate::func::gpu::EpiSite> = Vec::new();
-    let mut epi_calls: Vec<(String, mapal_ir::FuncId, Vec<u32>)> = Vec::new();
+    #[allow(clippy::type_complexity)]
+    let mut epi_calls: Vec<(
+        String,
+        mapal_ir::FuncId,
+        Vec<u32>,
+        Option<mapal_ir::MorphismId>,
+    )> = Vec::new();
     // `devmap` (S54): each function's cell kernels and the bodies they call.
     let mut cells: Vec<crate::func::gpu::CellKernel> = Vec::new();
     // S65: the row folds each function runs on the device.
@@ -1711,11 +1764,11 @@ fn emit_module(
             epi_bodies.push((fnames[nb].clone(), texts[nb].clone()));
         }
     }
-    for (callee, body, slots) in epi_calls {
+    for (callee, body, slots, post) in epi_calls {
         if epi_bodies.iter().any(|(c, _)| *c == callee) {
             continue;
         }
-        let text = if slots.is_empty() {
+        let text = if slots.is_empty() && post.is_none() {
             texts[body].clone()
         } else {
             let mut fe = FnEmit::new(
@@ -1734,6 +1787,7 @@ fn emit_module(
             );
             fe.set_gpu_arms(opts.gpu);
             fe.set_cell_slots(slots);
+            fe.set_post_fold(post);
             fe.emit()
         };
         epi_bodies.push((callee, text));

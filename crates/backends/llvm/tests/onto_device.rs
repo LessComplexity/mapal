@@ -182,7 +182,10 @@ fn guard_condition_proves_partner_read() {
         (4, 4, 2),
         "both partner reads (and the two prints), both arms gated"
     );
-    let off = ir.refacted(FactArms { cond_bounds: false });
+    let off = ir.refacted(FactArms {
+        cond_bounds: false,
+        ..FactArms::default()
+    });
     assert_eq!(proof_counts(&off).1, 2, "only the prints' constant indexes");
     // The CPU build under the OFF arm (`--gpu-off=cond-bounds` rebuilds the
     // facts under `FactArms`): both partner reads checked.
@@ -226,7 +229,13 @@ fn loop_counter_ranges_index() {
     let ir = lower(src);
     let (n, proven, _) = proof_counts(&ir);
     assert_eq!(n, proven, "every read proven");
-    assert!(proof_counts(&ir.refacted(FactArms { cond_bounds: false })).1 < n);
+    assert!(
+        proof_counts(&ir.refacted(FactArms {
+            cond_bounds: false,
+            ..FactArms::default()
+        }))
+        .1 < n
+    );
     assert_eq!(interp(&ir), "68\n");
     // Wrap: `t * 65536` leaves i32 on the way to the exit — no range.
     let wrap = src.replace("28 + t -> p;", "t * 1073741824 + 28 -> p;");
@@ -297,7 +306,10 @@ fn decode_state_stays_on_device() {
         m.contains("2:16384:device") && m.contains("h2d=0 d2h=0"),
         "{m}"
     );
-    let off = shipped(&ir, &["carry-made"]);
+    // (`tile-post` off too: with the O projection a post tile site, this
+    // OFF arm also runs the norm's scaling map on the host and uploads its
+    // 16 KB — device-geometry's open placement item.)
+    let off = shipped(&ir, &["carry-made", "tile-post"]);
     let m = moves(&off);
     assert!(m.contains("2:16384:two") && m.contains("h2d=16384"), "{m}");
     // `cond-bounds` off: RoPE keeps its traps, the caches cross too.
@@ -338,7 +350,10 @@ fn check_onto(clang: &str, i: usize, p: &testgen::OntoProg) -> Vec<(&'static str
     let want = interp(&ir);
     let mut c = vec![("programs", 1)];
     let (n, proven, armed) = proof_counts(&ir);
-    let off_ir = ir.refacted(FactArms { cond_bounds: false });
+    let off_ir = ir.refacted(FactArms {
+        cond_bounds: false,
+        ..FactArms::default()
+    });
     let (_, proven_off, _) = proof_counts(&off_ir);
     c.push(("indexes", n as u64));
     c.push(("proven", proven as u64));
