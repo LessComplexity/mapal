@@ -142,7 +142,8 @@ Where the time goes, ranked by the gap it explains:
 
 ## Open findings (compiler; not fixed here) — minimal repros
 
-(Findings 1–5 and 10 are fixed in [Onto device](#onto-device-2026-11-21) below; 6–9 stay open.)
+(Findings 1–5 and 10 are fixed in [Onto device](#onto-device-2026-11-21) below, 6–9 in
+[Device geometry](#device-geometry-2026-11-21).)
 
 Each repro is run with `target/release/examples/emit <f> - --rewrite --target=rtx-5080 --host=x86-64-v3
 --device-out=<f>.dev.ll` (placement: the `; mapal.move` / `; mapal.host` lines; kernels: `; mapal.plan`) or the
@@ -325,3 +326,97 @@ loose (intervals carry no stride).
 
 Raw (local, not in git): `.claude/raw-evidence/local-rtx-5080/onto-device/` (`resE/` results, box.out, conditions;
 `trace/` CUPTI summaries; `commands.txt`; `ws_tests2.log`).
+
+## Device geometry (2026-11-21)
+
+Branch `local-rtx-5080` (this commit); same machine and protocol (bench lock, load < 3 and CPUs 0–7 idle at start,
+pinned, Tctl 39–49 C, no game). Findings 6–9 fixed generically — each a fact in `mapal-ir` (one query, stored on the
+graph, row in CLAUDE.md's facts table) read by a rule, each with an OFF arm (a measurement flag), unit tests and
+generated-program tests (`crates/backends/llvm/tests/device_geometry.rs`, generator `testgen::LayerProg`):
+
+| finding | fact → rule | OFF arm |
+|---|---|---|
+| 6 GEMM + residual a per-cell kernel | `tile_plan_post` (`TileSite::post`, `TilePost`): a sum of products whose map body goes on past its fold — the slots the rest reads, its number captures, whether the fold sits in a guard arm (then every read is in bounds over the whole space). The epilogue is the body itself with the fold's value given (`<body>_post`), called in the tile's store (the S54 group); a workspace split's reduce launch calls it once the sums are whole (atomic / stream-K off for such a group). Refused where a `b` panel serves one row over a k-major `b` (below) or a number read by value is a whole fold's (it stays in its device buffer) | `--gpu-off=tile-post` |
+| 7 attention per-cell, K re-read per query head | `tile_plan_radix` batch digits (`FactArms::head_group`): digits of `t` both operands read (a KV head's query heads, a sequence) are row digits of `a` and block-uniform row digits of `b`, numbered above `a`'s own; a captured digit's digit (`h / 4`) is a digit of `t`. A block's rows lie in one group (`row_group`), so its `b` panel (one KV head's rows) is staged once for the group: `gpu_group_tile` (`tm` = the group's rows in registers, ≤ half of `regs_per_thread`; one warp — or the widest power of two whose vectors tile `c` — over the lanes) or, for long groups (prefill), the derived tile over the group's rows. P·V's long fold over the positions is cut into a workspace (S 4–64) whose reduce evaluates `/ den` | `--gpu-off=head-group` |
+| 8 whole-cache update per step | `map_law` `Outside::w` / `write_delta` `Delta::Pieces` (`FactArms::piece_delta`): `((t ÷ d) % s == r) ? new : x[t]` is `w = d` cells every `d·s` — one row of every sequence; on the device a range cell over the B pieces in the cache's buffer (`piece=`) | `--gpu-off=piece-delta` |
+| 9 RMSNorm one thread a row | `cell_plan` `CellSite::tree` (`FactArms::row_tree`): the one nested fold that loads array elements is the tree fold beside folds that load none (Heron's root) — `cell-lanes` takes the row over a warp | `--gpu-off=row-tree` |
+
+**A mixed result, its fact, and a bug the value gates caught (first runs, `v1/`).** With `tile-post` alone, the main
+suite's decode-shaped attention loops lost: ABBA (16 processes an arm) causal 1.083, gen 1.078, prefill 1.049. CUPTI
+(causal): the masked score map `(r ≤ t) ? q·K[r] : −1e9` became a one-row post GEMV, 5.61 us + its reduce 2.58 us a
+trip, where the warp-a-cell kernel took 5.28 us — `K[r·256 + k]` is k-major, which a warp folding one cell over its
+lanes reads coalesced and the tile's lanes read one element a row, with nothing to share the panel with, and the cell
+form skips the masked cells. The separating facts are the site's own (`row_group` = 1, `b`'s unit step along `k`):
+such a site stays the cell (`post_sites`, `b_k_major`); causal and gen are then byte-identical to OFF. The model-scale
+value gates then failed `pick2`–`pick7` of the prefills (token 0's attention 0): a split partition stored its partials
+at a digit-affine output address without its workspace slab (`Kernel::slab`), so the P·V split's partitions
+overwrote each other. Fixed; the generator gained a token-major P·V (`radix=…out` with a split: `group-out-splits`)
+and every site candidate is forced in turn (`MAPAL_GPU_PICK`) — the generated test fails without the fix.
+
+**Intent → realized** (`bG` bundle, `evidence.py`; new host intents `tile-post`, `head-group`, `piece-delta`,
+`row-tree` in `intent.py`: 276 checks, all ok — every post kernel stores through its epilogue group or is a split
+partial whose reduce does; every grouped tile's block rows divide its group; every piece cell launched with no
+per-trip upload; every lane cell beside local folds combines by ≥ 5 shuffles; OFF arms have none). Launched kernels
+(SASS, `ptxas -v`): the decode QKᵀ group tile `53fdec5c` (B32 L8192: rows 1024 = 32 × 32 heads, c 8192, k 128,
+`tm 4 tn 4 tx 32 ty 1 bk 32`, group 4) — hot loop 512 FFMA, 16 accumulators, 64 `LDS.128`, no spill, 5 blocks/SM;
+its K panel is staged by 128 scalar `STS` a trip (k-major K through digit addresses: `kmajor-a` mismatch) and the
+5 one-warp blocks hold 5 warps an SM (`full-tile` mismatches: ≥ 128 threads, ≥ 64 accumulators) — open below. Bytes:
+K read once per KV head (1.07 GB a step at B32 L8192, 4.3 GB before); the cache write 2 × B × 4 KB a step (2 × 1 GB
+read + written before). New-kernel mismatches 254 of 5779 checks (shipped builds): the two above, `prefetch` /
+`unroll` on split candidates, and the GEMV `bk = 128` candidates' spills shared with the non-post GEMVs (not picked).
+
+**Values.** Every value gate passes (154 arms over 12 programs, the default face within D2 of the exact-face device
+oracle, XREF), the five `px_llm_*` twins match the interpreter (32 differentials); 8192 prefill −1.3648784,
+−1.6895329, 0.65508735, 0.8966407 as before.
+
+**Tests.** Workspace 1414 pass, 0 fail (`--no-fail-fast`). Generated (`device_geometry_on_generated_programs`, 96
+`LayerProg`s: epilogue GEMMs / GEMVs in seven forms, grouped-head QKᵀ and P·V — 1–2 sequences or query tokens, 1–2 KV
+heads, groups of 1/2/4, masks at a uniform or the head —, appends in loops, norms with one or two local folds) ×
+emulator `MAPAL_EMU_SERIAL=0/1/2`, `MAPAL_EMU_REVERSE=1`, every site candidate forced (49 runs), the CPU build, each
+kind's OFF arm on a third (32): 23 post facts (3 guarded) → 37 post kernels, 25 post reduces, 6 with a uniform;
+16 group facts → 14 group tiles, 3 digit-affine outputs (1 split); 23 piece facts → 23 piece cells; 73 tree facts,
+18 lane rows. Unit tests: the residual GEMM, a GEMV through its reduce, masked grouped QKᵀ with a uniform, the
+per-sequence append, the norm row, the lone k-major row; the differential / recurrence coverage counters count nest
+and lane cells with `tile-post` off (post sites take those maps now).
+
+| workload | OFF (all four off) | ON | best competitor (f32 / TF32) | ratio | torch bf16 | per-rung OFF | explanation (CUPTI, ON vs OFF) |
+|---|---:|---:|---|---:|---:|---|---|
+| (a) decode B1 L2048, ms/step | 0.668 | **0.240** | 0.258 (torch-compile) | 0.93 | 0.149 | tile-post 0.590, row-tree 0.354 | O + residual cell 292 us → split-16 post GEMV 79 us (67 MB, DRAM); RMSNorm 75 → 17 us (32 lanes); cache rows (hz 141 us) → two 1.3 us piece cells; QKᵀ 52 → 14 us, P·V 99 → 10 + 4 us (group tiles); QKV 114 us (DRAM) unchanged |
+| (a) decode B1 L8192 | 1.363 | **0.332** | 0.344 (torch-compile) | 0.96 | 0.189 | head-group 0.977 | as B1 L2048; QKᵀ / P·V group tiles grow with L |
+| (a) decode B8 L2048 | 1.212 | **0.431** | 0.678 (torch-compile) | 0.63 | 0.218 | piece-delta 0.739 | as B32 |
+| (a) decode B8 L8192 | 3.600 | **1.065** | 2.466 (torch-compile) | 0.43 | 0.485 | | as B32 |
+| (a) decode B32 L2048 | 3.682 | **1.029** | 2.277 (torch-compile) | 0.45 | 0.462 | | as B32 |
+| (a) decode B32 L8192 | 12.55 | **3.518** | 9.523 (torch-compile) | 0.37 | 1.473 | head-group 6.77, tile-post 7.30, piece-delta 8.93 | QKᵀ (K read per query head) + the whole K-cache map, one hz grid 7.46 ms, and the V-cache map 2.71 ms → QKᵀ group tile 1.97 ms (K once a group: 545 GB/s) + two 1.3 us piece cells; P·V cell 1.65 → 1.25 + 0.24 ms reduce (860 GB/s); O cell 0.63 → 0.08 + 0.08; RMSNorm 98 → 18 us |
+| (c) block decode B1 L4096 | 2.298 | **1.069** | 1.074 (torch-compile) | 1.00 | 0.559 | tile-post 2.160, row-tree 1.292 | down + residual cell 1.08 ms → split-7 post GEMV 0.52 ms (235 MB, 450 GB/s); O 297 → 77 us; QKᵀ 34, P·V 21 + 21 us; gate GEMV 523 us unsplit (tune pick) |
+| (b) prefill T2048, ms | 86.81 | **8.821** | 8.322 (torch-compile) | 1.06 | 1.925 | tile-post 86.49, head-group 58.87 | QKᵀ cell 38.7 → group tile 1.18 ms (29 TFLOPS, masked cells computed); O + residual cell 29.8 → post tile 2.15 ms (32 TFLOPS); P·V cell 14.1 → 1.68 ms (20 TFLOPS); RMSNorm 378 → 44 us; QKV 2.60, softmax 1.33 unchanged |
+| (b) prefill T2048 TF32 | 85.99 | **7.710** | 6.068 (torch-compile-tf32) | 1.27 | 1.925 | | as above; O + residual a TF32 `mma.sync` post site; the attention tiles FFMA |
+| (b) prefill T8192 | 1011 | **1012** | 83.71 (torch-compile) | 12.1 | 11.32 | (= shipped) | unchanged: 2³¹-cell scores (i64 cell index) and the KV-group loop's `g·4` in the address keep per-cell kernels (open) |
+| (c) block prefill T2048 | 276.6 | **32.38** | 27.93 (torch-compile) | 1.16 | 8.028 | | + down + residual post tile (OFF 117 ms cell); ON 15 % spread (rules 29.88, null 32.72) |
+| (c) block prefill T2048 TF32 | 285.3 | **25.66** | 18.53 (torch-compile-tf32) | 1.38 | 8.028 | | as above |
+
+Mapal: the program's `iter ms`, median of 3 processes, arms interleaved (decode: the 16-step run / 16; decode rows
+from run `v2/`, prefill rows from `v3/` after the slab fix — the decode emission is identical in both, `v3` within
+its own spread); null ≤ 0.4 % on the prefills, 0–17 % on decode in `v3` (bimodal processes, both arms). Competitor
+legs: the model-scale run of 2026-11-20 (same box). OFF = the four rungs off in the same run.
+
+**Main suite (35 programs, ON / OFF / ON `LADDER=1 gpu_run.sh`, `v2/`).** Only `prefill_1024_512_256`'s emission
+changes (its prompt: the masked 512 × 1024 scores and the `/ pden` P·V become post tiles, 191 + 132 us → 28 + 26 us);
+ABBA 0.966 (8.143 → 7.867 ms, 16 processes an arm), suite 7.81 / 8.37 / 8.00. The other 34 are byte-identical to
+OFF (causal and gen by the k-major rule); their run-to-run spread on identical code is 0.83–1.12 (decode_1024_256 0.90,
+causal 0.87, pj_m16_n2048 1.12, pj_m1_n2048 0.83: tuned picks and cross-run drift, as `gpu-analysis.md` measured).
+
+**Open (this step).**
+- The group tile's K panel is staged element by element (k-major digit address; 128 `STS` a trip) and its one-warp
+  blocks hold 5 warps an SM (the 32-deep panel's smem): QKᵀ at 545 GB/s where P·V's lane-major V reaches 860.
+- A guarded post site computes every cell: prefill's causal QKᵀ / P·V do the masked half (the main suite's prompt
+  three quarters); a block-uniform guard (whole blocks masked) is a missing fact.
+- The 8192 prefill: an i64 cell index in the epilogue and a number capture in a radix address (`g·4`) are refused.
+- A number a whole fold makes, read by value in an epilogue, is refused (the `scalar-fold` pointer form).
+- `carry-made`'s OFF arm with `tile-post` on also runs RMSNorm's scaling map on the host (+16 KB a trip): that arm only.
+- One KV head a query head (group 1) or a `c` of no whole vector stays per-cell; the Exp step's online-softmax
+  rescale law (flash-style QKᵀ → softmax → P·V) is next.
+
+Raw (local, not in git): `.claude/raw-evidence/local-rtx-5080/device-geometry/` (`v1/` the mixed run and its
+traces, `v2/` model + suite + ABBA, `v3/` model after the fix + CUPTI traces with plan facts, `commands.txt`,
+`ws_tests*.log`).
+

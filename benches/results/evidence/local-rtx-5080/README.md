@@ -86,6 +86,15 @@ exit values readable in later bodies, `carry-made` placement, `host-par`, i64 ex
 (B1 L2048; 1.32–3.96× torch-compile f32 over the suite), prefill 2048 280 s → 86.7 ms (10.4×), the 8192 prefill 1.01 s
 (12.1×; no device form before); the gaps are findings 6–9.
 
+**device-geometry** (`model-scale.md` [Device geometry](model-scale.md#device-geometry-2026-11-21)): findings 6–9 —
+`tile_plan_post` (a GEMM whose map body goes on past its fold is a tile site; the body after the fold is its store's
+epilogue, or a split's reduce), batch digits of mixed-radix sites (a KV head's query heads share one staged K/V panel:
+`row_group`, `gpu_group_tile`), `Delta::Pieces` (a per-sequence cache append written as B pieces in place) and the
+row-tree fold beside a norm's root. Decode 0.668 → 0.240 ms/step at B1 L2048 (0.93× torch-compile f32), 0.37–0.96×
+torch-compile over B 1–32 × L 2048–8192; block decode 1.00×; prefill 2048 86.8 → 8.82 ms (1.06×), block prefill
+276.6 → 32.4 ms (1.16×); the 8192 prefill unchanged (open). Main suite: prefill_1024_512_256 0.966 (ABBA), 34
+programs byte-identical; the first version's loss on decode-shaped loops (1.05–1.08) is the k-major lone-row rule.
+
 Raw output (results txt, box.out, CPU logs) is kept locally in `.claude/raw-evidence/local-rtx-5080/`; not yet
 uploaded with `benches/gpu/archive_raw.sh` (that publishes a GitHub release).
 
