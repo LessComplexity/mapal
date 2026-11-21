@@ -132,3 +132,10 @@ off); the tune trial settles to steady state and its head-to-head pairs decide (
 reverted); `calib.cu` gains the sustained clock, the PDL chain head and the one-SM rate; the rented parts' profiles
 carry their measured costs. `min-blocks`, `warp-fill` and the 3090's `grid-share` convmc site stay open. RTX 5080:
 decode 0.981, short programs 0.989–0.990 (inside null), loopmm 1.003.
+
+**half-precision** (`half-precision.md`): ADR-0043 — `bf16` / `f16` storage types (`to_bf16` / `to_f16` round an f32 once,
+`widen_f32` widens exactly; no arithmetic on narrow values; the interpreter's bits on every face and backend),
+`tile_plan_narrow` sites on the one-thread-per-cell kernel (`LDG.U16`) and the register-staged tile (panels widened as
+copied), operand bytes per format in the cost model; every non-narrow program emits byte-identical modules. The
+model-scale decode rows with bf16 weights: 0.59–0.98× the f32 program (B1 L2048 0.149 ms/step against torch bf16-compile's
+0.143; projections at half their bytes, CUPTI), the remaining gap attention over an f32 cache; 16-bit `mma` and fp8 open.
