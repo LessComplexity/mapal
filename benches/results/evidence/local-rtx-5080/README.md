@@ -105,3 +105,11 @@ cooperative launch), priced by two new measured properties (`row_iter_ns` 87 ns,
 pt_lsm_1_131072 (softmax over one 131072-long row): flow kernel 182 → 7.6 us, iteration ABBA 0.290; every other
 program's emission unchanged. No exponential law in the IR: attention's `den` is a phase, so flash-style attention
 stays open (reasons and the model-scale rows there).
+
+**exp** (`exp.md`): `x -> exp` is a pipeline builtin (ADR-0042) — the oracle's algorithm `E_b` (exhaustively ≤ 1.221
+ulp in f32) byte for byte on the exact faces (interpreter = host = RTX 5080 = CUDA backend), and on the default face
+the host's vectorizable contracted polynomial and the device's `ex2.approx` form (exhaustively ≤ 2.068 ulp; admitted by
+the measured `Caps::ex2` against the 2⁻²¹ bound); `fold_combine`'s rescale law makes a row-sliced softmax fold its sum
+beside its max (lsm_1_131072: 3 → 2 phases, flow kernel 7.94 → 5.89 us). The softmax / attention / model-scale
+programs use `-> exp`; torch legs (incl. SDPA) now value-gate within 10⁻⁶. Suite ON vs OFF: lsm_4_32768 0.950 (ABBA),
+the rest null; flash-style attention and the walk-cost fact (lsm_4_32768 vs the polynomial program) are open.
