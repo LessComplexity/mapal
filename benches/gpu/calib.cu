@@ -13,7 +13,11 @@
 //   copy    hardware-properties `pinned`: host->device copy rate from pageable vs page-locked host memory, by size
 //           (`cudaMemcpy`, the runtime's synchronous copy, median of 9 after 2 warm), and their ratio per mille — the
 //           profile's `pageable_pm` is the median ratio at >= 4 MiB (the sizes a loop's arrays cross)
-// usage: calib [chase|bw|loaded|lds|gsync|copy ...]   (all when none).  Output: `<kind> k=v ...` lines, one per point.
+//   ffma    the FFMA peak under load (flops per ns: 8 independent chains a thread, 8 blocks of 256 a SM, best of 5)
+//           and the SM clock it implies at the compute capability's FP32 lanes per SM (`fp32_lanes_of_cc`: 64 on
+//           sm_60 / sm_80, else 128) — the profile's `clock_khz` under load
+// The `calib device=` line carries the device query's physical facts the rung rules read (`DeviceQuery`).
+// usage: calib [chase|bw|loaded|lds|gsync|copy|ffma ...]   (all when none).  Output: `<kind> k=v ...` lines, one per point.
 // build: nvcc -O3 -arch=sm_<cc> -std=c++17 -rdc=true calib.cu -o calib -lcudadevrt   (rdc for the tail launch)
 #include <cstdio>
 #include <cstdlib>
@@ -313,12 +317,45 @@ static void copy_run() {
     std::sort(ratios.begin(), ratios.end());
     printf("copy pageable_pm=%.0f (median ratio at >= 4 MiB)\n", ratios[ratios.size() / 2] * 1e3);
 }
+// ffma: 8 independent FMA chains a thread; `a`, `b` and the store guard come from the host (nothing folds).
+__global__ void ffma_k(float* out, int iters, float a, float b, int store) {
+    float x[8];
+    for (int j = 0; j < 8; j++) x[j] = threadIdx.x * 1e-3f + j;
+    for (int i = 0; i < iters; i++) {
+#pragma unroll
+        for (int j = 0; j < 8; j++) x[j] = fmaf(x[j], a, b);
+    }
+    float acc = 0.f;
+    for (int j = 0; j < 8; j++) acc += x[j];
+    if (store || acc == 1234.5f) out[blockIdx.x * blockDim.x + threadIdx.x] = acc;
+}
+static void ffma_run(int cc) {
+    const int block = 256, grid = sms * 8, iters = 1 << 16;
+    float* out; CK(cudaMalloc(&out, (size_t)grid * block * sizeof(float)));
+    cudaEvent_t e0, e1; CK(cudaEventCreate(&e0)); CK(cudaEventCreate(&e1));
+    ffma_k<<<grid, block>>>(out, iters / 16, 0.999f, 1e-4f, 0); CK(cudaDeviceSynchronize());
+    double best = 0;
+    for (int rep = 0; rep < 5; rep++) {
+        CK(cudaEventRecord(e0)); ffma_k<<<grid, block>>>(out, iters, 0.999f, 1e-4f, 0); CK(cudaEventRecord(e1));
+        CK(cudaEventSynchronize(e1)); float ms; CK(cudaEventElapsedTime(&ms, e0, e1));
+        best = std::max(best, 2.0 * 8 * iters * (double)grid * block / (ms * 1e6));
+    }
+    const int lanes = (cc == 60 || cc == 80) ? 64 : 128;
+    printf("ffma flops_per_ns=%.0f lanes=%d implied_clock_khz=%.0f\n", best, lanes, best / (2.0 * sms * lanes) * 1e6);
+    CK(cudaFree(out));
+}
 int main(int argc, char** argv) {
     cudaDeviceProp p; CK(cudaGetDeviceProperties(&p, 0)); sms = p.multiProcessorCount;
     CK(cudaDeviceGetAttribute(&clk_khz, cudaDevAttrClockRate, 0));
     int mclk = 0; // CUDA 13 dropped cudaDeviceProp::memoryClockRate; the attribute stays
     CK(cudaDeviceGetAttribute(&mclk, cudaDevAttrMemoryClockRate, 0));
     printf("calib device=%s sms=%d clock_khz=%d l2_mb=%d mem_clock_khz=%d bus_bits=%d\n", p.name, sms, clk_khz, p.l2CacheSize >> 20, mclk, p.memoryBusWidth);
+    int bps = 0; CK(cudaDeviceGetAttribute(&bps, cudaDevAttrMaxBlocksPerMultiprocessor, 0));
+    printf("facts cc=%d sms=%d l2_bytes=%d smem_per_sm=%zu smem_per_block=%zu max_threads_per_sm=%d regs_per_sm=%d "
+           "max_blocks_per_sm=%d clock_khz=%d mem_clock_khz=%d mem_bus_bits=%d dram_peak_bytes_per_ns=%.0f\n",
+           p.major * 10 + p.minor, sms, p.l2CacheSize, p.sharedMemPerMultiprocessor, p.sharedMemPerBlockOptin,
+           p.maxThreadsPerMultiProcessor, p.regsPerMultiprocessor, bps, clk_khz, mclk, p.memoryBusWidth,
+           2.0 * mclk * p.memoryBusWidth / 8 / 1e6);
     std::string want; for (int i = 1; i < argc; i++) want += std::string(argv[i]) + " ";
     auto on = [&](const char* k) { return want.empty() || want.find(k) != std::string::npos; };
     if (on("chase")) chase_run();
@@ -327,5 +364,6 @@ int main(int argc, char** argv) {
     if (on("lds")) { lds_one<1>(); lds_one<2>(); lds_one<4>(); }
     if (on("gsync")) gsync_run();
     if (on("copy")) copy_run();
+    if (on("ffma")) ffma_run(p.major * 10 + p.minor);
     return 0;
 }

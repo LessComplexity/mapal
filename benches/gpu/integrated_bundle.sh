@@ -258,6 +258,8 @@ cp "$ROOT/target/x86_64-unknown-linux-gnu/release/libmapal_rt.a" "$OUT/"
 cp "$ROOT/crates/mapal-rt/gpu/mapal_gpu.c" "$ROOT/crates/mapal-rt/gpu/mapal_choice.h" "$ROOT/benches/gpu/tile_bench.cu" "$ROOT/benches/gpu/chain_bench.cu" \
     "$ROOT/benches/gpu/mlp_bench.cu" "$ROOT/benches/gpu/gemm_lib.cu" "$ROOT/benches/gpu/value_gate.py" \
     "$ROOT/benches/gpu/box_run.sh" "$ROOT/benches/gpu/box_profile.sh" "$OUT/"
+# cross-arch: the device calibration box_run.sh runs before the timed sections (the native-gpu profile's properties).
+cp "$ROOT/benches/gpu/calib.cu" "$OUT/"
 # S64: the checker and its inputs, for the box's `exec` / `jit` checks; the torch legs.
 cp "$ROOT/benches/gpu/"{evidence.py,intent.py,sass_stats.py,occ.py,ptx_static.py,cudatool.sh,torch_bench.py} "$OUT/"
 cp "$ROOT/benches/gpu/capture_images/capture.cpp" "$OUT/"

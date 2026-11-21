@@ -153,11 +153,13 @@ if [ "${TORCH:-1}" = 1 ] && [ -f torch_bench.py ] && [ -n "${TORCH_PY:-}" ]; the
     "$TORCH_PY" -c 'import torch; print("torch", torch.__version__, "cuda", torch.version.cuda)' > torch-install.log 2>&1 &
     TORCH_PID=$!
 elif [ "${TORCH:-1}" = 1 ] && [ -f torch_bench.py ]; then
-    # The pin: the newest cu128 wheel for the image's Python 3.10 (2026-10-23: 2.11.0). torch.compile's
-    # Triton builds a C launcher against Python.h: python3-dev.
+    # The pin: 2.11.0 for the image's Python 3.10 (the version of the local model-scale legs), the cu130 wheel
+    # (cross-arch: the CUDA 13 image; TORCH_INDEX overrides). torch.compile's Triton builds a C launcher
+    # against Python.h: python3-dev.
     ( { apt-get update -qq && apt-get install -y -qq python3-pip python3-dev; } || true
       # fusion-natural-forms: a 3090 box's download timed out once (no torch legs): retry the wheel.
-      python3 -m pip install -q --timeout 120 --retries 10 "torch==${TORCH_VERSION:-2.11.0}" --index-url https://download.pytorch.org/whl/cu128
+      python3 -m pip install -q --timeout 120 --retries 10 "torch==${TORCH_VERSION:-2.11.0}" \
+          --index-url "${TORCH_INDEX:-https://download.pytorch.org/whl/cu130}"
     ) > torch-install.log 2>&1 &
     TORCH_PID=$!
 fi
@@ -176,6 +178,18 @@ nvcc -O3 -std=c++17 -arch="${SM%a}" -Icutlass/include -Icutlass/tools/util/inclu
 if [ -f gemm_lib.cu ]; then
     nvcc -O3 -std=c++17 -arch="${SM%a}" gemm_lib.cu -lcublasLt -lcublas -o gemm_lib 2>&1 | grep -v Wno | tail -5 | tee -a "$LOG"
     [ -x gemm_lib ] || say "GEMM HARNESS BUILD FAILED"
+fi
+# cross-arch: the device calibration (calib.cu, every kind once, then `gsync` and `copy` twice more: the medians
+# of three the profile's launch and copy properties cite) -> calib-<profile>.txt, while the GPU is idle (the torch
+# install downloads beside it). CALIB=0 skips it.
+if [ "${CALIB:-1}" = 1 ] && [ -f calib.cu ]; then
+    nvcc -O3 -std=c++17 -arch="${SM%a}" -rdc=true calib.cu -o calib -lcudadevrt 2>&1 | grep -v Wno | tail -5 | tee -a "$LOG"
+    if [ -x calib ]; then
+        { timeout 20m ./calib; for r in 2 3; do timeout 5m ./calib gsync copy | sed "s/^/run=$r /"; done; } > "calib-$PROF.txt" 2>&1
+        say "calib: $(grep -c '' "calib-$PROF.txt") lines; $(grep -m1 '^facts' "calib-$PROF.txt"); $(grep -m1 '^ffma' "calib-$PROF.txt"); $(grep -m1 '^copy pageable_pm' "calib-$PROF.txt")"
+    else
+        say "CALIB BUILD FAILED"
+    fi
 fi
 # S63: the residual MLP's kernels vs cuBLAS, cuBLASLt and CUTLASS (mlp_bench.cu).
 if [ -f mlp_bench.cu ]; then
