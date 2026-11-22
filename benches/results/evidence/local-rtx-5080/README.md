@@ -177,3 +177,14 @@ uploaded once), `cone-span` (loop buffers take the bytes of what died before the
 cache's B ≥ 8 rows), `arena-fit` (largest-first packing where it is smaller and folds as many zeros: prefill T2048
 −9 %); fixed: a seedless back-edge value claimed "unchanged", a widened delta's first piece skipped below row 0.
 Open: demand, the gathered-rows split rule, prefill peak (1.34–1.54× torch: materialized scores).
+
+**competitors** (`competitors.md`): "best competitor" now means the fastest real-world implementation — torch.compile
+with CUDA graphs (`max-autotune`, `reduce-overhead`), SDPA's efficient and cuDNN backends, hand-written Triton (the
+tutorials' matmul / softmax / fused attention, autotuned), Liger, FlashAttention-2 (built from source: no wheel for
+torch 2.11 + CUDA 13), FlashAttention-3 (sm_90a boxes), FlashInfer; TensorRT-LLM is not installable on this stack
+(every release pins its own torch: 1.3.0 → 2.14). Every leg value-gated, timed like the torch legs, in the box flow
+(`comp_bench.py`, `comp_build.sh`); the matrix lists every leg per row and part by family. On the 5080, 28 of 86 rows
+get a new best (CUDA graphs 20, Liger 4, Triton 2, FlashInfer 1, cuDNN 1): geomean Mapal/best 0.980 → 1.001, no win
+disappears; the f32 prefills go even → loss (1.19, 1.53) and the TF32 prefill 1.23 → 1.64 — fused attention kernels
+(the CUTLASS memory-efficient f32 kernel, the Triton flash tutorial) against Mapal's three-kernel attention with the
+scores through DRAM (long-prefill open 1–2). ABBA and CUPTI for every move > 2 %.

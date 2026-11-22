@@ -171,6 +171,16 @@ Small sizes are now a single-thread kernel gap, not a scheduling one
 
 ### GPU workloads - 4 GPUs, October 2026
 
+Current: the cross-part matrix against every competitor leg ([matrix](benches/results/evidence/matrix.md)); since
+2026-11-23 the best competitor is the fastest real-world implementation — torch.compile with CUDA graphs, SDPA
+(efficient / cuDNN), hand-written Triton, Liger, FlashAttention-2/3, FlashInfer
+([competitors](benches/results/evidence/local-rtx-5080/competitors.md); TensorRT-LLM does not install on torch 2.11).
+
+| RTX 5080, 86 rows | geomean Mapal / best | win / even / loss |
+| --- | ---: | ---: |
+| the legs before (torch eager / compile / SDPA / bf16, cuBLAS, cuBLASLt, CUTLASS, hand CUDA) | 0.980 | 18 / 24 / 44 |
+| every leg | 1.001 | 18 / 22 / 46 |
+
 Mapal time / the best of cuBLAS, cuBLASLt, CUTLASS, PyTorch eager and `torch.compile` (`_tf32` rows: torch with TF32 on);
 below 1 = Mapal faster. Values pass on every program and arch. 61 of 132 cells at or below 1.0. † = carried from an
 earlier sweep (emission identical); – = not timed on that part (no library leg, or a new program whose emission is
