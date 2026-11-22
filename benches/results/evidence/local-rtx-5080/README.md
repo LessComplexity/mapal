@@ -153,3 +153,13 @@ unchanged), and `intent.py` entries for `row-slices`, `exp-hw`, `exp-rescale` (4
 copied), operand bytes per format in the cost model; every non-narrow program emits byte-identical modules. The
 model-scale decode rows with bf16 weights: 0.59–0.98× the f32 program (B1 L2048 0.149 ms/step against torch bf16-compile's
 0.143; projections at half their bytes, CUPTI), the remaining gap attention over an f32 cache; 16-bit `mma` and fp8 open.
+
+**long-prefill** (`long-prefill.md`): cross-arch gap items 1–2. The fact that kept the 8192-token prefill per-cell was
+`tile_plan_radix` refusing an address term on any map capture but the cell index — the KV-group loop's counter `g`
+(every index fit `i32` and was proven in bounds). `uniform-base` gives such terms a digit form checked at the capture's
+range (`BoundsProof::capture_range`); the launch moves the operand pointer. With `carry-take` (a carry takes its
+dying init's device copy: the 134 MB `y` upload gone) the T8192 prefill is **1064.8 → 82.06 ms, 0.97× torch-compile**
+(was 12.1×), values unchanged. `slice-launches` meets a sliced unit's phases at kernel boundaries where launches
+undercut a cooperative launch (outside a loop its first one): lsm 1 × 131072 / 4 × 32768 0.65× / 0.87× the best torch
+leg (were 2.3× / 3.6×); 32 × 8192 1.80×. Open: flash-style streaming (an operand read through `exp(s − m)`, then the
+streamed row-block unit), causal block skips, attn_1024_64.
