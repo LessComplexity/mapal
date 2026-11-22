@@ -711,6 +711,17 @@ impl CategoryIr {
                     out.loop_of.insert(o, merge);
                 }
             }
+            // A carried write's back-edge value differs from its own last
+            // trip only where this trip writes (write_delta's `next`).
+            for (o, d) in wd.iter() {
+                if let Delta::Rows { next, .. } | Delta::Pieces { next, .. } = *d
+                    && is_view(o)
+                    && self.loop_of_view(o, merge, &plan)
+                {
+                    out.trip.insert(next, *d);
+                    out.loop_of.insert(next, merge);
+                }
+            }
             if !on {
                 continue;
             }
@@ -769,8 +780,6 @@ impl CategoryIr {
                     && st.contains_key(o)
                 {
                     st.insert(next, Chg::Arr(*d));
-                    out.trip.insert(next, *d);
-                    out.loop_of.insert(next, merge);
                 }
             }
             let state_of = |st: &SecondaryMap<ObjectId, Chg>, o: ObjectId| -> Chg {
