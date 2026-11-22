@@ -514,3 +514,246 @@ Raw (local, not in git): `.claude/raw-evidence/cross-arch/7a2b67bf/<part>/` (res
 the `exp` lines, `evidence-<part>.tsv`, profile / trace / tune archives — `prof2-<part>.tgz` the patched profile with the
 trace sweep —, wisdom, rest logs), `analysis/` (props, arms, gap, ms, sweep per part, `compare.md`), `scripts/` (build,
 launch, watchdog, armdedup, torch_rest, rest, gates, props, gapsweep, compare).
+
+## 60f0f8ce (half precision, review fixes, chain pricing)
+
+Branch `local-rtx-5080` @ `60f0f8ce`: half precision (bf16 / f16 storage, ADR-0043: the bf16-weight decode rows), the
+review fixes (the rescale law over masked slices, a next state made once is no device carry, the `row-slices` /
+`exp-rescale` / `exp-hw` intents), `calls` priced with the members' body change (`coop_body_cycles`: the RTX 5080's
+`calib.cu body` measurement, 4390 cycles, derived per part at its clock) and the named-host dispatch fix (bundles emit
+with `--host=x86-64-v3`) + this round's tooling (branch `cross-arch-half-precision`: the `force` re-judge arm
+`--calls=force` in `integrated_bundle.sh`; `box_run.sh` runs the torch legs bf16-weight rows first, projections last).
+Four vast.ai boxes in parallel, CUDA 13.0.2 devel image, torch 2.11.0+cu130; `integrated_bundle.sh` `LADDER=1`,
+`box_run.sh` REPS=30, `evidence.py` check, `calib.cu` (with `body`) in all three calibration passes, `exp_calib.cu`.
+
+**Bundle, one per part** (82 timed programs on the 4090, 81 elsewhere): the 35 README programs + the two GEMM cells, the
+12 f32 layer programs + **7 bf16-weight rows** (`_bf16w`: decode B 1/8/32 × L 2048/8192, block decode B1 L4096), 24
+projections, the 3 lsm programs (XREF for the layer and projections), 9 px differentials (+ the two bf16w twins, + the
+`_pv` prefill twins in which the h100 forms chains). Arms: **`calls` OFF where the price forms chains** (4090: causal /
+gen / prefill and block decode with its `_bf16w` / `_pv` twins; 3090: causal / gen / prefill), **`--calls=force` where
+it refuses them** (a100 / h100: causal / gen / prefill; 3090: block decode), `narrow-tile` OFF on three bf16w rows per
+part. Against the 7a2b67bf bundles, 62–68 shipped programs a part emit identically (host IR less `; mapal.` lines, PTX);
+the rest changed by their `calls` decision: chains that formed on the boundaries alone in 7a2b67bf are now refused by
+the body price (3090 decode, rt_mlp2, block decode, decode B1, block prefill TF32; a100 causal / gen / prefill, block
+decode, decode B1; 4090 decode, diamond, block prefill, decode B1 / B8; h100 smlp, firew_rowsum, lsm_32_8192, prefill,
+block prefill, mlp / mlp2 TF32), and the 3090 / 4090 causal family keeps its chain at the higher price.
+
+**Run notes.** Each box's torch legs were checked before its destroy (`ops_nsys.sh` in the bundle: the legs of every
+timed program without one, then nsys traces of every `calls` arm): torch covers **81 / 81 programs on every part** (82 on
+the 4090). The h100's `box_run.sh` was cut by its own `RUN_MIN` (72 min, set short for the then $3.70–4.56/h offers) 22
+min into the torch legs: its `vast_run.sh` was paused, the remainder (38 programs) run by hand, then resumed — no
+`== done`, so no timing section (mlp_bench) and no profile pass on the h100. Starts that never ran: 3090 one (image
+pull past 15 min), 4090 three (one pull, two created stopped).
+
+### Boxes and cost
+
+| part | GPU (driver, power limit) | host CPU | offer | $/h | hours | cost | status |
+|---|---|---|---|---:|---:|---:|---|
+| rtx-3090 | RTX 3090 24 GB (595.91.07, **350 W**) | EPYC 7532 | 61720834 | 0.193 | 1.52 | $0.29 | done |
+| (3090 try) | — | EPYC 7452 | 61869758 | 0.206 | 0.29 | $0.06 | image pull never finished |
+| a100 | A100-SXM4-40GB (595.91.07, **300 W**) | Ryzen 7 7700 (8 cores) | 56853932 | 0.580 | 0.98 | $0.57 | done |
+| rtx-4090 | RTX 4090 24 GB (580.178.04, **480 W**) | EPYC 9354P | 51934648 | 0.384 | 1.09 | $0.42 | done |
+| (4090 tries) | — | EPYC 7742 / … | 60749252, 61538557, 61804555 | 0.36–0.42 | 0.30 | $0.12 | pull never finished; two created stopped |
+| h100 | H100 80GB HBM3 SXM (595.91.07, 700 W) | Xeon Platinum 8480+ | 59816261 | 2.278 | 1.85 | $4.21 | done (box_run cut in its torch legs, remainder by hand) |
+| **total** | | | | | | **$5.68** | every `mapal-xarch-*` instance destroyed (checked by id and by label) |
+
+$/h is the instance's `dph_total`; hours from creation to destroy. The account's credit fell $28.84 over the window
+(315.50 → 286.66): other projects' B200 / H100 / H200 billed through it. **All four tables are like-for-like this
+round**: the library legs hold their clocks on every box (`gemm_lib` median / min 1.007–1.012; 7a2b67bf: 3090 1.13 at
+200 W, a100 1.31 at 270 W). The h100 box is noisy on host-bound programs (13 rows with a null above 5 %: causal 13 %,
+ew 16 %, lsm_4 15 %; median null 0.5 %, the others 0.1–0.2 %).
+
+### Value gates — all pass
+
+| part | differential | probe gates (programs) | arms · candidates within D2/D3 | device-exact oracles | split programs | gemm_lib legs within | torch legs within | mlp_bench bit-exact |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| rtx-3090 | 41 / 41 | 81 / 81 | 656 / 656 | 67 / 67 | 8 / 8 | 112 / 112 | 267 / 281 | 27 / 27 |
+| a100 | 54 / 54 | 81 / 81 | 690 / 690 | 67 / 67 | 8 / 8 | 112 / 112 | 269 / 281 | 30 / 30 |
+| rtx-4090 | 56 / 56 | 82 / 82 | 715 / 715 | 68 / 68 | 8 / 8 | 112 / 112 | 274 / 286 | 30 / 30 |
+| h100 | 54 / 54 | 81 / 81 | 685 / 685 | 67 / 67 | 8 / 8 | 112 / 112 | 265 / 277 | — (timing section cut) |
+
+No Mapal value failed on any part, face, arm or site candidate: the bf16-weight rows (XREF within D2, the px twins bit
+for bit on the exact face and within the bound on `_d`, the narrow-tile OFF arms), the forced and OFF chains, the lsm
+rows (the masked-slice fix: values only — no flow unit is sliced on these four parts, see the evidence check). Every
+torch leg outside its tolerance is a cross-precision leg (TF32 mode on the f32 `mlp_2048` / `mlp2_2048` / `rt_mlp2_*`
+programs, f32 mode on their `_tf32` twins; maxdev 1.4–2.6·10⁻³ against 10⁻³), as in both previous rounds.
+
+### Properties: the profile against the box
+
+Device-query facts equal the profiles on all four. Measured (block 256, grid ≤ sms; `props.py`): FFMA clock burst /
+sustained 3090 1 559 / 1 377 MHz (350 W), a100 1 394 / 1 394, 4090 2 219 / 2 207, h100 1 820 / 1 821; DRAM read 892 /
+1 483 / 959 / 3 177 GB/s; dependent / cooperative launch 1 508 / 2 842, 2 448 / 5 040, 1 214 / 2 427, 1 940 / 1 946 ns
+(h100 PDL 752); grid barrier 506 / 1 104 / 438 / 931 ns. `Caps::ex2` = 3 on all four (2^−22.709, the 5080's). The only
+rung that flips on the measured values is `pinned` (pageable ratio 501 / 970 / 567 / 246 ‰; the a100 now above 900),
+as before — no program copies a host array in a loop.
+
+### `calls`: the chains against their price
+
+Median `iter ms` (5 processes ABBA) of the arm over the shipped build; the 4090's block-decode arms against the shipped
+build's AUTO picks (identical kernels keep their wisdom). h100: the minimum per arm (its shipped arms spread 1.26–2.38×).
+
+| part | programs | price (per vs sep ns, profile) | arm | arm / shipped | null | verdict |
+|---|---|---|---|---|---:|---|
+| rtx-4090 | causal / gen / prefill | formed (6 912 vs 8 640) | OFF | **1.164 / 1.159 / 1.166** | ≤ 0.4 % | the chain wins |
+| rtx-4090 | block decode, `_bf16w`, `_pv` | formed (7 916 vs 11 520) | OFF | 1.000 / 1.000 / 1.001 | 0.0 % | **formed, not realized** (below) |
+| rtx-3090 | causal / gen / prefill | formed (8 248 vs 8 832) | OFF | **1.356 / 1.359 / 1.377** (min 1.14 / 1.36 / 1.14: OFF bimodal on this host) | ≤ 0.4 % | the chain wins |
+| rtx-3090 | block decode | refused (cost ×3) | force | 1.004 | 0.0 % | null (1 of 3 forced chains realized, below) |
+| a100 | causal / gen / prefill | refused (13 392 vs 12 300) | force | 1.013 / 1.015 / 1.017 | ≤ 0.1 % | refusal holds (marginal) |
+| h100 | causal / gen / prefill | refused (8 818 vs 4 404: PDL) | force | 1.105 / 1.110 / 1.134 (min) | 3.5–13 % | refusal holds |
+
+Every decision on the causal family has the measured sign on all four parts. Why (nsys, `prof/chains`): on the 4090 the
+persistent kernel (40 registers, 128 × 256, 6 levels, 5 barrier arrivals) takes 15.7 µs a trip against its six members'
+16.3 µs as separate kernels, and OFF's 7 launches a trip leave the device idle between them — the chain saves the
+launches and its bodies do not slow. On the a100 the forced kernel takes 41.3 µs a trip against the members' 37.5 µs
+(+10 %): the saved launches do not cover the slower bodies (+1.3–1.7 %).
+
+**Formed, not realized (4090 block decode).** The host records `formed=1` (8 units) but the default-face module has no
+cooperative launch and no persistent kernel (intent `calls`: `host.chain.coop=0 host.chain.formed=1`; PTX identical to
+the OFF arm, only the host's launch order differs; the exact-face `.xref` build does carry it). Repro: `emit
+pt_llm_blkdec_b1_l4096.mapal - --rewrite --target=rtx-4090 --host=x86-64-v3 --device-out=x.ll` → `; mapal.calls.host
+chains=2 formed=1 …`, and the module's PTX has no grid-barrier code (0 `red.release.gpu` / `ld.acquire` / `membar`
+lines; causal's module 40, the block decode's `.xref` 128). Its OFF arm is the shipped program (1.000). The same
+count gap in every block (FFN) program whose chains form: 3090 forced block decode 3 formed / 1 cooperative launch,
+h100 px block prefill 2 / 1, the 4090's px block decode / prefill twins 1 / 0 and 2 / 1.
+
+**Across rounds: the refusals the body price added** (Mapal ms 7a2b67bf → now; rows whose emission is identical moved
+0.98 / 0.94 / 0.96 / 1.06 geomean on 3090 / a100 / 4090 / h100): **decode_1024_256 3090 17.66 → 26.10 (bimodal: 20.4 /
+26–27 ms), 4090 12.23 → 14.73 (1.20)** — the refusal loses; a100 causal / gen / prefill 0.98–0.99, decode B1 0.89 / 0.91,
+4090 diamond 0.915, h100 **smlp 0.198 → 0.135 (0.68), firew_rowsum 0.088 → 0.046 (0.52)**, lsm_32_8192 0.58, mlp / mlp2
+TF32 0.89 / 0.93 — those refusals win. Decode's formed chain (7a2b67bf) was one persistent kernel of 11.2 µs a trip
+(3090; 4090 8.3 µs); refused, its three members (a horizontal unit and two GEMVs on 1 and 4 blocks) take 16.9 µs a trip
+host-measured while the trip takes 19.9–25.5 µs: the separate form is host-issue-bound on these EPYC hosts (on the
+5080's Threadripper the forced decode chain was 1.447 slower).
+
+**The body term, measured on each part** (`calib.cu body`, three passes; derived = 4390 cycles at the profile clock):
+
+| part | derived (ns) | measured 4 rounds (ns) | measured / derived | one round, 2 / 3 / 4 levels (ns) | 2 rounds (ns) | the price on the measured body (+ the measured boundaries) |
+|---|---:|---:|---:|---|---:|---|
+| rtx-3090 | 2 812 | 1 357 [1 310–1 588] | 0.48 | −119 / −167 / −230 | 214 | causal family stays; block decode forms 2 of 3 (its forced arm: null) |
+| a100 | 3 113 | 2 699 [2 635–2 715] | 0.87 | −365 / 40 / 71 | 5 144 | unchanged; + boundaries (2 448 / 5 040 / 1 104 ns) → the causal family forms (forced: +1.3–1.7 %) |
+| rtx-4090 | 1 742 | 3 294 [3 247–3 588] | 1.89 | −183 / −238 / −373 | 2 421 | causal family still forms (8 464 vs 8 640); + boundaries → refused (it wins 1.16) |
+| h100 | 2 429 | −276 [−829 … −241] | −0.11 | −119 / −112 / 24 | −447 | smlp / firew_rowsum re-form (2 750 vs 3 444): the 7a2b67bf losers (1.55 / 2.3×) |
+
+The derived value transfers to no part (measured / derived −0.11 … 1.89), and the measured one mis-decides too: alone on
+the h100 (smlp / firew), with the measured boundaries also on the a100 and 4090. What separates the shapes is
+**rounds**: every one-round chain measures −0.37 … +0.07 µs on all four parts, the grid-stride forms 0.2–5.1 µs on the
+3090 / a100 / 4090 and none on the h100 (−0.45 / −0.28 µs, though its persistent kernel holds 5 blocks a SM against the
+members' 8). The causal and decode chains are one round (≤ 128-block levels). **Missing facts** (a mixed result:
+decode's chain wins on the 3090 / 4090, loses on the 5080): (1) the chain's widest level in rounds of the persistent
+grid (site) — the body term per round, ≈ 0 for one round; (2) the host's issue time per launch (host property): the
+price reads the device's dependent-launch latency, but on these hosts the separate form is bounded by the host; (3) the
+phases' time in the merged grid (open since 7a2b67bf: the h100 smlp / firew phases, a100 members +10 % inside the
+persistent kernel).
+
+### Half precision: the bf16-weight rows against torch bf16
+
+ms per decode step (16-step `iter ms` / 16). f32: the f32 program; bf16w: shipped; OFF: `--gpu-off=narrow-tile`;
+torch bf16: the faster of `bf16` / `bf16-compile` (`c` compile, `e` eager) — bf16 weights, activations and KV cache.
+
+| row | rtx-3090: f32 → bf16w (/f32) · torch bf16 → /tb | a100 | rtx-4090 | h100 |
+|---|---|---|---|---|
+| dec B1 L2048 | 0.277 → **0.185** (0.67) · 0.250 → **0.74** | 0.215 → **0.170** (0.79) · 0.155 → **1.09** | 0.242 → **0.154** (0.64) · 0.172 → **0.89** | 0.116 → **0.096** (0.83) · 0.293 → **0.33** |
+| dec B1 L8192 | 0.378 → **0.287** (0.76) · 0.302 → **0.95** | 0.276 → **0.231** (0.84) · 0.198 → **1.16** | 0.344 → **0.258** (0.75) · 0.208 → **1.24** | 0.166 → **0.141** (0.85) · 0.168 → **0.84** |
+| dec B8 L2048 | 1.023 → **0.838** (0.82) · 0.356 → **2.35** | 0.398 → **0.347** (0.87) · 0.229 → **1.52** | 0.497 → **0.417** (0.84) · 0.236 → **1.77** | 0.207 → **0.190** (0.92) · 0.257 → **0.74** |
+| dec B8 L8192 | 1.801 → **1.615** (0.90) · 0.740 → **2.18** | 0.809 → **0.762** (0.94) · 0.423 e → **1.80** | 1.132 → **1.051** (0.93) · 0.460 → **2.29** | 0.468 → **0.454** (0.97) · 0.290 → **1.56** |
+| dec B32 L2048 | 1.224 → **1.196** (0.98) · 0.725 → **1.65** | 0.859 → **0.867** (**1.01**) · 0.475 → **1.83** | 1.129 → **1.023** (0.91) · 0.454 → **2.25** | 0.471 → **0.491** (**1.04**) · 0.304 → **1.62** |
+| dec B32 L8192 | 4.282 → **4.244** (0.99) · 2.412 → **1.76** | 2.535 → **2.541** (**1.00**) · 1.206 e → **2.11** | 3.765 → **3.661** (0.97) · 1.354 → **2.70** | 1.038 → **1.054** (**1.02**) · 0.562 → **1.88** |
+| block dec B1 L4096 | 1.133 → **0.712** (0.63) · 0.679 → **1.05** | 0.959 → **0.790** (0.82) · 0.452 → **1.75** | 1.494 → **0.595** (0.40) · 0.572 → **1.04** | 0.569 → **0.352** (0.62) · 0.429 → **0.82** |
+| geomean | /f32 **0.81**, /tb **1.41** | **0.89**, **1.57** | **0.75**, **1.61** | **0.88**, **0.97** |
+
+The narrow tile's OFF arm (per-cell kernels) loses on every part: 1.19–3.40 (3090), 1.67–3.05 (a100), 1.50–1.70 (4090),
+2.02–2.98 (h100). B1 reaches or passes torch bf16 on the 3090 / 4090 / h100 (the h100's torch B1 legs are slow on its
+noisy host: 0.293 ms against the 5080's 0.143); B ≥ 8 trails 1.5–2.7× — attention over the f32 KV cache, as on the 5080
+(ADR-0043 open 3). The 4090's block decode 0.40 is partly the f32 program's tuned pick (AUTO 1.126 × its rules pick,
+open item 7 of 7a2b67bf, unchanged). **The mixed result: B32 on the a100 / h100, bf16w 1.00–1.04 of f32** (0.91–0.98 on
+the 3090 / 4090). Traced projections (`probe_kernels`, ms a 16-step run, mean of 2 reps): h100 QKV 32 × 6144 × 4096 f32
+1.004 → bf16w 1.192, O 0.632 → 0.750 — the f32 tile (`LDGSTS` 24, 1 024 FFMA a trip, 128 registers) moves its 100 MB a
+step at 1.6 TB/s, the register-staged narrow tile (no `LDGSTS`, 256 FFMA a trip) its 50 MB at 0.68 TB/s: neither DRAM-
+(3.2 TB/s) nor FFMA-bound (42 / 35 % of the measured FFMA rate) — latency-bound, the narrow tile with fewer loads in
+flight; a100 QKV 2.167 → 2.170, O 1.394 → 1.508: FFMA-bound (62 % of its 64-lane FP32 peak at 32 rows), where the format
+cannot help and the narrow tile is the less efficient one. The 4090: QKV 2.479 → 1.124, O 1.248 → 0.712 (−55 / −43 %;
+the 50 MB of bf16 weights fit its 72 MB L2). **Missing realization / property**: the narrow panel's bytes in flight
+against DRAM bytes per µs per SM (h100 25.4, a100 14.4 KB against the 4090's 7.9) — `cp.async` narrow panels (ADR-0043
+open 4); and the site's FFMA per weight byte against the part's ridge (a100 12.4 FFMA / B): above it the format buys
+nothing.
+
+### Performance — Mapal / best competitor, 7a2b67bf → now
+
+Best competitor as before (f32 legs for f32 programs, TF32 for `_tf32`, bf16 never). Geomeans over the rows with a
+competitor in both rounds (`compare.py`).
+
+| suite | rtx-3090 | a100 | rtx-4090 | h100 |
+|---|---|---|---|---|
+| README GPU suite (rows, wins now) | 0.69 → **0.90** (27, 10) | 0.71 → **1.00** (24, 8) | 0.73 → **0.79** (30, 19) | 1.06 → **1.05** (27, 7) |
+| model-scale layer, f32 llm_* | 0.78 → **1.04** (12, 7) | 0.63 → **0.79** (7, 4) | 0.99 → **1.04** (12, 6) | 0.92 → **0.94** (12, 6) |
+| projections, pj_* | 0.98 → **1.20** (28, 1) | 0.62 → **1.23** (28, 5) | 1.24 → **1.22** (28, 4) | 1.47 → **1.51** (28, 0) |
+| GEMM cells 16×2048×7168 / 4096³ | 0.90 / 1.52 → **1.02 / 1.11** | 1.02 / 1.02 → **1.02 / 1.04** | 1.13 / 1.00 → **1.13 / 0.97** | 1.85 / 1.18 → **1.84 / 1.18** |
+| bf16w decode vs torch bf16 (7, new) | **1.41** (2) | **1.57** (0) | **1.61** (1) | **0.97** (4) |
+
+**What moved is the competitor, not Mapal.** Over the rows emitted identically in both rounds, Mapal's own ms moved
+0.98 / 0.94 / 0.96 / 1.06 (geomean; the h100 within its noise), the best competitor's 0.77 / 0.58 / 0.98 / 1.04: the
+3090 (200 → 350 W) and a100 (270 → 300 W) library legs no longer throttle, and faster hosts speed torch's launch-bound
+loops (a100 causal torch-compile 236.6 → 72.6 ms on a Ryzen 7700; 4090 causal 0.09 → 0.18 with Mapal 18.50 → 18.38
+ms). The capped boxes' last-round wins (3090 / a100 projections 0.62–0.98, mlp_2048 0.41–0.58) were the throttle.
+
+| row (Mapal / best, now) | rtx-3090 | a100 | rtx-4090 | h100 |
+|---|---:|---:|---:|---:|
+| causal / gen / prefill | 0.13 / 0.13 / 0.13 | 0.51 / 0.48 / 0.49 | 0.18 / 0.18 / 0.19 | 0.19 / 0.13 / 0.13 |
+| decode_1024 (was) | 0.79 (0.55) | 0.96 (0.50) | 0.75 (0.37) | 0.73 (0.76) |
+| smlp / firew_rowsum | 1.23 / 0.74 | 1.18 / 0.64 | 0.99 / 0.61 | **1.21 / 0.69** (was 1.78 / 1.33) |
+| attn_1024_64 | 1.83 | 1.32 | 1.47 | 2.40 (null 8.9 %) |
+| mlp_2048 / mlp_512 | 1.06 / 1.50 | 1.13 / 1.24 | 0.96 / 1.03 | 1.11 / 2.21 |
+| decode B1 L2048 / B32 L2048 (f32) | 0.76 / 0.45 | 0.87 / 0.47 | 0.88 / 0.49 | 0.47 / 0.40 |
+| block decode / prefill T2048 | 0.94 / 1.16 | 1.14 / 1.01 | 1.42 / 1.04 | 1.25 / 1.12 |
+| prefill T8192 | 13.7 | 12.3 | 13.5 | 19.1 |
+| lsm 1×131072 / 32×8192 | 11.2 / 2.69 | 10.8 / 1.67 | 8.39 / 2.44 | 5.81 / 2.52 |
+
+Every row, leg and null for all four parts: `analysis/compare.md` in the raw directory.
+
+### Evidence (intent check, `evidence-<part>.tsv`)
+
+3090 45 247 checks / 2 471 mismatches, a100 50 773 / 4 691, 4090 58 090 / 3 819, h100 52 540 / 5 808. The new intents:
+`narrow-tile` 446 / 452, 706 / 744, 852 / 896, 753 / 776 ok — the misses are `no spill` (8–244 B) and, on the a100, the
+format-load check on `.xref` builds; most spilling kernels are table candidates, but **the block decode's narrow gate /
+up site (1 × 14336 × 4096) ships a 255-register tile of 32-thread blocks spilling 216–244 B as its rules pick**
+(candidate 0, launched: 132 µs a step on the 4090, as long as the naive GEMV beside it); `calls` 17 / 18, 10 / 10, 53 /
+60, 20 / 22 — every miss a block (FFN) program with more chains formed than cooperative launches; `calls-kernel` **one
+barrier arrival too many** on the exact-face chains (`.xref`, px: 8 arrivals for 8 levels, the intent expects levels −
+1); `exp-hw` 264 / 444 … 345 / 528 — **every miss is an exact-face build** (`.xref`, px exact: the face that forbids the
+hardware form; intent.py applies the intent there — stale scope, like `pdl`'s entry trigger, still 876 h100 misses).
+`row-slices` / `exp-rescale` apply to no kernel on these parts: no flow unit is sliced (lsm one block a row). Largest
+groups as before (fma-pairs 714–785, face-registers residency 971–1 015 a100 / h100, prefetch cover 213–543).
+
+### Gap analysis — ranking update
+
+1. **Missing dataflow fact (c): prefill T8192** — 12.3–19.1×, unchanged (one program, the most time).
+2. **Under-filled grids against the SM count (b)**: lsm 1.7–11.2× (one block a row: no slices on any rented part),
+   attention 1.3–2.4×, the skinny GEMM / m16 projections. Unchanged.
+3. **`calls` pricing (b), up from 6**: the body term per chain from the 5080's grid-stride chain refuses decode's
+   one-round chain on the 3090 / 4090 (1.2–1.5× slower than formed) while the causal family's decisions are right on
+   all four; missing: rounds of the chain, the host's issue time per launch, the phases' time in the merged grid; and
+   the 4090's block-decode chain formed but not realized.
+4. **bf16 decode at B ≥ 8 (a / b, new)**: 1.5–2.7× torch bf16 — the f32 KV cache (attention), and on the high-bandwidth
+   parts (a100 / h100) the register-staged narrow tile below DRAM bandwidth (B32 bf16w ≥ f32): `cp.async` narrow panels.
+5. **GEMV / narrow-panel bytes in flight per SM (b)**: m1 projections 1.0–2.9× (h100 worst), and now the narrow
+   tile — one property (DRAM B/µs/SM against the site's loads in flight) behind both.
+6. **Hopper TMA / mbarrier / warp specialization (a)**: h100 TF32 rows 1.4–3.2×, unchanged (no library SASS yet).
+7. **The 128-accumulator tile's rule (b)** and **conv window fill (b)**: unchanged (convmc f32 1.7–2.3×).
+
+### Open items (missing facts)
+
+1. `calls`: the chain's rounds over the persistent grid (body term per round), the host's issue time per launch, the
+   phases' time in the merged grid; the 4090 block decode's formed-but-not-realized chain.
+2. Half precision: `cp.async` narrow panels (bytes in flight on a100 / h100), the bf16 KV cache (B ≥ 8 gap), the
+   block decode's spilling 255-register rules pick at the narrow m = 1 gate / up site.
+3. intent.py: `exp-hw` and `calls-kernel` scoped onto exact-face builds; `pdl` entry trigger (876 h100).
+4. Tune: the 4090 block decode AUTO 1.126 × rules (unchanged), h100 causal AUTO 1.374 × rules (noisy box).
+5. `row-slices` on the rented parts: lsm stays one block a row (1.7–11×) — the first cooperative launch's price.
+6. Unchanged from 7a2b67bf: `wide-fma` lanes / waves, `async` after `k-fill`, flow-unit grids against `sms`, Hopper
+   TMA, `warp-fill` / `grid-share` / `min-blocks`.
+
+Raw (local, not in git): `.claude/raw-evidence/cross-arch/60f0f8ce/<part>/` (results, run output, `calib-<part>.txt`
+with the `body` and `exp` lines, `evidence-<part>.tsv`, profile archives with `prof/chains` nsys traces, tune, wisdom,
+rest logs), `analysis/` (gates, props, body, arms, chainarms, gap, ms, bf16, compare, samecode, chains-decisions per
+part), `scripts/` (build, stems, launch, watchdog, ops_nsys, rest, rest_now, analyze, body, chainarms, kdiff, ntrace,
+drift, bf16, intents, cost, samecode, chains, offers).
