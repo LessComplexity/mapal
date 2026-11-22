@@ -12,6 +12,16 @@ usage: torch_bench.py <reps> <vals dir> <stem>...   (TORCH_MODES=<mode,...>: onl
 model-scale (`pt_llm_*`, `pt_pj_*`): also `sdpa` and the bf16 reference legs, and per-mode tolerances (`llm_workload`).
 prints `torch prog=<stem> mode=eager|compile n= min_ms= med_ms= max_ms= within=yes|no|no-mapal maxdev=
 compile_s=` per leg, after one `torch version= cuda= cudnn= device=` line.
+
+competitors (CUDA graphs, the way torch decode is run): `compile-cg` = torch.compile(mode="max-autotune") (cudagraphs
+on), `compile-ro` = mode="reduce-overhead", with `-tf32` and `bf16-` twins. Every tensor the function reads (weights,
+the KV cache, the caches a decode loop updates in place) is a static address, as nn.Module parameters and buffers are
+(gpt-fast): cudagraph trees then neither copy them per replay nor skip the graph over the in-place cache update; a
+decode step marks the step begin and clones its output (gpt-fast's `decode_one_token` loop). A graph leg prints
+`cg=on`, or `cg=skipped(<n>)` when Inductor fell back (then it is a plain compile run, not a CUDA-graph leg).
+SDPA backends: `sdpa-efficient` (f32: the memory-efficient kernel, K/V repeated per query head as HF's `repeat_kv`
+does — it takes no GQA), `bf16-efficient`, `bf16-cudnn` (cuDNN attention); `sdpa` / `bf16` keep torch's own pick.
+`llm_workload(..., ops=)` takes the library kernels comp_bench.py plugs in (RMSNorm, RoPE, SwiGLU, attention).
 """
 import math
 import os
@@ -104,9 +114,30 @@ def llm_rope(v, c, s):  # v [..., dh]; c, s broadcast to [..., dh / 2]
     return torch.cat((v1 * c - v2 * s, v2 * c + v1 * s), -1)
 
 
-def llm_ffn(w, h1):
-    hn = llm_rms(h1, w['g2'])
+def llm_ffn(w, h1, ops=None):
+    ops = ops or {}
+    hn = ops.get('rms', llm_rms)(h1, w['g2'])
+    if 'silu_mul' in ops:  # a library SwiGLU (comp_bench.py)
+        return h1 + ops['silu_mul'](hn @ w['wg'], hn @ w['wu']) @ w['wd']
     return h1 + (torch.nn.functional.silu(hn @ w['wg']) * (hn @ w['wu'])) @ w['wd']
+
+
+SDPA_BACKENDS = {'efficient': 'EFFICIENT_ATTENTION', 'cudnn': 'CUDNN_ATTENTION', 'flash': 'FLASH_ATTENTION'}
+
+
+def sdpa_call(mode, q, k, v, **kw):
+    """F.scaled_dot_product_attention with GQA, under the backend the mode names (`-efficient`, `-cudnn`, `-flash`;
+    none: torch's own pick). The efficient kernel takes no GQA: K / V repeated per query head first (HF `repeat_kv`)."""
+    from torch.nn.attention import SDPBackend, sdpa_kernel  # here: preflight.py imports this file with torch stubbed
+    F_ = torch.nn.functional
+    be = next((b for b in SDPA_BACKENDS if f'-{b}' in mode), None)
+    if be is None:
+        return F_.scaled_dot_product_attention(q, k, v, enable_gqa=True, **kw)
+    with sdpa_kernel([getattr(SDPBackend, SDPA_BACKENDS[be])]):
+        if be == 'efficient':
+            g = q.shape[1] // k.shape[1]
+            return F_.scaled_dot_product_attention(q, k.repeat_interleave(g, 1), v.repeat_interleave(g, 1), **kw)
+        return F_.scaled_dot_product_attention(q, k, v, enable_gqa=True, **kw)
 
 
 LLM_CELLS = lambda rows, D: [0, (rows - 1) * D + 1, rows * D // 2 + 3, rows * D - 1]  # noqa: E731 — the printed cells
@@ -115,10 +146,16 @@ LLM_CELLS = lambda rows, D: [0, (rows - 1) * D + 1, rows * D // 2 + 3, rows * D 
 LLM_WEIGHTS = ('wqkv', 'wo', 'wg', 'wu', 'wd')  # gen_tiles.py: `_bf16w` stores these as bf16 (ADR-0043)
 
 
-def llm_workload(stem, mode):
+def llm_workload(stem, mode, ops=None):
     """-> (fn, args); fn(*args) returns the layer's output [rows, D]. A decode workload is ('run', step).
     `_bf16w` (half-precision, ADR-0043): the weights rounded once to bf16 — the f32 legs compute on those values
-    (the program's own semantics), the bf16 legs are bf16 throughout."""
+    (the program's own semantics), the bf16 legs are bf16 throughout. `ops` (comp_bench.py): library kernels in place
+    of the torch ones — `rms(x, g)`, `rope_qk(q, k, pv)` (q [N, H, dh], k [N, Hk, dh]; pv: the decode position, None
+    for a prefill), `silu_mul(a, b)`, `attn_dec(q, k, v, kc, vc, p, pv, ti)` (appends k, v at position p and attends
+    rows <= p; ti: the step as a host int), `attn_pre(q, k, v)` ([T, H|Hk, dh], causal; -> [T, H, dh]); `tables(w)`
+    is called once with the layer's tensors (a leg's own RoPE tables)."""
+    ops = ops or {}
+    rms = ops.get('rms', llm_rms)
     w16 = stem.endswith('_bf16w')
     stem = stem.removesuffix('_bf16w')
     P = LLM_PX if stem.startswith('px_') else LLM
@@ -135,35 +172,44 @@ def llm_workload(stem, mode):
         w = llm_tensors(P, B, L, B * L * KD, ffn, dt)
         if w16:
             w.update({k: v.to(torch.bfloat16).to(dt) for k, v in w.items() if k in LLM_WEIGHTS})
+        if 'tables' in ops:
+            ops['tables'](w)
         kc, vc = w['kc0'].view(B, L, Hk, dh), w['vc0'].view(B, L, Hk, dh)
         pos = torch.arange(L, device=dev)
 
         def step(t, x, ti=None):  # t: a 0-d tensor (one compiled graph for every step); the cache is updated in place
             p = t + (L - S)
             pv = p.view(1)
-            qkv = llm_rms(x, w['g1']) @ w['wqkv']
-            c, s = w['cs'].index_select(0, pv), w['sn'].index_select(0, pv)
-            q = llm_rope(qkv[:, :D].view(B, H, dh), c, s)
-            kc.index_copy_(1, pv, llm_rope(qkv[:, D:D + KD].view(B, Hk, dh), c, s).view(B, 1, Hk, dh))
+            qkv = rms(x, w['g1']) @ w['wqkv']
+            if 'rope_qk' in ops:
+                q, k = ops['rope_qk'](qkv[:, :D].view(B, H, dh), qkv[:, D:D + KD].view(B, Hk, dh), pv)
+            else:
+                c, s = w['cs'].index_select(0, pv), w['sn'].index_select(0, pv)
+                q = llm_rope(qkv[:, :D].view(B, H, dh), c, s)
+                k = llm_rope(qkv[:, D:D + KD].view(B, Hk, dh), c, s)
+            if 'attn_dec' in ops:
+                o = ops['attn_dec'](q, k, qkv[:, D + KD:].view(B, Hk, dh), kc, vc, p, pv, ti)
+                h1 = x + o.reshape(B, D) @ w['wo']
+                return llm_ffn(w, h1, ops) if ffn else h1
+            kc.index_copy_(1, pv, k.view(B, 1, Hk, dh))
             vc.index_copy_(1, pv, qkv[:, D + KD:].view(B, 1, Hk, dh))
             if sdpa and ti is not None:  # eager SDPA: the attended prefix of the cache (ti: the step, a host int)
                 n = ti + L - S + 1
-                o = F_.scaled_dot_product_attention(q.view(B, H, 1, dh), kc[:, :n].transpose(1, 2),
-                                                    vc[:, :n].transpose(1, 2), enable_gqa=True)
+                o = sdpa_call(mode, q.view(B, H, 1, dh), kc[:, :n].transpose(1, 2), vc[:, :n].transpose(1, 2))
             elif sdpa:  # compiled: the whole cache, masked (static shapes)
-                o = F_.scaled_dot_product_attention(q.view(B, H, 1, dh), kc.transpose(1, 2), vc.transpose(1, 2),
-                                                    attn_mask=(pos <= p).view(1, 1, 1, L), enable_gqa=True)
+                o = sdpa_call(mode, q.view(B, H, 1, dh), kc.transpose(1, 2), vc.transpose(1, 2),
+                              attn_mask=(pos <= p).view(1, 1, 1, L))
             else:
                 sc = torch.einsum('bkgd,blkd->bkgl', q.view(B, Hk, G, dh), kc) / dh ** 0.5
                 pr = torch.softmax(sc.masked_fill(pos > p, float('-inf')), -1)
                 o = torch.einsum('bkgl,blkd->bkgd', pr, vc)
             h1 = x + o.reshape(B, D) @ w['wo']
-            return llm_ffn(w, h1) if ffn else h1
+            return llm_ffn(w, h1, ops) if ffn else h1
 
         def run(step):
             x = w['x0']
             for t in range(S):
-                x = step(torch.tensor(t, device=dev), x, t if sdpa and 'compile' not in mode else None)
+                x = step(torch.tensor(t, device=dev), x, t if (sdpa or ops) and 'compile' not in mode else None)
             return x
         return run, ('step', step)
     m = re.fullmatch(r'p[tx]_llm_kv([xn])(_blkdec)?_b(\d+)_l(\d+)', stem)
@@ -173,17 +219,28 @@ def llm_workload(stem, mode):
     if m:
         ffn, T = m.group(1) == 'blkpre', int(m.group(2))
         w = llm_tensors(P, T, T, 0, ffn, dt)
+        if 'tables' in ops:
+            ops['tables'](w)
         grouped = H * T * T * 4 > (4 << 30) or m.group(1) == 'preg'  # the program's own split (gen_tiles.py)
 
         def layer(x0, w):
-            qkv = llm_rms(x0, w['g1']) @ w['wqkv']
+            qkv = rms(x0, w['g1']) @ w['wqkv']
+            if 'attn_pre' in ops:  # a library attention on [T, heads, dh] (comp_bench.py)
+                q, k = qkv[:, :D].view(T, H, dh), qkv[:, D:D + KD].view(T, Hk, dh)
+                if 'rope_qk' in ops:
+                    q, k = ops['rope_qk'](q, k, None)
+                else:
+                    c, s = w['cs'].view(T, 1, -1), w['sn'].view(T, 1, -1)
+                    q, k = llm_rope(q, c, s), llm_rope(k, c, s)
+                o = ops['attn_pre'](q, k, qkv[:, D + KD:].view(T, Hk, dh))
+                h1 = x0 + o.reshape(T, D) @ w['wo']
+                return llm_ffn(w, h1, ops) if ffn else h1
             c, s = w['cs'].view(T, 1, -1), w['sn'].view(T, 1, -1)
             q = llm_rope(qkv[:, :D].view(T, H, dh), c, s).transpose(0, 1)          # [H, T, dh]
             k = llm_rope(qkv[:, D:D + KD].view(T, Hk, dh), c, s).transpose(0, 1)  # [Hk, T, dh]
             v = qkv[:, D + KD:].view(T, Hk, dh).transpose(0, 1)
             if sdpa:
-                o = F_.scaled_dot_product_attention(q.unsqueeze(0), k.unsqueeze(0), v.unsqueeze(0), is_causal=True,
-                                                    enable_gqa=True)[0]
+                o = sdpa_call(mode, q.unsqueeze(0), k.unsqueeze(0), v.unsqueeze(0), is_causal=True)[0]
             else:
                 mask = torch.ones(T, T, dtype=torch.bool, device=dev).triu(1)
                 parts = []
@@ -194,7 +251,7 @@ def llm_workload(stem, mode):
                     parts.append(torch.softmax(sc.masked_fill(mask, float('-inf')), -1) @ vg.unsqueeze(1))
                 o = torch.cat(parts).view(H, T, dh)
             h1 = x0 + o.transpose(0, 1).reshape(T, D) @ w['wo']
-            return llm_ffn(w, h1) if ffn else h1
+            return llm_ffn(w, h1, ops) if ffn else h1
         return layer, (w['x0'], w)
     raise LookupError(f'no llm workload for {stem}')
 
@@ -365,8 +422,11 @@ def workload(stem, mode='eager'):
             V.index_copy_(0, tv, (xr @ wv).view(1, d))
             return (K @ Q.index_select(0, tv).view(d)) @ V
 
+        K, V = torch.empty(T, d, device=dev), torch.empty(T, d, device=dev)  # one cache (a static address)
+
         def run(step):
-            K, V = torch.zeros(T, d, device=dev), torch.zeros(T, d, device=dev)
+            K.zero_()
+            V.zero_()
             o = torch.zeros(d, device=dev)
             for t in range(T):
                 o = step(torch.tensor(t, device=dev), o, K, V)
@@ -395,8 +455,11 @@ def workload(stem, mode='eager'):
             V.index_copy_(0, tv, (xr @ wv).view(1, d))
             return softmax_v(K @ Q.index_select(0, tv).view(d), rows <= t, V)
 
+        K, V = torch.empty(T, d, device=dev), torch.empty(T, d, device=dev)  # one cache (a static address)
+
         def run(step):
-            K, V = torch.zeros(T, d, device=dev), torch.zeros(T, d, device=dev)
+            K.zero_()
+            V.zero_()
             o, po = torch.zeros(d, device=dev), None
             if P:  # prefill: the prompt's K/V and causal attention, every prompt row's output
                 K[:P], V[:P] = F[:P] @ wk, F[:P] @ wv
@@ -503,15 +566,21 @@ def gate(stem, outs, vals_dir, tol=1e-3):
     return ('yes' if ok else 'no'), dev_
 
 
-def timed(fn, args, reps, flush):
+def timed(fn, args, reps, flush, pre=None):
+    """5 warm-ups, then `reps` CUDA-event-bracketed calls, each after the L2 flush. `pre` (a CUDA-graph leg's
+    `cudagraph_mark_step_begin`) runs before each call, outside the bracket."""
     sync = torch.cuda.synchronize if dev == 'cuda' else (lambda: None)
     for _ in range(5):
+        if pre:
+            pre()
         fn(*args)
     sync()
     ts = []
     for _ in range(reps):
         if flush is not None:
             flush.zero_()
+        if pre:
+            pre()
         if dev == 'cuda':
             e0, e1 = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
             e0.record()
@@ -525,6 +594,54 @@ def timed(fn, args, reps, flush):
             ts.append((time.perf_counter() - t0) * 1e3)
     ts.sort()
     return ts
+
+
+def compile_mode(mode):
+    """`-cg`: max-autotune (cudagraphs on); `-ro`: reduce-overhead; else max-autotune-no-cudagraphs."""
+    return 'max-autotune' if '-cg' in mode else 'reduce-overhead' if '-ro' in mode else 'max-autotune-no-cudagraphs'
+
+
+def graph_mode(mode):
+    return 'compile' in mode and ('-cg' in mode or '-ro' in mode)
+
+
+ACTIVATIONS = ('x0', 'hx0')  # a layer's input activations: not weights / caches
+
+
+def mark_static(obj, seen=None, depth=0):
+    """Every tensor a leg's function reads — its arguments, and through closures the weights and caches — at a static
+    address (what nn.Module parameters / buffers are to cudagraph trees): not copied per replay, mutable in place.
+    The layer's input activations stay inputs (ACTIVATIONS): a decode step's x is the previous step's output, a new
+    address each step — static, cudagraph trees re-record the graph every step (reduce-overhead did, 30 ms a step);
+    as an input it is copied into the graph's buffer, as gpt-fast's token is."""
+    seen = set() if seen is None else seen
+    if id(obj) in seen or depth > 4:
+        return
+    seen.add(id(obj))
+    if isinstance(obj, torch.Tensor):
+        torch._dynamo.mark_static_address(obj)
+    elif isinstance(obj, dict):
+        for k, v in obj.items():
+            if k not in ACTIVATIONS:
+                mark_static(v, seen, depth + 1)
+    elif isinstance(obj, (list, tuple)):
+        for v in obj:
+            mark_static(v, seen, depth + 1)
+    elif callable(obj) and getattr(obj, '__closure__', None):
+        for c in obj.__closure__:
+            try:
+                mark_static(c.cell_contents, seen, depth + 1)
+            except ValueError:  # an empty cell
+                pass
+
+
+def graphed_step(st):
+    """A decode step under CUDA graphs: mark the step begin, clone the output (it feeds the next step; the next replay
+    overwrites the graph's own output buffer) — gpt-fast's `decode_one_token` loop."""
+    def call(*a):
+        torch.compiler.cudagraph_mark_step_begin()
+        return st(*a).clone()
+    return call
 
 
 def main():
@@ -550,14 +667,16 @@ def main():
             continue
         # ADR-0041: the `: tf32 | f32` programs (and the conv family, whose default cuDNN leg is TF32) also get
         # the TF32-on legs (matmul and cuDNN allow_tf32), beside the pure-FP32 ones above.
-        modes = ['eager', 'compile']
+        # competitors: every compiled leg also with CUDA graphs (`-cg` max-autotune, `-ro` reduce-overhead).
+        modes = ['eager', 'compile', 'compile-cg', 'compile-ro']
         if 'tf32' in stem or 'convmc' in stem or '_mlp' in stem:
-            modes += ['eager-tf32', 'compile-tf32']
+            modes += ['eager-tf32', 'compile-tf32', 'compile-cg-tf32', 'compile-ro-tf32']
         # model-scale: SDPA legs; the bf16 reference (reported apart, gated loosely against Mapal's f32 values); a
         # `_tf32` twin times only its TF32 legs (the f32 and bf16 ones are its base stem's).
         scale = llm or base.startswith('pt_pj_')
         if llm:
-            modes += ['sdpa'] + (['sdpa-tf32'] if 'tf32' in stem else [])
+            modes += ['sdpa', 'sdpa-efficient'] + (['sdpa-tf32'] if 'tf32' in stem else [])
+        kv = '_llm_kvn' in base or '_llm_kvx' in base
         # caching-memory: the naive twin's torch legs recompute the history (no cache); the explicit twin's keep one.
         if '_llm_kvn' in base:
             modes = ['naive', 'naive-compile']
@@ -566,10 +685,12 @@ def main():
         # long-rows: the attention rows against SDPA, the long softmax rows against torch.softmax (both exact exp).
         sdpa_ref = base.startswith(('pt_attn_', 'pt_lsm_'))
         if sdpa_ref:
-            modes += ['sdpa', 'sdpa-compile']
+            modes += ['sdpa', 'sdpa-compile', 'sdpa-compile-cg']
         if scale:
+            bf = ['bf16', 'bf16-compile'] + ([] if kv else ['bf16-compile-cg', 'bf16-compile-ro'])
+            bf += ['bf16-cudnn', 'bf16-efficient'] if llm and not kv else []
             modes = ([m for m in modes if m.endswith('-tf32')] if 'tf32' in stem
-                     else modes + ([] if '_llm_kvn' in base else ['bf16', 'bf16-compile']))
+                     else modes + ([] if '_llm_kvn' in base else bf))
         # TORCH_MODES=<mode,...> keeps only those legs (a CUPTI trace of one leg).
         keep = [m for m in os.environ.get('TORCH_MODES', '').split(',') if m]
         modes = [m for m in modes if not keep or m in keep]
@@ -578,36 +699,55 @@ def main():
             torch.backends.cuda.matmul.allow_tf32 = tf
             torch.backends.cudnn.allow_tf32 = tf
             tol = 5e-2 if mode.startswith('bf16') else 1e-2 if scale and tf else 1e-3
+            graph = graph_mode(mode)
+            own = scale or sdpa_ref or graph  # a CUDA-graph leg marks its tensors static: its own set
+            cg = ''
             try:
                 base_b = stem_base
-                if dev == 'cuda' and (scale or sdpa_ref):  # the leg builds its own tensors: drop the stem's first set
+                if dev == 'cuda' and (own or fn is None):  # the leg builds its own tensors: drop the stem's first set
                     fn = args = None
                     torch.cuda.empty_cache()
                     base_b = torch.cuda.memory_allocated()
-                fn, args = workload(base, mode) if scale or sdpa_ref else (fn, args)
+                fn, args = workload(base, mode) if own or fn is None else (fn, args)
+                if 'compile' in mode:  # one compiled function per leg (Dynamo's per-code cache stays small)
+                    torch._dynamo.reset()
+                torch._inductor.config.fx_graph_cache = not graph  # a cached graph's cudagraph verdict is not keyed
+                torch._dynamo.utils.counters.clear()               # on static inputs: a graph leg compiles fresh
                 if dev == 'cuda':  # caching-memory: the leg's peak device bytes from its inputs on (their making's
                     torch.cuda.synchronize()  # integer temporaries are the harness's, not the program's)
                     torch.cuda.reset_peak_memory_stats()
                 t0 = time.perf_counter()
                 comp_mode = 'compile' in mode
+                pre = None
+                if graph:
+                    mark_static(args)
+                    mark_static(fn)
                 if fn.__name__ == 'run':  # decode: the step is what compiles, the loop stays Python
-                    st = torch.compile(args[1], mode='max-autotune-no-cudagraphs') if comp_mode else args[1]
-                    f, a = fn, (st,)
+                    st = torch.compile(args[1], mode=compile_mode(mode)) if comp_mode else args[1]
+                    f, a = fn, ((graphed_step(st) if graph else st),)
                 else:
-                    f = torch.compile(fn, mode='max-autotune-no-cudagraphs') if comp_mode else fn
+                    f = torch.compile(fn, mode=compile_mode(mode)) if comp_mode else fn
                     a = args
+                    pre = torch.compiler.cudagraph_mark_step_begin if graph else None
+                if pre:
+                    pre()
                 outs = f(*a)
                 comp = time.perf_counter() - t0
                 ok, dv = gate(stem, outs, vals_dir, tol)
-                ts = timed(f, a, reps, flush)
-                vals = llm_vals(base, outs) if llm else ends(outs)
+                vals = llm_vals(base, outs) if llm else ends(outs)  # before a graph replay overwrites them
+                outs = None
+                ts = timed(f, a, reps, flush, pre)
+                if graph:
+                    skips = torch._dynamo.utils.counters['inductor'].get('cudagraph_skips', 0)
+                    cg = f' cg={"on" if not skips else f"skipped({skips})"}'
                 peak = (torch.cuda.max_memory_allocated() - base_b) / 2 ** 20 if dev == 'cuda' else float('nan')
                 print(f'torch prog={stem} mode={mode} n={len(ts)} min_ms={ts[0]:.4f} med_ms={ts[len(ts) // 2]:.4f} '
                       f'max_ms={ts[-1]:.4f} within={ok} maxdev={dv:.3e} compile_s={comp:.1f} peak_mb={peak:.1f} '
-                      f'values={",".join(f"{v:.6g}" for v in vals)}', flush=True)
+                      f'values={",".join(f"{v:.6g}" for v in vals)}{cg}', flush=True)
             except Exception as ex:  # noqa: BLE001 — one leg's failure is a row, not the session
                 print(f'torch prog={stem} mode={mode} FAILED {type(ex).__name__}: {str(ex)[:200]}', flush=True)
-            if scale:  # the next mode's tensors (GBs at this scale): drop this one's graphs and cached blocks
+            torch._inductor.config.fx_graph_cache = True
+            if scale or graph:  # the next mode's tensors (GBs at this scale) / graph pools: drop this leg's
                 fn = args = f = a = outs = None
                 torch._dynamo.reset()
                 torch.cuda.empty_cache()

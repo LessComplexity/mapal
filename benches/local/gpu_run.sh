@@ -7,7 +7,7 @@ B=${1:-$G/bundle}; REPS=${2:-30}; R=$G/results
 mkdir -p "$R"
 nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv > "$R/gpu-apps-before.csv"
 nvidia-smi --query-gpu=utilization.gpu,clocks.sm,temperature.gpu,power.draw --format=csv >> "$R/gpu-apps-before.csv"
-cd "$B" && env PATH=/opt/cuda/bin:$PATH CUDA=/opt/cuda TORCH_PY=${TORCH_PY:-$G/venv/bin/python} TORCH_MIN=${TORCH_MIN:-45} \
+cd "$B" && env PATH=/opt/cuda/bin:$PATH CUDA=/opt/cuda TORCH_PY=${TORCH_PY:-$G/venv/bin/python} TORCH_MIN=${TORCH_MIN:-120} COMP_MIN=${COMP_MIN:-60} \
     bash box_run.sh rtx-5080 sm_120 "$REPS" > "$R/box.out" 2>&1
 rc=$?
 cp results-rtx-5080.txt evidence-rtx-5080.tsv wisdom-rtx-5080.tsv "$R/" 2>/dev/null

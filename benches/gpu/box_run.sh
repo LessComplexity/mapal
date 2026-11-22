@@ -160,6 +160,19 @@ elif [ "${TORCH:-1}" = 1 ] && [ -f torch_bench.py ]; then
       # fusion-natural-forms: a 3090 box's download timed out once (no torch legs): retry the wheel.
       python3 -m pip install -q --timeout 120 --retries 10 "torch==${TORCH_VERSION:-2.11.0}" \
           --index-url "${TORCH_INDEX:-https://download.pytorch.org/whl/cu130}"
+      # competitors (comp_bench.py): the pip-wheel legs — Liger, FlashInfer and its prebuilt kernels for this part's
+      # family (flashinfer.ai's cu130 index; a part without one JIT-compiles on first use). The source-built legs
+      # (FlashAttention-2 / -3: comp_build.sh) build after the timed sections.
+      if [ "${COMP:-1}" = 1 ]; then
+          t0=$(date +%s)
+          fv=${FLASHINFER_VERSION:-0.7.5.post1}
+          python3 -m pip install -q --timeout 120 --retries 5 "liger-kernel==${LIGER_VERSION:-0.8.5}" "flashinfer-python==$fv"
+          case $SM in sm_80 | sm_86 | sm_87) fj=sm80 ;; sm_89) fj=sm89 ;; sm_90*) fj=sm90a ;; sm_100*) fj=sm100a ;;
+              sm_12*) fj=sm120f ;; *) fj= ;; esac
+          [ -n "$fj" ] && python3 -m pip install -q --timeout 120 --retries 5 --no-deps "flashinfer-jit-cache==$fv+cu130" \
+              "flashinfer-jit-cache-$fj==$fv+cu130" --extra-index-url https://flashinfer.ai/whl/cu130
+          echo "comp pip install s=$(($(date +%s) - t0)) flashinfer_jit_cache=${fj:-none}"
+      fi
     ) > torch-install.log 2>&1 &
     TORCH_PID=$!
 fi
@@ -554,6 +567,21 @@ if [ -n "${TORCH_PID:-}" ]; then
     # shellcheck disable=SC2086  # the stems are separate arguments
     [ -n "$tp" ] && timeout "${TORCH_MIN:-15}m" "${TORCH_PY:-python3}" torch_bench.py "$REPS" vals $tp 2>torch.err | tee -a "$LOG"
     say "torch exit=${PIPESTATUS[0]} $(tail -c 300 torch.err | tr '\n' ' ')"
+    # competitors (comp_bench.py): hand Triton, Liger, FlashAttention-2 / -3, FlashInfer on the same stems and the GEMM
+    # cells. A rented box builds the source legs first (comp_build.sh, in the foreground: nothing timed runs beside
+    # it; COMP_BUILD=0 skips them); a local box's TORCH_PY venv carries every package already. COMP=0 skips all.
+    if [ "${COMP:-1}" = 1 ] && [ -f comp_bench.py ]; then
+        if [ -z "${TORCH_PY:-}" ] && [ "${COMP_BUILD:-1}" = 1 ] && [ -f comp_build.sh ]; then
+            say "-- competitor builds: flash-attn ${FA_TAG:-v2.8.3.post2} (FA2; FA3 on sm_90a), cap ${COMP_BUILD_MIN:-25}m each"
+            bash comp_build.sh "$SM" > comp-build.log 2>&1
+            say "comp build: $(grep '^comp build' comp-build.log | tr '\n' ' ') $(grep '^comp pip' torch-install.log)"
+        fi
+        cells=$(for f in "$PROF"/mm_*x*x*.launch; do [ -f "$f" ] && basename "$f" .launch; done | grep -E '^mm_[0-9]+x[0-9]+x[0-9]+$' | tr '\n' ' ')
+        say "-- competitors: hand Triton, Liger, FlashAttention-2/3, FlashInfer (comp_bench.py, reps=$REPS)"
+        # shellcheck disable=SC2086  # the stems are separate arguments
+        timeout "${COMP_MIN:-20}m" "${TORCH_PY:-python3}" comp_bench.py "$REPS" vals $tp $cells 2>comp.err | tee -a "$LOG"
+        say "comp exit=${PIPESTATUS[0]} $(grep -v -e POSIX -e features.h -e define -e '^ ' -e '^In file' comp.err | tail -c 300 | tr '\n' ' ')"
+    fi
 fi
 # TIMING=0 (S63): skip the single-arm square-cell section (a cell session runs tile_bench --splitk).
 if [ "${TIMING:-1}" = 1 ]; then

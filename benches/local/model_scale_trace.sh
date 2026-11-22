@@ -4,7 +4,8 @@
 # process (TORCH_MODES), gemm_lib with 3 repetitions. Same machine protocol as model_scale_run.sh (one lock for the
 # whole pass: every process is seconds). Summaries: ktrace_sum.py, Mapal over its timed kernels (first to last
 # `mapal_tile`); torch / gemm_lib whole-process (per call = total / (1 gate + 5 warm-up + 3 timed calls)).
-# usage: model_scale_trace.sh <bundle> <out dir> <ktrace.so> <stem>:<torch mode,...>...   (TRACE_ARMS="on off-place")
+# usage: model_scale_trace.sh <bundle> <out dir> <ktrace.so> <stem>:<torch mode | comp=<comp_bench leg>,...>...
+#        (TRACE_ARMS="on off-place")
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 B=$(cd "$1" && pwd); O=$2; KT=$(cd "$(dirname "$3")" && pwd)/$(basename "$3"); shift 3
@@ -24,6 +25,11 @@ for spec in "$@"; do
         python3 "$ROOT/benches/local/ktrace_sum.py" "$O/$s$arm.mapal.tsv" --window=mapal_tile:mapal_tile > "$O/$s$arm.mapal.sum"
     done
     for m in ${modes//,/ }; do
+        if [ "${m#comp=}" != "$m" ]; then  # competitors: a comp_bench.py leg (`comp=<leg>`)
+            tr1 "$O/$s.comp-${m#comp=}.tsv" env COMP_LEGS="${m#comp=}" "$TORCH_PY" comp_bench.py 3 vals "$s"
+            python3 "$ROOT/benches/local/ktrace_sum.py" "$O/$s.comp-${m#comp=}.tsv" --top=16 > "$O/$s.comp-${m#comp=}.sum"
+            continue
+        fi
         tr1 "$O/$s.torch-$m.tsv" env TORCH_MODES="$m" "$TORCH_PY" torch_bench.py 3 vals "$s"
         python3 "$ROOT/benches/local/ktrace_sum.py" "$O/$s.torch-$m.tsv" --top=16 > "$O/$s.torch-$m.sum"
     done

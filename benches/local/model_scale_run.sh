@@ -5,8 +5,9 @@
 # game process (MapleStory.exe), `sensors` Tctl under 85 C and CPUs 0-7 under 10 % busy (/proc/stat over 2 s), and
 # every timed process runs pinned to CPUs 0-7 (`taskset`): another agent's builds load CPUs 8-31 / 40-63, so the
 # usual "load < 3" wait never ends. The conditions at the start and end land in <results>/conditions.txt.
-# usage: model_scale_run.sh <bundle> <results dir> [reps]   (TORCH_PY, TORCH_MIN, TORCH, TORCH_MODES, PROBE_REPS,
-# PROBE_ARMS pass through; LADDER=1 by default: a program whose tune keeps candidate 0 is timed too, not `carried`)
+# usage: model_scale_run.sh <bundle> <results dir> [reps]   (TORCH_PY, TORCH_MIN, TORCH, TORCH_MODES, COMP, COMP_MIN,
+# COMP_LEGS, PROBE_REPS, PROBE_ARMS pass through; LADDER=1 by default: a program whose tune keeps candidate 0 is timed
+# too, not `carried`)
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 B=$(cd "$1" && pwd); R=$2; REPS=${3:-30}
@@ -39,7 +40,7 @@ done
 cond start
 nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv > "$R/gpu-apps-before.csv"
 (cd "$B" && taskset -c "$CPUS" env PATH=/opt/cuda/bin:$PATH CUDA=/opt/cuda TORCH_PY="${TORCH_PY:?TORCH_PY}" \
-    TORCH_MIN="${TORCH_MIN:-180}" PROBE_REPS="${PROBE_REPS:-5}" TIMING=0 LADDER="${LADDER:-1}" \
+    TORCH_MIN="${TORCH_MIN:-300}" COMP_MIN="${COMP_MIN:-120}" PROBE_REPS="${PROBE_REPS:-5}" TIMING=0 LADDER="${LADDER:-1}" \
     bash box_run.sh rtx-5080 sm_120 "$REPS" > "$R/box.out" 2>&1)
 rc=$?
 cond end

@@ -317,7 +317,7 @@ cp "$ROOT/crates/mapal-rt/gpu/mapal_gpu.c" "$ROOT/crates/mapal-rt/gpu/mapal_choi
 # cross-arch: the device calibration box_run.sh runs before the timed sections (the native-gpu profile's properties).
 cp "$ROOT/benches/gpu/calib.cu" "$ROOT/benches/local/exp_calib.cu" "$OUT/"
 # S64: the checker and its inputs, for the box's `exec` / `jit` checks; the torch legs.
-cp "$ROOT/benches/gpu/"{evidence.py,intent.py,sass_stats.py,occ.py,ptx_static.py,cudatool.sh,torch_bench.py} "$OUT/"
+cp "$ROOT/benches/gpu/"{evidence.py,intent.py,sass_stats.py,occ.py,ptx_static.py,cudatool.sh,torch_bench.py,comp_bench.py,triton_kernels.py,comp_build.sh} "$OUT/"
 cp "$ROOT/benches/gpu/capture_images/capture.cpp" "$OUT/"
 if [ ! -d "$OUT/cutlass" ]; then
     git clone -q --depth 1 https://github.com/NVIDIA/cutlass "$OUT/cutlass.git"

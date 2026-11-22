@@ -58,5 +58,8 @@ Typical: `RUST_TEST_THREADS=16 MAPAL_PAR=4 taskset -c 16-31,48-63 cargo test --r
 
 ## Other scripts
 
-`cpu_matmul.sh`, `cpu_shapes.sh` (CPU competitors), `model_scale_*.sh` (model-scale bundle / run / trace / report),
+`comp_run.sh` (re-time competitor legs only — torch_bench / comp_bench — in a timed run's bundle, same protocol),
+`comp_abba.sh` (same-box ABBA of two competitor legs of a row), the competitor venv (`competitors.md`),
+`cpu_matmul.sh`, `cpu_shapes.sh` (CPU competitors), `model_scale_*.sh` (model-scale bundle / run / trace / report;
+the trace takes `comp=<leg>` too),
 `ktrace.cpp` + `ktrace_sum.py` (CUPTI kernel traces), `exp_calib.cu`, `gap.py` (gap table of a run).
