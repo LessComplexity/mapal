@@ -810,6 +810,8 @@ def flow_facts(f, dev):
                 # long-rows `row-slices`: blocks a row, the phases its laws leave (grid barriers between), and the
                 # rescale laws (ADR-0042 D7: a sum folded beside its shift).
                 slices=f.get('slices', 1) or 1, phases=f.get('phases', 1) or 1,
+                # long-prefill `slice-launches`: the phases at kernel boundaries (one launch a phase).
+                launches=f.get('launches', 0) or 0,
                 n_rescale=str(f.get('laws', '')).split(',').count('rescale'),
                 members=str(f.get('members', '')),
                 keep=[x.split(':')[0] for x in str(f.get('keep', '')).split(';') if x],
@@ -930,6 +932,9 @@ def facts(d, sm):
         host['cpu'] = int(not devm and 'profile' not in host)
         host['loop'] = source_loops(d, stem)
         host['move'] = move_facts(read(base + '.host.ll') or '', source_trips(d, stem))
+        # long-prefill `carry-take`: loop carries that start in their host-built init's device buffer, and its bytes.
+        takes = [kv(m.group(1)) for m in re.finditer(r'^\s*; mapal\.take (.*)$', read(base + '.host.ll') or '', re.M)]
+        host['take'], host['take_bytes'] = len(takes), sum(int(t.get('bytes', 0)) for t in takes)
         if rows:  # the host rungs the rules ship at their fill (GPU_RESIDENT_BLOCKS: Filled) and face
             from intent import INTENT
             hr = set(INTENT) - set(KERNEL_RUNGS)
@@ -1079,7 +1084,7 @@ def check(d, results=None, out=sys.stdout):
                     continue
                 # exp-hw: a face whose order is not free takes the oracle's steps (its OFF realization).
                 state = 'off' if rung in off or (rung == 'exp-hw' and not ns['free']) else 'on' if rung in kon or rung in (
-                    'row-slices', 'exp-hw', 'exp-rescale') or rung.startswith(('face', 'exec', 'module', 'window', 'radix-tile', 'tf32-tile', 'plan-cost', 'linear', 'choice', 'fma-pairs', 'horizontal-', 'calls-', 'narrow-tile')) else 'off'  # plan-cost / linear: gated by the plan line itself (`applies`), not rungs_on
+                    'row-slices', 'exp-hw', 'exp-rescale', 'slice-launches') or rung.startswith(('face', 'exec', 'module', 'window', 'radix-tile', 'tf32-tile', 'plan-cost', 'linear', 'choice', 'fma-pairs', 'horizontal-', 'calls-', 'narrow-tile')) else 'off'  # plan-cost / linear: gated by the plan line itself (`applies`), not rungs_on
                 rows += [(prof, stem, k, f'{rung}:{state}', *r) for r in run_intent(it, state, ns)]
         # host rungs: one row per stem (kernel `-`)
         if not e['host'].get('calls'):
@@ -1112,6 +1117,10 @@ def check(d, results=None, out=sys.stdout):
         dev['post_split'] = sum(kf['plan'].get('post', 0) == 1 and kf['plan'].get('combine') == 'splitk' for kf in tiles)
         dev['post_red'] = sum(kf.get('plan', {}).get('kind') == 'reduce' and kf['plan'].get('epi', 0) == 1
                               for kf in e['kernels'].values())
+        # long-prefill `uniform-base`: tile kernels whose launch moves an operand by a captured number (`ubase=`).
+        dev['ubase'] = sum(str(kf['plan'].get('ubase', '')) not in ('', '0') for kf in tiles)
+        dev['ubase_staged'] = sum(str(kf['plan'].get('ubase', '')) not in ('', '0')
+                                  and kf['plan'].get('kind') in ('tile', 'mma') for kf in tiles)
         grp = [kf for kf in tiles if int(kf['plan'].get('group', 0) or 0) > 0]
         dev['group'] = len(grp)
         dev['group_whole'] = sum(kf['plan'].get('kind') == 'tile'

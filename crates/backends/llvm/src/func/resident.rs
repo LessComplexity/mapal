@@ -3290,6 +3290,29 @@ impl<'a> FnEmit<'a> {
             let d = self.dev_operand(source, slot, ms, &mut temps);
             ops.push(d);
         }
+        // long-prefill `uniform-base`: a tile site's operand pointer moved by
+        // its captured numbers' terms (a head group, a weight panel); the
+        // kernel addresses from there as from the array's start.
+        let site = self
+            .tile_plan
+            .as_ref()
+            .and_then(|p| p.sites.get(ms))
+            .cloned();
+        if let Some(site) = site.filter(|s| slots == [s.a.slot, s.b.slot])
+            && let Some(r) = site.radix.as_deref()
+        {
+            let e = match &site.elem {
+                Ty::Float { bits } => u64::from(*bits) / 8,
+                _ => 4,
+            };
+            for (i, ds) in [(0, &r.ua), (1, &r.ub)] {
+                if let Some(off) = self.uniform_bytes(source, ds, e) {
+                    let p = self.tmp();
+                    self.line(format!("{p} = add i64 {}, {off}", ops[i]));
+                    ops[i] = p;
+                }
+            }
+        }
         let plan = self.resident.clone().expect("resident site");
         let s = plan.stream_of(self.ir, &self.groups, target);
         if s != 0 && self.first_chained(&plan, target) {
@@ -3634,14 +3657,40 @@ impl<'a> FnEmit<'a> {
 
     /// Loop entry: the carry's buffer gets the init state, copied in once.
     pub(crate) fn resident_loop_enter(&mut self, merge: ObjectId, init: ObjectId) {
+        // long-prefill `carry-take`: where the loop is entered (`LastUsePlan`).
+        let take = gpu::host_rungs(self.profile, self.contract, self.gpu_arms).carry_take;
+        let entered = self
+            .ir
+            .in_edges(merge)
+            .iter()
+            .copied()
+            .find(|&m| {
+                self.ir
+                    .morphism(m)
+                    .is_some_and(|x| x.op == Operation::LoopEnter)
+            })
+            .and_then(|m| self.lup.position(m));
         for c in self.carries_of(merge) {
             // S65: a device-built init array is the carry's first state — its
             // buffer moves to the carry (its slot is emptied, so one free).
+            // long-prefill `carry-take`: so does a host-built one whose device
+            // copy is valid and read by nothing past the loop's entry (its
+            // death there): its host bytes stay, its device bytes are the
+            // carry's — no second upload of what the device holds.
+            let dies = |a: ObjectId| {
+                take && entered.is_some_and(|p| self.lup.death(a).is_some_and(|d| d <= p))
+            };
             if let Some(a) = self.pair_source(init, c.k)
-                && self.host_free(a)
+                && (self.host_free(a) || dies(a))
                 && self.dvalid.contains_key(a)
             {
                 let (sa, sm) = (self.dslot(a), self.dslot(c.key()));
+                // long-prefill `carry-take`: a host-built init's buffer taken
+                // (intent.py `carry-take`); the S65 move's text is unchanged.
+                if !self.host_free(a) {
+                    let bytes = self.array_bytes(&self.obj_ty(a));
+                    self.line(format!("; mapal.take carry={} bytes={bytes}", c.k));
+                }
                 let d = self.tmp();
                 self.line(format!("{d} = load i64, ptr {sa}"));
                 self.line(format!("store i64 {d}, ptr {sm}"));

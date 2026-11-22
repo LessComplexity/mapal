@@ -73,6 +73,12 @@ impl BoundsProof {
     pub fn index_range(&self, m: MorphismId) -> Option<(i128, i128)> {
         self.index.get(m).copied()
     }
+
+    /// The range of map/fold site `m`'s capture `slot` (an integer) where
+    /// `m` runs, if known — what its body's capture param is seeded with.
+    pub fn capture_range(&self, m: MorphismId, slot: u32) -> Option<(i128, i128)> {
+        *self.sites.get(m)?.get(slot as usize)?
+    }
 }
 
 /// A condition object and the pole it holds at.

@@ -126,12 +126,18 @@ pub(crate) struct Slices {
     pub args: Vec<Vec<Option<mapal_ir::RescaleArg>>>,
     /// The model's `(sliced, one block a row)` ns; `(0, 0)` when forced.
     pub ns: (u64, u64),
+    /// long-prefill `slice-launches`: the phases meet at kernel boundaries
+    /// — one launch a phase, the kernel's `%phase` argument selecting its
+    /// phase — where the part's measured launches undercut a cooperative
+    /// launch and its grid barriers (outside a loop, the process's first
+    /// cooperative launch). `false`: one cooperative launch.
+    pub launches: bool,
 }
 
 impl Slices {
     /// Grid barriers between the phases: a cooperative launch.
     pub fn coop(&self) -> bool {
-        self.phases > 1
+        self.phases > 1 && !self.launches
     }
 }
 
@@ -785,7 +791,8 @@ impl<'a> FnEmit<'a> {
                                 .unwrap_or_else(|| t.clone());
                             let ok = self.device.contains_key(mb.m)
                                 && !self.groups.contains_key(mb.m)
-                                && !self.retain.contains_key(mb.out);
+                                && !self.retain.contains_key(mb.out)
+                                && !gpu::uniform_site(&site);
                             if ok {
                                 bc.insert(mb.m, Cand::Tile(site));
                             }
@@ -1330,7 +1337,7 @@ impl<'a> FnEmit<'a> {
                 .unwrap_or(gpu.warp)
         };
         let fits = |s: u64| exts.iter().all(|&e| e % s == 0) && s <= lanes_of(s);
-        let slices = |s: u64, ns: (u64, u64)| Slices {
+        let slices = |s: u64, ns: (u64, u64), launches: bool| Slices {
             s,
             phase: phase.clone(),
             avail: avail.clone(),
@@ -1338,9 +1345,12 @@ impl<'a> FnEmit<'a> {
             laws: laws.clone(),
             args: args.clone(),
             ns,
+            launches,
         };
         if force > 1 {
-            return fits(force).then(|| slices(force, (0, 0)));
+            // A forced `--gpu-on=slice-launches` arm: the phases as launches.
+            let launches = self.gpu_arms.on.slice_launches && phases > 1;
+            return fits(force).then(|| slices(force, (0, 0), launches));
         }
         let d = gpu.cost?;
         if d.row_iter_ns == 0 || d.gsync_ns == 0 || d.coop_launch_ns == 0 {
@@ -1441,26 +1451,34 @@ impl<'a> FnEmit<'a> {
             let work = (rounds * (walk * d.row_iter_ns + restore) as f64).max(bytes as f64 / rate);
             // A unit outside every loop launches once: its cooperative launch
             // may be the process's first (`coop_first_ns`); a loop's trips
-            // share that cost.
+            // share that cost. long-prefill `slice-launches`: or one launch a
+            // phase, each a kernel boundary in place of a grid barrier.
             let first = if looped { 0 } else { d.coop_first_ns };
-            let launch = match s > 1 && phases > 1 {
+            let one_launch = d.launch_at(grid, gpu.sms, rungs.pdl)?;
+            let (launch, launches) = match s > 1 && phases > 1 {
                 true => {
-                    d.coop_launch_at(grid, gpu.sms)?
+                    let coop = d.coop_launch_at(grid, gpu.sms)?
                         + f64::from(phases - 1) * d.gsync_at(grid, gpu.sms)?
-                        + first as f64
+                        + first as f64;
+                    let each = f64::from(phases) * one_launch;
+                    match rungs.slice_launches && each < coop {
+                        true => (each, true),
+                        false => (coop, false),
+                    }
                 }
-                false => d.launch_at(grid, gpu.sms, rungs.pdl)?,
+                false => (one_launch, false),
             };
-            Some(launch + work)
+            Some((launch + work, launches))
         };
-        let one = time(1)?;
+        let one = time(1)?.0;
         let best = (1..=6)
             .map(|e| 1u64 << e)
             // A slice of at least a warp of cells.
             .filter(|&s| fits(s) && exts.iter().all(|&e| e / s >= gpu.warp))
             .filter_map(|s| Some((s, time(s)?)))
-            .min_by(|a, b| a.1.total_cmp(&b.1))?;
-        (best.1 < one).then(|| slices(best.0, (best.1.round() as u64, one.round() as u64)))
+            .min_by(|a, b| a.1.0.total_cmp(&b.1.0))?;
+        let (s, (ns, launches)) = best;
+        (ns < one).then(|| slices(s, (ns.round() as u64, one.round() as u64), launches))
     }
 
     /// **The phases of a sliced unit** (`fold_combine`): a fold's partials
@@ -2090,6 +2108,15 @@ impl<'a> FnEmit<'a> {
         }
         // kernel-merging `zero-fold`: later sites' zero passes as its tail.
         self.zero_args(u.members[0].m, &gx.to_string(), block, &mut ptrs);
+        // long-prefill `slice-launches`: one launch a phase, its number last.
+        let phased = u
+            .slices
+            .as_ref()
+            .filter(|sl| sl.launches)
+            .map(|sl| sl.phases);
+        if phased.is_some() {
+            ptrs.push("0".to_string());
+        }
         let args = format!("%dv{}", self.fresh());
         let np = ptrs.len();
         self.allocas
@@ -2108,10 +2135,20 @@ impl<'a> FnEmit<'a> {
             true => "launch_coop",
             false => "launchv",
         };
-        self.line(format!(
-            "call void @mapal_gpu_{entry}(i64 {}, i32 0, i32 {np}, ptr {args}, i32 {gx}, i32 1, i32 {block}, i32 {smem}) ; unit",
-            u.id as i64
-        ));
+        for p in 0..phased.unwrap_or(1) {
+            if p > 0 {
+                let g = self.tmp();
+                self.line(format!(
+                    "{g} = getelementptr [{np} x i64], ptr {args}, i64 0, i64 {}",
+                    np - 1
+                ));
+                self.line(format!("store i64 {p}, ptr {g}"));
+            }
+            self.line(format!(
+                "call void @mapal_gpu_{entry}(i64 {}, i32 0, i32 {np}, ptr {args}, i32 {gx}, i32 1, i32 {block}, i32 {smem}) ; unit",
+                u.id as i64
+            ));
+        }
         for t in temps {
             self.line(format!("call void @mapal_gpu_free(ptr {t})"));
         }
@@ -2319,6 +2356,10 @@ impl<'a> FnEmit<'a> {
                 .into_iter()
                 .skip(usize::from(zero == 0)),
         );
+        // long-prefill `slice-launches`: the phase this launch runs.
+        if u.slices.as_ref().is_some_and(|sl| sl.launches) {
+            params.push("i64 %phase".to_string());
+        }
         for (k, c) in g.calls.iter().enumerate() {
             if let Some(c) = c {
                 for &s in &c.slots {
@@ -2417,9 +2458,10 @@ impl<'a> FnEmit<'a> {
             None => match &u.slices {
                 None => String::new(),
                 Some(sl) => format!(
-                    " slices={} phases={} laws={} ns_sliced={} ns_row={}",
+                    " slices={} phases={}{} laws={} ns_sliced={} ns_row={}",
                     sl.s,
                     sl.phases,
+                    if sl.launches { " launches=1" } else { "" },
                     sl.laws
                         .iter()
                         .flatten()
@@ -3009,6 +3051,18 @@ impl UnitGen<'_> {
         self.line("%nct = call i32 @llvm.nvvm.read.ptx.sreg.nctaid.x()");
         self.line("%g64 = zext i32 %nct to i64");
         for p in 0..sl.phases {
+            // long-prefill `slice-launches`: a launch runs the phase its
+            // `%phase` argument names; the others' items loops are empty.
+            let items = match sl.launches {
+                true => {
+                    let on = self.tmp();
+                    self.line(format!("{on} = icmp eq i64 %phase, {p}"));
+                    let n = self.tmp();
+                    self.line(format!("{n} = select i1 {on}, i64 {items}, i64 0"));
+                    n
+                }
+                false => items.to_string(),
+            };
             let (head, body, latch, exit) = (
                 format!("ph{p}"),
                 format!("ph{p}b"),
@@ -3072,7 +3126,7 @@ impl UnitGen<'_> {
             self.line(format!("{it}n = add i64 {it}, %g64"));
             self.line(format!("br label %{head}"));
             self.label(&exit);
-            if p + 1 < sl.phases {
+            if p + 1 < sl.phases && !sl.launches {
                 self.line(format!(
                     "call void @mapal_gsync(ptr addrspace(1) @{}.gsync)",
                     self.name

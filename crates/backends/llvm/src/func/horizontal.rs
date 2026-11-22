@@ -495,7 +495,9 @@ impl FnEmit<'_> {
             });
         }
         let site = self.tile_plan.as_ref()?.sites.get(m)?;
-        if !self.device.contains_key(m) {
+        // long-prefill `uniform-base`: its launch moves the operands'
+        // pointers by captured numbers — a launch of its own.
+        if !self.device.contains_key(m) || gpu::uniform_site(site) {
             return None;
         }
         let col = plan.rowfold.values().any(|r| r.colmajor == Some(m))

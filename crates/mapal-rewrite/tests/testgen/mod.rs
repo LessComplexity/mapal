@@ -4466,6 +4466,149 @@ pub fn layer_prog_src(p: &LayerProg) -> String {
     }
 }
 
+/// **long-prefill `uniform-base` generated programs**
+/// (`crates/backends/llvm/tests/device_geometry.rs`): a loop over `groups`
+/// KV-head groups whose counter `gg` slices the operands — the group's query
+/// heads (`q[(bb·h + gg·per + hh)·d + u]`), its KV head
+/// (`kc[(r·g + gg)·d + u]`) and its weight panel (`w[(gg·K + k)·n + j]`) —
+/// as an attention half (QKᵀ or P·V, plain, masked at a position the
+/// counter moves, or scaled per row) and the group's projection added into
+/// a carried `y`. Head widths include odd ones (`d = 3`: a pointer moved by
+/// a non-vector step); `b` rows the staged tiles take. Every value is a small integer or an exact quotient
+/// by 2 or 4, so every face and fold order agrees with the interpreter.
+#[derive(Clone, Debug)]
+pub struct SliceProg {
+    /// Query rows (tokens or sequences), KV groups (the loop's trips),
+    /// query heads a group, positions, head width, projection width.
+    pub b: u64,
+    pub groups: u64,
+    pub per: u64,
+    pub l: u64,
+    pub d: u64,
+    pub n: u64,
+    /// QKᵀ (`true`) or P·V.
+    pub qk: bool,
+    /// 0 plain, 1 masked (QKᵀ: `r ≤ hh + gg`) / doubled, 2 halved / per-row
+    /// divisor.
+    pub epi: u8,
+    /// K/V shared by every sequence (a prefill's tokens) or per sequence.
+    pub shared: bool,
+    /// A row fold reads the carry's init before the loop (its device copy
+    /// then dies at the loop's entry: long-prefill `carry-take`).
+    pub pre: bool,
+}
+
+pub fn slice_strategy() -> impl Strategy<Value = SliceProg> {
+    (
+        (
+            prop::sample::select(vec![4u64, 16, 32]),
+            1u64..5,
+            prop::sample::select(vec![1u64, 2, 4]),
+        ),
+        (
+            prop::sample::select(vec![16u64, 64]),
+            prop::sample::select(vec![3u64, 8, 32]),
+            prop::sample::select(vec![16u64, 64]),
+        ),
+        any::<bool>(),
+        0u8..3,
+        (any::<bool>(), any::<bool>()),
+    )
+        .prop_map(
+            |((b, groups, per), (l, d, n), qk, epi, (shared, pre))| SliceProg {
+                b,
+                groups,
+                per,
+                l,
+                d,
+                n,
+                qk,
+                epi,
+                shared,
+                pre,
+            },
+        )
+}
+
+/// [`SliceProg`]'s source text.
+pub fn slice_prog_src(p: &SliceProg) -> String {
+    let data = |name: &str, len: u64, a: u64, c: u64, md: u64| {
+        let h = md / 2;
+        format!(
+            "    {len} -> iota -> i_{name};\n    i_{name} -> map {{ t -> (t * {a} + {c}) % {md} - {h} -> widen_f32 }} -> {name};\n"
+        )
+    };
+    let (b, g, per, l, d, n) = (p.b, p.groups, p.per, p.l, p.d, p.n);
+    let h = g * per;
+    // One group's output: `b` rows of `kk` (its heads' cells).
+    let x = if p.qk { l } else { d };
+    let kk = per * x;
+    let (kn, kb) = match p.shared {
+        true => (l * g * d, String::new()),
+        false => (b * l * g * d, format!("bb * {l} + ")),
+    };
+    let mut s = String::from("fn main() {\n");
+    s += &data("q", b * h * d, 5, 3, 7);
+    s += &data("kc", kn, 3, 1, 5);
+    s += &data("pe", b * h * l, 7, 2, 5);
+    s += &data("w", g * kk * n, 3, 2, 5);
+    s += &data("y0", b * n, 5, 1, 9);
+    s += &format!(
+        "    {} -> iota -> i_den;\n    i_den -> map {{ t -> (t % 2 + 1) * 2 -> widen_f32 }} -> den;\n",
+        b * h
+    );
+    s += &format!(
+        "    {d} -> iota -> rd;\n    {l} -> iota -> rl;\n    {kk} -> iota -> rk;\n    {} -> iota -> o;\n    {} -> iota -> ry;\n",
+        b * kk,
+        b * n
+    );
+    if p.pre {
+        s += &format!(
+            "    {b} -> iota -> rb;\n    {n} -> iota -> rn;\n    rb -> map {{ i -> (0.0, rn) -> fold {{ acc, j -> acc + y0[i * {n} + (j * 3) % {n}] }} }} -> ys;\n    ys[0] -> println;\n"
+        );
+    }
+    s += &format!(
+        "    mut y: [f32; {}] <- y0;\n    mut gg: i32 <- 0;\n",
+        b * n
+    );
+    let att = if p.qk {
+        let fold = format!(
+            "(0.0, rd) -> fold {{\n                        acc, u -> acc + q[(bb * {h} + gg * {per} + hh) * {d} + u] * kc[(({kb}r) * {g} + gg) * {d} + u]\n                    }}"
+        );
+        let body = match p.epi {
+            0 => format!("{fold}"),
+            1 => format!(
+                "(r <= hh + gg) -> {{\n                        -true-> {{ {fold} -> dt; dt }}\n                        -false-> -1000.0;\n                    }}"
+            ),
+            _ => format!("{fold} -> dt;\n                    dt * 0.5"),
+        };
+        format!(
+            "                o -> map {{\n                    e -> e / {kk} -> bb;\n                    e / {l} % {per} -> hh;\n                    e % {l} -> r;\n                    {body}\n                }} -> s;\n"
+        )
+    } else {
+        let fold = format!(
+            "(0.0, rl) -> fold {{\n                        acc, r -> acc + pe[(bb * {h} + gg * {per} + hh) * {l} + r] * kc[(({kb}r) * {g} + gg) * {d} + u]\n                    }}"
+        );
+        let body = match p.epi {
+            0 => format!("{fold}"),
+            1 => format!("{fold} -> av;\n                    av * 2.0"),
+            _ => format!("{fold} -> av;\n                    av / den[bb * {h} + gg * {per} + hh]"),
+        };
+        format!(
+            "                o -> map {{\n                    e -> e / {kk} -> bb;\n                    e / {d} % {per} -> hh;\n                    e % {d} -> u;\n                    {body}\n                }} -> s;\n"
+        )
+    };
+    s += &format!(
+        "    loop {{\n        (gg < {g}) -> {{\n            -true-> {{\n{att}                ry -> map {{\n                    e -> e / {n} -> i;\n                    e % {n} -> j;\n                    (0.0, rk) -> fold {{\n                        acc, k -> acc + s[i * {kk} + k] * w[(gg * {kk} + k) * {n} + j]\n                    }} -> yo;\n                    y[e] + yo\n                }} -> y;\n                gg + 1 -> gg;\n                -> loop;\n            }}\n            -false-> y -> out;\n        }}\n    }}\n"
+    );
+    s += &format!(
+        "    out[0] -> println;\n    out[{}] -> println;\n    out[{}] -> println;\n    0.0 -> zero: f32;\n    (zero, out) -> fold {{ acc, v -> acc + v }} -> total;\n    total -> println;\n}}\n",
+        b * n - 1,
+        (b * n) / 2 + 1
+    );
+    s
+}
+
 // ---------------------------------------------------------------------------
 // exp (ADR-0042): `x -> exp` over every branch of the oracle's algorithm.
 // ---------------------------------------------------------------------------

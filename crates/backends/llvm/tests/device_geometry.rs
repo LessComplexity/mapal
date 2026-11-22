@@ -651,3 +651,273 @@ fn device_geometry_on_generated_programs() {
         assert!(c.get(key).copied().unwrap_or(0) > 0, "{key}: {c:?}");
     }
 }
+
+/// long-prefill `uniform-base`: the 8192-token prefill's loop over KV-head
+/// groups, small. The counter `g` slices the group's query heads and KV head
+/// out of `q` / `kr` and its weight panel out of `wo`: each map is a
+/// mixed-radix tile site whose operands' pointers the launch moves by `g`
+/// (`ua` / `ub`), in bounds at `g`'s top where the site runs (`g < 2`).
+const SLICED: &str = "fn main() {
+    16384 -> iota -> i_q;
+    i_q -> map { t -> (t * 5 + 3) % 7 - 3 -> widen_f32 } -> q;
+    4096 -> iota -> i_k;
+    i_k -> map { t -> (t * 3 + 1) % 5 - 2 -> widen_f32 } -> kr;
+    16384 -> iota -> i_w;
+    i_w -> map { t -> (t * 3 + 2) % 5 - 2 -> widen_f32 } -> wo;
+    2048 -> iota -> y0;
+    y0 -> map { t -> t % 3 -> widen_f32 } -> yi;
+    32 -> iota -> rd;
+    16384 -> iota -> rs;
+    256 -> iota -> rgd;
+    2048 -> iota -> ry;
+    mut y: [f32; 2048] <- yi;
+    mut g: i32 <- 0;
+    loop {
+        (g < 2) -> {
+            -true-> {
+                rs -> map {
+                    e -> e / 4096 -> hh;
+                    e / 64 % 64 -> i;
+                    e % 64 -> r;
+                    (0.0, rd) -> fold {
+                        acc, u -> acc + q[i * 256 + (g * 4 + hh) * 32 + u] * kr[r * 64 + g * 32 + u]
+                    } -> dt;
+                    dt * 0.5
+                } -> s;
+                ry -> map {
+                    e -> e / 32 -> i;
+                    e % 32 -> j;
+                    (0.0, rgd) -> fold {
+                        acc, k -> acc + s[(k / 64 * 64 + i) * 64 + k % 64] * wo[(g * 256 + k) * 32 + j]
+                    } -> yo;
+                    y[e] + yo
+                } -> y;
+                g + 1 -> g;
+                -> loop;
+            }
+            -false-> y -> out;
+        }
+    }
+    out[0] -> println;
+    out[2047] -> println;
+}
+";
+
+#[test]
+fn uniform_base_moves_the_operands_by_the_loop_counter() {
+    let ir = lower(SLICED);
+    let f = ir.entry();
+    let sites: Vec<mapal_ir::TileSite> = ir.tile_plan_radix(f).values().cloned().collect();
+    let moved: Vec<(Vec<mapal_ir::Digit>, Vec<mapal_ir::Digit>)> = sites
+        .iter()
+        .filter_map(|s| s.radix.as_deref())
+        .filter(|r| r.uniform())
+        .map(|r| (r.ua.clone(), r.ub.clone()))
+        .collect();
+    assert_eq!(moved.len(), 2, "{sites:#?}");
+    // QKᵀ: `q` by `g·4·32` (four query heads a group), `kr` by `g·32`
+    // (its KV head); the projection: `wo` by `g·256·32` (its panel).
+    let coefs: Vec<(Vec<u64>, Vec<u64>)> = moved
+        .iter()
+        .map(|(a, b)| {
+            let c = |ds: &[mapal_ir::Digit]| ds.iter().map(|d| d.coef).collect::<Vec<_>>();
+            (c(a), c(b))
+        })
+        .collect();
+    assert!(coefs.contains(&(vec![128], vec![32])), "{coefs:?}");
+    assert!(coefs.contains(&(vec![], vec![8192])), "{coefs:?}");
+    let got = |ds: &[mapal_ir::Digit], g: u64| mapal_ir::uniform_at(ds, |_| g);
+    let qk = moved.iter().find(|m| !m.0.is_empty()).unwrap();
+    assert_eq!(got(&qk.0, 1) + got(&qk.1, 1), 160);
+    // OFF arm: no form, a per-cell kernel (the facts before).
+    let off = ir.refacted(FactArms {
+        uniform_base: false,
+        ..FactArms::default()
+    });
+    assert!(
+        off.tile_plan_radix(off.entry())
+            .values()
+            .all(|s| !s.radix.as_deref().is_some_and(|r| r.uniform()))
+    );
+    let on = device_emission(&ir, &[]);
+    let ps = plans(&on);
+    assert!(
+        ps.iter().filter(|l| l.contains(" ubase=")).count() >= 2,
+        "{ps:#?}"
+    );
+    let want = interp(&ir);
+    if let Some(clang) = emu::clang() {
+        let ex = emu::build_emulated(&clang, &on.text, on.device.as_deref().unwrap_or(""));
+        for (mode, (got, _)) in MODES.iter().zip(ex.run_each(&MODES)) {
+            assert_eq!(got, want, "{mode:?}");
+        }
+        let offe = device_emission(&ir, &["uniform-base"]);
+        assert!(plans(&offe).iter().all(|l| !l.contains(" ubase=")));
+        let got = emu::run_emulated(&clang, &offe.text, offe.device.as_deref().unwrap_or(""));
+        assert_eq!(got, want, "uniform-base off");
+    }
+}
+
+/// A counter whose range where the site runs (`g < 3`) puts the weight panel
+/// past `wo` at its top has no uniform form (nor do wrapped reads).
+#[test]
+fn uniform_base_refuses_a_slice_past_the_array() {
+    let src = SLICED
+        .replace("(g < 2) -> {", "(g < 3) -> {")
+        .replace(
+            "acc, u -> acc + q[i * 256 + (g * 4 + hh) * 32 + u] * kr[r * 64 + g * 32 + u]",
+            "acc, u -> acc + q[(i * 256 + (g * 4 + hh) * 32 + u) % 16384] * kr[(r * 64 + g * 32 + u) % 4096]",
+        );
+    let ir = lower(&src);
+    let f = ir.entry();
+    for s in ir.tile_plan_radix(f).values() {
+        // The projection's panel runs past `wo` at `g = 2`: refused; the
+        // wrapped reads are no digit form at all.
+        assert!(!s.radix.as_deref().is_some_and(|r| r.uniform()), "{s:#?}");
+    }
+}
+
+/// One generated sliced program ([`testgen::SliceProg`]): the facts' and
+/// plans' coverage, and its values on the device (every mode, every site
+/// candidate) and the host against the interpreter; the OFF arm's on a third.
+fn check_slice(clang: &str, i: usize, p: &testgen::SliceProg) -> Vec<(&'static str, u64)> {
+    let src = testgen::slice_prog_src(p);
+    let ir = lower(&src);
+    let want = interp(&ir);
+    let f = ir.entry();
+    let mut c = vec![("programs", 1)];
+    let mut facts = 0;
+    for s in ir.tile_plan_radix(f).values() {
+        if s.radix.as_deref().is_some_and(|r| r.uniform()) {
+            facts += 1;
+            c.push(("uniform-facts", 1));
+            c.push(match s.post {
+                Some(_) => ("uniform-post-facts", 1),
+                None => ("uniform-plain-facts", 1),
+            });
+        }
+    }
+    let em = device_emission(&ir, &[]);
+    let dev = em.device.as_deref().unwrap_or("");
+    let ps = plans(&em);
+    let tiles: Vec<&&str> = ps.iter().filter(|l| l.contains(" ubase=")).collect();
+    if !tiles.is_empty() {
+        c.push(("uniform-tiles", 1));
+    }
+    if tiles.iter().any(|l| l.contains(" post=1")) {
+        c.push(("uniform-post-tiles", 1));
+    }
+    if tiles.iter().any(|l| l.contains("combine=splitk")) {
+        c.push(("uniform-splits", 1));
+    }
+    if facts > 0 && tiles.is_empty() {
+        c.push(("uniform-refused", 1));
+    }
+    if em.text.contains("; mapal.take") {
+        c.push(("carry-takes", 1));
+    }
+    let ex = emu::build_emulated(clang, &em.text, dev);
+    for (mode, (got, _)) in MODES.iter().zip(ex.run_each(&MODES)) {
+        assert_eq!(got, want, "{mode:?}\n{src}");
+    }
+    let cands = ps
+        .iter()
+        .filter(|l| l.contains("kind=tile") || l.contains("kind=naive"))
+        .count();
+    let picks: Vec<String> = (1..cands.min(9)).map(|k| k.to_string()).collect();
+    let envs: Vec<[(&str, &str); 1]> = picks
+        .iter()
+        .map(|k| [("MAPAL_GPU_PICK", k.as_str())])
+        .collect();
+    for (pick, (got, _)) in picks.iter().zip(ex.run_each(&envs)) {
+        assert_eq!(got, want, "pick {pick}\n{src}");
+        c.push(("candidate-runs", 1));
+    }
+    let cpu = emu::run_emulated(
+        clang,
+        &emit_detailed(&ir, &EmitOpts::default()).unwrap().text,
+        "",
+    );
+    assert_eq!(cpu, want, "cpu\n{src}");
+    if i % 3 == 0 {
+        let off = device_emission(&ir, &["uniform-base", "carry-take"]);
+        let got = emu::run_emulated(clang, &off.text, off.device.as_deref().unwrap_or(""));
+        assert_eq!(got, want, "uniform-base, carry-take off\n{src}");
+        c.push(("off-arm-runs", 1));
+    }
+    c
+}
+
+/// Generated sliced programs (`testgen::slice_strategy`): 1–4 KV groups a
+/// loop's trips, 1, 2 or 4 query heads a group, QKᵀ or P·V (plain, masked
+/// where the counter moves the mask, scaled, per-row divisors), K/V shared or
+/// per sequence, head widths 3–32, the group's projection into a carried `y`.
+/// Every reach counter is non-zero.
+#[test]
+fn uniform_base_on_generated_programs() {
+    let Some(clang) = emu::clang() else {
+        return;
+    };
+    let mut runner = TestRunner::deterministic();
+    let progs: Vec<testgen::SliceProg> = std::iter::repeat_with(|| {
+        testgen::slice_strategy()
+            .new_tree(&mut runner)
+            .unwrap()
+            .current()
+    })
+    .take(64)
+    .collect();
+    let results = testgen::par_check(&progs, |i, p| check_slice(&clang, i, p));
+    let mut c = std::collections::BTreeMap::<&str, u64>::new();
+    for r in results.into_iter().flatten() {
+        *c.entry(r.0).or_default() += r.1;
+    }
+    eprintln!("uniform-base generated: {c:?}");
+    for key in [
+        "programs",
+        "uniform-facts",
+        "uniform-post-facts",
+        "uniform-plain-facts",
+        "uniform-tiles",
+        "uniform-post-tiles",
+        "uniform-splits",
+        "uniform-refused",
+        "carry-takes",
+        "candidate-runs",
+        "off-arm-runs",
+    ] {
+        assert!(c.get(key).copied().unwrap_or(0) > 0, "{key}: {c:?}");
+    }
+}
+
+/// long-prefill `carry-take`: the carried `y`'s init `yi` is host-built and
+/// already on the device (a row fold reads it before the loop); its device
+/// copy dies at the loop's entry, so the carry starts in that buffer — one
+/// upload fewer than the OFF arm, the values the interpreter's either way.
+#[test]
+fn carry_take_starts_the_carry_in_the_inits_device_copy() {
+    let src = SLICED.replace(
+        "    2048 -> iota -> ry;\n",
+        "    2048 -> iota -> ry;\n    512 -> iota -> rr;\n    rr -> map { b -> (0.0, rd) -> fold { acc, i -> acc + yi[b * 4 + i % 4] } } -> y2;\n    y2[5] -> println;\n",
+    );
+    let ir = lower(&src);
+    let h2d = |em: &Emission| em.text.matches("call void @mapal_gpu_h2d(").count();
+    let on = device_emission(&ir, &[]);
+    let off = device_emission(&ir, &["carry-take"]);
+    assert!(
+        on.text.contains("; mapal.take carry=0 bytes=8192"),
+        "{}",
+        on.text
+    );
+    assert!(!off.text.contains("; mapal.take"));
+    assert_eq!(h2d(&on) + 1, h2d(&off));
+    let want = interp(&ir);
+    if let Some(clang) = emu::clang() {
+        for em in [&on, &off] {
+            let ex = emu::build_emulated(&clang, &em.text, em.device.as_deref().unwrap_or(""));
+            for (mode, (got, _)) in MODES.iter().zip(ex.run_each(&MODES)) {
+                assert_eq!(got, want, "{mode:?}");
+            }
+        }
+    }
+}

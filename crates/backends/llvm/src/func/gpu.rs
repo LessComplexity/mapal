@@ -296,6 +296,26 @@ pub(crate) fn gpu_site(site: &TileSite, profile: &TargetProfile, window: bool) -
         && (window || (site.a.ksplit.is_none() && site.b.ksplit.is_none()))
         && site.k > 0
         && site.rows * site.c > 0
+        && uniform_aligned(site)
+}
+
+/// long-prefill `uniform-base`: a site whose operand address takes terms of a
+/// number its map captures ([`mapal_ir::RadixTile::ua`]) — its launch moves
+/// the operand's pointer by them, so it launches on its own.
+pub(crate) fn uniform_site(site: &TileSite) -> bool {
+    site.radix.as_deref().is_some_and(|r| r.uniform())
+}
+
+/// The pointer a launch moves by a captured number keeps the alignment every
+/// kernel declares for it (a 16-byte vector, [`GPU_VEC_BYTES`]): each term's
+/// step is whole vectors. Otherwise the site is no device site.
+fn uniform_aligned(site: &TileSite) -> bool {
+    let e = elem_bytes_of(&site.elem);
+    site.radix.as_deref().is_none_or(|r| {
+        r.ua.iter()
+            .chain(&r.ub)
+            .all(|d| (d.coef * e).is_multiple_of(GPU_VEC_BYTES))
+    })
 }
 
 /// **S62 `place`: the tile sites of `f` that run on the device** — of
@@ -1181,6 +1201,16 @@ fn plan_line(
             .map(|(n, _)| *n)
             .collect();
         f += &format!(" radix={}", on.join(","));
+        // long-prefill `uniform-base`: the operands whose pointer the launch
+        // moves by a captured number (intent.py `uniform-base`).
+        let moved: Vec<&str> = [("a", &r.ua), ("b", &r.ub)]
+            .iter()
+            .filter(|(_, ds)| !ds.is_empty())
+            .map(|(n, _)| *n)
+            .collect();
+        if !moved.is_empty() {
+            f += &format!(" ubase={}", moved.join(","));
+        }
     }
     // device-geometry `head-group`: the rows one `b` panel serves (a KV
     // head's query heads), where fewer than the site's (intent.py
@@ -6770,6 +6800,26 @@ impl<'a> FnEmit<'a> {
         let b_ptr = self
             .array_operand_ptr(source, Some(site.b.slot))
             .expect("tile b ptr");
+        // long-prefill `uniform-base`: each operand copied from where its
+        // captured numbers' terms move it (the copy ends where it did).
+        let (mut a_ptr, mut b_ptr, mut a_bytes, mut b_bytes) =
+            (a_ptr, b_ptr, a_bytes.to_string(), b_bytes.to_string());
+        if let Some(r) = site.radix.as_deref() {
+            let e = elem_bytes_of(&site.elem);
+            for (ds, p, n) in [
+                (&r.ua, &mut a_ptr, &mut a_bytes),
+                (&r.ub, &mut b_ptr, &mut b_bytes),
+            ] {
+                if let Some(off) = self.uniform_bytes(source, ds, e) {
+                    let (q, m) = (self.tmp(), self.tmp());
+                    self.line(format!(
+                        "{q} = getelementptr inbounds i8, ptr {p}, i64 {off}"
+                    ));
+                    self.line(format!("{m} = sub i64 {n}, {off}"));
+                    (*p, *n) = (q, m);
+                }
+            }
+        }
         let o_ptr = self.slot(target).expect("tile output slot");
         // LLVM reads an `i64` literal as signed; the runtime prints the same
         // 64 bits back as hex, so the two units agree on the name.
@@ -6780,6 +6830,46 @@ impl<'a> FnEmit<'a> {
              i64 {b_bytes}, ptr {o_ptr}, i64 {o_bytes}, i32 {}, i32 {}, i32 {}, i32 {})",
             l.gx, l.gy, l.block, l.smem
         ));
+    }
+
+    /// long-prefill `uniform-base`: the bytes an operand's pointer moves by
+    /// its captured numbers' terms `ds` ([`mapal_ir::uniform_at`]), each
+    /// value loaded from `source` (non-negative where the site runs: the
+    /// fact's range) — an `i64` operand, `None` without a term.
+    pub(super) fn uniform_bytes(
+        &mut self,
+        source: ObjectId,
+        ds: &[mapal_ir::Digit],
+        elem_bytes: u64,
+    ) -> Option<String> {
+        let mut acc: Option<String> = None;
+        for d in ds {
+            let (t, v) = self
+                .load_component(source, d.slot)
+                .expect("a captured number loads");
+            let w = self.tmp();
+            self.line(uniform_to_i64(&w, &v, &t));
+            let q = match d.stride {
+                1 => w,
+                s => self.op_i64("udiv", &w, s),
+            };
+            let r = match d.radix {
+                0 => q,
+                r => self.op_i64("urem", &q, r),
+            };
+            let term = self.op_i64("mul", &r, d.coef * elem_bytes);
+            acc = Some(match acc {
+                None => term,
+                Some(a) => self.op_i64("add", &a, &term),
+            });
+        }
+        acc
+    }
+
+    fn op_i64(&mut self, code: &str, x: &str, y: impl std::fmt::Display) -> String {
+        let r = self.tmp();
+        self.line(format!("{r} = {code} i64 {x}, {y}"));
+        r
     }
 
     /// Site `m`'s epilogue as its kernel takes it (S54), `None` without one.

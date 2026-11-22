@@ -89,6 +89,12 @@ pub struct FactArms {
     /// `exp` of a difference [`crate::DepLaw::Rescale`]. Off
     /// (`--no-exp-rescale`): such a value is a phase.
     pub exp_rescale: bool,
+    /// long-prefill `uniform-base`: a mixed-radix tile read's address may
+    /// take terms of a number the map captures (a loop counter slicing a
+    /// head group or a weight panel: [`crate::RadixTile::ua`]), each in
+    /// bounds at its capture range's top. Off: such a read has no form (the
+    /// map is a per-cell kernel).
+    pub uniform_base: bool,
 }
 
 impl Default for FactArms {
@@ -99,6 +105,7 @@ impl Default for FactArms {
             piece_delta: true,
             head_group: true,
             exp_rescale: true,
+            uniform_base: true,
         }
     }
 }

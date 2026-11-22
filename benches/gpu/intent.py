@@ -273,8 +273,8 @@ INTENT = {
     # one row of its unit; `; mapal.flow` says what it keeps (no store, no pointer), stores and reads.
     'flow': dict(applies="plan.kind == 'flow'", on=[
         ('kept members are not kernel parameters: the pointers are the stored members and the operands '
-         '(and a zero tail\'s: its threads, a pointer and bytes a job)',
-         'ptx.params == flow.n_store + flow.n_gmem + flow.zero_params '
+         '(and a zero tail\'s: its threads, a pointer and bytes a job; a phase launch\'s phase number)',
+         'ptx.params == flow.n_store + flow.n_gmem + flow.zero_params + flow.launches '
          'and flow.ll_params == flow.n_store + flow.n_gmem + flow.zero'),
         ('a stored member is stored, a kept one is not: st.global iff something is stored',
          '(ptx.st_global > 0) == (flow.n_store > 0)'),
@@ -301,13 +301,23 @@ INTENT = {
     # row, each fold's slice partials combined by `fold_combine`'s law from a workspace, the phases the laws leave
     # (`phases=`) separated by grid barriers of one cooperative launch. OFF (`--gpu-off=row-slices`): one block a row.
     'row-slices': dict(applies="plan.kind == 'flow' and flow.slices > 1", on=[
-        ('one grid-barrier arrival a phase boundary (release arrival, PTX)', 'ptx.gsync_arrive == flow.phases - 1'),
-        ('the sliced unit launches cooperatively (every block of its rows co-resident)', 'host.calls.launch_coop >= 1'),
+        ('one grid-barrier arrival a phase boundary (release arrival, PTX); none where the phases are launches',
+         'ptx.gsync_arrive == (flow.phases - 1) * (1 - flow.launches)'),
+        ('the sliced unit launches cooperatively (every block of its rows co-resident), or once a phase',
+         'host.calls.launch_coop >= 1 or (flow.launches == 1 and host.calls.launchv >= flow.phases)'),
         ('a block walks its slice and stores its partials: st.global', 'ptx.st_global > 0'),
         ('every member body inlined: no call left in PTX', 'ptx.call == 0'),
         ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')],
         applies_off="plan.kind == 'flow'", off=[
         ('one block a row: no unit sliced, no grid barrier', 'flow.slices == 1 and ptx.gsync_arrive == 0')]),
+    # long-prefill `slice-launches`: a sliced unit's phases meet at kernel boundaries — one launch a phase, the
+    # kernel's `%phase` argument selecting its phase — where the part's launches (`launch_at` x phases) undercut one
+    # cooperative launch and its grid barriers (outside a loop, the process's first one, `coop_first_ns`).
+    # `.off-slice-launches`: the cooperative launch.
+    'slice-launches': dict(applies="plan.kind == 'flow' and flow.slices > 1 and flow.phases > 1", on=[
+        ('no grid barrier: the phases are launches', 'flow.launches == 1 and ptx.gsync_arrive == 0'),
+        ('one launch a phase', 'host.calls.launchv >= flow.phases')],
+        off=[('one cooperative launch', 'flow.launches == 0 and host.calls.launch_coop >= 1')]),
     # exp (ADR-0042 D7) `exp-rescale` (a `fold_combine` fact arm): a sum whose term is `exp` of a difference with a
     # running max (min) of the same row folds beside it — each slice's partial against its slice's own max, rescaled
     # by `exp(m_r − m)` when combined. OFF (`--gpu-off=exp-rescale`): no rescale law, the sum a phase after its max.
@@ -448,6 +458,17 @@ INTENT = {
     # digits of `a` and block-uniform row digits of `b` (`group=`): a block's rows lie in one group, so its `b`
     # panel (one KV head's rows) is staged once for the group's query heads. `.off-head-group`: a per-cell kernel,
     # each query head re-reading its KV head's rows.
+    # long-prefill `uniform-base` (a fact arm): a tile read whose address takes a number the map captures (a loop
+    # counter slicing a head group or a weight panel) is a staged tile site whose launch moves the operand's pointer
+    # (`ubase=`); the kernel is the unmoved site's. `.off-uniform-base`: such a map is a per-cell kernel.
+    'uniform-base': dict(host=True, applies='dev.ubase > 0', on=[
+        ('every moved site is a staged tile (shared panels, not one thread a cell)', 'dev.ubase_staged == dev.ubase')],
+        applies_off='dev.cell > 0', off=[('no moved operand', 'dev.ubase == 0')]),
+    # long-prefill `carry-take`: a loop carry whose host-built init's device copy dies at the loop's entry starts in
+    # that buffer (`; mapal.take`): no second upload. `.off-carry-take`: the init uploaded again.
+    'carry-take': dict(host=True, applies='host.take > 0', on=[
+        ("the carry's first state is the init's device bytes", 'host.take_bytes > 0')],
+        applies_off='host.move.loops > 0', off=[('no carry takes an init buffer', 'host.take == 0')]),
     'head-group': dict(host=True, applies='dev.group > 0', on=[
         ("each grouped tile's block rows divide its group (one b panel a group)", 'dev.group_whole == dev.group')],
         applies_off='dev.cell > 0', off=[('no grouped tile', 'dev.group == 0')]),

@@ -93,11 +93,59 @@ pub struct RadixAddr {
 /// The addresses of a [`TileSite`] that are digit-affine but not affine:
 /// `None` = the plain form (the [`TileRead`]'s `ci`/`clane`/`ck`; for `out`,
 /// row-major `i·c + lane`).
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+///
+/// long-prefill `uniform-base`: `ua` / `ub` are the terms of `a`'s / `b`'s
+/// address that a number the map captures contributes — a loop counter
+/// slicing a head group or a panel (`q[i·D + (g·4 + h)·128 + u]`): digits
+/// `coef · ((v ÷ stride) % radix)` of capture slot `slot`'s value `v`, one
+/// value for the whole launch. The address at `(i, lane, k)` is the form's
+/// plus their sum; every one of them, at its range's top, is inside the
+/// array ([`CategoryIr::tile_plan_radix`] checks it on `bounds_proof`'s
+/// capture ranges).
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct RadixTile {
     pub a: Option<RadixAddr>,
     pub b: Option<RadixAddr>,
     pub out: Option<RadixAddr>,
+    pub ua: Vec<Digit>,
+    pub ub: Vec<Digit>,
+}
+
+/// The derived `Debug`'s text, `ua` / `ub` printed only where a term is: the
+/// backends key kernel ids on this text, so a site without one keys as it
+/// always did.
+impl std::fmt::Debug for RadixTile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut d = f.debug_struct("RadixTile");
+        d.field("a", &self.a)
+            .field("b", &self.b)
+            .field("out", &self.out);
+        if !self.ua.is_empty() {
+            d.field("ua", &self.ua);
+        }
+        if !self.ub.is_empty() {
+            d.field("ub", &self.ub);
+        }
+        d.finish()
+    }
+}
+
+impl RadixTile {
+    /// Whether an operand's address takes a captured number's term.
+    pub fn uniform(&self) -> bool {
+        !self.ua.is_empty() || !self.ub.is_empty()
+    }
+}
+
+/// `Σ coef · ((v ÷ stride) % radix)` over `ds` at the captured values `v(slot)`
+/// — the definition the host's launch and the tests share.
+pub fn uniform_at(ds: &[Digit], v: impl Fn(u32) -> u64) -> u64 {
+    ds.iter()
+        .map(|d| {
+            let q = v(d.slot) / d.stride;
+            d.coef * if d.radix == 0 { q } else { q % d.radix }
+        })
+        .sum()
 }
 
 fn axis_sum(ds: &[AxisDigit], x: u64) -> u64 {
@@ -404,9 +452,33 @@ impl CategoryIr {
         let mul = self.tile_definer(product, Operation::Mul)?;
         let map_forms = self.radix_plan(body);
         let fold_forms = self.radix_plan(fold_body);
+        // long-prefill `uniform-base`: a number the map captures (`g` of a
+        // loop over head groups) may add terms to an address: digits of it,
+        // in bounds at its capture range's top (`bounds_proof` where the
+        // site runs), non-negative there (the digit forms' domain).
+        let owner_bounds = self.try_owner(map.source).map(|o| self.bounds_proof(o));
+        let scalar = |slot: u32| -> Option<u64> {
+            if !self.fact_arms().uniform_base || slot >= map_captures {
+                return None;
+            }
+            let cap = self.pair_slot_source(map.source, slot)?;
+            if !matches!(self.objects.get(cap)?.ty, Ty::Int { .. }) {
+                return None;
+            }
+            let (lo, hi) = owner_bounds.as_ref()?.capture_range(site, slot)?;
+            (lo >= 0).then(|| u64::try_from(hi).ok()).flatten()
+        };
         // One read: its map-capture slot, and its address as (base, t-digits,
-        // k-digits), each digit `(stride, radix, coef)` of the raw index.
-        type Read = (u32, u64, Vec<(u64, u64, u64)>, Vec<(u64, u64, u64)>, u64);
+        // k-digits), each digit `(stride, radix, coef)` of the raw index; its
+        // captured numbers' terms; the array's length.
+        type Read = (
+            u32,
+            u64,
+            Vec<(u64, u64, u64)>,
+            Vec<(u64, u64, u64)>,
+            u64,
+            Vec<Digit>,
+        );
         let read = |value: ObjectId| -> Option<(Read, Ty)> {
             let index = self.tile_definer(value, Operation::Index)?;
             let array = self.pair_slot_source(index.source, 0)?;
@@ -421,6 +493,7 @@ impl CategoryIr {
             }
             let form = fold_forms.get(addr)?;
             let (mut base, mut td, mut kd) = (form.base, Vec::new(), Vec::new());
+            let mut ud: Vec<Digit> = Vec::new();
             for d in &form.digits {
                 if d.slot == fc + 1 {
                     kd.push((d.stride, d.radix, d.coef));
@@ -450,13 +523,21 @@ impl CategoryIr {
                 };
                 base = base.checked_add(cf.base)?;
                 for e in &cf.digits {
-                    if e.slot != map_captures {
-                        return None;
+                    if e.slot == map_captures {
+                        td.push((e.stride, e.radix, e.coef));
+                        continue;
                     }
-                    td.push((e.stride, e.radix, e.coef));
+                    scalar(e.slot)?;
+                    match ud
+                        .iter_mut()
+                        .find(|x| (x.slot, x.stride, x.radix) == (e.slot, e.stride, e.radix))
+                    {
+                        Some(x) => x.coef = x.coef.checked_add(e.coef)?,
+                        None => ud.push(*e),
+                    }
                 }
             }
-            Some(((slot, base, td, kd, *size), (**elem).clone()))
+            Some(((slot, base, td, kd, *size, ud), (**elem).clone()))
         };
         let (x, ex) = read(self.pair_slot_source(mul.source, 0)?)?;
         let (y, ey) = read(self.pair_slot_source(mul.source, 1)?)?;
@@ -565,8 +646,17 @@ impl CategoryIr {
             k: Vec::new(),
         };
         // Every partial sum of a form is at most its maximum: inside the array,
-        // no intermediate of the program's own index arithmetic wrapped.
-        if addr_a.max() >= a.4 || addr_b.max() >= b.4 {
+        // no intermediate of the program's own index arithmetic wrapped. A
+        // captured number's terms at their range's top.
+        let utop = |ds: &[Digit]| -> Option<u64> {
+            ds.iter().try_fold(0u64, |acc, d| {
+                let q = scalar(d.slot)? / d.stride;
+                let q = if d.radix == 0 { q } else { q.min(d.radix - 1) };
+                acc.checked_add(d.coef.checked_mul(q)?)
+            })
+        };
+        let (ua, ub) = (utop(&a.5)?, utop(&b.5)?);
+        if addr_a.max().checked_add(ua)? >= a.4 || addr_b.max().checked_add(ub)? >= b.4 {
             return None;
         }
         let tile_read = |slot: u32, r: &RadixAddr| -> (TileRead, Option<RadixAddr>) {
@@ -620,6 +710,8 @@ impl CategoryIr {
             a: ma,
             b: mb,
             out: (!row_major).then_some(out),
+            ua: a.5.clone(),
+            ub: b.5.clone(),
         };
         // All-plain is still a radix site: `tile_plan_strided` refused its
         // several div/mod pairs (`t/64%8`, `t/16%4`), the digits merged.

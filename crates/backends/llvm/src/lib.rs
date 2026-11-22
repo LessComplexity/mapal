@@ -720,6 +720,25 @@ pub struct GpuRungs {
     /// load per fewer than 16 FFMA. Off (`--gpu-off=k-fill`): the shrunk
     /// tile.
     pub k_fill: bool,
+    /// long-prefill `uniform-base` (a fact arm, `mapal_ir::FactArms`): a
+    /// mixed-radix tile read may take terms of a number its map captures (a
+    /// loop counter slicing a head group or a weight panel); the launch
+    /// moves the operand's pointer by them. Off (`--gpu-off=uniform-base`):
+    /// such a map is a per-cell kernel.
+    pub uniform_base: bool,
+    /// long-prefill `carry-take`: a loop carry whose init's device copy is
+    /// valid and dies at the loop's entry (`LastUsePlan`) takes that buffer
+    /// as its first state, host-built or not — the S65 move of a
+    /// device-built init, widened. Off (`--gpu-off=carry-take`): a host-built
+    /// init is uploaded again into the carry's own buffer.
+    pub carry_take: bool,
+    /// long-prefill `slice-launches`: a sliced unit's phases may meet at
+    /// kernel boundaries — one launch a phase — where the part's measured
+    /// launches (`launch_at` × phases) undercut one cooperative launch and
+    /// its grid barriers (outside a loop with the process's first
+    /// cooperative launch, `coop_first_ns`). Off
+    /// (`--gpu-off=slice-launches`): the cooperative launch only.
+    pub slice_launches: bool,
 }
 
 impl GpuRungs {
@@ -822,11 +841,14 @@ impl GpuRungs {
         narrow_tile: true,
         streamk_fill: true,
         k_fill: true,
+        uniform_base: true,
+        carry_take: true,
+        slice_launches: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 97] = [
+    pub const NAMES: [&'static str; 100] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -924,6 +946,9 @@ impl GpuRungs {
         "narrow-tile",
         "streamk-fill",
         "k-fill",
+        "uniform-base",
+        "carry-take",
+        "slice-launches",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -1026,6 +1051,9 @@ impl GpuRungs {
             "narrow-tile" => &mut self.narrow_tile,
             "streamk-fill" => &mut self.streamk_fill,
             "k-fill" => &mut self.k_fill,
+            "uniform-base" => &mut self.uniform_base,
+            "carry-take" => &mut self.carry_take,
+            "slice-launches" => &mut self.slice_launches,
             _ => return None,
         })
     }
@@ -1368,6 +1396,7 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
         piece_delta: !opts.gpu.off.piece_delta,
         head_group: !opts.gpu.off.head_group,
         exp_rescale: !opts.gpu.off.exp_rescale,
+        uniform_base: !opts.gpu.off.uniform_base,
     };
     if arms != ir.fact_arms() {
         return emit_detailed(&ir.refacted(arms), opts);

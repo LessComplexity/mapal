@@ -25,7 +25,7 @@ pub use algebra::{
 pub use bounds::BoundsProof;
 pub use linear::LinearSite;
 pub use precision::{PrecisionPlan, bound_coef, gamma};
-pub use radix::{AxisDigit, Digit, RadixAddr, RadixForm, RadixTile};
+pub use radix::{AxisDigit, Digit, RadixAddr, RadixForm, RadixTile, uniform_at};
 
 /// A non-trivial loop SCC and its merge objects (DESIGN §7; the backend
 /// capability predicate). One entry per non-trivial SCC.

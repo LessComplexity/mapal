@@ -39,8 +39,22 @@ fn emission(
     s: u64,
     off: &[&str],
 ) -> Emission {
+    emission_on(ir, target, base, s, off, false)
+}
+
+/// [`emission`], a forced `s` taking its phases as launches where `launches`
+/// (`--gpu-on=slice-launches`).
+fn emission_on(
+    ir: &CategoryIr,
+    target: &'static str,
+    base: EmitOpts,
+    s: u64,
+    off: &[&str],
+    launches: bool,
+) -> Emission {
     let mut gpu = GpuArms::default();
     gpu.on.flow = true;
+    gpu.on.slice_launches = launches;
     gpu.row_slices_s = s;
     for r in [
         "place",
@@ -342,6 +356,7 @@ fn row_slices_on_generated_long_rows() {
         "one row",
         "looped",
         "runs",
+        "phase launches",
     ] {
         assert!(c.get(key).copied().unwrap_or(0) > 0, "{key}: {c:?}");
     }
@@ -364,8 +379,9 @@ fn check_long_row(clang: &str, p: &testgen::LongRow) -> Vec<(&'static str, u64)>
         "OFF: {got:?} vs {:?}\n{src}",
         rr.output
     );
-    for s in [2u64, 8] {
-        let on = emission(&ir, "rtx-5080", EmitOpts::default(), s, &[]);
+    // long-prefill `slice-launches`: `s = 8` forced as one launch a phase.
+    for (s, launches) in [(2u64, false), (8, false), (8, true)] {
+        let on = emission_on(&ir, "rtx-5080", EmitOpts::default(), s, &[], launches);
         let lines = slice_lines(&on);
         if lines.is_empty() {
             continue;
@@ -374,6 +390,11 @@ fn check_long_row(clang: &str, p: &testgen::LongRow) -> Vec<(&'static str, u64)>
         for l in &lines {
             let phases: u32 = field(l, "phases").parse().unwrap();
             out.push(("phases>1", u64::from(phases > 1)));
+            if launches && phases > 1 {
+                assert!(l.contains(" launches=1"), "{l}");
+                assert!(!on.device.as_deref().unwrap().contains("@mapal_gsync("));
+                out.push(("phase launches", 1));
+            }
             out.push(("phases>2", u64::from(phases > 2)));
             for law in field(l, "laws").split(',').filter(|x| !x.is_empty()) {
                 out.push(("law", 1));
@@ -478,11 +499,30 @@ fn rule_slices_long_rows_on_measured_properties() {
             lw = len * 8
         )
     };
-    assert_eq!(pick(&softmax(1, 131072), "rtx-5080", &[]), Some(64));
-    assert_eq!(pick(&softmax(4, 32768), "rtx-5080", &[]), None);
-    assert_eq!(pick(&looped(4, 32768), "rtx-5080", &[]), Some(64));
-    assert_eq!(pick(&softmax(4, 2048), "rtx-5080", &[]), None);
-    assert_eq!(pick(&softmax(32, 8192), "rtx-5080", &[]), None);
+    // The cooperative launch alone (`slice-launches` off): the rule before.
+    let coop = &["slice-launches"][..];
+    assert_eq!(pick(&softmax(1, 131072), "rtx-5080", coop), Some(64));
+    assert_eq!(pick(&softmax(4, 32768), "rtx-5080", coop), None);
+    assert_eq!(pick(&looped(4, 32768), "rtx-5080", coop), Some(64));
+    assert_eq!(pick(&softmax(4, 2048), "rtx-5080", coop), None);
+    assert_eq!(pick(&softmax(32, 8192), "rtx-5080", coop), None);
     assert_eq!(pick(&softmax(1, 131072), "rtx-4090", &[]), None);
     assert_eq!(pick(&softmax(1, 131072), "rtx-5080", &["row-slices"]), None);
+    // long-prefill `slice-launches`: two phases as two launches (2 × 486 ns
+    // programmatic) undercut the first cooperative launch (38 us) outside a
+    // loop and one cooperative launch and its barrier (2044 + 553 ns) inside
+    // one: four rows of 32768 and 32 of 8192 slice; four of 2048 keep one
+    // block a row (a walk of 24 lane-iterations).
+    let launched = |src: &str| {
+        let ir = lower(src);
+        let em = emission(&ir, "rtx-5080", EmitOpts::default(), 0, &[]);
+        slice_lines(&em)
+            .first()
+            .map(|l| (field(l, "slices").to_string(), l.contains(" launches=1")))
+    };
+    assert_eq!(launched(&softmax(1, 131072)), Some(("64".into(), true)));
+    assert_eq!(launched(&softmax(4, 32768)), Some(("64".into(), true)));
+    assert_eq!(launched(&looped(4, 32768)).map(|x| x.1), Some(true));
+    assert_eq!(launched(&softmax(32, 8192)), Some(("8".into(), true)));
+    assert_eq!(launched(&softmax(4, 2048)), None);
 }
