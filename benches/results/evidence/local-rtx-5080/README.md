@@ -24,6 +24,8 @@ system NumPy links reference cblas, 250 ms at 1024² — not a valid opponent), 
 (run 2: 10695 checks, 401 mismatch, 66 n/a — not yet triaged), `gpu/wisdom-rtx-5080.tsv`, GPU app snapshots;
 `cpu/matmul-summary.md`, `cpu/shapes-summary.md`, `cpu/nn-report.txt`.
 
+Cross-part matrix — Mapal vs the fastest same-precision competitor per family, this box and the rented parts: [matrix.md](../matrix.md).
+
 ## Known invalid / open
 
 - **The CPU NN NumPy leg was a cold single iteration per process** (`nn_numpy.py`, no warm-up). Warm, NumPy nn2

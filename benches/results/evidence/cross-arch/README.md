@@ -4,6 +4,8 @@ Branch `local-rtx-5080` @ `8bba2a50` (kernel merging, hardware properties, model
 this round's tooling (`f4e6e270` vast wrappers, `3968f59c` / `bd9ae103` / `73360fbc` calibration on the box,
 `72ee9297` per-instance ssh key). Four vast.ai boxes in parallel, CUDA 13.0.2 devel image, torch 2.11.0+cu130.
 
+Cross-part matrix (60f0f8ce rows + the RTX 5080), Mapal vs the fastest same-precision competitor: [matrix.md](../matrix.md).
+
 **Bundle, one per part** (`integrated_bundle.sh`, built locally, `LADDER=1`): the README GPU suite (35 programs and
 the two GEMM cells of `benches/local/gpu_bundle.sh`); the model-scale suite — the 12 natural Llama-layer programs
 (decode B 1/8/32 × L 2048/8192, block decode, prefill 2048 / 8192, block prefill, TF32 twins) and 24 projections
