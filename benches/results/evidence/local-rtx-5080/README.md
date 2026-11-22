@@ -37,6 +37,13 @@ system NumPy links reference cblas, 250 ms at 1024² — not a valid opponent), 
   kernel causes, the calibrated `rtx-5080` DeviceCost (`calib/`) and its neutral A/B are there. Rows whose working set
   fits the 64 MB L2 compare an L2-warm Mapal with torch's flushed L2: open.
 
+**harness** (`harness.md`): cheaper steps, same checks — the emulator's serialized modes hand the turn to one thread
+(a block-wide broadcast per hand-off was their whole cost) and generated programs are checked in parallel
+(`MAPAL_TESTGEN_JOBS`, deterministic draws, index-ordered results): 14 test binaries 3790 → 558 s, every coverage
+counter identical on the fixed seed; changed-programs GPU runs per A/B (`gpu_changed.sh`: only programs whose host or
+device text differs, ABBA) plus one full suite per step; incremental bundles (`BUNDLE_CACHE`: 155 → 47 s, the same
+files). Flow: `benches/local/README.md`.
+
 **compile-time-graph** (`compile-time-graph.md`): `unit_plan` row-block units (attention one kernel when forced; the
 plan model keeps the boundary — the in-unit q·Kᵀ reads Kᵀ at half a sector a lane) and compile-time launch regions
 replayed as CUDA graphs (rt_mlp2_1024 0.92× by overlapping independent chains; decode family neutral: a 10-node

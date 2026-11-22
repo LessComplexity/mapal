@@ -104,6 +104,12 @@ def base_tree(ref, tmp):
     sha = sh('git', '-C', str(ROOT), 'rev-parse', ref).strip()
     gen = tmp / 'gen_tiles.py'
     gen.write_text(sh('git', '-C', str(ROOT), 'show', f'{sha}:benches/gpu/gen_tiles.py'))
+    return base_emitter(ref), tiles(gen, tmp / 'tiles')
+
+
+def base_emitter(ref):
+    """The emitter at `ref`, built once per commit (target/base-emit/<sha>)."""
+    sha = sh('git', '-C', str(ROOT), 'rev-parse', ref).strip()
     exe = ROOT / 'target/base-emit' / sha[:12] / 'emit'
     if not exe.exists():
         src = ROOT / 'target/base-emit/src'
@@ -119,7 +125,7 @@ def base_tree(ref, tmp):
         exe.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / 'target/base-emit/target/release/examples/emit', exe)
         shutil.rmtree(src)
-    return exe, tiles(gen, tmp / 'tiles')
+    return exe
 
 
 def rt_stamp(ref):

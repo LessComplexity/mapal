@@ -37,6 +37,10 @@ No keep/remove/gate decision stands on timing alone.
    library (cuBLAS/cuBLASLt/CUTLASS) or PyTorch where no library exists.
    Tooling: `benches/gpu/intent.py` (intents), `evidence.py` (checker), `rejudge.py`; a GPU run without its
    `evidence.tsv` is not a result.
+   Per A/B, time only the suite programs whose host or device text differs between the arms
+   (`benches/local/gpu_changed.sh`, ABBA; equal text is the same object and PTX: null by construction), and run the
+   full suite once per step as the safety net; bundles reuse what an unchanged emission built (`BUNDLE_CACHE`).
+   Generated-program tests check their programs in parallel (`MAPAL_TESTGEN_JOBS`; same draws, same counters).
    Raw run output (profile archives, box logs, raw result text) never goes into git: `benches/gpu/archive_raw.sh`
    uploads it to a GitHub release and appends `benches/results/evidence/RAW-manifest.tsv`; commit only the evidence
    tables, reports and the manifest (`benches/results/evidence/RAW.md`).
