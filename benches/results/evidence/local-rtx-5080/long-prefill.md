@@ -69,6 +69,11 @@ the lsm, softmax, attention and model-scale programs: **39 of 44 emit identical 
 candidate ids and loop-metadata numbers masked — the new rungs renumber candidate kernel ids), the 5 that differ
 are the ones above (T8192, the three lsm, prefill_1024_512_256).
 
+Safety net (the whole suite, `gpu_bundle.sh` + `LADDER=1 gpu_run.sh`, 35 programs + 2 cells): every value gate
+passes, `evidence.py` 12 573 checks / 560 mismatches (the standing items); prefill_1024_512_256 7.739 ms (0.32×
+torch-compile), causal 0.32×, the cells 16 × 2048 × 7168 0.0871 / 4096³ 3.823 ms (1.09 / 1.05× cuBLAS) — the suite's
+other rows emit the same kernels as before (above) and sit where the last runs put them.
+
 ## 4. Tests
 
 Workspace 1459 pass, 0 fail (the CUDA backend's differential tests with the matching driver userspace). New:
