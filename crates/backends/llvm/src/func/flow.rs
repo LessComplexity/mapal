@@ -757,7 +757,7 @@ impl<'a> FnEmit<'a> {
             for (m, c) in plan
                 .cells
                 .iter()
-                .filter(|(_, c)| c.uniform.is_empty() && c.nested.is_empty())
+                .filter(|(_, c)| c.uniform.is_empty() && c.nested.is_empty() && c.retain.is_none())
             {
                 cand.insert(m, Cand::Cell(c.clone()));
             }

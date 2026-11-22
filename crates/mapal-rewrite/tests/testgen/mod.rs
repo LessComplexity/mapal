@@ -4999,3 +4999,180 @@ pub fn narrow_src(p: &NarrowProg) -> (String, usize) {
     );
     (s, tight)
 }
+
+/// caching-memory: a growing-history loop — the loop carries a history of `b`
+/// sequences × `l` rows × `d` cells and writes the step's input row into it
+/// at position `p0 + t` (one row of every sequence; past the end: no write),
+/// then recomputes, for every row, a chain of row-local transforms (a row
+/// fold of squares and a per-row scale; a capture-free `·2` map; a
+/// projection through `n` columns; a rotation reading each row's partner
+/// half — a window), and reads every cell of the result for the next input
+/// (so a cell a delta missed shows). `wc` is an input the loop carries
+/// without ever writing it (a program keeps it between trips): its
+/// transpose, recomputed every trip, is the projection's weights. Small
+/// integers throughout: every face and fold order agrees with the
+/// interpreter.
+#[derive(Clone, Debug)]
+pub struct HistoryProg {
+    pub b: u64,
+    pub l: u64,
+    pub d: u64,
+    pub n: u64,
+    pub trips: i64,
+    pub p0: i64,
+    /// One sequence written as `c ÷ d == p` (a row range, `Rows`) instead of
+    /// `(c ÷ d) % l == p` (pieces).
+    pub rows_form: bool,
+    pub rowfold: bool,
+    pub same: bool,
+    pub rot: bool,
+    /// The projection reads the carried constant's transpose.
+    pub constant: bool,
+    /// The row is written at the trip's end: the transforms read the history
+    /// as the trip found it (its previous trip's row is the new one).
+    pub late: bool,
+}
+
+pub fn history_strategy() -> impl Strategy<Value = HistoryProg> {
+    (
+        1u64..4,
+        prop::sample::select(vec![4u64, 8, 16]),
+        prop::sample::select(vec![4u64, 8, 16]),
+        prop::sample::select(vec![4u64, 8, 16]),
+        1i64..6,
+        0i64..17,
+        any::<bool>(),
+        (
+            any::<bool>(),
+            any::<bool>(),
+            any::<bool>(),
+            any::<bool>(),
+            any::<bool>(),
+        ),
+    )
+        .prop_map(
+            |(b, l, d, n, trips, p0, rows_form, (rowfold, same, rot, constant, late))| {
+                HistoryProg {
+                    b,
+                    l,
+                    d,
+                    n,
+                    trips,
+                    p0: p0 % l as i64,
+                    rows_form: rows_form && b == 1,
+                    rowfold,
+                    same,
+                    rot,
+                    constant,
+                    late,
+                }
+            },
+        )
+}
+
+/// [`HistoryProg`]'s source text.
+pub fn history_prog_src(p: &HistoryProg) -> String {
+    let (b, l, d, n) = (p.b, p.l, p.d, p.n);
+    let data = |name: &str, len: u64, a: u64, c: u64| {
+        format!(
+            "    {len} -> iota -> i_{name};\n    i_{name} -> map {{ t -> (t * {a} + {c}) % 5 - 2 -> widen_f32 }} -> {name};\n"
+        )
+    };
+    let mut s = String::from("fn main() {\n");
+    s += &data("w", d * n, 3, 1);
+    s += &data("g", d, 2, 3);
+    s += &data("x0", b * d, 7, 2);
+    s += &data("h0", b * l * d, 3, 4);
+    s += &format!(
+        "    {} -> iota -> rBL;\n    {d} -> iota -> rD;\n    {} -> iota -> rHD;\n    {} -> iota -> rBLN;\n    \
+         {} -> iota -> rLN;\n    {} -> iota -> rBD;\n    {} -> iota -> rDN;\n",
+        b * l,
+        b * l * d,
+        b * l * n,
+        l * n,
+        b * d,
+        d * n
+    );
+    s += &format!(
+        "    mut hx: [f32; {}] <- h0;\n    mut x: [f32; {}] <- x0;\n",
+        b * l * d,
+        b * d
+    );
+    if p.constant {
+        s += &format!("    mut wc: [f32; {}] <- w;\n", d * n);
+    }
+    s += &format!(
+        "    mut t: i32 <- 0;\n    loop {{\n        (t < {}) -> {{\n            -true-> {{\n                {} + t -> p;\n",
+        p.trips, p.p0
+    );
+    let cond = if p.rows_form {
+        format!("c / {d} == p")
+    } else {
+        format!("c / {d} % {l} == p")
+    };
+    let write = format!(
+        "rHD -> map {{ c -> ({cond}) -> {{ -true-> x[c / {} * {d} + c % {d}]; -false-> hx[c]; }} }} -> hx;\n",
+        l * d
+    );
+    // A late write reads the step's input before the consumer rebinds it.
+    let mut body = if p.late {
+        "x -> map { v -> v } -> xin;\n".to_string()
+    } else {
+        write.clone()
+    };
+    if p.rowfold {
+        body += &format!(
+            "rBL -> map {{ r -> (0.0, rD) -> fold {{ acc, i -> hx[r * {d} + i] -> v; acc + v * v }} }} -> rs;\n\
+             rHD -> map {{ e -> hx[e] * g[e % {d}] + rs[e / {d}] }} -> xn;\n"
+        );
+    } else {
+        body += &format!("rHD -> map {{ e -> hx[e] * g[e % {d}] }} -> xn;\n");
+    }
+    let src = if p.same {
+        body += "xn -> map { v -> v * 2.0 } -> x2;\n";
+        "x2"
+    } else {
+        "xn"
+    };
+    let wread = if p.constant {
+        body += &format!("rDN -> map {{ e -> wc[e % {d} * {n} + e / {d}] }} -> wt;\n");
+        format!("wt[j * {d} + k]")
+    } else {
+        format!("w[k * {n} + j]")
+    };
+    body += &format!(
+        "rBLN -> map {{ e -> e / {n} -> r; e % {n} -> j; (0.0, rD) -> fold {{ acc, k -> acc + {src}[r * {d} + k] * {wread} }} }} -> pr;\n"
+    );
+    let res = if p.rot {
+        let h = n / 2;
+        body += &format!(
+            "rBLN -> map {{ e -> e / {n} -> r; e % {n} -> u; (u < {h}) -> {{ -true-> pr[r * {n} + u] * 2.0 - pr[r * {n} + u + {h}]; \
+             -false-> pr[r * {n} + u] + pr[r * {n} + u - {h}]; }} }} -> ro;\n"
+        );
+        "ro"
+    } else {
+        "pr"
+    };
+    body += &format!(
+        "rBD -> map {{ e -> e / {d} -> bb; e % {d} -> dd; (0.0, rLN) -> fold {{ acc, i -> i % 3 - 1 -> widen_f32 -> cw; \
+         acc + {res}[bb * {} + i] * cw }} -> s; dd -> widen_f32 -> df; (s + df > 0.0) -> {{ -true-> g[dd]; -false-> 0.0 - g[dd]; }} }} -> x;\n",
+        l * n
+    );
+    if p.late {
+        body += &write.replace("-true-> x[", "-true-> xin[");
+    }
+    // The carried constant goes round unchanged (a step that hands its
+    // weights on, as a step function returning its whole state does).
+    if p.constant {
+        body += "wc -> wc;\n";
+    }
+    for line in body.lines() {
+        s += &format!("                {line}\n");
+    }
+    s += "                t + 1 -> t;\n                -> loop;\n            }\n            -false-> x -> out;\n        }\n    }\n";
+    for c in 0..b * d {
+        s += &format!("    out[{c}] -> println;\n");
+    }
+    s += "    0.0 -> zero: f32;\n    (zero, out) -> fold { acc, v -> acc + v } -> sum;\n    sum -> println;\n}\n";
+    s
+}

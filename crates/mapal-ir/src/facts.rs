@@ -51,6 +51,7 @@ pub(crate) struct FuncFacts {
     pub(crate) last_use_plan: OnceLock<LastUsePlan>,
     pub(crate) bounds_proof: OnceLock<BoundsProof>,
     pub(crate) write_delta: OnceLock<SecondaryMap<ObjectId, Delta>>,
+    pub(crate) unchanged_plan: OnceLock<crate::algo::UnchangedPlan>,
     pub(crate) guard_plan: OnceLock<Vec<GuardSite>>,
     pub(crate) guard_structure: OnceLock<Vec<GuardSite>>,
     pub(crate) trip_split: OnceLock<Vec<TripSplit>>,
@@ -95,6 +96,10 @@ pub struct FactArms {
     /// bounds at its capture range's top. Off: such a read has no form (the
     /// map is a per-cell kernel).
     pub uniform_base: bool,
+    /// caching-memory `unchanged`: [`crate::CategoryIr::unchanged_plan`]'s
+    /// trip deltas reach through every map whose cells read rows of a
+    /// changed array. Off: its trip deltas are `write_delta`'s alone.
+    pub unchanged: bool,
 }
 
 impl Default for FactArms {
@@ -106,6 +111,7 @@ impl Default for FactArms {
             head_group: true,
             exp_rescale: true,
             uniform_base: true,
+            unchanged: true,
         }
     }
 }

@@ -54,6 +54,9 @@ pub struct BoundsProof {
     /// Each map/fold site's capture ranges where the site runs — what its
     /// body's capture params are seeded with.
     sites: SecondaryMap<MorphismId, Vec<Option<(i128, i128)>>>,
+    /// caching-memory: each integer view of a canonical loop's merge (the
+    /// counter as the body reads it) — its range over every trip.
+    views: SecondaryMap<ObjectId, (i128, i128)>,
 }
 
 impl BoundsProof {
@@ -78,6 +81,12 @@ impl BoundsProof {
     /// `m` runs, if known — what its body's capture param is seeded with.
     pub fn capture_range(&self, m: MorphismId, slot: u32) -> Option<(i128, i128)> {
         *self.sites.get(m)?.get(slot as usize)?
+    }
+
+    /// The range of loop merge view `v` (an integer state component, as the
+    /// loop body reads it) over every trip, if known.
+    pub fn view_range(&self, v: ObjectId) -> Option<(i128, i128)> {
+        self.views.get(v).copied()
     }
 }
 
@@ -767,6 +776,21 @@ impl CategoryIr {
             ev.loop_ranges(&flat);
         }
         let base = ev.forward(&Pins::new());
+        for scc in self.loop_structure(f) {
+            for &merge in &scc.merges {
+                let views = std::iter::once(merge).chain(
+                    self.out_edges(merge)
+                        .iter()
+                        .filter(|&&e| matches!(self.morphisms[e].op, Operation::Proj { .. }))
+                        .map(|&e| self.morphisms[e].target),
+                );
+                for v in views {
+                    if let Some(r) = int(base.get(v).copied()) {
+                        out.views.insert(v, r);
+                    }
+                }
+            }
+        }
 
         // --- contexts: the conditions holding where each morphism runs --------
         let links = if cond {

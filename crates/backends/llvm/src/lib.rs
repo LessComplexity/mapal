@@ -739,6 +739,25 @@ pub struct GpuRungs {
     /// cooperative launch, `coop_first_ns`). Off
     /// (`--gpu-off=slice-launches`): the cooperative launch only.
     pub slice_launches: bool,
+    /// caching-memory `unchanged` (a fact arm, `mapal_ir::FactArms`): the
+    /// trip deltas of `unchanged_plan` reach past `write_delta`'s carried
+    /// arrays — through every map whose cells read rows of a changed array
+    /// (a row fold, a per-row scale, a projection, a rotation) — so the
+    /// retained sites and cells below see them. Off
+    /// (`--gpu-off=unchanged`): `write_delta`'s deltas only.
+    pub unchanged: bool,
+    /// caching-memory `retain-cell`: a device cell map inside a loop whose
+    /// output differs from its previous trip's only in a row delta
+    /// (`unchanged_plan`) launches over that delta on every trip after the
+    /// loop's first, in its own persisting buffer. Off
+    /// (`--gpu-off=retain-cell`): every trip launches the whole map.
+    pub retain_cell: bool,
+    /// caching-memory `retain-pieces`: a retained tile site whose operand
+    /// changes in one row of every sequence (`Delta::Pieces`) computes those
+    /// rows as one site over the gathered rows into a compact buffer, then
+    /// places them (`mapal_gpu_copy2d`). Off (`--gpu-off=retain-pieces`):
+    /// such a site runs whole every trip.
+    pub retain_pieces: bool,
 }
 
 impl GpuRungs {
@@ -844,11 +863,14 @@ impl GpuRungs {
         uniform_base: true,
         carry_take: true,
         slice_launches: true,
+        unchanged: true,
+        retain_cell: true,
+        retain_pieces: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 100] = [
+    pub const NAMES: [&'static str; 103] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -949,6 +971,9 @@ impl GpuRungs {
         "uniform-base",
         "carry-take",
         "slice-launches",
+        "unchanged",
+        "retain-cell",
+        "retain-pieces",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -1054,6 +1079,9 @@ impl GpuRungs {
             "uniform-base" => &mut self.uniform_base,
             "carry-take" => &mut self.carry_take,
             "slice-launches" => &mut self.slice_launches,
+            "unchanged" => &mut self.unchanged,
+            "retain-cell" => &mut self.retain_cell,
+            "retain-pieces" => &mut self.retain_pieces,
             _ => return None,
         })
     }
@@ -1397,6 +1425,7 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
         head_group: !opts.gpu.off.head_group,
         exp_rescale: !opts.gpu.off.exp_rescale,
         uniform_base: !opts.gpu.off.uniform_base,
+        unchanged: !opts.gpu.off.unchanged,
     };
     if arms != ir.fact_arms() {
         return emit_detailed(&ir.refacted(arms), opts);

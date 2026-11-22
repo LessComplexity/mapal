@@ -247,7 +247,7 @@ pub(crate) const COOP_DECL: &str =
 /// S54 entries (`streams`, `pinned`), each declared only where it is called,
 /// so a module that never opens a stream or pins keeps its S53 text.
 /// (`launchv` is [`LAUNCHV_DECL`], shared with `epilogue` and `devmap`.)
-pub(crate) const S54_DECLS: [(&str, &str); 7] = [
+pub(crate) const S54_DECLS: [(&str, &str); 8] = [
     (
         "@mapal_gpu_event(",
         "declare void @mapal_gpu_event(i32, i32)\n",
@@ -262,6 +262,11 @@ pub(crate) const S54_DECLS: [(&str, &str); 7] = [
     (
         "@mapal_gpu_zero(",
         "declare void @mapal_gpu_zero(i64, i64)\n",
+    ),
+    // caching-memory `retain-pieces`: gathered rows placed at their stride.
+    (
+        "@mapal_gpu_copy2d(",
+        "declare void @mapal_gpu_copy2d(i64, i64, i64, i64, i64, i64)\n",
     ),
     // cpu-gpu-boundary `async-h2d`: an upload enqueued without a host wait.
     (
@@ -3075,7 +3080,16 @@ pub(crate) fn cell_kernel_text(
         ),
     };
     // Lanes: the bound test is on the cell, after the division.
-    let (head, guard) = if g.lanes == 1 {
+    // `retain-cell` (`clip`): the cell itself is tested against the extent
+    // too, so its index is formed first.
+    let (head, guard) = if g.clip && g.range.is_some() {
+        (
+            at.clone(),
+            format!(
+                "  %in0 = icmp ult i64 {k}, {bound}\n  %inc = icmp ult i64 %i, {n}\n  %in = and i1 %in0, %inc\n"
+            ),
+        )
+    } else if g.lanes == 1 {
         (
             String::new(),
             format!("  %in = icmp ult i64 {k}, {bound}\n"),
@@ -3083,7 +3097,11 @@ pub(crate) fn cell_kernel_text(
     } else {
         (at.clone(), format!("  %in = icmp ult i64 {k}, {bound}\n"))
     };
-    let at = if g.lanes == 1 { at } else { String::new() };
+    let at = if g.lanes == 1 && !(g.clip && g.range.is_some()) {
+        at
+    } else {
+        String::new()
+    };
     let store = if g.lanes == 1 {
         String::new()
     } else {
@@ -3151,6 +3169,9 @@ pub(crate) struct CellGeo {
     /// kernel-merging `zero-fold`: the later sites' outputs this kernel
     /// zeroes ([`super::zero::zero_tail`]).
     pub zero: usize,
+    /// caching-memory `retain-cell`: a range cell past the extent stores
+    /// nothing (a delta's window may reach past the array's end).
+    pub clip: bool,
 }
 
 impl CellGeo {
@@ -3160,6 +3181,7 @@ impl CellGeo {
         piece: 0,
         lanes: 1,
         zero: 0,
+        clip: false,
     };
 
     /// `(blocks, threads)` for `cells` cells.
@@ -7074,7 +7096,7 @@ impl<'a> FnEmit<'a> {
                 Combine::None => None,
                 c => Some(c),
             };
-            let bytes_o = one.c * elem_bytes_of(&one.elem);
+            let bytes_o = one.rows * one.c * elem_bytes_of(&one.elem);
             let part = match split {
                 Some(Combine::Atomic { .. }) => "atomic",
                 Some(Combine::StreamK { .. }) => "streamk",
@@ -7120,7 +7142,7 @@ impl<'a> FnEmit<'a> {
                     lc.block, lc.smem
                 ),
                 Some(Combine::Workspace { s }) => {
-                    let (rgx, rblock) = cell_grid(one.c);
+                    let (rgx, rblock) = cell_grid(one.rows * one.c);
                     format!(
                         "call void @mapal_gpu_launch(i64 {id}, i64 {a}, i64 {b}, i64 {ws}, \
                          i32 {}, i32 {}, i32 {}, i32 {}) ; splitk={s}\n  \

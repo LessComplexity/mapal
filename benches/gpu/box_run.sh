@@ -458,10 +458,11 @@ for o in "$PROF"/pt_*.host.o; do
             t1=$(date +%s%N)
             tr=""; trace_rc=0
             if [ "$r" -le "${PROBE_TRACE_REPS:-2}" ]; then
-                tr=$(MAPAL_GPU_PICK=$(sel "$arm") MAPAL_GPU_TRACE=1 MAPAL_PTX="$PROF/$s.ptx" "./pt_$s" 2>&1 >/dev/null); trace_rc=$?
+                # caching-memory: the traced process also reports the peak device bytes (`mapal_gpu_peak`).
+                tr=$(MAPAL_GPU_PICK=$(sel "$arm") MAPAL_GPU_TRACE=1 MAPAL_GPU_PEAK=1 MAPAL_PTX="$PROF/$s.ptx" "./pt_$s" 2>&1 >/dev/null); trace_rc=$?
             fi
             sp=; [ -n "$tr" ] && grep -q 'op=site ' <<< "$tr" && sp=" sites=[$(site_picks "$tr")]"
-            say "probe prog=$b face=${face:-_default} arm=$arm rep=$r wall_us=$(( (t1 - t0) / 1000 )) out=[$got] $(grep -m1 mapal_gpu_trace_total <<< "$tr") rc=$rc trace_rc=$trace_rc$sp"
+            say "probe prog=$b face=${face:-_default} arm=$arm rep=$r wall_us=$(( (t1 - t0) / 1000 )) out=[$got] $(grep -m1 mapal_gpu_trace_total <<< "$tr") $(grep -m1 -o 'mapal_gpu_peak bytes=[0-9]*' <<< "$tr") rc=$rc trace_rc=$trace_rc$sp"
             # S54: each launch's kernel time under the trace, in launch order.
             [ -n "$tr" ] && say "probe_kernels prog=$b face=${face:-_default} arm=$arm rep=$r $(grep -o 'op=launch kernel=mapal_tile_[0-9a-f]* ms=[0-9.]*' <<< "$tr" | sed 's/op=launch kernel=mapal_tile_//' | tr '\n' ' ')"
             [ "$rc" -eq 0 ] && [ "$trace_rc" -eq 0 ] || { say "VALIDATION FAILED (probe $s rep=$r process exit)"; exit 1; }

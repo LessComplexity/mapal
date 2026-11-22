@@ -368,6 +368,12 @@ void mapal_gpu_zero(uint64_t d, uint64_t bytes) {
   memset((void *)d, 0, bytes);
   n_zero++;
 }
+/* caching-memory `retain-pieces`: rows of `width` bytes placed at a pitch. */
+void mapal_gpu_copy2d(uint64_t dst, uint64_t dpitch, uint64_t src,
+                      uint64_t spitch, uint64_t width, uint64_t height) {
+  for (uint64_t r = 0; r < height; r++)
+    memmove((char *)(dst + r * dpitch), (const char *)(src + r * spitch), width);
+}
 void mapal_gpu_free(uint64_t *slot) {
   if (*slot && !arena_member(slot)) free((void *)*slot);
   *slot = 0;

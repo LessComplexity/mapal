@@ -479,6 +479,22 @@ INTENT = {
         ('each piece cell is launched (its first piece and count by value)', 'host.calls.launchv >= dev.cell_piece'),
         ("per-trip uploads are the facts' (no written row crosses)", 'host.move.h2d_b == host.move.intent_h2d')],
         applies_off='dev.cell > 0', off=[('no piece cell', 'dev.cell_piece == 0')]),
+    # caching-memory `retain-cell` (with the `unchanged` fact arm): a loop's device cell whose output differs from its
+    # previous trip's only in a row delta (`unchanged_plan`: a row fold, a per-row scale, a rotation over rows of a
+    # row-written state) has a delta kernel (`retain=<step>x<w>`, cells past the extent clipped) launched over the
+    # delta after the loop's first trip, into its own buffer; the first trip launches the whole map (one per loop
+    # entry). `.off-retain-cell` / `.off-unchanged`: the whole map every trip.
+    'retain-cell': dict(host=True, applies='dev.cell_retain > 0', on=[
+        ('each cell with a delta kernel launches whole (first trip) and over its delta (by value)',
+         'host.calls.launchv >= 2 * dev.cell_retain')],
+        applies_off='dev.cell > 0', off=[('no delta kernel', 'dev.cell_retain == 0')]),
+    # caching-memory `retain-pieces`: a retained tile site whose operand changes in one row of every sequence
+    # (`Delta::Pieces`) computes the gathered rows as one site (`rows=` the sequences, `a` rows a sequence apart) into
+    # a compact buffer, then places them at their stride (`mapal_gpu_copy2d`, one per gathered site a trip).
+    # `.off-retain-pieces`: the whole site every trip.
+    'retain-pieces': dict(host=True, applies='host.calls.copy2d > 0', on=[
+        ('the gathered rows are placed after their launch', 'host.calls.copy2d >= 1')],
+        applies_off='host.move.loops > 0', off=[('no gathered rows placed', 'host.calls.copy2d == 0')]),
     # device-geometry `row-tree`: a row fold beside local folds that load nothing (RMSNorm's sum of squares, then
     # its Heron root) takes a warp's lanes (`cell-lanes`): lane l every 32nd element, a butterfly of shuffles.
     # `.off-row-tree`: such a row is one thread's serial fold.

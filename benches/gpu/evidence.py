@@ -50,8 +50,8 @@ KERNEL_RUNGS = ('arch-rungs interleave unroll min-blocks warp prefetch mma async
                 'pad wide-fma wgmma-hopper raster l2-gate pdl row-fit wave-gate grid-share panel-regs fill-rows '
                 'cell-fill asyncstage splitk splitk-atomic streamk row-split fill-wave fit-first tf32-radix kmajor-a full-tile '
                 'async-depth bank-plan streamk-fill k-fill').split()
-GPU_SYMS = ('alloc arena d2h_on d2h event free gen h2d h2d_async h2d_on init launch_l2 launchv launch launch_coop pin '
-            'sync tile unpin zero').split()
+GPU_SYMS = ('alloc arena copy2d d2h_on d2h event free gen h2d h2d_async h2d_on init launch_l2 launchv launch launch_coop '
+            'pin sync tile unpin zero').split()
 PROFILE_RS = os.path.join(HERE, '..', '..', 'crates', 'backends', 'llvm', 'src', 'profile.rs')
 
 
@@ -1127,6 +1127,8 @@ def check(d, results=None, out=sys.stdout):
                                  and int(kf['plan']['group']) % (kf['plan'].get('ty', 1) * kf['plan'].get('tm', 1)) == 0
                                  for kf in grp)
         dev['cell_piece'] = sum(has(kf, 'piece') for kf in cells)
+        # caching-memory `retain-cell`: a cell's delta kernel (`retain=<step>x<w>`).
+        dev['cell_retain'] = sum(has(kf, 'retain') for kf in cells)
         multi = [kf for kf in lanes if kf['plan'].get('nested', 0) > 1]
         dev['cell_lanes_multi'] = len(multi)
         dev['cell_lanes_multi_shfl'] = sum(kf.get('ptx', {}).get('shfl', 0) >= 5 for kf in multi)

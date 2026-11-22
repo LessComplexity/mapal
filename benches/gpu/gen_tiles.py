@@ -1342,6 +1342,97 @@ def llm_decode(B, L, S, ffn, timed=True, P=LLM, pv=False, w16=False):
     return s + llm_tail(P, B, timed)
 
 
+def llm_attend(P, B, L, kread, vread):
+    """The decode step's GQA attention over positions <= p (scores, max, exp, sum, P·V): `kread(b, r, kv, i)` /
+    `vread(...)` the K / V element of sequence b, position r, KV head kv, lane i."""
+    D, H, Hk, dh = P["D"], P["H"], P["Hk"], P["dh"]
+    G, sq = H // Hk, f"{dh ** 0.5:.7f}"
+    return (
+        f"    rBHL -> map {{ e -> e / {H * L} -> b; e / {L} % {H} -> h; e % {L} -> r; (r <= p) -> {{ -true-> {{ (0.0, rdh) -> fold {{ acc, i -> "
+        f"acc + q[b * {D} + h * {dh} + i] * {kread('b', 'r', f'h / {G}', 'i')} }} -> dt; dt / {sq} }} -false-> -1000000000.0; }} }} -> s;\n"
+        f"    rBH -> map {{ bh -> (-1000000000.0, rL) -> fold {{ acc, r -> s[bh * {L} + r] -> se; (se > acc) -> {{ -true-> se; -false-> acc; }} }} }} -> mx;\n"
+        f"    rBHL -> map {{ e -> {llm_exp(f's[e] - mx[e / {L}]', 'x')} }} -> pe;\n"
+        f"    rBH -> map {{ bh -> (0.0, rL) -> fold {{ acc, r -> acc + pe[bh * {L} + r] }} }} -> den;\n"
+        f"    rRD -> map {{ e -> e / {D} -> b; e % {D} -> c; c / {dh} -> h; c % {dh} -> i; (0.0, rL) -> fold {{ acc, r -> "
+        f"acc + pe[(b * {H} + h) * {L} + r] * {vread('b', 'r', f'h / {G}', 'i')} }} -> av; av / den[b * {H} + h] }} -> att;\n")
+
+
+def llm_decode_kv(B, L, S, ffn, naive, timed=True, P=LLM):
+    """caching-memory: S decode steps over a history of L positions per sequence (`hx0`: the layer input at every
+    position; the steps write positions L - S + t), two ways a user writes the same layer:
+
+    - explicit cache (`naive=False`, `pt_llm_kvx_*`): K and V of the whole history computed once (RMSNorm, the
+      K|V columns of the fused projection, RoPE by position), then each step appends its token's row to the
+      loop-carried caches `kc` / `vc` (as `llm_decode`);
+    - naive (`naive=True`, `pt_llm_kvn_*`): no cache — the loop carries the history `hx` itself; each step writes
+      its input row into it and recomputes RMSNorm, K, V and RoPE for every position from it. That only the
+      written rows' K and V differ from the last step is the compiler's to find.
+
+    Same math, same fold orders: the two print the same values up to the default face's reorderings."""
+    D, H, Hk, dh = P["D"], P["H"], P["Hk"], P["dh"]
+    KD, NQ, KK = Hk * dh, (H + 2 * Hk) * dh, 2 * Hk * dh
+    C, HD = B * L * KD, B * L * D
+    (bq, vq), (bo, vo) = llm_w("wqkv", f"k * {NQ} + j", False), llm_w("wo", f"k * {D} + j", False)
+    ops = llm_ops(P, B, L, 0, ffn) + [("hx0", HD, "p", "v / 29.0")]
+    s = "fn main() {\n" + "".join(llm_law(*o) for o in ops)
+    s += llm_head(P, B, ffn, f"    {B * H} -> iota -> rBH;\n    {B * H * L} -> iota -> rBHL;\n"
+                             f"    {C} -> iota -> rC;\n    {L} -> iota -> rL;\n    {B * L} -> iota -> rBL;\n"
+                             f"    {HD} -> iota -> rHD;\n    {B * L * KK} -> iota -> rKK;\n"
+                             f"    {B * L * NQ} -> iota -> rBLQ;\n")
+
+    def kv_of(src, rinv, xn, kv):
+        """RMSNorm of every history row, then its K|V columns: `kv[(b·L + r)·KK + …]`."""
+        return (f"    rBL -> map {{ b -> {llm_rms(f'{src}[b * {D} + i]', D)} }} -> {rinv};\n"
+                f"    rHD -> map {{ e -> {src}[e] * {rinv}[e / {D}] * g1[e % {D}] }} -> {xn};\n"
+                f"    rKK -> map {{ e -> e / {KK} -> b; e % {KK} -> j; (0.0, rD) -> fold {{ acc, k -> "
+                f"{bq}acc + {xn}[b * {D} + k] * {vq.replace('+ j', f'+ {D} + j')} }} }} -> {kv};\n")
+
+    def rope_k(kv, dst):
+        return (f"    rC -> map {{ c -> c / {KD} -> b; c % {KD} -> u; "
+                f"{llm_rope(kv, f'b * {KK}', 'u', f'(b % {L})', dh)} }} -> {dst};\n")
+
+    if naive:
+        # The layer's projection over every position of the history, then RoPE by position: K for every row, the
+        # current token's q from its own row — nothing about a cache.
+        s += f"    mut hx: [f32; {HD}] <- hx0;\n    mut x: [f32; {B * D}] <- x0;\n    mut t: i32 <- 0;\n"
+        s += "    () -> time -> t0;\n" if timed else ""
+        body = (f"    {L - S} + t -> p;\n"
+                f"    rHD -> map {{ c -> (c / {D} % {L} == p) -> {{ -true-> x[c / {L * D} * {D} + c % {D}]; -false-> hx[c]; }} }} -> hx;\n"
+                f"    rBL -> map {{ b -> {llm_rms('hx[b * ' + str(D) + ' + i]', D)} }} -> rinvh;\n"
+                f"    rHD -> map {{ e -> hx[e] * rinvh[e / {D}] * g1[e % {D}] }} -> xnh;\n"
+                f"    rBLQ -> map {{ e -> e / {NQ} -> b; e % {NQ} -> j; (0.0, rD) -> fold {{ acc, k -> "
+                f"{bq}acc + xnh[b * {D} + k] * {vq} }} }} -> qkvh;\n"
+                f"    rC -> map {{ c -> c / {KD} -> b; c % {KD} -> u; "
+                f"{llm_rope('qkvh', f'b * {NQ} + {D}', 'u', f'(b % {L})', dh)} }} -> kh;\n"
+                f"    rRD -> map {{ e -> e / {D} -> b; e % {D} -> c; "
+                f"{llm_rope('qkvh', f'(b * {L} + p) * {NQ}', 'c', 'p', dh)} }} -> q;\n")
+        body += llm_attend(P, B, L, lambda b, r, kv, i: f"kh[(({b} * {L} + {r}) * {Hk} + {kv}) * {dh} + {i}]",
+                           lambda b, r, kv, i: f"qkvh[({b} * {L} + {r}) * {NQ} + {D + KD} + {kv} * {dh} + {i}]")
+    else:
+        s += "    () -> time -> t0;\n" if timed else ""
+        s += kv_of("hx0", "rinvh", "xnh", "kvh") + rope_k("kvh", "kc0")
+        s += f"    rC -> map {{ c -> kvh[c / {KD} * {KK} + {KD} + c % {KD}] }} -> vc0;\n"
+        s += (f"    mut kc: [f32; {C}] <- kc0;\n    mut vc: [f32; {C}] <- vc0;\n    mut x: [f32; {B * D}] <- x0;\n"
+              f"    mut t: i32 <- 0;\n")
+        body = (
+            f"    {L - S} + t -> p;\n"
+            f"    rR -> map {{ b -> {llm_rms(f'x[b * {D} + i]', D)} }} -> rinv;\n"
+            f"    rRD -> map {{ e -> x[e] * rinv[e / {D}] * g1[e % {D}] }} -> xn;\n"
+            f"    rRQ -> map {{ e -> e / {NQ} -> b; e % {NQ} -> j; (0.0, rD) -> fold {{ acc, k -> {bq}acc + xn[b * {D} + k] * {vq} }} }} -> qkv;\n"
+            f"    rRD -> map {{ e -> e / {D} -> b; e % {D} -> c; {llm_rope('qkv', f'b * {NQ}', 'c', 'p', dh)} }} -> q;\n"
+            f"    rC -> map {{ c -> c / {L * KD} -> b; c / {KD} % {L} -> r; (r == p) -> {{ -true-> {{ c % {KD} -> u; "
+            f"{llm_rope('qkv', f'b * {NQ} + {D}', 'u', 'p', dh)} }} -false-> kc[c]; }} }} -> kc;\n"
+            f"    rC -> map {{ c -> c / {L * KD} -> b; c / {KD} % {L} -> r; (r == p) -> {{ -true-> qkv[b * {NQ} + {D + KD} + c % {KD}]; -false-> vc[c]; }} }} -> vc;\n")
+        body += llm_attend(P, B, L, lambda b, r, kv, i: f"kc[(({b} * {L} + {r}) * {Hk} + {kv}) * {dh} + {i}]",
+                           lambda b, r, kv, i: f"vc[(({b} * {L} + {r}) * {Hk} + {kv}) * {dh} + {i}]")
+    body += (f"    rRD -> map {{ e -> e / {D} -> b; e % {D} -> j; (0.0, rD) -> fold {{ acc, k -> {bo}acc + att[b * {D} + k] * {vo} }} -> y; "
+             f"x[e] + y }} -> {'h1' if ffn else 'x'};\n")
+    if ffn:
+        body += llm_ffn(P, "h1", "x")
+    s += llm_loop(f"t < {S}", body, "t + 1 -> t", "x -> out")
+    return s + llm_tail(P, B, timed)
+
+
 def llm_prefill(T, ffn, groups=False, timed=True, P=LLM, pv=False):
     """Causal prefill of T tokens; `groups`: the attention as a loop over the KV-head groups."""
     D, H, Hk, dh = P["D"], P["H"], P["Hk"], P["dh"]
@@ -1414,6 +1505,15 @@ for B in (1, 8, 32):
                                                    llm_kmax(LLM, False, L, LLM_STEPS))
 llm_progs["pt_llm_blkdec_b1_l4096_bf16w"] = (llm_decode(1, 4096, LLM_STEPS, True, w16=True),
                                             llm_kmax(LLM, True, 4096, LLM_STEPS))
+# caching-memory: the explicit-cache (`kvx`) and naive (`kvn`) twins over a history (`llm_decode_kv`): the attention
+# half at the decode shapes whose naive state fits 16 GB, and the block.
+for B, L in ((1, 2048), (1, 8192), (8, 2048), (8, 8192), (32, 2048)):
+    for kind in ("kvx", "kvn"):
+        llm_progs[f"pt_llm_{kind}_b{B}_l{L}"] = (llm_decode_kv(B, L, LLM_STEPS, False, kind == "kvn"),
+                                                llm_kmax(LLM, False, L, LLM_STEPS + 1))
+for kind in ("kvx", "kvn"):
+    llm_progs[f"pt_llm_{kind}_blkdec_b1_l4096"] = (llm_decode_kv(1, 4096, LLM_STEPS, True, kind == "kvn"),
+                                                   llm_kmax(LLM, True, 4096, LLM_STEPS + 1))
 # (The grouped loop indexes by its counter, which no rewrite makes provable: no `_pv` twin.)
 llm_progs["pt_llm_pre_t8192"] = (llm_prefill(8192, False, groups=True), llm_kmax(LLM, False, 8192, 1))
 # The interpreter-sized twins (oracle: the interpreter; box_run.sh's differential, exact face and `_d`).
@@ -1430,6 +1530,11 @@ llm_progs["px_llm_dec_b2_l16_bf16w"] = (llm_decode(2, 16, 3, False, False, LLM_P
                                        llm_kmax(LLM_PX, False, 16, 3, 128))
 llm_progs["px_llm_blkdec_b2_l16_bf16w"] = (llm_decode(2, 16, 3, True, False, LLM_PX, w16=True),
                                           llm_kmax(LLM_PX, True, 16, 3, 128))
+for kind in ("kvx", "kvn"):
+    llm_progs[f"px_llm_{kind}_b2_l16"] = (llm_decode_kv(2, 16, 3, False, kind == "kvn", False, LLM_PX),
+                                         llm_kmax(LLM_PX, False, 16, 4, 128))
+    llm_progs[f"px_llm_{kind}_blkdec_b2_l16"] = (llm_decode_kv(2, 16, 3, True, kind == "kvn", False, LLM_PX),
+                                                llm_kmax(LLM_PX, True, 16, 4, 128))
 llm_progs["px_llm_preg_t12"] = (llm_prefill(12, False, groups=True, timed=False, P=LLM_PX),
                                 llm_kmax(LLM_PX, False, 12, 1, 768))
 # (d) the layer's projections alone: QKV (fused, N = 6144), O, gate/up (fused, N = 28672), down (K = 14336) —

@@ -85,6 +85,8 @@ impl<'a> FnEmit<'a> {
             dvalid: SecondaryMap::new(),
             retain: SecondaryMap::new(),
             retain_flags: SecondaryMap::new(),
+            row_out: None,
+            row_done: false,
             row_bounds: None,
             groups: SecondaryMap::new(),
             cell_slots: Vec::new(),

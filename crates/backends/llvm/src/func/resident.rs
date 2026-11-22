@@ -277,6 +277,34 @@ pub(crate) struct Cell {
     pub dev: Vec<u32>,
     /// `cell-lanes`: threads a cell.
     pub lanes: u64,
+    /// caching-memory `retain-cell`: the output differs from its previous
+    /// trip's only in a row delta (`unchanged_plan`).
+    pub retain: Option<RetainCell>,
+}
+
+/// caching-memory `retain-cell`: a loop's cell whose output differs from its
+/// previous trip's value only in `delta` (`mapal_ir::UnchangedPlan::trip`):
+/// the first trip after the loop's entry launches the whole map, every
+/// later one only the delta's cells (kernel `id`: the range geometry of the
+/// delta, cells past the extent clipped) into the same persisting buffer.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct RetainCell {
+    pub merge: ObjectId,
+    pub delta: mapal_ir::Delta,
+    pub id: u64,
+    /// `cell-lanes` for the delta's cells (its own extent: a few rows can
+    /// take a warp each where the whole map's cannot).
+    pub lanes: u64,
+}
+
+impl RetainCell {
+    /// The delta kernel's geometry: `(step, piece width)`.
+    pub(crate) fn geo(&self) -> (u64, u64) {
+        match self.delta {
+            mapal_ir::Delta::Pieces { w, step, .. } => (step, w),
+            _ => (1, 0),
+        }
+    }
 }
 
 impl Cell {
@@ -1508,6 +1536,48 @@ impl<'a> FnEmit<'a> {
             (false, 1) => self.fnames[body].clone(),
             (r, l) => format!("{}|range={r}|lanes={l}", self.fnames[body]),
         };
+        // caching-memory `retain-cell`: a loop cell whose output changes in
+        // a row delta only — not an in-place range cell (its buffer is the
+        // state's), not a guarded one (an arm may skip a trip).
+        let retain = (rungs.retain_cell
+            && (rungs.retain_delta || (rungs.resident && rungs.retain_resident))
+            && range.is_none()
+            && !self.gated.contains_key(m))
+        .then(|| {
+            let up = self.ir.unchanged_plan(self.f);
+            let d = up.delta(morph.target)?;
+            let merge = *up.loop_of.get(morph.target)?;
+            let start = match d {
+                mapal_ir::Delta::Rows { start, .. } | mapal_ir::Delta::Pieces { start, .. } => {
+                    start
+                }
+                mapal_ir::Delta::Top => return None,
+            };
+            let view = self.ir.morphism(*self.ir.in_edges(start.var).first()?)?;
+            (view.source == merge || start.var == merge).then_some(())?;
+            // The delta's cells per trip (at most): its range, or its pieces.
+            let cells = match d {
+                mapal_ir::Delta::Pieces { w, step, .. } => site.extent.div_ceil(step) * w,
+                mapal_ir::Delta::Rows { stride, .. } => stride,
+                mapal_ir::Delta::Top => site.extent,
+            }
+            .min(site.extent);
+            let lanes = self.cell_lanes(&CellSite {
+                extent: cells,
+                ..site.clone()
+            });
+            Some(RetainCell {
+                merge,
+                delta: d,
+                id: gpu::cell_id(
+                    &format!("{tag}|retain|lanes={lanes}"),
+                    site.extent,
+                    self.profile,
+                ),
+                lanes,
+            })
+        })
+        .flatten();
         let cell = Cell {
             id: gpu::cell_id(&tag, site.extent, self.profile),
             body,
@@ -1520,6 +1590,7 @@ impl<'a> FnEmit<'a> {
             range,
             dev: Vec::new(),
             lanes,
+            retain,
         };
         // The output, then every operand and uniform (and an interval's start
         // and count): one 8-byte argument each.
@@ -2014,9 +2085,40 @@ impl<'a> FnEmit<'a> {
                     .flat_map(|g| g.chain.iter().filter(|mb| mb.store).map(|mb| mb.out)),
             )
             .collect();
+        // caching-memory (`carry-take`): a device output that is a device
+        // carry's init and dies at the loop's entry is the carry's first
+        // state — the entry takes its buffer, no host reader is left, so it
+        // is kept (no copy out). Its only use is the init product's pair.
+        let take = gpu::host_rungs(self.profile, self.contract, self.gpu_arms).carry_take;
+        let taken: Vec<ObjectId> = plan
+            .carries
+            .iter()
+            .filter(|_| take)
+            .filter_map(|c| {
+                let lp = self.ir.loop_plan(self.f, c.merge)?;
+                let a = self.pair_source(lp.init, c.k)?;
+                let enter = self
+                    .ir
+                    .in_edges(c.merge)
+                    .iter()
+                    .copied()
+                    .find(|&m| {
+                        self.ir
+                            .morphism(m)
+                            .is_some_and(|x| x.op == Operation::LoopEnter)
+                    })
+                    .and_then(|m| self.lup.position(m))?;
+                (self.is_view(lp.init, &[c.k])
+                    && self.ir.out_edges(a).len() == 1
+                    && self.ir.try_owner(a) == Some(self.f)
+                    && !self.lup.escapes(a)
+                    && self.lup.death(a).is_some_and(|d| d <= enter))
+                .then_some(a)
+            })
+            .collect();
         for c in outs {
             device.push(c);
-            let uses = if plan.is_carry_next(c) {
+            let uses = if plan.is_carry_next(c) || taken.contains(&c) {
                 vec![] // checked device-only when the carry was admitted
             } else {
                 self.uses(&sites, &cells, c, &[])
@@ -2825,6 +2927,33 @@ impl<'a> FnEmit<'a> {
             temps.push(s);
             ptrs.push(d);
         }
+        // caching-memory `retain-cell`: the whole map on the loop's first
+        // trip, its delta's cells after (in its own persisting buffer).
+        if let Some(r) = c.retain.clone()
+            && c.range.is_none()
+            && self
+                .resident
+                .as_ref()
+                .is_some_and(|p| !p.is_carry_next(target) && p.alias(target) == target)
+        {
+            let start = match r.delta {
+                mapal_ir::Delta::Rows { start, .. } | mapal_ir::Delta::Pieces { start, .. } => {
+                    Some(start)
+                }
+                mapal_ir::Delta::Top => None,
+            };
+            if let Some(start) = start
+                && let Some((wllt, t)) = self.load_whole(start.var)
+            {
+                self.emit_cell_retained(m, c, &r, &ptrs, (&wllt, &t, start));
+                self.dvalid.insert(target, ());
+                for t in temps {
+                    self.line(format!("call void @mapal_gpu_free(ptr {t})"));
+                }
+                self.cell_out(target, bytes, &ptrs[0]);
+                return;
+            }
+        }
         // `range-cell`: the interval met with `[0, n)` — its start and count
         // by value, one block row per 256 of its cells (at least one block).
         let gx_dyn = c.range.map(|ou| {
@@ -2865,6 +2994,7 @@ impl<'a> FnEmit<'a> {
             piece: 0,
             lanes: c.lanes,
             zero: 0,
+            clip: false,
         }
         .grid(c.n);
         let gx = gx_dyn.unwrap_or_else(|| gx.to_string());
@@ -2889,6 +3019,11 @@ impl<'a> FnEmit<'a> {
         for t in temps {
             self.line(format!("call void @mapal_gpu_free(ptr {t})"));
         }
+        self.cell_out(target, bytes, &ptrs[0]);
+    }
+
+    /// A cell's output copied out to the host unless the device keeps it.
+    fn cell_out(&mut self, target: ObjectId, bytes: u64, d: &str) {
         let keep = self
             .resident
             .as_ref()
@@ -2896,10 +3031,139 @@ impl<'a> FnEmit<'a> {
         if !keep {
             let h = self.slot(target).expect("cell output slot");
             self.line(format!(
-                "call void @mapal_gpu_d2h(ptr {h}, i64 {}, i64 0, i64 {bytes})",
-                ptrs[0]
+                "call void @mapal_gpu_d2h(ptr {h}, i64 {d}, i64 0, i64 {bytes})"
             ));
         }
+    }
+
+    /// One `launchv` of kernel `id` over `ptrs` (the output first), `gx`
+    /// blocks of `block` threads.
+    fn launch_cell(&mut self, id: u64, ptrs: &[String], gx: &str, block: u64) {
+        let args = format!("%dv{}", self.fresh());
+        let np = ptrs.len();
+        self.allocas
+            .push_str(&format!("  {args} = alloca [{np} x i64]\n"));
+        for (i, p) in ptrs.iter().enumerate() {
+            let g = self.tmp();
+            self.line(format!(
+                "{g} = getelementptr [{np} x i64], ptr {args}, i64 0, i64 {i}"
+            ));
+            self.line(format!("store i64 {p}, ptr {g}"));
+        }
+        self.line(format!(
+            "call void @mapal_gpu_launchv(i64 {}, i32 0, i32 {np}, ptr {args}, i32 {gx}, i32 1, i32 {block}, i32 0)",
+            id as i64
+        ));
+    }
+
+    /// caching-memory `retain-cell`: the loop's first trip (the flag
+    /// `retain_reset` clears at entry) launches the whole cell; every later
+    /// trip launches the delta kernel over the delta's cells met with `[0,
+    /// n)` — a row range, or the pieces from the first one inside (each
+    /// piece's cells past `n` clipped in the kernel) — nothing when none is.
+    fn emit_cell_retained(
+        &mut self,
+        m: MorphismId,
+        c: &Cell,
+        r: &RetainCell,
+        ptrs: &[String],
+        (wllt, t, start): (&str, &str, mapal_ir::Affine),
+    ) {
+        let target = self.ir.morphism(m).expect("cell").target;
+        let flag = self.retain_flag(target);
+        let valid = self.tmp();
+        self.line(format!("{valid} = load i1, ptr {flag}"));
+        let (one, whole, go, done) = (self.label(), self.label(), self.label(), self.label());
+        self.line(format!("br i1 {valid}, label %{one}, label %{whole}"));
+        self.label_line(&whole);
+        let geo = gpu::CellGeo {
+            range: None,
+            piece: 0,
+            lanes: c.lanes,
+            zero: 0,
+            clip: false,
+        };
+        let (gx, block) = geo.grid(c.n);
+        self.launch_cell(c.id, ptrs, &gx.to_string(), block);
+        self.line(format!("store i1 true, ptr {flag}"));
+        self.line(format!("br label %{done}"));
+        self.label_line(&one);
+        let s = self.affine_cell(wllt, t, &start);
+        let n = c.n;
+        let (lo, cnt) = match r.delta {
+            mapal_ir::Delta::Pieces { w, step, .. } => {
+                // The first piece at or past 0: j0 = ⌈−start / step⌉ when start < 0.
+                let (neg, ns, up, q, j0, js, first) = (
+                    self.tmp(),
+                    self.tmp(),
+                    self.tmp(),
+                    self.tmp(),
+                    self.tmp(),
+                    self.tmp(),
+                    self.tmp(),
+                );
+                self.line(format!("{neg} = icmp slt i64 {s}, 0"));
+                self.line(format!("{ns} = sub i64 0, {s}"));
+                self.line(format!("{up} = add i64 {ns}, {}", step - 1));
+                self.line(format!("{q} = udiv i64 {up}, {step}"));
+                self.line(format!("{j0} = select i1 {neg}, i64 {q}, i64 0"));
+                self.line(format!("{js} = mul i64 {j0}, {step}"));
+                self.line(format!("{first} = add i64 {s}, {js}"));
+                // Pieces starting inside: (n − 1 − first) ÷ step + 1.
+                let (lt, rest, k, k1, np, cnt) = (
+                    self.tmp(),
+                    self.tmp(),
+                    self.tmp(),
+                    self.tmp(),
+                    self.tmp(),
+                    self.tmp(),
+                );
+                self.line(format!("{lt} = icmp slt i64 {first}, {n}"));
+                self.line(format!("{rest} = sub i64 {}, {first}", n - 1));
+                self.line(format!("{k} = udiv i64 {rest}, {step}"));
+                self.line(format!("{k1} = add i64 {k}, 1"));
+                self.line(format!("{np} = select i1 {lt}, i64 {k1}, i64 0"));
+                self.line(format!("{cnt} = mul i64 {np}, {w}"));
+                (first, cnt)
+            }
+            mapal_ir::Delta::Rows { stride, .. } => {
+                let (neg, lo, e, big, hi, d, pos, cnt) = (
+                    self.tmp(),
+                    self.tmp(),
+                    self.tmp(),
+                    self.tmp(),
+                    self.tmp(),
+                    self.tmp(),
+                    self.tmp(),
+                    self.tmp(),
+                );
+                self.line(format!("{neg} = icmp slt i64 {s}, 0"));
+                self.line(format!("{lo} = select i1 {neg}, i64 0, i64 {s}"));
+                self.line(format!("{e} = add i64 {s}, {stride}"));
+                self.line(format!("{big} = icmp sgt i64 {e}, {n}"));
+                self.line(format!("{hi} = select i1 {big}, i64 {n}, i64 {e}"));
+                self.line(format!("{d} = sub i64 {hi}, {lo}"));
+                self.line(format!("{pos} = icmp sgt i64 {d}, 0"));
+                self.line(format!("{cnt} = select i1 {pos}, i64 {d}, i64 0"));
+                (lo, cnt)
+            }
+            mapal_ir::Delta::Top => unreachable!("a retained cell has a delta"),
+        };
+        let none = self.tmp();
+        self.line(format!("{none} = icmp eq i64 {cnt}, 0"));
+        self.line(format!("br i1 {none}, label %{done}, label %{go}"));
+        self.label_line(&go);
+        let (thr, blk, b1, gx) = (self.tmp(), self.tmp(), self.tmp(), self.tmp());
+        self.line(format!("{thr} = mul i64 {cnt}, {}", r.lanes));
+        self.line(format!("{blk} = add i64 {thr}, {}", gpu::NAIVE_THREADS - 1));
+        self.line(format!("{b1} = udiv i64 {blk}, {}", gpu::NAIVE_THREADS));
+        self.line(format!("{gx} = trunc i64 {b1} to i32"));
+        let mut args = ptrs.to_vec();
+        args.push(lo);
+        args.push(cnt);
+        self.launch_cell(r.id, &args, &gx, gpu::NAIVE_THREADS);
+        self.line(format!("br label %{done}"));
+        self.label_line(&done);
     }
 
     /// The device kernels of this function's cells, each with the functions
@@ -2985,6 +3249,7 @@ impl<'a> FnEmit<'a> {
                     piece: c.range.map_or(0, |ou| ou.w),
                     lanes: c.lanes,
                     zero: plan.zero_by.get(m).map_or(0, Vec::len),
+                    clip: false,
                 };
                 let mut facts = format!("nested={} work={work}", c.nested.len());
                 if let Some(ou) = c.range {
@@ -3038,6 +3303,7 @@ impl<'a> FnEmit<'a> {
                                 piece: 0,
                                 lanes: 1,
                                 zero: 0,
+                                clip: false,
                             },
                         );
                         (
@@ -3048,8 +3314,56 @@ impl<'a> FnEmit<'a> {
                             ),
                         )
                     });
+                // caching-memory `retain-cell`: the same cell over its delta.
+                let retained = c.retain.as_ref().map(|r| {
+                    let (step, w) = r.geo();
+                    // Its own lanes: the body's lane variant where the delta's
+                    // cells take a warp each.
+                    let mut fns = fns.clone();
+                    if r.lanes != c.lanes {
+                        let tree = self.ir.cell_plan(self.f).get(m).and_then(|s| s.tree);
+                        let lanes = (r.lanes > 1).then_some(tree).flatten().map(|(g, op, _)| {
+                            (self.ir.morphism(g).expect("fold").target, op, r.lanes)
+                        });
+                        let base = if vals.is_empty() {
+                            self.fnames[c.body].clone()
+                        } else {
+                            gpu::cell_variant(&self.fnames[c.body])
+                        };
+                        let name = if lanes.is_some() {
+                            gpu::lanes_variant(&base)
+                        } else {
+                            base
+                        };
+                        fns[0] = (name, self.body_text_with(c.body, vals.clone(), lanes));
+                    }
+                    let k = gpu::cell_kernel_text(
+                        r.id,
+                        &fns[0].0,
+                        c.n,
+                        &out,
+                        &arg,
+                        elem.as_deref(),
+                        &caps,
+                        gpu::CellGeo {
+                            range: Some(step),
+                            piece: w,
+                            lanes: r.lanes,
+                            zero: 0,
+                            clip: true,
+                        },
+                    );
+                    (
+                        fns,
+                        format!(
+                            "; mapal.cell nested={} work={work} retain={step}x{w}\n{k}",
+                            c.nested.len()
+                        ),
+                    )
+                });
                 std::iter::once((fns, kernel))
                     .chain(batch)
+                    .chain(retained)
                     .collect::<Vec<_>>()
             })
             .collect()
@@ -3204,6 +3518,16 @@ impl<'a> FnEmit<'a> {
         self.line(format!("{a_off} = mul i64 {a_cell}, {eb}"));
         let a_row = self.tmp();
         self.line(format!("{a_row} = add i64 {a}, {a_off}"));
+        // `retain-pieces`: the gathered rows land in their compact buffer
+        // (the caller places them).
+        if let Some(o_row) = self.row_out.clone() {
+            match self.site_table.take() {
+                Some(t) => self.site_call(t, &[a_row, b, o_row]),
+                None => self.line(call(&a_row, &b, &o_row)),
+            }
+            self.row_done = true;
+            return true;
+        }
         let o = self.dload(target);
         let o_off = self.tmp();
         self.line(format!("{o_off} = mul i64 {row}, {}", site.c * eb));
@@ -3650,6 +3974,8 @@ impl<'a> FnEmit<'a> {
                     }
                 }
                 retained += self.retain.contains_key(t) as usize;
+                // caching-memory `retain-cell`: a cell launched over its delta.
+                retained += p.cells.get(m).is_some_and(|c| c.retain.is_some()) as usize;
             }
         }
         (copy, h2d, d2h, retained)

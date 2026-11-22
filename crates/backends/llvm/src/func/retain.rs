@@ -32,8 +32,15 @@ pub(crate) struct Retained {
     /// The written row's first cell: `a·var + b`.
     pub start: Affine,
     pub stride: u64,
-    /// The same site, one row, `a` read from base 0 (the host offsets it).
+    /// The same site, one row, `a` read from base 0 (the host offsets it);
+    /// with `pieces`, the gathered rows (`rows` of them, `a`'s rows `step`
+    /// cells apart).
     pub row: TileSite,
+    /// caching-memory `retain-pieces`: `a` changes in one row every `step`
+    /// cells (`Delta::Pieces`, one row of each sequence) — `row` computes
+    /// those rows into a compact buffer, then they are placed `step / ci`
+    /// output rows apart.
+    pub pieces: Option<u64>,
 }
 
 /// Every tile site of `f` the rule fires on, keyed by the site's output.
@@ -49,8 +56,14 @@ pub(crate) fn retained_sites(
     if !on || profile.gpu().is_none() {
         return out;
     }
-    let deltas = ir.write_delta(f);
-    if !deltas.values().any(|d| matches!(d, Delta::Rows { .. })) {
+    // caching-memory: the trip deltas `unchanged_plan` derives (with
+    // `unchanged` off, `write_delta`'s alone).
+    let up = ir.unchanged_plan(f);
+    if !up
+        .trip
+        .values()
+        .any(|d| matches!(d, Delta::Rows { .. } | Delta::Pieces { .. }))
+    {
         return out;
     }
     let pair_src = |agg: ObjectId, k: u32| pair_source_ir(ir, agg, k);
@@ -91,35 +104,50 @@ pub(crate) fn retained_sites(
             ) else {
                 continue;
             };
-            // This loop's `Δ` of `a`: the carried array's own, or (S54) a
-            // `Same` image of it; the counter view names the loop.
-            let Some((stride, start)) = deltas.values().find_map(|d| match *d {
-                Delta::Rows {
-                    stride,
-                    start,
-                    next,
-                } if next == a && proj_source(ir, start.var) == Some(merge) => {
-                    Some((stride, start))
-                }
-                _ => None,
-            }) else {
-                continue;
+            // This loop's `Δ` of `a` (`unchanged_plan`: the carried array's
+            // own, or an image of it through row-local maps); the counter
+            // view names the loop.
+            let (stride, start, step) = match up.delta(a) {
+                Some(Delta::Rows { stride, start, .. }) => (stride, start, None),
+                Some(Delta::Pieces { w, step, start, .. }) => (w, start, Some(step)),
+                _ => continue,
             };
+            if up.loop_of.get(a) != Some(&merge) || proj_source(ir, start.var) != Some(merge) {
+                continue;
+            }
             let row_local = site.a.ksplit.is_none()
                 && site.b.ksplit.is_none()
+                && site.radix.is_none()
+                && site.post.is_none()
                 && site.a.clane == 0
                 && site.a.ci == stride
                 && site.k.saturating_sub(1) * site.a.ck < stride
                 && site.b.ci == 0;
-            // `w` is computed before the loop: no in-edge is a loop morphism.
-            let invariant = ir.in_edges(b).iter().all(|&e| !in_loop(e));
+            // `w` is computed before the loop (no in-edge is a loop
+            // morphism), or the same on every trip.
+            let invariant = ir.in_edges(b).iter().all(|&e| !in_loop(e)) || up.same_every_trip(b);
             if !row_local || !invariant || updated.contains(&morph.target) {
                 continue;
             }
+            // `Pieces`: the rows `step / ci` apart — one of them inside the
+            // site (a single sequence) is the one-row pass.
+            let pieces = match step {
+                Some(st) if st % stride != 0 => continue,
+                Some(st) => {
+                    let gathered = site.rows.div_ceil(st / stride);
+                    match gathered {
+                        0 | 1 => None,
+                        _ if !rungs.retain_pieces => continue,
+                        g => Some((st, g)),
+                    }
+                }
+                None => None,
+            };
             let row = TileSite {
-                rows: 1,
+                rows: pieces.map_or(1, |(_, g)| g),
                 a: TileRead {
                     base: 0,
+                    ci: pieces.map_or(site.a.ci, |(st, _)| st),
                     ..site.a.clone()
                 },
                 ..site.clone()
@@ -131,6 +159,7 @@ pub(crate) fn retained_sites(
                     start,
                     stride,
                     row,
+                    pieces: pieces.map(|(st, _)| st),
                 },
             );
         }
@@ -165,12 +194,21 @@ impl<'a> FnEmit<'a> {
                 .map(|(o, _)| o)
                 .collect()
         });
+        // caching-memory `retain-cell`: this loop's retained cells too.
+        let cells: Vec<ObjectId> = self.resident.as_ref().map_or_else(Vec::new, |p| {
+            p.cells
+                .iter()
+                .filter(|(_, c)| c.retain.as_ref().is_some_and(|r| r.merge == merge))
+                .filter_map(|(m, _)| self.ir.morphism(m).map(|x| x.target))
+                .collect()
+        });
         let ys: Vec<ObjectId> = self
             .retain
             .iter()
             .filter(|(_, r)| r.merge == merge)
             .map(|(y, _)| y)
             .chain(ups)
+            .chain(cells)
             .collect();
         for y in ys {
             let f = self.retain_flag(y);
@@ -220,8 +258,20 @@ impl<'a> FnEmit<'a> {
         let aligned = self.tmp();
         self.line(format!("{aligned} = icmp eq i64 {rem}, 0"));
         // Unsigned: a `rel` below zero reads as huge and fails this too.
+        // `retain-pieces`: every gathered row inside the site — the first
+        // below `rows − (g − 1)·rstep` (and none before it: the first piece
+        // is at the start, `rel < rstep` rows in).
+        let lim = match r.pieces {
+            Some(st) => {
+                let rstep = st / r.stride;
+                site.rows
+                    .saturating_sub((r.row.rows - 1) * rstep)
+                    .min(rstep)
+            }
+            None => site.rows,
+        };
         let inside = self.tmp();
-        self.line(format!("{inside} = icmp ult i64 {row}, {}", site.rows));
+        self.line(format!("{inside} = icmp ult i64 {row}, {lim}"));
         let placed = self.tmp();
         self.line(format!("{placed} = and i1 {aligned}, {inside}"));
         let part = self.tmp();
@@ -238,7 +288,9 @@ impl<'a> FnEmit<'a> {
         self.line(format!("br label %{done}"));
 
         self.label_line(&one);
-        if self.on_device(target) && gpu::gpu_site(&r.row, self.profile, true) {
+        if let Some(st) = r.pieces {
+            self.emit_pieces(source, target, site, r, st, &row);
+        } else if self.on_device(target) && gpu::gpu_site(&r.row, self.profile, true) {
             self.emit_tiled_map_gpu_row(source, target, site, &r.row, &row);
         } else {
             let lo = self.tmp();
@@ -251,5 +303,66 @@ impl<'a> FnEmit<'a> {
         }
         self.line(format!("br label %{done}"));
         self.label_line(&done);
+    }
+
+    /// `retain-pieces`: the gathered rows (`r.row`, `a` offset to the first
+    /// one) into a compact buffer of `g` rows, then placed at their stride
+    /// in the retained output; the whole site where that path is not open
+    /// (off the device, an operand off it).
+    fn emit_pieces(
+        &mut self,
+        source: ObjectId,
+        target: ObjectId,
+        site: &TileSite,
+        r: &Retained,
+        step: u64,
+        row: &str,
+    ) {
+        let eb = crate::profile::elem_bytes(&site.elem);
+        let (g, c) = (r.row.rows, site.c);
+        if !(self.on_device(target) && gpu::gpu_site(&r.row, self.profile, true)) {
+            self.emit_tiled_map_realize(source, target, site, None);
+            return;
+        }
+        let slot = format!("%d{}", self.fresh());
+        self.allocas.push_str(&format!(
+            "  {slot} = alloca i64\n  store i64 0, ptr {slot}\n"
+        ));
+        self.dallocs.push((slot.clone(), g * c * eb));
+        let scratch = self.tmp();
+        self.line(format!(
+            "{scratch} = call i64 @mapal_gpu_alloc(ptr {slot}, i64 {})",
+            g * c * eb
+        ));
+        self.row_out = Some(scratch.clone());
+        self.row_done = false;
+        self.emit_tiled_map_gpu_row(source, target, site, &r.row, row);
+        self.row_out = None;
+        if !self.row_done {
+            return; // it ran the whole site
+        }
+        let o = self.dload(target);
+        let off = self.tmp();
+        self.line(format!("{off} = mul i64 {row}, {}", c * eb));
+        let dst = self.tmp();
+        self.line(format!("{dst} = add i64 {o}, {off}"));
+        let rstep = step / r.stride;
+        self.line(format!(
+            "call void @mapal_gpu_copy2d(i64 {dst}, i64 {}, i64 {scratch}, i64 {}, i64 {}, i64 {g})",
+            rstep * c * eb,
+            c * eb,
+            c * eb
+        ));
+        let keep = self
+            .resident
+            .as_ref()
+            .is_some_and(|p| p.keep.contains_key(target));
+        if !keep {
+            let h = self.slot(target).expect("tile output slot");
+            self.line(format!(
+                "call void @mapal_gpu_d2h(ptr {h}, i64 {o}, i64 0, i64 {})",
+                site.rows * c * eb
+            ));
+        }
     }
 }

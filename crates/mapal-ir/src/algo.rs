@@ -18,6 +18,7 @@ mod bounds;
 mod linear;
 mod precision;
 mod radix;
+mod unchanged;
 pub use algebra::{
     DepLaw, FmaPair, FoldCombine, FoldCombinePlan, Regroup, RescaleArg, RowDep, StepAlgebra,
     StepFlags,
@@ -26,6 +27,7 @@ pub use bounds::BoundsProof;
 pub use linear::LinearSite;
 pub use precision::{PrecisionPlan, bound_coef, gamma};
 pub use radix::{AxisDigit, Digit, RadixAddr, RadixForm, RadixTile, uniform_at};
+pub use unchanged::UnchangedPlan;
 
 /// A non-trivial loop SCC and its merge objects (DESIGN §7; the backend
 /// capability predicate). One entry per non-trivial SCC.

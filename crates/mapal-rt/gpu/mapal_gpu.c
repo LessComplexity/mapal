@@ -325,14 +325,36 @@ static CUfunction kernel(const char *prefix, uint64_t id, uint32_t smem,
   return fn;
 }
 
+/* caching-memory: the device bytes the program holds (every cuMemAlloc
+ * less every cuMemFree) and their high-water mark — the program's peak
+ * device memory, the counterpart of torch.cuda.max_memory_allocated.
+ * MAPAL_GPU_PEAK=1 prints it at exit (`mapal_gpu_peak`). */
+static uint64_t live_bytes, peak_bytes, n_peak_allocs;
+static void peak_line(void) {
+  fprintf(stderr, "mapal_gpu_peak bytes=%llu mb=%.1f allocs=%llu\n",
+          (unsigned long long)peak_bytes, peak_bytes / 1048576.0,
+          (unsigned long long)n_peak_allocs);
+}
+
 static uint64_t dev_alloc(uint64_t *slot, uint64_t bytes, const char *op) {
   load_module();
   if (*slot)
     return *slot;
+  static int peak_env = -1;
+  if (peak_env < 0) {
+    const char *e = getenv("MAPAL_GPU_PEAK");
+    peak_env = e && atoi(e) > 0;
+    if (peak_env)
+      atexit(peak_line);
+  }
   double t0 = now_ms();
   CUdeviceptr d;
   CK(cuMemAlloc(&d, bytes));
   *slot = (uint64_t)d;
+  live_bytes += bytes;
+  n_peak_allocs++;
+  if (live_bytes > peak_bytes)
+    peak_bytes = live_bytes;
   double ms = now_ms() - t0;
   tot.alloc += ms;
   tot.n_alloc++;
@@ -396,6 +418,31 @@ void mapal_gpu_h2d(uint64_t d, const void *h, uint64_t bytes) {
   if (trace)
     fprintf(stderr, "mapal_gpu_trace op=h2d ms=%.3f bytes=%llu\n", ms,
             (unsigned long long)bytes);
+}
+
+/* caching-memory `retain-pieces`: `height` rows of `width` bytes from `src`
+ * (rows `spitch` apart) to `dst` (rows `dpitch` apart), device to device, on
+ * the legacy stream behind the kernel that wrote them. */
+void mapal_gpu_copy2d(uint64_t dst, uint64_t dpitch, uint64_t src,
+                      uint64_t spitch, uint64_t width, uint64_t height) {
+  load_module();
+  double t0 = now_ms();
+  CUDA_MEMCPY2D c;
+  memset(&c, 0, sizeof c);
+  c.srcMemoryType = CU_MEMORYTYPE_DEVICE;
+  c.srcDevice = (CUdeviceptr)src;
+  c.srcPitch = spitch;
+  c.dstMemoryType = CU_MEMORYTYPE_DEVICE;
+  c.dstDevice = (CUdeviceptr)dst;
+  c.dstPitch = dpitch;
+  c.WidthInBytes = width;
+  c.Height = height;
+  CK(cuMemcpy2DAsync(&c, streams[0]));
+  legacy_ops++;
+  last_kernel[0] = 0;
+  if (trace)
+    fprintf(stderr, "mapal_gpu_trace op=copy2d ms=%.3f bytes=%llu\n",
+            now_ms() - t0, (unsigned long long)(width * height));
 }
 
 /* S63 `splitk-atomic` / `streamk` (ADR-0040 D4): zero `bytes` of the device
@@ -878,6 +925,13 @@ void mapal_gpu_free(uint64_t *slot) {
   if (chains_busy) {
     CK(cuCtxSynchronize());
     chains_busy = 0;
+  }
+  {
+    CUdeviceptr base;
+    size_t size = 0;
+    if (cuMemGetAddressRange(&base, &size, (CUdeviceptr)*slot) == CUDA_SUCCESS &&
+        size <= live_bytes)
+      live_bytes -= size;
   }
   CK(cuMemFree((CUdeviceptr)*slot));
   *slot = 0;

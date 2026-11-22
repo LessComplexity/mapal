@@ -256,7 +256,7 @@ impl<'a> FnEmit<'a> {
     /// a cell (not a batched write) or a unit launch.
     fn zero_kernel(&self, plan: &ResidentPlan, e: MorphismId) -> Option<(u64, usize)> {
         if let Some(c) = plan.cells.get(e) {
-            if plan.batch.iter().any(|b| b.writes.iter().any(|w| w.0 == e)) {
+            if c.retain.is_some() || plan.batch.iter().any(|b| b.writes.iter().any(|w| w.0 == e)) {
                 return None;
             }
             let cells = match c.range {

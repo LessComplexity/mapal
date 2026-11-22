@@ -405,6 +405,11 @@ pub(crate) struct FnEmit<'a> {
     /// flags.
     retain: SecondaryMap<ObjectId, retain::Retained>,
     retain_flags: SecondaryMap<ObjectId, String>,
+    /// caching-memory `retain-pieces`: the row pass stores its rows here
+    /// (a compact buffer) instead of at their place in the output.
+    row_out: Option<String>,
+    /// The row pass launched (into `row_out`).
+    row_done: bool,
     /// A retained site's restricted host pass: `bulk_bounds` answers this row.
     row_bounds: Option<(String, String)>,
     /// S54 `epilogue` (R1): per-cell morphisms evaluated in a device site's

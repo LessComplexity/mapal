@@ -166,6 +166,9 @@ def llm_workload(stem, mode):
                 x = step(torch.tensor(t, device=dev), x, t if sdpa and 'compile' not in mode else None)
             return x
         return run, ('step', step)
+    m = re.fullmatch(r'p[tx]_llm_kv([xn])(_blkdec)?_b(\d+)_l(\d+)', stem)
+    if m:
+        return llm_kv_workload(P, stem, mode, m.group(2) is not None, int(m.group(3)), int(m.group(4)), dt, sdpa)
     m = re.fullmatch(r'p[tx]_llm_(pre|preg|blkpre)_t(\d+)', stem)
     if m:
         ffn, T = m.group(1) == 'blkpre', int(m.group(2))
@@ -194,6 +197,76 @@ def llm_workload(stem, mode):
             return llm_ffn(w, h1) if ffn else h1
         return layer, (w['x0'], w)
     raise LookupError(f'no llm workload for {stem}')
+
+
+def llm_kv_workload(P, stem, mode, ffn, B, L, dt, sdpa):
+    """caching-memory (gen_tiles.py `llm_decode_kv`): S decode steps over a history `hx0` of L positions a sequence,
+    the steps writing positions L - S + t. HF-style (`eager` / `compile` / `sdpa` / `bf16*`): K and V of the history
+    computed once into a cache, each step appends its row (`index_copy_`). `naive` / `naive-compile`: no cache — each
+    step writes its input into the history and recomputes RMSNorm, the fused projection (Q, K, V for every position)
+    and RoPE over all of it, as the `kvn` program writes it. Both return the last step's output."""
+    D, H, Hk, dh = P['D'], P['H'], P['Hk'], P['dh']
+    G, KD, NQ, half = H // Hk, Hk * dh, (H + 2 * Hk) * dh, dh // 2
+    S = 3 if stem.startswith('px_') else LLM_STEPS
+    naive = mode.startswith('naive')
+    w = llm_tensors(P, B, L, 0, ffn, dt)
+    w['hx0'] = llm_law(B * L * D, 'p', lambda v: v / 29.0).to(dt).view(B, L, D)
+    F_ = torch.nn.functional
+    pos = torch.arange(L, device=dev)
+    cL, sL = w['cs'].view(1, L, 1, half), w['sn'].view(1, L, 1, half)
+
+    def attend(q, k, v, p, ti):  # q [B, H, dh]; k, v [B, L, Hk, dh]
+        if sdpa and ti is not None:
+            n = ti + L - S + 1
+            return F_.scaled_dot_product_attention(q.view(B, H, 1, dh), k[:, :n].transpose(1, 2),
+                                                   v[:, :n].transpose(1, 2), enable_gqa=True)
+        if sdpa:
+            return F_.scaled_dot_product_attention(q.view(B, H, 1, dh), k.transpose(1, 2), v.transpose(1, 2),
+                                                   attn_mask=(pos <= p).view(1, 1, 1, L), enable_gqa=True)
+        sc = torch.einsum('bkgd,blkd->bkgl', q.view(B, Hk, G, dh), k) / dh ** 0.5
+        pr = torch.softmax(sc.masked_fill(pos > p, float('-inf')), -1)
+        return torch.einsum('bkgl,blkd->bkgd', pr, v)
+
+    if naive:
+        def step(t, x, hx, ti=None):  # the history updated in place: its row p is the step's input
+            p = t + (L - S)
+            pv = p.view(1)
+            hx.index_copy_(1, pv, x.view(B, 1, D))
+            qkv = llm_rms(hx, w['g1']) @ w['wqkv']                                   # [B, L, NQ]
+            k = llm_rope(qkv[..., D:D + KD].view(B, L, Hk, dh), cL, sL)
+            v = qkv[..., D + KD:].view(B, L, Hk, dh)
+            c, s_ = w['cs'].index_select(0, pv), w['sn'].index_select(0, pv)
+            q = llm_rope(qkv.index_select(1, pv)[:, 0, :D].view(B, H, dh), c, s_)
+            h1 = x + attend(q, k, v, p, ti).reshape(B, D) @ w['wo']
+            return llm_ffn(w, h1) if ffn else h1
+
+        def run(step):
+            hx, x = w['hx0'].clone(), w['x0']
+            for t in range(S):
+                x = step(torch.tensor(t, device=dev), x, hx, t if sdpa and 'compile' not in mode else None)
+            return x
+        return run, ('step', step)
+
+    def step(t, x, kc, vc, ti=None):
+        p = t + (L - S)
+        pv = p.view(1)
+        qkv = llm_rms(x, w['g1']) @ w['wqkv']
+        c, s_ = w['cs'].index_select(0, pv), w['sn'].index_select(0, pv)
+        q = llm_rope(qkv[:, :D].view(B, H, dh), c, s_)
+        kc.index_copy_(1, pv, llm_rope(qkv[:, D:D + KD].view(B, Hk, dh), c, s_).view(B, 1, Hk, dh))
+        vc.index_copy_(1, pv, qkv[:, D + KD:].view(B, 1, Hk, dh))
+        h1 = x + attend(q, kc, vc, p, ti).reshape(B, D) @ w['wo']
+        return llm_ffn(w, h1) if ffn else h1
+
+    def run(step):  # the history's K and V once (the cache), then the steps
+        kv = llm_rms(w['hx0'], w['g1']) @ w['wqkv'][:, D:]
+        kc = llm_rope(kv[..., :KD].view(B, L, Hk, dh), cL, sL).contiguous()
+        vc = kv[..., KD:].reshape(B, L, Hk, dh).contiguous()
+        x = w['x0']
+        for t in range(S):
+            x = step(torch.tensor(t, device=dev), x, kc, vc, t if sdpa and 'compile' not in mode else None)
+        return x
+    return run, ('step', step)
 
 
 def llm_vals(stem, out):
@@ -479,12 +552,18 @@ def main():
         scale = llm or base.startswith('pt_pj_')
         if llm:
             modes += ['sdpa'] + (['sdpa-tf32'] if 'tf32' in stem else [])
+        # caching-memory: the naive twin's torch legs recompute the history (no cache); the explicit twin's keep one.
+        if '_llm_kvn' in base:
+            modes = ['naive', 'naive-compile']
+        if '_llm_kvx' in base:
+            modes = ['eager', 'compile', 'sdpa']
         # long-rows: the attention rows against SDPA, the long softmax rows against torch.softmax (both exact exp).
         sdpa_ref = base.startswith(('pt_attn_', 'pt_lsm_'))
         if sdpa_ref:
             modes += ['sdpa', 'sdpa-compile']
         if scale:
-            modes = [m for m in modes if m.endswith('-tf32')] if 'tf32' in stem else modes + ['bf16', 'bf16-compile']
+            modes = ([m for m in modes if m.endswith('-tf32')] if 'tf32' in stem
+                     else modes + ([] if '_llm_kvn' in base else ['bf16', 'bf16-compile']))
         # TORCH_MODES=<mode,...> keeps only those legs (a CUPTI trace of one leg).
         keep = [m for m in os.environ.get('TORCH_MODES', '').split(',') if m]
         modes = [m for m in modes if not keep or m in keep]
@@ -494,6 +573,9 @@ def main():
             torch.backends.cudnn.allow_tf32 = tf
             tol = 5e-2 if mode.startswith('bf16') else 1e-2 if scale and tf else 1e-3
             try:
+                if dev == 'cuda':  # caching-memory: the leg's peak device bytes, its tensors included
+                    torch.cuda.synchronize()
+                    torch.cuda.reset_peak_memory_stats()
                 fn, args = workload(base, mode) if scale or sdpa_ref else (fn, args)
                 t0 = time.perf_counter()
                 comp_mode = 'compile' in mode
@@ -508,8 +590,9 @@ def main():
                 ok, dv = gate(stem, outs, vals_dir, tol)
                 ts = timed(f, a, reps, flush)
                 vals = llm_vals(base, outs) if llm else ends(outs)
+                peak = torch.cuda.max_memory_allocated() / 2 ** 20 if dev == 'cuda' else float('nan')
                 print(f'torch prog={stem} mode={mode} n={len(ts)} min_ms={ts[0]:.4f} med_ms={ts[len(ts) // 2]:.4f} '
-                      f'max_ms={ts[-1]:.4f} within={ok} maxdev={dv:.3e} compile_s={comp:.1f} '
+                      f'max_ms={ts[-1]:.4f} within={ok} maxdev={dv:.3e} compile_s={comp:.1f} peak_mb={peak:.1f} '
                       f'values={",".join(f"{v:.6g}" for v in vals)}', flush=True)
             except Exception as ex:  # noqa: BLE001 — one leg's failure is a row, not the session
                 print(f'torch prog={stem} mode={mode} FAILED {type(ex).__name__}: {str(ex)[:200]}', flush=True)
