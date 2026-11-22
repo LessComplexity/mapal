@@ -66,11 +66,12 @@ INTENT = {
          'mixed-radix tile`s digit copies), a 4-element vector (LDG.64, the register-staged tile, never LDG.128), or '
          'copied by cp.async (LDGSTS: `narrow-async`)',
          "sass.hot.ldg16 > 0 if plan.kind == 'naive' or 'radix' in plan else "
-         "sass.hot.ldgsts > 0 if plan.stages >= 2 else sass.hot.ldg64 > 0"),
+         "sass.ldgsts > 0 if plan.stages >= 2 else sass.hot.ldg64 > 0"),
         ('a narrow panel is register-staged (no cp.async, LDGSTS) unless the tile streams it (`stages` >= 2: '
          'tensor-cores `narrow-async`)', "plan.kind == 'naive' or plan.stages >= 2 or sass.hot.ldgsts == 0"),
-        ('the products are f32 (FFMA, or FMUL + FADD on a separate-step face): the widened values exact',
-         'sass.hot.ffma + sass.hot.fmul > 0'),
+        ('the products are f32 (FFMA, or FMUL + FADD on a separate-step face): the widened values exact — or, under '
+         'a 16-bit member (`half-tile`), the tensor core`s exact products (HMMA)',
+         "sass.hot.ffma + sass.hot.fmul > 0 if plan.kind != 'mma' else sass.hmma > 0"),
         ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')]),
     'module': dict(applies="plan.kind != 'gen'", on=[
         ('every kernel in the device module is launched by the host', 'mod.launched > 0')]),
@@ -407,7 +408,8 @@ INTENT = {
     # tensor-cores `narrow-async`: a streamed (`stages` >= 2) FMA tile over a narrow `b` copies its panel in the
     # format (8-byte LDGSTS, 4 elements) and widens each fragment as read. OFF: the register-staged tile.
     'narrow-async': dict(applies_on="plan.kind == 'tile' and 'narrow' in plan and plan.stages >= 2", on=[
-        ('the narrow panel streams: LDGSTS in the hot loop, no LDG', 'sass.hot.ldgsts > 0 and sass.hot.ldg == 0'),
+        ('the narrow panel streams: LDGSTS in the kernel (issued in the panel loop, outside the k steps), no LDG in '
+         'the k steps', 'sass.ldgsts > 0 and sass.hot.ldg == 0'),
         ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')]),
     # tensor-cores `staged-regs`: no register-staged FMA tile whose panel and tile exceed the thread's registers —
     # every shipped and candidate tile stays in registers.

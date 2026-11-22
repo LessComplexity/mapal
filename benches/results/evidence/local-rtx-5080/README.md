@@ -156,6 +156,15 @@ copied), operand bytes per format in the cost model; every non-narrow program em
 model-scale decode rows with bf16 weights: 0.59–0.98× the f32 program (B1 L2048 0.149 ms/step against torch bf16-compile's
 0.143; projections at half their bytes, CUPTI), the remaining gap attention over an f32 cache; 16-bit `mma` and fp8 open.
 
+**tensor-cores** (`tensor-cores.md`): ADR-0043 slice 2 — `: bf16 | f32` / `: f16 | f32` compute members (D3's bound
+with `u_t` 2⁻⁸ / 2⁻¹¹); matrix instructions as capability geometry (`Caps::matrix`: shape, operand format, operand and
+accumulator homes, the accumulator measured — `mma_calib.cu`: every warp format truncates, so `{f32}` never takes a
+tensor core); `mma.sync.m16n8k16` bf16 / f16 tiles (`cp.async` panels in storage format, `ldmatrix`, f32 accumulate):
+projections at m ≥ 128 1.6–2.7× the FMA tile, 1.17–1.47× cuBLASLt bf16; prefill bf16 projections 2.4–2.7×; the bf16 KV
+cache as mixed-radix tile sites (`narrow-radix`): B ≥ 8 decode −13–26 %, 1.36–1.81× torch bf16 (was 1.6–2.5×);
+`narrow-async`, `staged-regs` (the block decode's 216–244 B spills gone), a host frame-size fix for narrow arrays. fp8
+types, the 16-bit tile over radix sites and split-k open.
+
 **long-prefill** (`long-prefill.md`): cross-arch gap items 1–2. The fact that kept the 8192-token prefill per-cell was
 `tile_plan_radix` refusing an address term on any map capture but the cell index — the KV-group loop's counter `g`
 (every index fit `i32` and was proven in bounds). `uniform-base` gives such terms a digit form checked at the capture's

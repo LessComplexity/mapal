@@ -129,12 +129,18 @@ they always read. `precision_plan.narrow` (D3). OFF arm: `--gpu-off=narrow-tile`
   both operands are f16 storage under `: f16 | f32` (an f32 operand is never rounded to f16: no value-range fact yet);
   the order-free face only (exact / fixed faces keep the oracle's f32 products). The 16-bit tile caps its warp rows at
   the site's (decode's 32 rows) and lets shared memory bound its residency. OFF: `--gpu-off=half-tile`.
+- **A narrow KV cache (`narrow-radix`, a fact arm).** `tile_plan_radix` reads the exact widening of a narrow element:
+  attention's scores and `P·V` over a `bf16` cache are mixed-radix tile sites (2-byte digit copies, widened), not
+  per-cell kernels. OFF: `--gpu-off=narrow-radix`.
 - **Narrow panels by `cp.async` (`narrow-async`).** The FMA tile streams a narrow `b` panel in its format (8-byte
   `cp.async` of 4 elements, LDGSTS.E.64) and widens each fragment as read (LDS.64 + PRMT), on the `cp.async` path the
   rules or a table candidate pick. OFF: the register-staged tile.
-- **The register budget (`staged-regs`).** A register-staged FMA tile whose panel (`(bm + bn)·bk / threads`) and tile
-  exceed the thread's registers is refused (the block decode's one-row narrow sites at 516 registers): no shipped or
-  candidate kernel of the bundle spills. OFF: `--gpu-off=staged-regs`.
+- **The register budget (`staged-regs`).** A register-staged FMA tile whose panel alone (`(bm + bn)·bk / threads`)
+  exceeds the thread's registers is refused (the block decode's one-row narrow sites at 516 registers: 216–244 B
+  spilled; ptxas shares the tile's registers with a panel inside the file). 4–36 B spills of 8 × 8 candidate tiles
+  remain. OFF: `--gpu-off=staged-regs`.
+- **Measured** (`benches/results/evidence/local-rtx-5080/tensor-cores.md`): projections at m ≥ 128 1.6–2.7× the FMA
+  tile (1.17–1.47× cuBLASLt bf16); a bf16 KV cache −13–26 % at B ≥ 8 decode (1.36–1.81× torch bf16).
 - **Open.** fp8 storage types (`f8e4m3`, `f8e5m2`, saturating `to_f8*`) and their `m16n8k32` realization; `wgmma` 16-bit
   emission; swap-AB (`cᵀ = bᵀ·aᵀ`) for sites below 16 rows; the 16-bit tile over radix (attention head) sites; split-k
   for the 16-bit tile; an f32 `a` panel rounded to bf16 as it is staged (half the shared memory, `ldmatrix`).
