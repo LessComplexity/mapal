@@ -288,6 +288,26 @@ struct Cover {
     runs: usize,
 }
 
+impl Cover {
+    fn add(&mut self, d: &Cover) {
+        self.programs += d.programs;
+        self.groups += d.groups;
+        self.members += d.members;
+        self.wide += d.wide;
+        self.cells += d.cells;
+        self.units += d.units;
+        self.tiles += d.tiles;
+        self.branchy += d.branchy;
+        self.tables += d.tables;
+        self.padded += d.padded;
+        self.refused += d.refused;
+        self.loops += d.loops;
+        self.straight += d.straight;
+        self.fewer += d.fewer;
+        self.runs += d.runs;
+    }
+}
+
 /// Over generated programs (`hz_prog_strategy`): the OFF arm has no merged
 /// launch; ON, every pick of the merged tables, free-running and serialized
 /// in thread order and reverse, equals the interpreter (within the default
@@ -302,14 +322,16 @@ fn horizontal_on_generated_programs() {
     };
     let mut runner = TestRunner::deterministic();
     let strat = testgen::hz_prog_strategy();
-    let mut cv = Cover::default();
     let n: usize = std::env::var("MAPAL_TESTGEN_N")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(120);
-    for z in 0..n {
-        let p = strat.new_tree(&mut runner).unwrap().current();
-        let src = testgen::hz_src(&p);
+    let progs: Vec<testgen::HzProg> = (0..n)
+        .map(|_| strat.new_tree(&mut runner).unwrap().current())
+        .collect();
+    let covers = testgen::par_check(&progs, |z, p| {
+        let mut cv = Cover::default();
+        let src = testgen::hz_src(p);
         let ir = lower(&src);
         let rr = run(&ir, 4_000_000_000);
         assert!(matches!(rr.outcome, Outcome::Done(_)), "#{z}\n{src}");
@@ -323,7 +345,7 @@ fn horizontal_on_generated_programs() {
         let groups = n("groups");
         if groups == 0 {
             assert_eq!(strip(&on.text), strip(&off.text), "#{z}");
-            continue;
+            return cv;
         }
         cv.groups += groups;
         cv.members += n("members");
@@ -354,7 +376,13 @@ fn horizontal_on_generated_programs() {
             emu::build_emulated(&clang, &off.text, off.device.as_deref().unwrap()),
         );
         for pick in ["0", "1", "3", "7"] {
-            let (a, ea) = eon.run(&[("MAPAL_GPU_PICK", pick)]);
+            let runs = eon.run_each(&[
+                [("MAPAL_GPU_PICK", pick), ("MAPAL_EMU_SERIAL", "0")],
+                [("MAPAL_GPU_PICK", pick), ("MAPAL_EMU_SERIAL", "1")],
+                [("MAPAL_GPU_PICK", pick), ("MAPAL_EMU_SERIAL", "2")],
+                [("MAPAL_GPU_PICK", pick), ("MAPAL_EMU_REVERSE", "1")],
+            ]);
+            let (a, ea) = &runs[0];
             let (b, eb) = eoff.run(&[("MAPAL_GPU_PICK", pick)]);
             assert!(
                 within(&a, &rr.output),
@@ -365,20 +393,24 @@ fn horizontal_on_generated_programs() {
                 within(&a, &b),
                 "#{z} pick {pick}: ON {a:?} OFF {b:?}\n{src}"
             );
-            assert!(launches(&ea) <= launches(&eb), "#{z} pick {pick}");
-            cv.fewer += usize::from(launches(&ea) < launches(&eb));
-            for mode in ["1", "2"] {
-                let (s, _) = eon.run(&[("MAPAL_GPU_PICK", pick), ("MAPAL_EMU_SERIAL", mode)]);
+            assert!(launches(ea) <= launches(&eb), "#{z} pick {pick}");
+            cv.fewer += usize::from(launches(ea) < launches(&eb));
+            for (mode, (s, _)) in ["1", "2"].iter().zip(&runs[1..3]) {
                 assert!(
-                    within(&s, &rr.output),
+                    within(s, &rr.output),
                     "#{z} pick {pick} serial {mode}\n{src}"
                 );
             }
             // A grid's blocks in reverse: two members sharing bytes race.
-            let (r, _) = eon.run(&[("MAPAL_GPU_PICK", pick), ("MAPAL_EMU_REVERSE", "1")]);
-            assert!(within(&r, &rr.output), "#{z} pick {pick} reverse\n{src}");
+            let (r, _) = &runs[3];
+            assert!(within(r, &rr.output), "#{z} pick {pick} reverse\n{src}");
             cv.runs += 1;
         }
+        cv
+    });
+    let mut cv = Cover::default();
+    for d in &covers {
+        cv.add(d);
     }
     eprintln!("horizontal_on_generated_programs: {cv:?}");
     assert!(

@@ -7,8 +7,9 @@ use std::sync::{Condvar, Mutex, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
 /// Child processes (clang, test binaries) this test binary runs at once, across
-/// all of its tests: half the cores left after the two CLAUDE.md keeps free
-/// (a child runs a 2-lane pool), or `MAPAL_TEST_JOBS`.
+/// all of its tests: a quarter of the CPUs this process may run on (a child
+/// runs a 2-lane pool, an emulated block's threads beside it; at half the
+/// CPUs the 32-CPU pin ran its cores at 89–93 C), or `MAPAL_TEST_JOBS`.
 ///
 /// Unbounded, each sweep ran `available_parallelism` workers, each starting a
 /// binary whose runtime pool was itself `available_parallelism` wide: 14 × 14
@@ -23,8 +24,8 @@ pub fn job_slots() -> usize {
             .and_then(|v| v.parse().ok())
             .filter(|&n| n >= 1)
             .unwrap_or_else(|| {
-                let cores = std::thread::available_parallelism().map_or(4, |n| n.get());
-                (cores.saturating_sub(2) / 2).max(1)
+                let cpus = std::thread::available_parallelism().map_or(4, |n| n.get());
+                (cpus / 4).max(1)
             })
     })
 }
@@ -265,6 +266,25 @@ impl Emulated {
             String::from_utf8_lossy(&out.stdout).into_owned(),
             String::from_utf8_lossy(&out.stderr).into_owned(),
         )
+    }
+
+    /// [`Emulated::run`] once per environment (the emulator's modes), the
+    /// runs side by side — each holds one of [`job_slots`] — their stdout
+    /// and stderr in `envs`' order.
+    #[allow(dead_code)]
+    pub fn run_each<'e, E>(&self, envs: &[E]) -> Vec<(String, String)>
+    where
+        E: AsRef<[(&'e str, &'e str)]> + Sync,
+    {
+        std::thread::scope(|s| {
+            let hs: Vec<_> = envs
+                .iter()
+                .map(|e| s.spawn(move || self.run(e.as_ref())))
+                .collect();
+            hs.into_iter()
+                .map(|h| h.join().unwrap_or_else(|p| std::panic::resume_unwind(p)))
+                .collect()
+        })
     }
 }
 

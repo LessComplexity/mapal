@@ -67,6 +67,15 @@ static _Thread_local int32_t tid_x;
 enum { S_RUN, S_BAR, S_WARP, S_DONE, S_BARK, S_PARK };
 static int s_mode = -1, s_turn;
 static unsigned char s_st[1024], s_bid[1024];
+/* One condition per thread: a hand-off wakes the one thread the turn goes to.
+ * (One shared broadcast woke every waiting thread of the block per hand-off —
+ * b_n^2 wake-ups a phase, the serialized modes' whole cost at 256 threads.) */
+static pthread_cond_t s_cv[1024] = {[0 ... 1023] = PTHREAD_COND_INITIALIZER};
+/* The turn to `t` (lock held; -1: nobody). */
+static void s_give(int t) {
+  s_turn = t;
+  if (t >= 0) pthread_cond_signal(&s_cv[t]);
+}
 static unsigned s_bar, s_warp[32], s_bark[16];
 static int serial(void) {
   if (s_mode < 0) {
@@ -97,11 +106,10 @@ static void s_pass(int t) {
     fprintf(stderr, "emu: serial block deadlocked (a barrier not every thread reaches)\n");
     exit(104);
   }
-  s_turn = next;
-  pthread_cond_broadcast(&b_cv);
+  s_give(next);
 }
 static void s_wait(void) {
-  while (s_turn != tid_x) pthread_cond_wait(&b_cv, &b_mu);
+  while (s_turn != tid_x) pthread_cond_wait(&s_cv[tid_x], &b_mu);
 }
 static void s_start(unsigned n) {
   b_n = n;
@@ -109,7 +117,7 @@ static void s_start(unsigned n) {
   memset(s_warp, 0, sizeof s_warp);
   memset(s_bark, 0, sizeof s_bark);
   memset(s_st, S_RUN, n);
-  s_turn = s_first();
+  s_give(s_first());
 }
 static void s_end(void) {
   pthread_mutex_lock(&b_mu);
@@ -129,8 +137,7 @@ static void s_meet_n(int warp, unsigned n) {
   if (++*c == hi - lo) {
     *c = 0;
     for (unsigned u = lo; u < hi; u++) s_st[u] = S_RUN;
-    s_turn = s_first();
-    pthread_cond_broadcast(&b_cv);
+    s_give(s_first());
   } else {
     s_pass(t);
   }
@@ -149,8 +156,7 @@ static void s_meet_k(int id, unsigned n) {
     s_bark[id] = 0;
     for (unsigned u = 0; u < b_n; u++)
       if (s_st[u] == S_BARK && s_bid[u] == id) s_st[u] = S_RUN;
-    s_turn = s_first();
-    pthread_cond_broadcast(&b_cv);
+    s_give(s_first());
   } else {
     s_pass(t);
   }

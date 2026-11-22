@@ -27,6 +27,101 @@ use mapal_interp::RValue;
 use mapal_ir::{CategoryIr, Dest, FuncId, FuncKind, IrBuilder, Operation, SourceLoc, Ty, Value};
 use proptest::prelude::*;
 
+/// Generated programs a test binary checks at once, across its tests:
+/// `MAPAL_TESTGEN_JOBS`, default a quarter of the CPUs this process may run
+/// on (CLAUDE.md's thermal rule: each check starts children of its own —
+/// clang, emulated programs — which the backend tests bound per binary by
+/// `emu::job_slots`).
+pub fn jobs() -> usize {
+    static N: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *N.get_or_init(|| {
+        std::env::var("MAPAL_TESTGEN_JOBS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .filter(|&n| n >= 1)
+            .unwrap_or_else(|| {
+                (std::thread::available_parallelism().map_or(4, |n| n.get()) / 4).max(1)
+            })
+    })
+}
+
+/// Programs being checked in this test binary, across its tests (at most
+/// [`jobs`]).
+static CHECKING: (std::sync::Mutex<usize>, std::sync::Condvar) =
+    (std::sync::Mutex::new(0), std::sync::Condvar::new());
+
+/// One of the binary's [`jobs`] program slots, held while a program is
+/// checked: tests running side by side (`RUST_TEST_THREADS`) share them.
+struct Checking;
+
+impl Checking {
+    fn take() -> Checking {
+        let (m, cv) = &CHECKING;
+        let n = m.lock().unwrap_or_else(|e| e.into_inner());
+        let mut n = cv
+            .wait_while(n, |n| *n >= jobs())
+            .unwrap_or_else(|e| e.into_inner());
+        *n += 1;
+        Checking
+    }
+}
+
+impl Drop for Checking {
+    fn drop(&mut self) {
+        let (m, cv) = &CHECKING;
+        *m.lock().unwrap_or_else(|e| e.into_inner()) -= 1;
+        cv.notify_one();
+    }
+}
+
+/// `check(i, &items[i])` for every item, at most [`jobs`] programs at once in
+/// the whole test binary, each worker taking the next index not yet started
+/// (a slow program holds no others behind it). The items are drawn before the
+/// call, from the test's deterministic runner, so the programs are the serial
+/// run's; the results come back in index order, so every counter summed over
+/// them is the serial run's at any job count. A failing check stops new ones
+/// from starting; once the running ones end, the lowest-index failure is
+/// raised again (`#i` named on stderr).
+pub fn par_check<T: Sync, R: Send>(items: &[T], check: impl Fn(usize, &T) -> R + Sync) -> Vec<R> {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering::Relaxed};
+    let (next, stop) = (AtomicUsize::new(0), AtomicBool::new(false));
+    let done: Vec<std::sync::Mutex<Option<std::thread::Result<R>>>> =
+        items.iter().map(|_| Default::default()).collect();
+    std::thread::scope(|s| {
+        for _ in 0..jobs().min(items.len()) {
+            s.spawn(|| {
+                while !stop.load(Relaxed) {
+                    let _slot = Checking::take();
+                    if stop.load(Relaxed) {
+                        break;
+                    }
+                    let i = next.fetch_add(1, Relaxed);
+                    let Some(item) = items.get(i) else {
+                        break;
+                    };
+                    let r =
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| check(i, item)));
+                    stop.fetch_or(r.is_err(), Relaxed);
+                    *done[i].lock().unwrap_or_else(|e| e.into_inner()) = Some(r);
+                }
+            });
+        }
+    });
+    let mut out = Vec::with_capacity(items.len());
+    for (i, d) in done.into_iter().enumerate() {
+        match d.into_inner().unwrap_or_else(|e| e.into_inner()) {
+            Some(Ok(r)) => out.push(r),
+            Some(Err(e)) => {
+                eprintln!("generated program #{i} of {} failed", items.len());
+                std::panic::resume_unwind(e)
+            }
+            // Never started: a lower index failed first.
+            None => {}
+        }
+    }
+    out
+}
+
 thread_local! {
     /// Monotonic source-position counter, reset at the top of [`build`].
     static NEXT_LOC: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };

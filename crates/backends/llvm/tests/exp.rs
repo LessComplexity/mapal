@@ -194,23 +194,7 @@ fn exact_face_bytes_and_default_bound_on_generated_programs() {
                 .current()
         })
         .collect();
-    let counts: Vec<[u64; 6]> = std::thread::scope(|sc| {
-        let hs: Vec<_> = progs
-            .chunks(progs.len().div_ceil(emu::job_slots()))
-            .map(|chunk| {
-                let clang = clang.clone();
-                sc.spawn(move || {
-                    chunk
-                        .iter()
-                        .map(|p| check_exp(&clang, p))
-                        .collect::<Vec<_>>()
-                })
-            })
-            .collect();
-        hs.into_iter()
-            .flat_map(|h| h.join().expect("worker"))
-            .collect()
-    });
+    let counts = testgen::par_check(&progs, |_, p| check_exp(&clang, p));
     let mut c = [0u64; 6];
     for k in counts {
         for i in 0..6 {

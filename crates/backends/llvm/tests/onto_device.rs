@@ -377,8 +377,7 @@ fn check_onto(clang: &str, i: usize, p: &testgen::OntoProg) -> Vec<(&'static str
         c.push(("device-carried", 1));
     }
     let ex = emu::build_emulated(clang, &em.text, dev);
-    for mode in MODES {
-        let (got, _) = ex.run(&mode);
+    for (mode, (got, _)) in MODES.iter().zip(ex.run_each(&MODES)) {
         assert_eq!(got, want, "{mode:?}\n{src}");
     }
     // A state whose next value is made once (hoisted out of the trip): no
@@ -427,24 +426,7 @@ fn onto_device_on_generated_programs() {
     })
     .take(96)
     .collect();
-    let results: Vec<Vec<(&'static str, u64)>> = std::thread::scope(|sc| {
-        let hs: Vec<_> = progs
-            .chunks(progs.len().div_ceil(emu::job_slots()))
-            .enumerate()
-            .map(|(ci, chunk)| {
-                let clang = clang.clone();
-                let base = ci * progs.len().div_ceil(emu::job_slots());
-                sc.spawn(move || {
-                    chunk
-                        .iter()
-                        .enumerate()
-                        .flat_map(|(i, p)| check_onto(&clang, base + i, p))
-                        .collect::<Vec<_>>()
-                })
-            })
-            .collect();
-        hs.into_iter().map(|h| h.join().expect("worker")).collect()
-    });
+    let results = testgen::par_check(&progs, |i, p| check_onto(&clang, i, p));
     let mut c = std::collections::BTreeMap::<&str, u64>::new();
     for r in results.into_iter().flatten() {
         *c.entry(r.0).or_default() += r.1;
@@ -514,47 +496,33 @@ fn bounds_proof_sound_on_fuzzed_offsets() {
     })
     .take(240)
     .collect();
-    let results: Vec<Vec<(&'static str, u64)>> = std::thread::scope(|sc| {
-        let hs: Vec<_> = progs
-            .chunks(progs.len().div_ceil(emu::job_slots()))
-            .map(|chunk| {
-                let clang = clang.clone();
-                sc.spawn(move || {
-                    chunk
-                        .iter()
-                        .flat_map(|p| {
-                            let src = testgen::bounds_fuzz_src(p);
-                            let ir = lower(&src);
-                            let rr = run(&ir, 2_000_000_000);
-                            let (n, proven, armed) = proof_counts(&ir);
-                            let (code, out) = native(&clang, &ir);
-                            let mut c = vec![
-                                ("programs", 1),
-                                ("indexes", n as u64),
-                                ("proven", proven as u64),
-                                ("guard-gated-arms", armed as u64),
-                            ];
-                            match rr.outcome {
-                                Outcome::Done(_) => {
-                                    assert_eq!((code, &out), (0, &rr.output), "{src}");
-                                    c.push(("done", 1));
-                                }
-                                Outcome::Trapped(_) => {
-                                    assert_eq!(code, 101, "{src}\n{out}");
-                                    c.push(("trapped", 1));
-                                    if proven > 0 {
-                                        c.push(("trapped-with-proofs", 1));
-                                    }
-                                }
-                                ref o => panic!("{o:?}\n{src}"),
-                            }
-                            c
-                        })
-                        .collect::<Vec<_>>()
-                })
-            })
-            .collect();
-        hs.into_iter().map(|h| h.join().expect("worker")).collect()
+    let results = testgen::par_check(&progs, |_, p| {
+        let src = testgen::bounds_fuzz_src(p);
+        let ir = lower(&src);
+        let rr = run(&ir, 2_000_000_000);
+        let (n, proven, armed) = proof_counts(&ir);
+        let (code, out) = native(&clang, &ir);
+        let mut c = vec![
+            ("programs", 1),
+            ("indexes", n as u64),
+            ("proven", proven as u64),
+            ("guard-gated-arms", armed as u64),
+        ];
+        match rr.outcome {
+            Outcome::Done(_) => {
+                assert_eq!((code, &out), (0, &rr.output), "{src}");
+                c.push(("done", 1));
+            }
+            Outcome::Trapped(_) => {
+                assert_eq!(code, 101, "{src}\n{out}");
+                c.push(("trapped", 1));
+                if proven > 0 {
+                    c.push(("trapped-with-proofs", 1));
+                }
+            }
+            ref o => panic!("{o:?}\n{src}"),
+        }
+        c
     });
     let mut c = std::collections::BTreeMap::<&str, u64>::new();
     for r in results.into_iter().flatten() {
@@ -647,61 +615,39 @@ fn host_par_on_generated_programs() {
     })
     .take(12)
     .collect();
-    let results: Vec<Vec<(&'static str, u64)>> = std::thread::scope(|sc| {
-        let hs: Vec<_> = progs
-            .chunks(progs.len().div_ceil(emu::job_slots()))
-            .map(|chunk| {
-                let clang = clang.clone();
-                sc.spawn(move || {
-                    chunk
-                        .iter()
-                        .flat_map(|p| {
-                            let src = testgen::host_par_src(p);
-                            let ir = lower(&src);
-                            let want = interp(&ir);
-                            let build = |off: &[&str]| {
-                                let mut gpu = GpuArms::default();
-                                for r in off.iter().chain(&["async", "pdl", "streams", "pinned"]) {
-                                    *gpu.off.rung(r).expect("rung") = true;
-                                }
-                                let opts = EmitOpts {
-                                    host: "x86-64-v3",
-                                    target: "rtx-5080",
-                                    gpu,
-                                    ..EmitOpts::exact()
-                                };
-                                emit_detailed(&ir, &opts).expect("emits")
-                            };
-                            let on = build(&[]);
-                            let split = on
-                                .text
-                                .lines()
-                                .filter(|l| l.starts_with("define internal void @mapal_main_hpar"))
-                                .count();
-                            let ex = emu::build_emulated(
-                                &clang,
-                                &on.text,
-                                on.device.as_deref().unwrap_or(""),
-                            );
-                            for lanes in ["1", "3"] {
-                                let (got, _) = ex.run(&[("MAPAL_PAR", lanes)]);
-                                assert_eq!(got, want, "MAPAL_PAR={lanes}\n{src}");
-                            }
-                            let off = build(&["host-par"]);
-                            assert!(!off.text.contains("@mapal_main_hpar"));
-                            let got = emu::run_emulated(
-                                &clang,
-                                &off.text,
-                                off.device.as_deref().unwrap_or(""),
-                            );
-                            assert_eq!(got, want, "host-par off\n{src}");
-                            vec![("programs", 1), ("split-maps", split as u64)]
-                        })
-                        .collect::<Vec<_>>()
-                })
-            })
-            .collect();
-        hs.into_iter().map(|h| h.join().expect("worker")).collect()
+    let results = testgen::par_check(&progs, |_, p| {
+        let src = testgen::host_par_src(p);
+        let ir = lower(&src);
+        let want = interp(&ir);
+        let build = |off: &[&str]| {
+            let mut gpu = GpuArms::default();
+            for r in off.iter().chain(&["async", "pdl", "streams", "pinned"]) {
+                *gpu.off.rung(r).expect("rung") = true;
+            }
+            let opts = EmitOpts {
+                host: "x86-64-v3",
+                target: "rtx-5080",
+                gpu,
+                ..EmitOpts::exact()
+            };
+            emit_detailed(&ir, &opts).expect("emits")
+        };
+        let on = build(&[]);
+        let split = on
+            .text
+            .lines()
+            .filter(|l| l.starts_with("define internal void @mapal_main_hpar"))
+            .count();
+        let ex = emu::build_emulated(&clang, &on.text, on.device.as_deref().unwrap_or(""));
+        for lanes in ["1", "3"] {
+            let (got, _) = ex.run(&[("MAPAL_PAR", lanes)]);
+            assert_eq!(got, want, "MAPAL_PAR={lanes}\n{src}");
+        }
+        let off = build(&["host-par"]);
+        assert!(!off.text.contains("@mapal_main_hpar"));
+        let got = emu::run_emulated(&clang, &off.text, off.device.as_deref().unwrap_or(""));
+        assert_eq!(got, want, "host-par off\n{src}");
+        vec![("programs", 1), ("split-maps", split as u64)]
     });
     let mut c = std::collections::BTreeMap::<&str, u64>::new();
     for r in results.into_iter().flatten() {

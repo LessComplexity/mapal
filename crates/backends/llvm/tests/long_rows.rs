@@ -321,21 +321,7 @@ fn row_slices_on_generated_long_rows() {
     .filter(|p| p.rows * p.len <= 4096)
     .take(160)
     .collect();
-    let results: Vec<Vec<(&'static str, u64)>> = std::thread::scope(|sc| {
-        let hs: Vec<_> = progs
-            .chunks(progs.len().div_ceil(emu::job_slots()))
-            .map(|chunk| {
-                let clang = clang.clone();
-                sc.spawn(move || {
-                    chunk
-                        .iter()
-                        .flat_map(|p| check_long_row(&clang, p))
-                        .collect::<Vec<_>>()
-                })
-            })
-            .collect();
-        hs.into_iter().map(|h| h.join().expect("worker")).collect()
-    });
+    let results = testgen::par_check(&progs, |_, p| check_long_row(&clang, p));
     for r in results.into_iter().flatten() {
         *c.entry(r.0).or_default() += r.1;
     }
@@ -426,8 +412,8 @@ fn check_long_row(clang: &str, p: &testgen::LongRow) -> Vec<(&'static str, u64)>
             out.push(("looped", 1));
         }
         let ex = emu::build_emulated(clang, &on.text, on.device.as_deref().unwrap());
-        for mode in [MODES[0], MODES[2], MODES[4]] {
-            let (got, _) = ex.run(&mode);
+        let modes = [MODES[0], MODES[2], MODES[4]];
+        for (mode, (got, _)) in modes.iter().zip(ex.run_each(&modes)) {
             assert!(
                 within(&got, &rr.output),
                 "s={s} {mode:?}: {got:?} vs {:?}\n{src}",

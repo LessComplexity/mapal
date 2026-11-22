@@ -115,11 +115,13 @@ fn warps(p: &HashMap<String, String>) -> u64 {
 fn large_gemm_rules_on_generated_shapes() {
     let mut runner = TestRunner::deterministic();
     let strat = testgen::gemm_prog_strategy();
-    let (mut kfill, mut filled_sk, mut declined, mut wide, mut shrunk_off) = (0, 0, 0, 0, 0);
-    let mut odd_plans = 0;
-    for z in 0..96 {
-        let p = strat.new_tree(&mut runner).unwrap().current();
-        let (src, (m, n, k)) = testgen::gemm_src(&p);
+    let progs: Vec<testgen::GemmProg> = (0..96)
+        .map(|_| strat.new_tree(&mut runner).unwrap().current())
+        .collect();
+    let counts = testgen::par_check(&progs, |z, p| {
+        let (mut kfill, mut filled_sk, mut declined, mut wide, mut shrunk_off) = (0, 0, 0, 0, 0);
+        let mut odd_plans = 0;
+        let (src, (m, n, k)) = testgen::gemm_src(p);
         let ctx = format!("#{z} {m}x{n}x{k} bt={}", p.bt);
         let ir = lower(&src);
         let on = emission(&ir, &[]);
@@ -196,7 +198,11 @@ fn large_gemm_rules_on_generated_shapes() {
                 assert_eq!(num(&t, "held"), 0, "{ctx} wide-fma off {t:?}");
             }
         }
-    }
+        [kfill, filled_sk, declined, wide, shrunk_off, odd_plans]
+    });
+    let sum = |i: usize| counts.iter().map(|c| c[i]).sum::<usize>();
+    let (kfill, filled_sk, declined, wide, shrunk_off, odd_plans) =
+        (sum(0), sum(1), sum(2), sum(3), sum(4), sum(5));
     eprintln!(
         "large-gemm plans: {kfill} k-fill stream-K kernels ({shrunk_off} shrunk under the OFF arm), \
          {filled_sk} filled stream-K, {declined} stream-K grids declined for the fill split, \
@@ -242,9 +248,11 @@ fn large_gemm_values_through_the_emulator() {
     };
     let mut runner = TestRunner::deterministic();
     let strat = testgen::gemm_prog_strategy();
-    let (mut kfill, mut fill_split, mut runs) = (0, 0, 0);
-    for z in 0..12 {
-        let p = strat.new_tree(&mut runner).unwrap().current();
+    let progs: Vec<testgen::GemmProg> = (0..12)
+        .map(|_| strat.new_tree(&mut runner).unwrap().current())
+        .collect();
+    let counts = testgen::par_check(&progs, |z, p| {
+        let (mut kfill, mut fill_split, mut runs) = (0, 0, 0);
         let deep = z % 2 == 1;
         let pick = |d: u8, v: &[u64]| v[usize::from(d) % v.len()];
         let (m, n, k) = match deep {
@@ -255,7 +263,7 @@ fn large_gemm_values_through_the_emulator() {
             ),
             false => (16, 2048, pick(p.dims[2], &[256, 512])),
         };
-        let src = testgen::gemm_src_at(&p, m, n, k);
+        let src = testgen::gemm_src_at(p, m, n, k);
         let ctx = format!("#{z} {m}x{n}x{k} bt={}", p.bt);
         let ir = lower(&src);
         let geom: &[&str] = if deep { &["kfill=1"] } else { &[] };
@@ -267,7 +275,7 @@ fn large_gemm_values_through_the_emulator() {
             false => t["combine"] == "atomic" && num(t, "S") > 1,
         });
         if !acted {
-            continue;
+            return [0, 0, 0];
         }
         match deep {
             true => kfill += 1,
@@ -283,12 +291,14 @@ fn large_gemm_values_through_the_emulator() {
             "{ctx} {rule} off"
         );
         let built = emu::build_emulated(&cc, &on.text, &dev(&on));
-        for env in MODES {
-            let (got, _) = built.run(&env);
+        for (env, (got, _)) in MODES.iter().zip(built.run_each(&MODES)) {
             assert_eq!(got, want, "{ctx} {rule} {env:?}\n{src}");
             runs += 1;
         }
-    }
+        [kfill, fill_split, runs]
+    });
+    let sum = |i: usize| counts.iter().map(|c| c[i]).sum::<usize>();
+    let (kfill, fill_split, runs) = (sum(0), sum(1), sum(2));
     eprintln!(
         "large-gemm values: {kfill} k-fill, {fill_split} fill-split programs, {runs} emulated runs"
     );

@@ -563,8 +563,7 @@ fn check_geom(clang: &str, i: usize, p: &testgen::LayerProg) -> Vec<(&'static st
         c.push(("lane-rows", 1));
     }
     let ex = emu::build_emulated(clang, &em.text, dev);
-    for mode in MODES {
-        let (got, _) = ex.run(&mode);
+    for (mode, (got, _)) in MODES.iter().zip(ex.run_each(&MODES)) {
         assert_eq!(got, want, "{mode:?}\n{src}");
     }
     // Every site-table candidate in turn (`MAPAL_GPU_PICK`, clamped per
@@ -574,9 +573,12 @@ fn check_geom(clang: &str, i: usize, p: &testgen::LayerProg) -> Vec<(&'static st
         .iter()
         .filter(|l| l.contains("kind=tile") || l.contains("kind=naive"))
         .count();
-    for pick in 1..cands.min(9) {
-        let k = pick.to_string();
-        let (got, _) = ex.run(&[("MAPAL_GPU_PICK", k.as_str())]);
+    let picks: Vec<String> = (1..cands.min(9)).map(|k| k.to_string()).collect();
+    let envs: Vec<[(&str, &str); 1]> = picks
+        .iter()
+        .map(|k| [("MAPAL_GPU_PICK", k.as_str())])
+        .collect();
+    for (pick, (got, _)) in picks.iter().zip(ex.run_each(&envs)) {
         assert_eq!(got, want, "pick {pick}\n{src}");
         c.push(("candidate-runs", 1));
     }
@@ -622,24 +624,7 @@ fn device_geometry_on_generated_programs() {
     })
     .take(96)
     .collect();
-    let results: Vec<Vec<(&'static str, u64)>> = std::thread::scope(|sc| {
-        let hs: Vec<_> = progs
-            .chunks(progs.len().div_ceil(emu::job_slots()))
-            .enumerate()
-            .map(|(ci, chunk)| {
-                let clang = clang.clone();
-                let base = ci * progs.len().div_ceil(emu::job_slots());
-                sc.spawn(move || {
-                    chunk
-                        .iter()
-                        .enumerate()
-                        .flat_map(|(i, p)| check_geom(&clang, base + i, p))
-                        .collect::<Vec<_>>()
-                })
-            })
-            .collect();
-        hs.into_iter().map(|h| h.join().expect("worker")).collect()
-    });
+    let results = testgen::par_check(&progs, |i, p| check_geom(&clang, i, p));
     let mut c = std::collections::BTreeMap::<&str, u64>::new();
     for r in results.into_iter().flatten() {
         *c.entry(r.0).or_default() += r.1;

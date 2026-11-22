@@ -442,34 +442,26 @@ fn calls_on_generated_programs() {
     let progs: Vec<testgen::HzProg> = (0..n)
         .map(|_| strat.new_tree(&mut runner).unwrap().current())
         .collect();
-    let cv = std::sync::Mutex::new(Cover::default());
-    let next = std::sync::atomic::AtomicUsize::new(0);
-    // Programs in parallel (each emulated run holds one of the harness's
-    // job slots): one worker a slot.
-    std::thread::scope(|sc| {
-        for _ in 0..emu::job_slots().max(1) {
-            sc.spawn(|| {
-                loop {
-                    let z = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    let Some(p) = progs.get(z) else { break };
-                    // `MAPAL_TESTGEN_ONLY=<z>`: one program (a failure's repro).
-                    if std::env::var("MAPAL_TESTGEN_ONLY")
-                        .ok()
-                        .and_then(|v| v.parse::<usize>().ok())
-                        .is_some_and(|o| o != z)
-                    {
-                        continue;
-                    }
-                    eprintln!("calls gen #{z} start");
-                    let d = one_program(&clang, z, p);
-                    eprintln!("calls gen #{z} done");
-                    let mut c = cv.lock().unwrap();
-                    c.add(&d);
-                }
-            });
+    // Programs in parallel (`testgen::par_check`; each emulated run holds
+    // one of the harness's job slots).
+    let covers = testgen::par_check(&progs, |z, p| {
+        // `MAPAL_TESTGEN_ONLY=<z>`: one program (a failure's repro).
+        if std::env::var("MAPAL_TESTGEN_ONLY")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .is_some_and(|o| o != z)
+        {
+            return Cover::default();
         }
+        eprintln!("calls gen #{z} start");
+        let d = one_program(&clang, z, p);
+        eprintln!("calls gen #{z} done");
+        d
     });
-    let cv = cv.into_inner().unwrap();
+    let mut cv = Cover::default();
+    for d in &covers {
+        cv.add(d);
+    }
     eprintln!("calls_on_generated_programs: {cv:?}");
     assert!(
         cv.formed > 0

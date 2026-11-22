@@ -298,12 +298,21 @@ fn every_candidate_answers_the_interpreter() {
         return;
     };
     let _ = emu::rt_lib();
-    let (mut programs, mut tabled, mut runs, mut reruns, mut sites) = (0, 0, 0, 0, 0);
-    let mut exact = 0;
-    let mut by_n = [0usize; 9];
-    // Per part: [tabled programs, exact-face runs, f64 runs].
-    let mut per = [[0usize; 3]; 4];
-    for (z, case) in cases(48).iter().enumerate() {
+    // One program's counts.
+    #[derive(Default)]
+    struct V {
+        programs: usize,
+        tabled: usize,
+        runs: usize,
+        reruns: usize,
+        sites: usize,
+        exact: usize,
+        by_n: [usize; 9],
+        // Per part: [tabled programs, exact-face runs, f64 runs].
+        per: [[usize; 3]; 4],
+    }
+    let vs = testgen::par_check(&cases(48), |z, case| {
+        let mut v = V::default();
         let ir = lower(&case.src);
         // Each block of 12 runs every strategy, rotated over the parts by
         // block (a Latin square: every strategy meets every part); the
@@ -312,16 +321,16 @@ fn every_candidate_answers_the_interpreter() {
         let part = (z % 12 + [3, 2, 0, 1][z / 12 % 4]) % PARTS.len();
         let target = PARTS[part];
         let e = emission(&ir, target, case.base, 8, &[], &[]);
-        programs += 1;
+        v.programs += 1;
         let ts = tables(&e.text);
         let Some(max) = ts.iter().map(|t| t.rows.len()).max() else {
-            continue;
+            return v;
         };
-        tabled += 1;
-        per[part][0] += 1;
-        sites += ts.len();
+        v.tabled += 1;
+        v.per[part][0] += 1;
+        v.sites += ts.len();
         for t in &ts {
-            by_n[t.rows.len().min(8)] += 1;
+            v.by_n[t.rows.len().min(8)] += 1;
         }
         let rr = mapal_interp::run(&ir, 4_000_000_000);
         assert!(
@@ -351,10 +360,10 @@ fn every_candidate_answers_the_interpreter() {
                 rr.output,
                 case.src
             );
-            runs += 1;
-            exact += usize::from(case.base.order == Order::Sequential);
-            per[part][1] += usize::from(case.base.order == Order::Sequential);
-            per[part][2] += usize::from(case.src.contains("f64"));
+            v.runs += 1;
+            v.exact += usize::from(case.base.order == Order::Sequential);
+            v.per[part][1] += usize::from(case.base.order == Order::Sequential);
+            v.per[part][2] += usize::from(case.src.contains("f64"));
         }
         if ts.iter().all(|t| t.flags & 1 == 1) {
             assert_eq!(
@@ -363,7 +372,24 @@ fn every_candidate_answers_the_interpreter() {
                 "#{z} {target}: every candidate in turn vs the last\n{}",
                 case.src
             );
-            reruns += 1;
+            v.reruns += 1;
+        }
+        v
+    });
+    let (mut programs, mut tabled, mut runs, mut reruns, mut sites) = (0, 0, 0, 0, 0);
+    let mut exact = 0;
+    let mut by_n = [0usize; 9];
+    let mut per = [[0usize; 3]; 4];
+    for v in &vs {
+        (programs, tabled, runs) = (programs + v.programs, tabled + v.tabled, runs + v.runs);
+        (reruns, sites, exact) = (reruns + v.reruns, sites + v.sites, exact + v.exact);
+        for (n, k) in by_n.iter_mut().zip(v.by_n) {
+            *n += k;
+        }
+        for (p, k) in per.iter_mut().zip(v.per) {
+            for (a, b) in p.iter_mut().zip(k) {
+                *a += b;
+            }
         }
     }
     eprintln!(

@@ -269,17 +269,19 @@ fn tree_gate_on_generated_chains() {
     let mut runner = TestRunner::deterministic();
     let strat = testgen::chain_strategy();
     let units = |em: &mapal_backend_llvm::Emission| launches(&em.text).1;
-    let (mut fired, mut findings) = (0, Vec::new());
-    for z in 0..256 {
-        let src = strat.new_tree(&mut runner).unwrap().current().source();
-        let ir = lower(&src);
+    let srcs: Vec<String> = (0..256)
+        .map(|_| strat.new_tree(&mut runner).unwrap().current().source())
+        .collect();
+    // Per chain: whether the gate fired, and its findings.
+    let per = testgen::par_check(&srcs, |z, src| {
+        let mut findings = Vec::new();
+        let ir = lower(src);
         let col = ["rowfold-layout"];
         let on = emission_arms(&ir, "rtx-4090", &col, &[], EmitOpts::default());
         let off = emission_arms(&ir, "rtx-4090", &col, &["tree-gate"], EmitOpts::default());
         if units(&on) >= units(&off) {
-            continue;
+            return (0, findings);
         }
-        fired += 1;
         let rr = run(&ir, 400_000_000);
         for em in [&on, &off] {
             let got =
@@ -288,7 +290,10 @@ fn tree_gate_on_generated_chains() {
                 findings.push(format!("chain#{z}: {got:?} vs {:?}\n{src}", rr.output));
             }
         }
-    }
+        (1, findings)
+    });
+    let fired: usize = per.iter().map(|p| p.0).sum();
+    let findings: Vec<String> = per.into_iter().flat_map(|p| p.1).collect();
     assert!(findings.is_empty(), "{}", findings.join("\n"));
     assert!(fired > 0, "tree-gate fired on no generated chain");
     eprintln!("tree_gate_on_generated_chains: fired on {fired}/256");
@@ -594,18 +599,32 @@ fn generic_fusion_chains_values_launches_and_stores() {
         .unwrap_or(256);
     let mut runner = TestRunner::deterministic();
     let strat = testgen::chain_strategy();
-    let mut findings = Vec::new();
-    let (mut device, mut units, mut members, mut kept, mut halos, mut saved) = (0, 0, 0, 0, 0, 0);
-    let (mut defaults, mut trees, mut onchip) = (0, 0, 0);
+    // One program's findings and counts.
+    #[derive(Default)]
+    struct G {
+        findings: Vec<String>,
+        device: usize,
+        units: usize,
+        members: usize,
+        kept: usize,
+        halos: usize,
+        saved: usize,
+        defaults: usize,
+        trees: usize,
+        onchip: usize,
+        reasons: std::collections::BTreeMap<String, usize>,
+    }
     let lines_of = |d: &str| -> Vec<String> {
         d.lines()
             .filter(|l| l.starts_with("; mapal.flow kernel="))
             .map(String::from)
             .collect()
     };
-    let mut reasons: std::collections::BTreeMap<String, usize> = Default::default();
-    for z in 0..n {
-        let ch = strat.new_tree(&mut runner).unwrap().current();
+    let chains: Vec<_> = (0..n)
+        .map(|_| strat.new_tree(&mut runner).unwrap().current())
+        .collect();
+    let per = testgen::par_check(&chains, |z, ch| {
+        let mut g = G::default();
         let src = ch.source();
         let ir = lower(&src);
         let rr = run(&ir, 400_000_000);
@@ -618,20 +637,22 @@ fn generic_fusion_chains_values_launches_and_stores() {
             (emission(&ir, target, &[]), emission(&ir, target, &["flow"]))
         });
         let Ok((on, off)) = ems else {
-            findings.push(format!("chain#{z} {target}: the emitter panicked\n{src}"));
-            continue;
+            g.findings
+                .push(format!("chain#{z} {target}: the emitter panicked\n{src}"));
+            return g;
         };
         let (Some(don), Some(doff)) = (&on.device, &off.device) else {
             if on.device.is_some() != off.device.is_some() {
-                findings.push(format!("chain#{z}: a device unit on one arm only\n{src}"));
+                g.findings
+                    .push(format!("chain#{z}: a device unit on one arm only\n{src}"));
             }
-            continue;
+            return g;
         };
-        device += 1;
+        g.device += 1;
         for (arm, em, dev) in [("on", &on, don), ("off", &off, doff)] {
             let got = emu::run_emulated(&clang, &em.text, dev);
             if got != rr.output {
-                findings.push(format!(
+                g.findings.push(format!(
                     "chain#{z} {target} flow {arm}: {got:?} != {:?}\n{src}",
                     rr.output
                 ));
@@ -647,13 +668,13 @@ fn generic_fusion_chains_values_launches_and_stores() {
                 emission_on(&ir, target, &["flow"], base),
             );
             if let (Some(da), Some(db)) = (&a.device, &b.device) {
-                defaults += 1;
+                g.defaults += 1;
                 let (ga, gb) = (
                     emu::run_emulated(&clang, &a.text, da),
                     emu::run_emulated(&clang, &b.text, db),
                 );
                 if !within(&ga, &rr.output) || !within(&gb, &rr.output) {
-                    findings.push(format!(
+                    g.findings.push(format!(
                         "chain#{z} {target} default face: on {ga:?} off {gb:?} vs {:?}\n{src}",
                         rr.output
                     ));
@@ -671,12 +692,12 @@ fn generic_fusion_chains_values_launches_and_stores() {
                         .filter(|m| m.contains(":rowfold:"))
                         .count();
                     if (w > 1 || folds > 0) && lanes < 32 {
-                        findings.push(format!(
+                        g.findings.push(format!(
                             "chain#{z}: a unit row of {w} on {lanes} lanes: {l}\n{src}"
                         ));
                     }
-                    trees += field(&l, "tree").parse::<usize>().unwrap_or(0);
-                    onchip += field(&l, "onchip").parse::<usize>().unwrap_or(0);
+                    g.trees += field(&l, "tree").parse::<usize>().unwrap_or(0);
+                    g.onchip += field(&l, "onchip").parse::<usize>().unwrap_or(0);
                 }
             }
         }
@@ -687,7 +708,7 @@ fn generic_fusion_chains_values_launches_and_stores() {
                 .count()
         };
         if epi(don) != epi(doff) {
-            findings.push(format!(
+            g.findings.push(format!(
                 "chain#{z}: tile roots {} on, {} off\n{src}",
                 epi(don),
                 epi(doff)
@@ -705,20 +726,20 @@ fn generic_fusion_chains_values_launches_and_stores() {
         let (l_on, u_on) = launches(&on.text);
         let (l_off, _) = launches(&off.text);
         if u_on != lines.len() || l_on + unit_members != l_off + lines.len() {
-            findings.push(format!(
+            g.findings.push(format!(
                 "chain#{z}: {l_on} launches on ({u_on} units of {unit_members} members), {l_off} off\n{src}"
             ));
         }
-        units += lines.len();
-        members += unit_members;
-        saved += l_off.saturating_sub(l_on);
+        g.units += lines.len();
+        g.members += unit_members;
+        g.saved += l_off.saturating_sub(l_on);
         // 4. Stores, recomputed from the graph.
         let lup = ir.last_use_plan(ir.entry());
         for l in &lines {
             let store = labels(field(l, "store"));
             let keep = labels(field(l, "keep"));
-            kept += keep.len();
-            halos += usize::from(field(l, "members").contains("+halo"));
+            g.kept += keep.len();
+            g.halos += usize::from(field(l, "members").contains("+halo"));
             let objs: Vec<(String, Option<ObjectId>)> = store
                 .iter()
                 .chain(&keep)
@@ -730,14 +751,14 @@ fn generic_fusion_chains_values_launches_and_stores() {
                 .collect();
             for (label, o) in &objs {
                 let Some(o) = *o else {
-                    findings.push(format!(
+                    g.findings.push(format!(
                         "chain#{z}: unit member {label} names no object\n{l}"
                     ));
                     continue;
                 };
                 let outside = lup.escapes(o) || readers(&ir, o).iter().any(|r| !ms.contains(r));
                 if outside != store.contains(label) {
-                    findings.push(format!(
+                    g.findings.push(format!(
                         "chain#{z}: {label} stored={} but outside reader={outside}\n{l}\n{src}",
                         store.contains(label)
                     ));
@@ -750,7 +771,7 @@ fn generic_fusion_chains_values_launches_and_stores() {
                 .unwrap_or("");
             let params = def.matches("ptr addrspace(1)").count();
             if params != store.len() + labels(field(l, "gmem")).len() {
-                findings.push(format!(
+                g.findings.push(format!(
                     "chain#{z}: {name} has {params} pointers\n{l}\n{def}"
                 ));
             }
@@ -761,7 +782,7 @@ fn generic_fusion_chains_values_launches_and_stores() {
             .filter_map(|l| l.trim().strip_prefix("; mapal.flow.host "))
         {
             for r in field(l, "refused").split(';').filter(|x| !x.is_empty()) {
-                *reasons
+                *g.reasons
                     .entry(r.rsplit(':').next().unwrap().to_string())
                     .or_default() += 1;
             }
@@ -769,9 +790,23 @@ fn generic_fusion_chains_values_launches_and_stores() {
         // 5. Movement per trip.
         let (pon, poff) = (planned_moves(&on.text), planned_moves(&off.text));
         if pon.len() != poff.len() || pon.iter().zip(&poff).any(|(a, b)| a.0 > b.0 || a.1 > b.1) {
-            findings.push(format!(
+            g.findings.push(format!(
                 "chain#{z}: per-trip moves on {pon:?} off {poff:?}\n{src}"
             ));
+        }
+        g
+    });
+    let mut findings = Vec::new();
+    let (mut device, mut units, mut members, mut kept, mut halos, mut saved) = (0, 0, 0, 0, 0, 0);
+    let (mut defaults, mut trees, mut onchip) = (0, 0, 0);
+    let mut reasons: std::collections::BTreeMap<String, usize> = Default::default();
+    for g in per {
+        findings.extend(g.findings);
+        (device, units, members) = (device + g.device, units + g.units, members + g.members);
+        (kept, halos, saved) = (kept + g.kept, halos + g.halos, saved + g.saved);
+        (defaults, trees, onchip) = (defaults + g.defaults, trees + g.trees, onchip + g.onchip);
+        for (r, k) in g.reasons {
+            *reasons.entry(r).or_default() += k;
         }
     }
     assert!(

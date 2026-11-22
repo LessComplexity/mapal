@@ -185,6 +185,8 @@ fn flags_and_realized_intents() {
 
 /// The program's stdout, or `None` when it exited non-zero (a trap).
 fn run_native(clang: &str, ll: &str, tag: &str) -> Option<String> {
+    // One of the binary's child slots (programs are checked in parallel).
+    let _slot = emu::slot();
     let dir = tempfile::tempdir().unwrap();
     let (src, exe) = (dir.path().join("p.ll"), dir.path().join("p"));
     std::fs::write(&src, ll).unwrap();
@@ -282,31 +284,33 @@ fn generated_programs_keep_values_and_invariants() {
     let recurs = testgen::recur_prog_strategy();
     let radixes = testgen::radix_prog_strategy();
     let geoms = testgen::geom_prog_strategy();
-    let (mut pairs, mut regroups, mut tiles, mut contracted, mut reassoc) = (0, 0, 0, 0, 0);
-    let (mut valued, mut trapped, mut diverged) = (0, 0, 0);
-    for z in 0..64 {
-        // Chains (maps, cells, tile sites, row / whole folds, loops),
-        // recurrences (attention-like trips: max / sum row folds, products),
-        // radix (implicit-GEMM digit reads) and strided geometry sites.
-        let src = match z % 4 {
+    // Chains (maps, cells, tile sites, row / whole folds, loops),
+    // recurrences (attention-like trips: max / sum row folds, products),
+    // radix (implicit-GEMM digit reads) and strided geometry sites.
+    let srcs: Vec<String> = (0..64)
+        .map(|z| match z % 4 {
             0 => chains.new_tree(&mut runner).unwrap().current().source(),
             1 => testgen::recur_src(&recurs.new_tree(&mut runner).unwrap().current()),
             2 => testgen::radix_src(&radixes.new_tree(&mut runner).unwrap().current()).0,
             _ => testgen::geom_src(&geoms.new_tree(&mut runner).unwrap().current()).0,
-        };
+        })
+        .collect();
+    // Per program: pairs, regroups, tiles, contracted, reassoc, valued, trapped, diverged.
+    let counts = testgen::par_check(&srcs, |z, src| {
+        let mut c = [0usize; 8];
         let tag = format!("gen#{z}");
         let ir = lower(&src);
         let (p, g, t) = invariants(&ir, &tag);
-        (pairs, regroups, tiles) = (pairs + p, regroups + g, tiles + t);
+        (c[0], c[1], c[2]) = (p, g, t);
         let exact = emit_with_opts(&ir, &opts(EmitOpts::exact(), &[])).unwrap();
         assert!(
             !exact.contains(" reassoc") && !exact.contains(" contract"),
             "{tag}"
         );
         let def = emit_with_opts(&ir, &opts(EmitOpts::default(), &[])).unwrap();
-        contracted += def.matches("fmul contract").count();
-        reassoc += def.matches(" reassoc").count();
-        let Some(clang) = &clang else { continue };
+        c[3] = def.matches("fmul contract").count();
+        c[4] = def.matches(" reassoc").count();
+        let Some(clang) = &clang else { return c };
         let rr = run(&ir, 400_000_000);
         // A program the interpreter traps on traps compiled too; one past the
         // interpreter's step budget has no oracle here.
@@ -314,12 +318,12 @@ fn generated_programs_keep_values_and_invariants() {
             mapal_interp::Outcome::Done(_) => {}
             mapal_interp::Outcome::Trapped(_) => {
                 assert!(run_native(clang, &exact, &tag).is_none(), "{tag}: no trap");
-                trapped += 1;
-                continue;
+                c[6] = 1;
+                return c;
             }
             mapal_interp::Outcome::Diverged => {
-                diverged += 1;
-                continue;
+                c[7] = 1;
+                return c;
             }
         }
         let out =
@@ -335,8 +339,12 @@ fn generated_programs_keep_values_and_invariants() {
             let ll = emit_with_opts(&ir, &opts(EmitOpts::default(), &[off])).unwrap();
             assert!(within(&out(&ll), &rr.output), "{tag} {off}\n{src}");
         }
-        valued += 1;
-    }
+        c[5] = 1;
+        c
+    });
+    let sum = |i: usize| counts.iter().map(|c| c[i]).sum::<usize>();
+    let (pairs, regroups, tiles, contracted, reassoc) = (sum(0), sum(1), sum(2), sum(3), sum(4));
+    let (valued, trapped, diverged) = (sum(5), sum(6), sum(7));
     eprintln!(
         "fold_algebra: {pairs} pairs, {regroups} regroups, {tiles} tile sites; default face: \
          {contracted} contracted muls, {reassoc} reassoc steps; {valued} valued, {trapped} trapped, {diverged} past the budget"

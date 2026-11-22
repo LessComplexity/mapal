@@ -336,6 +336,20 @@ struct Cover {
     runs: usize,
 }
 
+impl Cover {
+    fn add(&mut self, d: &Cover) {
+        self.programs += d.programs;
+        self.sites += d.sites;
+        self.folded += d.folded;
+        self.loops += d.loops;
+        self.straight += d.straight;
+        self.multi += d.multi;
+        self.stopped += d.stopped;
+        self.none += d.none;
+        self.runs += d.runs;
+    }
+}
+
 /// Over generated programs (`zero_prog_strategy`): the OFF arm is the
 /// emission without tails or flags; ON, every candidate pick, free-running
 /// and serialized in thread order and reverse, equals the interpreter (within
@@ -350,10 +364,12 @@ fn zero_fold_on_generated_programs() {
     };
     let mut runner = TestRunner::deterministic();
     let strat = testgen::zero_prog_strategy();
-    let mut cv = Cover::default();
-    for z in 0..120 {
-        let p = strat.new_tree(&mut runner).unwrap().current();
-        let src = testgen::zero_src(&p);
+    let progs: Vec<testgen::ZeroProg> = (0..120)
+        .map(|_| strat.new_tree(&mut runner).unwrap().current())
+        .collect();
+    let covers = testgen::par_check(&progs, |z, p| {
+        let mut cv = Cover::default();
+        let src = testgen::zero_src(p);
         let ir = lower(&src);
         let rr = run(&ir, 4_000_000_000);
         assert!(matches!(rr.outcome, Outcome::Done(_)), "#{z}\n{src}");
@@ -377,7 +393,7 @@ fn zero_fold_on_generated_programs() {
                     .join("\n")
             };
             assert_eq!(strip(&on.text), strip(&off.text), "#{z}");
-            continue;
+            return cv;
         }
         cv.folded += folded;
         if p.looped {
@@ -398,27 +414,33 @@ fn zero_fold_on_generated_programs() {
             emu::build_emulated(&clang, &off.text, off.device.as_deref().unwrap()),
         );
         for pick in ["0", "1", "3", "7"] {
-            let (a, ea) = eon.run(&[("MAPAL_GPU_PICK", pick)]);
+            let runs = eon.run_each(&[
+                [("MAPAL_GPU_PICK", pick), ("MAPAL_EMU_SERIAL", "0")],
+                [("MAPAL_GPU_PICK", pick), ("MAPAL_EMU_SERIAL", "1")],
+                [("MAPAL_GPU_PICK", pick), ("MAPAL_EMU_SERIAL", "2")],
+            ]);
+            let (a, ea) = &runs[0];
             let (b, eb) = eoff.run(&[("MAPAL_GPU_PICK", pick)]);
             assert!(
-                within(&a, &rr.output),
+                within(a, &rr.output),
                 "#{z} pick {pick}: {a:?} vs {:?}\n{src}",
                 rr.output
             );
-            assert!(
-                within(&a, &b),
-                "#{z} pick {pick}: ON {a:?} OFF {b:?}\n{src}"
-            );
-            assert!(zeros(&ea) <= zeros(&eb), "#{z} pick {pick}");
-            for mode in ["1", "2"] {
-                let (s, _) = eon.run(&[("MAPAL_GPU_PICK", pick), ("MAPAL_EMU_SERIAL", mode)]);
+            assert!(within(a, &b), "#{z} pick {pick}: ON {a:?} OFF {b:?}\n{src}");
+            assert!(zeros(ea) <= zeros(&eb), "#{z} pick {pick}");
+            for (mode, (s, _)) in ["1", "2"].iter().zip(&runs[1..]) {
                 assert!(
-                    within(&s, &rr.output),
+                    within(s, &rr.output),
                     "#{z} pick {pick} serial {mode}\n{src}"
                 );
             }
             cv.runs += 1;
         }
+        cv
+    });
+    let mut cv = Cover::default();
+    for d in &covers {
+        cv.add(d);
     }
     eprintln!("zero_fold_on_generated_programs: {cv:?}");
     assert!(

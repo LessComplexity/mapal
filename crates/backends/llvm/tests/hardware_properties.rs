@@ -122,14 +122,16 @@ fn rung_rules_counted_and_valued_on_unseen_parts_and_programs() {
         proptest::array::uniform6(proptest::prelude::any::<u8>()),
     );
     let clang = emu::clang();
-    // Per property the rules read: programs on each side of its threshold.
-    let mut sides = [[0u32; 2]; 4];
-    let (mut moved, mut valued, mut modes) = (0, 0, 0);
-    for z in 0..36 {
-        let (p, pick) = strat.new_tree(&mut runner).unwrap().current();
-        let (src, _) = testgen::geom_src(&p);
+    let progs: Vec<_> = (0..36)
+        .map(|_| strat.new_tree(&mut runner).unwrap().current())
+        .collect();
+    // Per program: its parts' side of each property threshold, moved, valued, emulator runs.
+    let per = testgen::par_check(&progs, |z, (p, pick)| {
+        let mut sides = [[0u32; 2]; 4];
+        let (mut moved, mut valued, mut modes) = (0, 0, 0);
+        let (src, _) = testgen::geom_src(p);
         let ir = lower(&src);
-        let part = Part::draw(z, pick);
+        let part = Part::draw(z, *pick);
         for (i, s) in part.sides().into_iter().enumerate() {
             sides[i][usize::from(s)] += 1;
         }
@@ -138,7 +140,9 @@ fn rung_rules_counted_and_valued_on_unseen_parts_and_programs() {
         if dev(&on) != dev(&every) {
             moved += 1;
         }
-        let Some(cc) = &clang else { continue };
+        let Some(cc) = &clang else {
+            return (sides, moved, valued, modes);
+        };
         let want = emu::run_emulated(cc, &every.text, &dev(&every));
         assert_eq!(
             want.lines().count(),
@@ -148,13 +152,13 @@ fn rung_rules_counted_and_valued_on_unseen_parts_and_programs() {
             part.over
         );
         let e = emu::build_emulated(cc, &on.text, &dev(&on));
-        for env in [
+        let envs = [
             &[][..],
             &[("MAPAL_EMU_SERIAL", "1")][..],
             &[("MAPAL_EMU_SERIAL", "2")][..],
             &[("MAPAL_EMU_REVERSE", "1")][..],
-        ] {
-            let (got, _) = e.run(env);
+        ];
+        for (env, (got, _)) in envs.iter().zip(e.run_each(&envs)) {
             assert_eq!(
                 got, want,
                 "#{z} {} {:?} {env:?}: the rules' values\n{src}",
@@ -163,6 +167,18 @@ fn rung_rules_counted_and_valued_on_unseen_parts_and_programs() {
             modes += 1;
         }
         valued += 1;
+        (sides, moved, valued, modes)
+    });
+    // Per property the rules read: programs on each side of its threshold.
+    let mut sides = [[0u32; 2]; 4];
+    let (mut moved, mut valued, mut modes) = (0, 0, 0);
+    for (s, m, v, r) in per {
+        for i in 0..4 {
+            for j in 0..2 {
+                sides[i][j] += s[i][j];
+            }
+        }
+        (moved, valued, modes) = (moved + m, valued + v, modes + r);
     }
     eprintln!(
         "hardware-properties: sides (lo/hi) dram-scarce {:?} regs {:?} l2 {:?} dram {:?}; \

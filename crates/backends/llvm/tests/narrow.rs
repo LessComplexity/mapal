@@ -358,23 +358,7 @@ fn generated_programs_exact_bytes_and_default_bounds() {
                 .current()
         })
         .collect();
-    let covers: Vec<Cover> = std::thread::scope(|sc| {
-        let hs: Vec<_> = progs
-            .chunks(progs.len().div_ceil(emu::job_slots()))
-            .map(|chunk| {
-                let clang = clang.clone();
-                sc.spawn(move || {
-                    chunk
-                        .iter()
-                        .map(|p| check_narrow(&clang, p))
-                        .collect::<Vec<_>>()
-                })
-            })
-            .collect();
-        hs.into_iter()
-            .flat_map(|h| h.join().expect("worker"))
-            .collect()
-    });
+    let covers = testgen::par_check(&progs, |_, p| check_narrow(&clang, p));
     let mut c = Cover::default();
     for k in covers {
         c += k;

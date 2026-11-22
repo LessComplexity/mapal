@@ -353,8 +353,7 @@ fn attention_row_block_values_and_launches() {
                 // Free-running threads, then serialized between barriers in
                 // thread order and in reverse (`MAPAL_EMU_SERIAL`).
                 let ex = emu::build_emulated(&clang, &on.text, on.device.as_deref().unwrap());
-                for mode in ["0", "1", "2"] {
-                    let (got, _) = ex.run(&[("MAPAL_EMU_SERIAL", mode)]);
+                for (mode, (got, _)) in SERIAL.iter().zip(ex.run_each(&SERIAL_ENVS)) {
                     match face {
                         "exact" => {
                             assert_eq!(got, rr.output, "b={b} {arm} exact serial={mode}")
@@ -370,6 +369,15 @@ fn attention_row_block_values_and_launches() {
         }
     }
 }
+
+/// The emulator's thread orders: free-running, then serialized between
+/// barriers in thread order and in reverse (`MAPAL_EMU_SERIAL`).
+const SERIAL: [&str; 3] = ["0", "1", "2"];
+const SERIAL_ENVS: [[(&str, &str); 1]; 3] = [
+    [("MAPAL_EMU_SERIAL", "0")],
+    [("MAPAL_EMU_SERIAL", "1")],
+    [("MAPAL_EMU_SERIAL", "2")],
+];
 
 fn bench(name: &str) -> CategoryIr {
     let src = std::fs::read_to_string(format!(
@@ -455,8 +463,7 @@ fn staged_column_passes_values() {
                 let stage = field(&lines[0], "stage").to_string();
                 assert!(stage.contains("p2:kmaj"), "b={b} {force:?}: {stage}");
                 let ex = emu::build_emulated(&clang, &on.text, on.device.as_deref().unwrap());
-                for mode in ["0", "1", "2"] {
-                    let (got, _) = ex.run(&[("MAPAL_EMU_SERIAL", mode)]);
+                for (mode, (got, _)) in SERIAL.iter().zip(ex.run_each(&SERIAL_ENVS)) {
                     let ok = match face {
                         "exact" => got == rr.output,
                         _ => within(&got, &rr.output),
@@ -817,8 +824,8 @@ fn check_chain(clang: &str, z: usize, src: &str) -> ChainCheck {
         );
         // Block threads serialized between barriers in thread order and in
         // reverse: a write and a read no barrier orders meet in one order.
-        for mode in ["1", "2"] {
-            let (got, _) = ex.run(&[("MAPAL_EMU_SERIAL", mode)]);
+        let modes = [[("MAPAL_EMU_SERIAL", "1")], [("MAPAL_EMU_SERIAL", "2")]];
+        for (mode, (got, _)) in ["1", "2"].into_iter().zip(ex.run_each(&modes)) {
             let ok = match (exact, arm.ends_with(" off")) {
                 (true, _) => got == rr.output,
                 (false, true) => {
@@ -864,23 +871,7 @@ fn row_block_on_generated_chains() {
         .map(|_| narrow.new_tree(&mut runner).unwrap().current().source())
         .collect();
     srcs.extend((0..600).map(|_| wide.new_tree(&mut runner).unwrap().current().source()));
-    let next = std::sync::atomic::AtomicUsize::new(0);
-    let checks: std::sync::Mutex<Vec<ChainCheck>> = Default::default();
-    std::thread::scope(|s| {
-        for _ in 0..emu::job_slots().max(1) {
-            s.spawn(|| {
-                loop {
-                    let z = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    let Some(src) = srcs.get(z) else {
-                        break;
-                    };
-                    let ck = check_chain(&clang, z, src);
-                    checks.lock().unwrap().push(ck);
-                }
-            });
-        }
-    });
-    let checks = checks.into_inner().unwrap();
+    let checks = testgen::par_check(&srcs, |z, src| check_chain(&clang, z, src));
     let sum = |f: fn(&ChainCheck) -> usize| checks.iter().map(f).sum::<usize>();
     let (groups, formed) = (sum(|c| c.groups), sum(|c| c.formed));
     let (wide, tree, split, fma, reuse) = (
