@@ -36,6 +36,42 @@ SUITE=${SUITE-""}
 SUITE_C=${SUITE_C-""}
 ARMS=${ARMS-""}
 mkdir -p "$OUT/tiles"
+# Incremental bundles: a stem's built objects (host object, optimized device IR, PTX and their remarks) and a
+# CPU oracle's printed values (`.expect`; a hit leaves no `tiles/*.cpu` executable — an intermediate nothing reads,
+# excluded from rentals) are content-addressed under BUNDLE_CACHE (default target/bundle-cache;
+# BUNDLE_CACHE=0 builds everything) by the emitted IR text itself, the CPU / SM, the runtime library (oracles)
+# and a toolchain key (clang, opt, llc and this script, whose text holds every compile step's flags); ptxas -v
+# and SASS per distinct PTX likewise (evidence.py static, EVIDENCE_CACHE). An emission whose text is unchanged
+# takes the bytes its compile steps made before; any change to the text, the tools or the flags is a new key.
+# The emitter always runs: its text is the key.
+BUNDLE_CACHE=${BUNDLE_CACHE-$ROOT/target/bundle-cache}
+TOOLS_KEY="" RT_KEY=""
+[ "$BUNDLE_CACHE" = 0 ] || TOOLS_KEY=$({ clang --version; "$LLVM/opt" --version; "$LLVM/llc" --version
+    cat "${BASH_SOURCE[0]}"; } 2>&1 | sha256sum | cut -c1-16)
+# evidence.py static: each distinct PTX's ptxas -v and SASS by the PTX's bytes, the SM and the ptxas release.
+[ "$BUNDLE_CACHE" = 0 ] || export EVIDENCE_CACHE=${EVIDENCE_CACHE:-$BUNDLE_CACHE/evidence}
+# The CPU oracles' runtime library, by content.
+[ "$BUNDLE_CACHE" = 0 ] || RT_KEY=$(cat "$ROOT/target/release/libmapal_rt.a" 2>/dev/null | sha256sum | cut -c1-16)
+OBJS=(host.o host.remarks.yaml dev.opt.ll dev.opt.remarks.yaml ptx dev.llc.remarks.yaml)
+cache_key() { # <kind> <salt> <files...>: the entry of these inputs' text (not their paths); "" when off
+    [ "$BUNDLE_CACHE" = 0 ] && return 0
+    local k=$1 salt=$2 f; shift 2
+    echo "$BUNDLE_CACHE/$k/$( { echo "$TOOLS_KEY $salt"; for f in "$@"; do
+        if [ -f "$f" ]; then echo "== file"; cat "$f"; else echo "== none"; fi; done; } | sha256sum | cut -c1-32)"
+}
+cache_put() { # <entry> <dir> <prefix> <names...>: store <dir>/<prefix><name> that exist (atomic rename)
+    local c=$1 dir=$2 pre=$3 x; shift 3
+    [ -n "$c" ] || return 0
+    mkdir -p "$c.$$"
+    for x in "$@"; do [ -f "$dir/$pre$x" ] && cp "$dir/$pre$x" "$c.$$/$x"; done
+    touch "$c.$$/ok"; mkdir -p "$(dirname "$c")"; mv -T "$c.$$" "$c" 2>/dev/null || rm -rf "$c.$$"
+}
+cache_get() { # <entry> <dir> <prefix>: copy a complete entry's files out; 1 when absent
+    local c=$1 x
+    [ -n "$c" ] && [ -f "$c/ok" ] || return 1
+    for x in "$c"/*; do case ${x##*/} in ok | stem) ;; *) cp "$x" "$2/$3${x##*/}" ;; esac; done
+    echo "$3" >> "$OUT/.bundle-cache-hits"
+}
 # per-site-choice ladders: LADDER=1 adds the scale-ladder programs (gen_tiles.py --ladder, ladder_bundle.sh).
 # XREF="<stem>..": suite programs too large for the exact CPU oracle — no `.expect` here; `<stem>.xref` (the exact
 # face on the device: the interpreter's order bit for bit; `.xabsref` its D2 magnitude program) writes it on the box.
@@ -56,8 +92,11 @@ for p in $PROGS $SUITE; do
         [ -s "$OUT/tiles/$p$face.expect" ] && continue
         fl=(--exact); [ "$face" = _c ] && fl=(--order=sequential)
         "$EMIT" "$OUT/tiles/$p.mapal" - --rewrite "${fl[@]}" "--target=$CPU_TARGET" > "$OUT/tiles/$p$face.cpu.ll"
+        c=$(cache_key expect "$RT_KEY" "$OUT/tiles/$p$face.cpu.ll")
+        cache_get "$c" "$OUT/tiles" "$p$face." && continue
         clang -O2 -Wno-override-module "$OUT/tiles/$p$face.cpu.ll" "$ROOT/target/release/libmapal_rt.a" -o "$OUT/tiles/$p$face.cpu"
         "$OUT/tiles/$p$face.cpu" | grep -v '^iter ms=' > "$OUT/tiles/$p$face.expect"
+        cache_put "$c" "$OUT/tiles" "$p$face." expect
     done
     # S65: ADR-0040 D2's M per printed value (gen_tiles.py `xabs`), where the program has one.
     if [ -f "$OUT/tiles/${p}_xabs.mapal" ] && [ ! -s "$OUT/tiles/${p}_xabs.expect" ]; then
@@ -98,12 +137,24 @@ emit_one() { # <src> <stem> <prof> <sm> [flags...]
     for a in "$@"; do case $a in --gpu-off=*hostopt*) m=x86-64 ;; esac; done
     rm -f "$stem.dev.ll"
     "$EMIT" "$src" - --rewrite "--target=$prof" --host=x86-64-v3 "--device-out=$stem.dev.ll" "$@" > "$stem.host.ll"
-    host_cc "$stem" "$m"
+    local c; c=$(cache_key obj "$m $sm" "$stem.host.ll" "$stem.dev.ll")
+    if cache_get "$c" "$(dirname "$stem")" "$(basename "$stem")."; then
+        # `opt -S` names its input file (`; ModuleID`, `source_filename`): this stem's, as a build here writes it.
+        [ -f "$stem.dev.opt.ll" ] && python3 -c 'import sys; p, o, n = sys.argv[1:]; t = open(p).read().split("\n", 2)
+t[:2] = [l.replace(o, n) for l in t[:2]]; open(p, "w").write("\n".join(t))' "$stem.dev.opt.ll" "$(cat "$c/stem").dev.ll" "$stem.dev.ll"
+    else
+        host_cc "$stem" "$m"
+        if [ -f "$stem.dev.ll" ]; then
+            "$LLVM/opt" -O3 "$stem.dev.ll" -S -o "$stem.dev.opt.ll" -pass-remarks-output="$stem.dev.opt.remarks.yaml" \
+                -pass-remarks-filter='loop-unroll|sroa|licm|gvn|instcombine|loop-vectorize'
+            "$LLVM/llc" -O3 -mcpu="$sm" -nvptx-fma-level=0 "$stem.dev.opt.ll" -o "$stem.ptx" \
+                -pass-remarks-output="$stem.dev.llc.remarks.yaml"
+        fi
+        echo "$stem" > "$stem.stem"
+        cache_put "$c" "$(dirname "$stem")" "$(basename "$stem")." "${OBJS[@]}" stem
+        rm -f "$stem.stem"
+    fi
     [ -f "$stem.dev.ll" ] || return 0
-    "$LLVM/opt" -O3 "$stem.dev.ll" -S -o "$stem.dev.opt.ll" -pass-remarks-output="$stem.dev.opt.remarks.yaml" \
-        -pass-remarks-filter='loop-unroll|sroa|licm|gvn|instcombine|loop-vectorize'
-    "$LLVM/llc" -O3 -mcpu="$sm" -nvptx-fma-level=0 "$stem.dev.opt.ll" -o "$stem.ptx" \
-        -pass-remarks-output="$stem.dev.llc.remarks.yaml"
     # `kernel gx gy block smem`, then `S rkernel rgx rgy rblock rsmem` (workspace split),
     # `S atomic` (splitk-atomic) or `1 streamk` (stream-K). per-site-choice: a site table's candidate 0 when the
     # table comes first; `.sites` (every table's candidates) and `.pick<i>.launch` (the first table's candidate i,
@@ -273,4 +324,5 @@ if [ ! -d "$OUT/cutlass" ]; then
     (cd "$OUT/cutlass.git" && git rev-parse HEAD) > "$OUT/cutlass/COMMIT"
     rm -rf "$OUT/cutlass.git"
 fi
+echo "bundle cache: $(wc -l < "$OUT/.bundle-cache-hits" 2>/dev/null || echo 0) built stems and oracles reused (${BUNDLE_CACHE})"
 echo "bundle ready: $OUT"

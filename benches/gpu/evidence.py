@@ -26,6 +26,7 @@ import json
 import math
 import os
 import re
+import shutil
 import subprocess
 import sys
 from collections import Counter, defaultdict
@@ -829,6 +830,23 @@ def static(d, sm):
         seen[h] = stem
         if not os.path.exists(os.path.join(ev, stem + '.sass')):
             todo.append(stem)
+    # Incremental bundles (integrated_bundle.sh): EVIDENCE_CACHE holds each PTX's ptxas -v and SASS by the PTX's
+    # bytes, the SM and the ptxas release — an unchanged PTX takes the outputs ptxas / cuobjdump made for it before.
+    cache, ver = os.environ.get('EVIDENCE_CACHE'), None
+    if cache and todo:
+        ver = (subprocess.run([os.path.join(HERE, 'cudatool.sh'), 'ptxas', '--version'], capture_output=True,
+                              text=True).stdout.strip().splitlines() or [''])[-1]
+        if not os.path.exists(os.path.join(ev, 'ptxas.version')):
+            open(os.path.join(ev, 'ptxas.version'), 'w').write(ver + '\n')
+        key = {t: hashlib.sha1(open(os.path.join(d, t + '.ptx'), 'rb').read() + f'|{sm}|{ver}'.encode()).hexdigest()
+               for t in todo}
+        hit = [t for t in todo if all(os.path.exists(os.path.join(cache, key[t] + x)) for x in ('.ptxas', '.sass'))]
+        for t in hit:
+            for x in ('.ptxas', '.sass'):
+                shutil.copyfile(os.path.join(cache, key[t] + x), os.path.join(ev, t + x))
+        todo = [t for t in todo if t not in hit]
+        if hit:
+            print(f'static: {len(hit)} PTX from the evidence cache', file=sys.stderr)
     if todo:
         lst = os.path.join(ev, 'todo.txt')
         open(lst, 'w').write('\n'.join(todo) + '\n')
@@ -837,6 +855,13 @@ def static(d, sm):
                   f'cuobjdump -sass @.cubin > @.sass 2>&1; rm -f @.cubin\' < todo.txt')
         subprocess.run([os.path.join(HERE, 'cudatool.sh'), 'bash', '-c', script], check=True)
         os.remove(lst)
+        if cache:
+            os.makedirs(cache, exist_ok=True)
+            for t in todo:
+                for x in ('.ptxas', '.sass'):
+                    tmp = os.path.join(cache, f'{key[t]}{x}.{os.getpid()}')
+                    shutil.copyfile(os.path.join(ev, t + x), tmp)
+                    os.replace(tmp, os.path.join(cache, key[t] + x))
     objdump = next((x for x in (os.environ.get('LLVM', '/opt/homebrew/opt/llvm/bin') + '/llvm-objdump',
                                 'llvm-objdump', 'objdump') if subprocess.run(['sh', '-c', f'command -v {x}'],
                                                                              capture_output=True).returncode == 0),
