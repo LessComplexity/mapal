@@ -165,3 +165,15 @@ dying init's device copy: the 134 MB `y` upload gone) the T8192 prefill is **106
 undercut a cooperative launch (outside a loop its first one): lsm 1 × 131072 / 4 × 32768 0.65× / 0.87× the best torch
 leg (were 2.3× / 3.6×); 32 × 8192 1.80×. Open: flash-style streaming (an operand read through `exp(s − m)`, then the
 streamed row-block unit), causal block skips, attn_1024_64.
+
+**caching-memory** (`caching-memory.md`): the automatic KV cache and memory reuse, time and peak device memory
+(`MAPAL_GPU_PEAK`, against `torch.cuda.max_memory_allocated` one process a leg). A Llama-layer decode written
+naively (each step recomputes RMSNorm, the fused projection and RoPE over the whole carried history) gets its cache
+from `unchanged_plan`: after the first trip it runs the explicit-cache program's kernels at their cost (CUPTI), 4.5–12.5×
+faster than torch running the same naive program at 0.84–0.96× its memory; 1.19–2.18× the explicit program (the
+first trip projects all 6144 columns — the missing fact is demand). The explicit-cache program: 0.65–1.00×
+torch-compile's HF-style time at 0.69–0.96× its peak. New: `retain-same` (a value the same every trip launched /
+uploaded once), `cone-span` (loop buffers take the bytes of what died before the loop: −19 % peak on the explicit
+cache's B ≥ 8 rows), `arena-fit` (largest-first packing where it is smaller and folds as many zeros: prefill T2048
+−9 %); fixed: a seedless back-edge value claimed "unchanged", a widened delta's first piece skipped below row 0.
+Open: demand, the gathered-rows split rule, prefill peak (1.34–1.54× torch: materialized scores).
