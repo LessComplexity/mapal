@@ -328,7 +328,8 @@ impl<'a> FnEmit<'a> {
         self.allocas.push_str(&format!(
             "  {slot} = alloca i64\n  store i64 0, ptr {slot}\n"
         ));
-        self.dallocs.push((slot.clone(), g * c * eb));
+        let from = self.cone_birth(target);
+        self.dallocs.push((slot.clone(), g * c * eb, from));
         let scratch = self.tmp();
         self.line(format!(
             "{scratch} = call i64 @mapal_gpu_alloc(ptr {slot}, i64 {})",

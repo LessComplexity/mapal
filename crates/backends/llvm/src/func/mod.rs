@@ -430,8 +430,13 @@ pub(crate) struct FnEmit<'a> {
     /// its first launch and freed at function exit (a loop reuses it).
     split_slots: Vec<String>,
     /// `entry-arena`: every `mapal_gpu_alloc` the walk emits on a slot of its
-    /// own (an object's buffer, a split workspace), with its bytes.
-    dallocs: Vec<(String, u64)>,
+    /// own (an object's buffer, a split workspace), with its bytes and the
+    /// position its buffer is live from (`cone-span`: 0 where unknown).
+    dallocs: Vec<(String, u64, u32)>,
+    /// caching-memory `cone-span`: arena members whose buffer a loop carry
+    /// took at its entry (`carry-take`, S65's move): live to exit for the
+    /// buffers placed after them.
+    taken: Vec<ObjectId>,
     /// per-site-choice: the table of the site being emitted, taken by its
     /// launch point in place of the single launch (`gpu.rs` `site_call`).
     site_table: Option<gpu::SiteTable>,

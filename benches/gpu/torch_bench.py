@@ -538,6 +538,12 @@ def main():
         base = re.sub(r'^pt_gen_', 'pt_prefill_', stem.removesuffix('_tf32'))
         llm = base.startswith(('pt_llm_', 'px_llm_'))
         try:
+            # caching-memory: a leg's peak counts from the device bytes held before its inputs were made (the
+            # L2-flush buffer, anything an earlier stem left), so its own inputs, temporaries and outputs only.
+            fn = args = None
+            if dev == 'cuda':
+                torch.cuda.empty_cache()
+            stem_base = torch.cuda.memory_allocated() if dev == 'cuda' else 0
             fn, args = workload(base)
         except Exception as ex:  # noqa: BLE001 — a stem without a torch leg is a row, not the end of the run
             print(f'torch prog={stem} NOWORKLOAD {type(ex).__name__}: {str(ex)[:200]}', flush=True)
@@ -573,10 +579,15 @@ def main():
             torch.backends.cudnn.allow_tf32 = tf
             tol = 5e-2 if mode.startswith('bf16') else 1e-2 if scale and tf else 1e-3
             try:
-                if dev == 'cuda':  # caching-memory: the leg's peak device bytes, its tensors included
-                    torch.cuda.synchronize()
-                    torch.cuda.reset_peak_memory_stats()
+                base_b = stem_base
+                if dev == 'cuda' and (scale or sdpa_ref):  # the leg builds its own tensors: drop the stem's first set
+                    fn = args = None
+                    torch.cuda.empty_cache()
+                    base_b = torch.cuda.memory_allocated()
                 fn, args = workload(base, mode) if scale or sdpa_ref else (fn, args)
+                if dev == 'cuda':  # caching-memory: the leg's peak device bytes from its inputs on (their making's
+                    torch.cuda.synchronize()  # integer temporaries are the harness's, not the program's)
+                    torch.cuda.reset_peak_memory_stats()
                 t0 = time.perf_counter()
                 comp_mode = 'compile' in mode
                 if fn.__name__ == 'run':  # decode: the step is what compiles, the loop stays Python
@@ -590,7 +601,7 @@ def main():
                 ok, dv = gate(stem, outs, vals_dir, tol)
                 ts = timed(f, a, reps, flush)
                 vals = llm_vals(base, outs) if llm else ends(outs)
-                peak = torch.cuda.max_memory_allocated() / 2 ** 20 if dev == 'cuda' else float('nan')
+                peak = (torch.cuda.max_memory_allocated() - base_b) / 2 ** 20 if dev == 'cuda' else float('nan')
                 print(f'torch prog={stem} mode={mode} n={len(ts)} min_ms={ts[0]:.4f} med_ms={ts[len(ts) // 2]:.4f} '
                       f'max_ms={ts[-1]:.4f} within={ok} maxdev={dv:.3e} compile_s={comp:.1f} peak_mb={peak:.1f} '
                       f'values={",".join(f"{v:.6g}" for v in vals)}', flush=True)

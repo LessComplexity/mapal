@@ -758,6 +758,29 @@ pub struct GpuRungs {
     /// places them (`mapal_gpu_copy2d`). Off (`--gpu-off=retain-pieces`):
     /// such a site runs whole every trip.
     pub retain_pieces: bool,
+    /// caching-memory `retain-same`: a device cell map inside a loop whose
+    /// output is the same on every trip (`unchanged_plan`'s `same`: every
+    /// input unchanged — a transform of a carried array the loop never
+    /// writes) launches on the loop's first trip only, in its own persisting
+    /// buffer. Off (`--gpu-off=retain-same`): every trip launches it.
+    pub retain_same: bool,
+    /// caching-memory `cone-span`, under `entry-arena`: a buffer freed only at
+    /// exit lives in the arena from its first writer (a loop's body: its
+    /// outermost loop's entry, the `LoopEnter`'s position; an epilogue's site,
+    /// a unit's tile site, a kernel its zero pass rides) to exit — placed
+    /// first-fit among the straight-line members' intervals (a member a
+    /// carry took: to exit), so it takes the bytes of what died before (a
+    /// prebuilt cache's inputs). Off (`--gpu-off=cone-span`): every such
+    /// buffer lives over the whole function, after the members.
+    pub cone_span: bool,
+    /// caching-memory `arena-fit`: the arena's members are also placed
+    /// largest first (then in birth order), first-fit, and that arena kept
+    /// where it is smaller and `zero-fold` folds as many zero passes under
+    /// it — largest first packs tighter where small early buffers would push
+    /// a large late one above them, birth order where it does not (and a
+    /// tighter packing may put a member between a site's zero and the
+    /// site). Off (`--gpu-off=arena-fit`): birth order only.
+    pub arena_fit: bool,
 }
 
 impl GpuRungs {
@@ -866,11 +889,14 @@ impl GpuRungs {
         unchanged: true,
         retain_cell: true,
         retain_pieces: true,
+        retain_same: true,
+        cone_span: true,
+        arena_fit: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 103] = [
+    pub const NAMES: [&'static str; 106] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -974,6 +1000,9 @@ impl GpuRungs {
         "unchanged",
         "retain-cell",
         "retain-pieces",
+        "retain-same",
+        "cone-span",
+        "arena-fit",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -1082,6 +1111,9 @@ impl GpuRungs {
             "unchanged" => &mut self.unchanged,
             "retain-cell" => &mut self.retain_cell,
             "retain-pieces" => &mut self.retain_pieces,
+            "retain-same" => &mut self.retain_same,
+            "cone-span" => &mut self.cone_span,
+            "arena-fit" => &mut self.arena_fit,
             _ => return None,
         })
     }

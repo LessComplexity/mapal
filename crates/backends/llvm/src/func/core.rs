@@ -97,6 +97,7 @@ impl<'a> FnEmit<'a> {
             path_plan: None,
             split_slots: Vec::new(),
             dallocs: Vec::new(),
+            taken: Vec::new(),
             site_table: None,
             cand_tables: String::new(),
             hz: horizontal::HzEmit::default(),

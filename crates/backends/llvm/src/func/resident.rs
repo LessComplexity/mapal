@@ -108,6 +108,10 @@ pub(crate) struct DeltaUp {
     /// The written row's first cell: `a·var + b`.
     pub start: Affine,
     pub stride: u64,
+    /// caching-memory `retain-same`: the value is the same on every trip
+    /// (`unchanged_plan`'s `same`): the first trip uploads it whole, no
+    /// later one uploads anything (`start` / `stride` unused, `stride` 0).
+    pub same: bool,
 }
 
 /// A device site: a tile site (R0), or a row fold over a device output (R0
@@ -295,6 +299,10 @@ pub(crate) struct RetainCell {
     /// `cell-lanes` for the delta's cells (its own extent: a few rows can
     /// take a warp each where the whole map's cannot).
     pub lanes: u64,
+    /// caching-memory `retain-same`: the output is the same on every trip
+    /// (`unchanged_plan`'s `same`) — the first trip launches the whole map,
+    /// no later one launches anything (`delta` unused, no delta kernel).
+    pub same: bool,
 }
 
 impl RetainCell {
@@ -428,6 +436,9 @@ pub(crate) struct Arena {
     pub offset: SecondaryMap<ObjectId, u64>,
     /// Device-only arrays: no host slot (no `%Frame` field, no paging).
     pub host_free: SecondaryMap<ObjectId, ()>,
+    /// caching-memory `cone-span`: each member with its `(birth, death,
+    /// offset, aligned bytes)`, which the entry arena's later buffers avoid.
+    pub spans: Vec<(ObjectId, u32, u32, u64, u64)>,
 }
 
 /// First-fit interval coloring: `live[i] = (birth, death, bytes)` occupies
@@ -436,9 +447,22 @@ pub(crate) struct Arena {
 /// [`ARENA_ALIGN`]-aligned offset no time-overlapping object holds. Returns
 /// the offsets and the arena size.
 pub(crate) fn color(live: &[(u32, u32, u64)]) -> (Vec<u64>, u64) {
+    color_by(live, false)
+}
+
+/// [`color`], and with `by_size` (caching-memory `arena-fit`) the objects
+/// placed largest first (then in birth order): a large late object no
+/// longer lands above the small ones that filled the low offsets before it
+/// (first-fit by decreasing size, the interval-packing order that keeps
+/// the peak near the live bytes' maximum).
+pub(crate) fn color_by(live: &[(u32, u32, u64)], by_size: bool) -> (Vec<u64>, u64) {
     let size = |i: usize| live[i].2.div_ceil(ARENA_ALIGN) * ARENA_ALIGN;
     let mut order: Vec<usize> = (0..live.len()).collect();
-    order.sort_by_key(|&i| (live[i].0, i));
+    if by_size {
+        order.sort_by_key(|&i| (std::cmp::Reverse(size(i)), live[i].0, i));
+    } else {
+        order.sort_by_key(|&i| (live[i].0, i));
+    }
     let mut off = vec![0; live.len()];
     let (mut placed, mut total): (Vec<usize>, u64) = (Vec::new(), 0);
     for i in order {
@@ -459,6 +483,46 @@ pub(crate) fn color(live: &[(u32, u32, u64)]) -> (Vec<u64>, u64) {
         off[i] = at;
         total = total.max(at + size(i));
         placed.push(i);
+    }
+    (off, total)
+}
+
+/// caching-memory `cone-span`: offsets for buffers live from `from` to the
+/// function's exit (`bufs[i] = (from, bytes)`), placed in birth order at the
+/// lowest [`ARENA_ALIGN`]-aligned offset that no member live at or after
+/// `from` (`spans`: `(birth, death, offset, aligned bytes)`, fixed) and no
+/// buffer placed before holds. Returns the absolute offsets and the arena's
+/// size (at least `line`, the members' own).
+pub(crate) fn cone_fit(
+    spans: &[(u32, u32, u64, u64)],
+    line: u64,
+    bufs: &[(u32, u64)],
+) -> (Vec<u64>, u64) {
+    let size = |b: u64| b.div_ceil(ARENA_ALIGN) * ARENA_ALIGN;
+    let mut order: Vec<usize> = (0..bufs.len()).collect();
+    order.sort_by_key(|&i| (bufs[i].0, i));
+    let mut off = vec![0; bufs.len()];
+    let mut placed: Vec<(u64, u64)> = Vec::new();
+    let mut total = line;
+    for i in order {
+        let (from, bytes) = bufs[i];
+        let mut busy: Vec<(u64, u64)> = spans
+            .iter()
+            .filter(|&&(_, d, _, _)| d >= from)
+            .map(|&(_, _, o, b)| (o, o + b))
+            .chain(placed.iter().copied())
+            .collect();
+        busy.sort_unstable();
+        let mut at = 0;
+        for (s, e) in busy {
+            if at + size(bytes) <= s {
+                break;
+            }
+            at = at.max(e);
+        }
+        off[i] = at;
+        placed.push((at, at + size(bytes)));
+        total = total.max(at + size(bytes));
     }
     (off, total)
 }
@@ -1413,12 +1477,15 @@ impl<'a> FnEmit<'a> {
     }
 
     /// The `upload`s a loop's iteration writes only rows of (`delta-h2d`): the
-    /// value `write_delta` says crosses the back edge, or a `Same` image of it.
-    /// Its producer runs every iteration, inside the loop, so its device copy
-    /// is never freed there and holds last iteration's value.
+    /// value `write_delta` says crosses the back edge, or a `Same` image of it
+    /// — and (caching-memory `retain-same`) the uploads `unchanged_plan` has
+    /// the same on every trip. Its producer runs every iteration, inside the
+    /// loop, so its device copy is never freed there and holds last
+    /// iteration's value.
     fn delta_uploads(
         &self,
         upload: &SecondaryMap<ObjectId, ()>,
+        same_on: bool,
     ) -> SecondaryMap<ObjectId, DeltaUp> {
         let mut out = SecondaryMap::new();
         for d in self.ir.write_delta(self.f).values() {
@@ -1443,8 +1510,29 @@ impl<'a> FnEmit<'a> {
                         merge,
                         start,
                         stride,
+                        same: false,
                     },
                 );
+            }
+        }
+        let up = self.ir.unchanged_plan(self.f);
+        if same_on {
+            for o in up.same.keys().filter(|&o| upload.contains_key(o)) {
+                if let Some(&merge) = up.loop_of.get(o) {
+                    out.insert(
+                        o,
+                        DeltaUp {
+                            merge,
+                            start: Affine {
+                                var: merge,
+                                a: 0,
+                                b: 0,
+                            },
+                            stride: 0,
+                            same: true,
+                        },
+                    );
+                }
             }
         }
         out
@@ -1539,45 +1627,63 @@ impl<'a> FnEmit<'a> {
         // caching-memory `retain-cell`: a loop cell whose output changes in
         // a row delta only — not an in-place range cell (its buffer is the
         // state's), not a guarded one (an arm may skip a trip).
-        let retain = (rungs.retain_cell
-            && (rungs.retain_delta || (rungs.resident && rungs.retain_resident))
-            && range.is_none()
-            && !self.gated.contains_key(m))
-        .then(|| {
-            let up = self.ir.unchanged_plan(self.f);
-            let d = up.delta(morph.target)?;
-            let merge = *up.loop_of.get(morph.target)?;
-            let start = match d {
-                mapal_ir::Delta::Rows { start, .. } | mapal_ir::Delta::Pieces { start, .. } => {
-                    start
-                }
-                mapal_ir::Delta::Top => return None,
-            };
-            let view = self.ir.morphism(*self.ir.in_edges(start.var).first()?)?;
-            (view.source == merge || start.var == merge).then_some(())?;
-            // The delta's cells per trip (at most): its range, or its pieces.
-            let cells = match d {
-                mapal_ir::Delta::Pieces { w, step, .. } => site.extent.div_ceil(step) * w,
-                mapal_ir::Delta::Rows { stride, .. } => stride,
-                mapal_ir::Delta::Top => site.extent,
-            }
-            .min(site.extent);
-            let lanes = self.cell_lanes(&CellSite {
-                extent: cells,
-                ..site.clone()
-            });
-            Some(RetainCell {
-                merge,
-                delta: d,
-                id: gpu::cell_id(
-                    &format!("{tag}|retain|lanes={lanes}"),
-                    site.extent,
-                    self.profile,
-                ),
-                lanes,
+        let retain_on = range.is_none() && !self.gated.contains_key(m);
+        // caching-memory `retain-same`: one whose output is the same on
+        // every trip of its loop launches on the first trip only.
+        let same = (retain_on && rungs.retain_same)
+            .then(|| {
+                let up = self.ir.unchanged_plan(self.f);
+                let merge = *up.loop_of.get(morph.target)?;
+                up.same_every_trip(morph.target).then_some(RetainCell {
+                    merge,
+                    delta: mapal_ir::Delta::Top,
+                    id: 0,
+                    lanes: 1,
+                    same: true,
+                })
             })
-        })
-        .flatten();
+            .flatten();
+        let retain = (same.is_none()
+            && retain_on
+            && rungs.retain_cell
+            && (rungs.retain_delta || (rungs.resident && rungs.retain_resident)))
+            .then(|| {
+                let up = self.ir.unchanged_plan(self.f);
+                let d = up.delta(morph.target)?;
+                let merge = *up.loop_of.get(morph.target)?;
+                let start = match d {
+                    mapal_ir::Delta::Rows { start, .. } | mapal_ir::Delta::Pieces { start, .. } => {
+                        start
+                    }
+                    mapal_ir::Delta::Top => return None,
+                };
+                let view = self.ir.morphism(*self.ir.in_edges(start.var).first()?)?;
+                (view.source == merge || start.var == merge).then_some(())?;
+                // The delta's cells per trip (at most): its range, or its pieces.
+                let cells = match d {
+                    mapal_ir::Delta::Pieces { w, step, .. } => site.extent.div_ceil(step) * w,
+                    mapal_ir::Delta::Rows { stride, .. } => stride,
+                    mapal_ir::Delta::Top => site.extent,
+                }
+                .min(site.extent);
+                let lanes = self.cell_lanes(&CellSite {
+                    extent: cells,
+                    ..site.clone()
+                });
+                Some(RetainCell {
+                    merge,
+                    delta: d,
+                    same: false,
+                    id: gpu::cell_id(
+                        &format!("{tag}|retain|lanes={lanes}"),
+                        site.extent,
+                        self.profile,
+                    ),
+                    lanes,
+                })
+            })
+            .flatten()
+            .or(same);
         let cell = Cell {
             id: gpu::cell_id(&tag, site.extent, self.profile),
             body,
@@ -2251,7 +2357,7 @@ impl<'a> FnEmit<'a> {
             device.push(o);
         }
         if rungs.delta_h2d {
-            plan.delta = self.delta_uploads(&plan.upload);
+            plan.delta = self.delta_uploads(&plan.upload, rungs.retain_same);
         }
         // `trip-batch`, once every operand's device copy is placed: a loop
         // invariant's is made before the loop (uploaded, devgen'd or a
@@ -2359,7 +2465,19 @@ impl<'a> FnEmit<'a> {
         // streams do not follow; a function that opens streams keeps its own
         // buffers. Color per stream when a part ships both on one program.
         if arena && plan.chain.is_empty() {
-            plan.arena = Some(self.arena(&plan));
+            // caching-memory `arena-fit`: the members also placed largest
+            // first; that arena where it is smaller and folds as many zero
+            // passes (`zero-fold` reads the arena's byte sharing: a tighter
+            // packing may put a member between a site's zero and the site).
+            let birth = self.arena(&plan, false);
+            let fit = gpu::host_rungs(self.profile, self.contract, self.gpu_arms).arena_fit;
+            let large = fit
+                .then(|| self.arena(&plan, true))
+                .filter(|a| a.bytes < birth.bytes);
+            plan.arena = Some(match large {
+                Some(a) if self.zero_folds(&plan, &a) >= self.zero_folds(&plan, &birth) => a,
+                _ => birth,
+            });
         }
         // kernel-merging `zero-fold`: zero passes into earlier kernels.
         self.zero_fold(&mut plan);
@@ -2594,7 +2712,16 @@ impl<'a> FnEmit<'a> {
         Some(table.map_or(d, |p| d.max(p)))
     }
 
-    fn arena(&self, plan: &ResidentPlan) -> Arena {
+    /// The zero passes `zero-fold` folds into earlier kernels under the
+    /// arena `a` (a trial on a copy of the plan).
+    fn zero_folds(&self, plan: &ResidentPlan, a: &Arena) -> usize {
+        let mut trial = plan.clone();
+        trial.arena = Some(a.clone());
+        self.zero_fold(&mut trial);
+        trial.zeroed.len()
+    }
+
+    fn arena(&self, plan: &ResidentPlan, by_size: bool) -> Arena {
         let gated_use = |o: ObjectId| {
             self.ir.out_edges(o).iter().any(|&m| {
                 self.gated.contains_key(m)
@@ -2657,13 +2784,15 @@ impl<'a> FnEmit<'a> {
                 )
             })
             .collect();
-        let (offs, bytes) = color(&live);
+        let (offs, bytes) = color_by(&live, by_size);
         let mut a = Arena {
             bytes,
             ..Arena::default()
         };
-        for (o, off) in members.into_iter().zip(offs) {
+        for ((o, off), &(b, d, bytes)) in members.into_iter().zip(offs).zip(&live) {
             a.offset.insert(o, off);
+            a.spans
+                .push((o, b, d, off, bytes.div_ceil(ARENA_ALIGN) * ARENA_ALIGN));
         }
         let built = plan.devgen.keys().chain(plan.skip.keys());
         let built: Vec<ObjectId> = built
@@ -2821,8 +2950,80 @@ impl<'a> FnEmit<'a> {
         self.line(format!(
             "{d} = call i64 @mapal_gpu_alloc(ptr {slot}, i64 {bytes})"
         ));
-        self.dallocs.push((slot, bytes));
+        let from = self.cone_birth(o);
+        self.dallocs.push((slot, bytes, from));
         d
+    }
+
+    /// caching-memory `cone-span`: the position from which `o`'s buffer must
+    /// hold its bytes — its outermost loop's entry (the `LoopEnter`'s
+    /// position: every trip re-runs the body, so a buffer the body writes is
+    /// live across all of it) when a loop's body makes it, else its first
+    /// writer's (its own morphism, an epilogue's site, a unit's tile site, a
+    /// kernel its zero pass rides). 0 (the whole function) where no canonical
+    /// loop answers, or with the rung off.
+    pub(super) fn cone_birth(&self, o: ObjectId) -> u32 {
+        if !gpu::host_rungs(self.profile, self.contract, self.gpu_arms).cone_span {
+            return 0;
+        }
+        // Its writers: its own morphism, and a launch that writes it before
+        // that (an epilogue member at its site, a unit at its tile site) —
+        // the arena members' births (`arena`) the same way.
+        let mut writers: Vec<MorphismId> = self
+            .ir
+            .in_edges(o)
+            .iter()
+            .copied()
+            .chain(grouped_writer(&self.groups, o))
+            .chain(self.resident.as_ref().and_then(|p| p.unit_writer(o)))
+            .collect();
+        // `zero-fold`: an atomic site's zero pass runs as the tail of an
+        // earlier kernel, which writes the bytes from there.
+        if let Some(p) = &self.resident {
+            let tails: Vec<MorphismId> = p
+                .zero_by
+                .iter()
+                .filter(|(_, zs)| zs.iter().any(|(l, _)| writers.contains(l)))
+                .map(|(e, _)| e)
+                .collect();
+            writers.extend(tails);
+        }
+        let Some(mut at) = writers.iter().filter_map(|&w| self.lup.position(w)).min() else {
+            return 0;
+        };
+        for scc in self.ir.loop_structure(self.f) {
+            let cyclic = scc.objects.contains(&o);
+            for &merge in &scc.merges {
+                let Some(lp) = self.ir.loop_plan(self.f, merge) else {
+                    if cyclic {
+                        return 0;
+                    }
+                    continue;
+                };
+                let body = writers
+                    .iter()
+                    .any(|w| lp.decide_order.contains(w) || lp.advance_order.contains(w));
+                if !(body || cyclic || merge == o) {
+                    continue;
+                }
+                let enter = self
+                    .ir
+                    .in_edges(merge)
+                    .iter()
+                    .filter(|&&e| {
+                        self.ir
+                            .morphism(e)
+                            .is_some_and(|x| matches!(x.op, Operation::LoopEnter { .. }))
+                    })
+                    .filter_map(|&e| self.lup.position(e))
+                    .min();
+                match enter {
+                    Some(p) => at = at.min(p),
+                    None => return 0,
+                }
+            }
+        }
+        at
     }
 
     pub(super) fn dload(&mut self, o: ObjectId) -> String {
@@ -2936,6 +3137,15 @@ impl<'a> FnEmit<'a> {
                 .as_ref()
                 .is_some_and(|p| !p.is_carry_next(target) && p.alias(target) == target)
         {
+            if r.same {
+                self.emit_cell_once(m, c, &ptrs);
+                self.dvalid.insert(target, ());
+                for t in temps {
+                    self.line(format!("call void @mapal_gpu_free(ptr {t})"));
+                }
+                self.cell_out(target, bytes, &ptrs[0]);
+                return;
+            }
             let start = match r.delta {
                 mapal_ir::Delta::Rows { start, .. } | mapal_ir::Delta::Pieces { start, .. } => {
                     Some(start)
@@ -3056,6 +3266,31 @@ impl<'a> FnEmit<'a> {
         ));
     }
 
+    /// caching-memory `retain-same`: the loop's first trip (its flag, which
+    /// `retain_reset` clears at entry) launches the whole cell; no later trip
+    /// launches anything — the output is the same on every trip.
+    fn emit_cell_once(&mut self, m: MorphismId, c: &Cell, ptrs: &[String]) {
+        let target = self.ir.morphism(m).expect("cell").target;
+        let flag = self.retain_flag(target);
+        let valid = self.tmp();
+        self.line(format!("{valid} = load i1, ptr {flag}"));
+        let (whole, done) = (self.label(), self.label());
+        self.line(format!("br i1 {valid}, label %{done}, label %{whole}"));
+        self.label_line(&whole);
+        let geo = gpu::CellGeo {
+            range: None,
+            piece: 0,
+            lanes: c.lanes,
+            zero: 0,
+            clip: false,
+        };
+        let (gx, block) = geo.grid(c.n);
+        self.launch_cell(c.id, ptrs, &gx.to_string(), block);
+        self.line(format!("store i1 true, ptr {flag}"));
+        self.line(format!("br label %{done}"));
+        self.label_line(&done);
+    }
+
     /// caching-memory `retain-cell`: the loop's first trip (the flag
     /// `retain_reset` clears at entry) launches the whole cell; every later
     /// trip launches the delta kernel over the delta's cells met with `[0,
@@ -3092,8 +3327,13 @@ impl<'a> FnEmit<'a> {
         let n = c.n;
         let (lo, cnt) = match r.delta {
             mapal_ir::Delta::Pieces { w, step, .. } => {
-                // The first piece at or past 0: j0 = ⌈−start / step⌉ when start < 0.
-                let (neg, ns, up, q, j0, js, first) = (
+                // The first piece reaching past 0: j0 = ⌊−(start + w) / step⌋ + 1
+                // when start + w ≤ 0, else 0 — a piece that starts below 0 but
+                // ends inside is the delta's too (a window's widened rows); the
+                // kernel clips its cells below 0 as it clips those past `n`
+                // (an unsigned compare).
+                let (e, neg, ns, q, q1, j0, js, first) = (
+                    self.tmp(),
                     self.tmp(),
                     self.tmp(),
                     self.tmp(),
@@ -3102,11 +3342,12 @@ impl<'a> FnEmit<'a> {
                     self.tmp(),
                     self.tmp(),
                 );
-                self.line(format!("{neg} = icmp slt i64 {s}, 0"));
-                self.line(format!("{ns} = sub i64 0, {s}"));
-                self.line(format!("{up} = add i64 {ns}, {}", step - 1));
-                self.line(format!("{q} = udiv i64 {up}, {step}"));
-                self.line(format!("{j0} = select i1 {neg}, i64 {q}, i64 0"));
+                self.line(format!("{e} = add i64 {s}, {w}"));
+                self.line(format!("{neg} = icmp sle i64 {e}, 0"));
+                self.line(format!("{ns} = sub i64 0, {e}"));
+                self.line(format!("{q} = udiv i64 {ns}, {step}"));
+                self.line(format!("{q1} = add i64 {q}, 1"));
+                self.line(format!("{j0} = select i1 {neg}, i64 {q1}, i64 0"));
                 self.line(format!("{js} = mul i64 {j0}, {step}"));
                 self.line(format!("{first} = add i64 {s}, {js}"));
                 // Pieces starting inside: (n − 1 − first) ÷ step + 1.
@@ -3315,7 +3556,7 @@ impl<'a> FnEmit<'a> {
                         )
                     });
                 // caching-memory `retain-cell`: the same cell over its delta.
-                let retained = c.retain.as_ref().map(|r| {
+                let retained = c.retain.as_ref().filter(|r| !r.same).map(|r| {
                     let (step, w) = r.geo();
                     // Its own lanes: the body's lane variant where the delta's
                     // cells take a warp each.
@@ -3449,6 +3690,19 @@ impl<'a> FnEmit<'a> {
         let eb = crate::profile::elem_bytes(array_elem(&self.obj_ty(t)));
         let flag = self.retain_flag(t);
         let whole = format!("call void @mapal_gpu_h2d(i64 {d}, ptr {h}, i64 {bytes})");
+        // `retain-same`: the loop's first trip uploads it, no later one.
+        if du.same {
+            let valid = self.tmp();
+            self.line(format!("{valid} = load i1, ptr {flag}"));
+            let (first, done) = (self.label(), self.label());
+            self.line(format!("br i1 {valid}, label %{done}, label %{first}"));
+            self.label_line(&first);
+            self.line(whole);
+            self.line(format!("store i1 true, ptr {flag}"));
+            self.line(format!("br label %{done}"));
+            self.label_line(&done);
+            return;
+        }
         let Some((wllt, tv)) = self.load_whole(du.start.var) else {
             self.line(whole);
             return;
@@ -3905,9 +4159,28 @@ impl<'a> FnEmit<'a> {
             return String::new();
         }
         let (copy, h2d, d2h, retained) = self.trip_moves(plan);
+        // caching-memory `retain-same`: the cells launched and the uploads
+        // copied on the loop's first trip only.
+        let same = self.resident.as_ref().map_or(0, |p| {
+            plan.decide_order
+                .iter()
+                .chain(&plan.advance_order)
+                .filter(|&&m| {
+                    let t = self.ir.morphism(m).expect("morphism resolves").target;
+                    p.cells
+                        .get(m)
+                        .is_some_and(|c| c.retain.as_ref().is_some_and(|r| r.same))
+                        || p.delta.get(t).is_some_and(|d| d.same)
+                })
+                .count()
+        });
         format!(
-            "; mapal.move loop={header} carried={} h2d={h2d} d2h={d2h} host_copy={copy} alloc=0 retained={retained}\n",
-            self.carried_desc(plan.merge)
+            "; mapal.move loop={header} carried={} h2d={h2d} d2h={d2h} host_copy={copy} alloc=0 retained={retained}{}\n",
+            self.carried_desc(plan.merge),
+            match same {
+                0 => String::new(),
+                n => format!(" same={n}"),
+            }
         )
     }
 
@@ -4021,6 +4294,7 @@ impl<'a> FnEmit<'a> {
                 self.line(format!("{d} = load i64, ptr {sa}"));
                 self.line(format!("store i64 {d}, ptr {sm}"));
                 self.line(format!("store i64 0, ptr {sa}"));
+                self.taken.push(a);
                 self.dvalid.remove(a);
                 self.dvalid.insert(c.key(), ());
                 continue;
@@ -4166,24 +4440,52 @@ impl<'a> FnEmit<'a> {
             .filter(|&&o| self.arena_offset(o).is_none())
             .filter_map(|&o| self.dslots.get(o))
             .collect();
-        let mut cone: Vec<(String, u64)> = Vec::new();
-        for (slot, bytes) in &self.dallocs {
+        let mut cone: Vec<(String, u64, u32)> = Vec::new();
+        for (slot, bytes, from) in &self.dallocs {
             if freed.contains(slot) {
                 continue;
             }
-            match cone.iter_mut().find(|(s, _)| s == slot) {
-                Some(c) => c.1 = c.1.max(*bytes),
-                None => cone.push((slot.clone(), *bytes)),
+            match cone.iter_mut().find(|(s, _, _)| s == slot) {
+                Some(c) => {
+                    c.1 = c.1.max(*bytes);
+                    c.2 = c.2.min(*from);
+                }
+                None => cone.push((slot.clone(), *bytes, *from)),
             }
         }
-        let line = self
+        let (line, spans) = self
             .resident
             .as_ref()
             .and_then(|p| p.arena.as_ref())
-            .map_or(0, |a| a.bytes);
-        let live: Vec<(u32, u32, u64)> = cone.iter().map(|&(_, b)| (0, u32::MAX, b)).collect();
-        let (offs, cone_bytes) = color(&live);
-        let total = line + cone_bytes;
+            .map_or((0, Vec::new()), |a| (a.bytes, a.spans.clone()));
+        // A member a carry took lives on in the carry's slots (swapped at
+        // every back edge, then the exit's): to exit.
+        let spans: Vec<(u32, u32, u64, u64)> = spans
+            .into_iter()
+            .map(|(o, b, d, off, sz)| {
+                let d = if self.taken.contains(&o) { u32::MAX } else { d };
+                (b, d, off, sz)
+            })
+            .collect();
+        // caching-memory `cone-span`: each buffer from its position to exit,
+        // first-fit among the members that are live then (and the buffers
+        // placed before it); off, after the members over the whole function.
+        let (offs, total) = if gpu::host_rungs(self.profile, self.contract, self.gpu_arms).cone_span
+        {
+            cone_fit(
+                &spans,
+                line,
+                &cone.iter().map(|c| (c.2, c.1)).collect::<Vec<_>>(),
+            )
+        } else {
+            let live: Vec<(u32, u32, u64)> =
+                cone.iter().map(|&(_, b, _)| (0, u32::MAX, b)).collect();
+            let (offs, cone_bytes) = color(&live);
+            (
+                offs.into_iter().map(|o| line + o).collect(),
+                line + cone_bytes,
+            )
+        };
         if total == 0 {
             return false;
         }
@@ -4195,11 +4497,10 @@ impl<'a> FnEmit<'a> {
         text.push_str(&format!(
             "  {base} = call i64 @mapal_gpu_arena(ptr %darena, i64 {total})\n"
         ));
-        for ((slot, _), off) in cone.iter().zip(offs) {
+        for ((slot, _, _), off) in cone.iter().zip(offs) {
             let d = self.tmp();
             text.push_str(&format!(
-                "  {d} = add i64 {base}, {}\n  store i64 {d}, ptr {slot}\n",
-                line + off
+                "  {d} = add i64 {base}, {off}\n  store i64 {d}, ptr {slot}\n"
             ));
         }
         self.allocas.push_str(&text);
@@ -4246,7 +4547,7 @@ pub(super) fn array_elem(ty: &Ty) -> &Ty {
 
 #[cfg(test)]
 mod tests {
-    use super::{ARENA_ALIGN, color};
+    use super::{ARENA_ALIGN, color, color_by};
 
     #[test]
     fn grouped_stream_lookup_uses_aliases_and_keeps_unknowns_legacy() {
@@ -4325,6 +4626,30 @@ mod tests {
         // Strictly after: shared.
         let (off, total) = color(&[(0, 2, 100), (3, 4, 100)]);
         assert_eq!((off[0], off[1], total), (0, 0, ARENA_ALIGN));
+    }
+
+    /// caching-memory `arena-fit`: largest first, a large late object takes
+    /// the low bytes and the small early ones pack around it — never more
+    /// than the birth order here, and the live maximum on this shape.
+    #[test]
+    fn color_by_size_packs_large_first() {
+        let a = ARENA_ALIGN;
+        // Two small early lives, then a large one born after the first dies.
+        let live = [(0, 1, a), (0, 5, a), (2, 5, 4 * a)];
+        let (_, birth) = color(&live);
+        let (off, fit) = color_by(&live, true);
+        assert_eq!(birth, 6 * a, "birth order stacks the large one above both");
+        assert_eq!(fit, 5 * a, "{off:?}");
+        assert_eq!(off[2], 0);
+        // Same lives, no conflict anywhere.
+        for i in 0..live.len() {
+            for j in 0..i {
+                let t = live[i].0 <= live[j].1 && live[j].0 <= live[i].1;
+                let b = off[i] < off[j] + live[j].2.div_ceil(a) * a
+                    && off[j] < off[i] + live[i].2.div_ceil(a) * a;
+                assert!(!(t && b), "{i} {j} {off:?}");
+            }
+        }
     }
 
     /// Every offset is `cuMemAlloc`'s alignment, and a hole is reused first-fit.

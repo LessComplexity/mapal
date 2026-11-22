@@ -261,6 +261,47 @@ fn unchanged_constant_carry_and_calls() {
     assert!(!clock.is_empty() && clock.iter().all(|&o| !up.same_every_call(o)));
 }
 
+/// A map over the history's back-edge value (`write_delta` keys the write
+/// on an image, not on the view): the value changes every trip, so neither it
+/// nor what reads it is "the same every trip" (the seedless back edge once
+/// defaulted to unchanged).
+#[test]
+fn unchanged_back_edge_value_is_never_same() {
+    let src = "fn main() {
+    128 -> iota -> tc;
+    8 -> iota -> krange;
+    64 -> iota -> tw;
+    tw -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> x; x / 128.0 } -> wk;
+    (0.0, 128) -> fill -> x0;
+    (0.0, 8) -> fill -> o0;
+    mut x: [f32; 128] <- x0;
+    mut o: [f32; 8] <- o0;
+    mut t: i32 <- 0;
+    loop {
+        (t < 16) -> {
+            -true-> {
+                tc -> map { c -> (c / 8 == t) -> { -true-> { (c * 7 + 13) % 101 - 50 -> widen_f32 -> f; f / 64.0 + o[c % 8] } -false-> x[c]; } } -> x;
+                x -> map { v -> v * 0.5 } -> xh;
+                tc -> map { c -> c / 8 -> i; c % 8 -> j; (0.0, krange) -> fold { acc, k -> acc + xh[i * 8 + k] * wk[k * 8 + j] } } -> kk;
+                krange -> map { j -> (0.0, krange) -> fold { acc, r -> acc + kk[(t * 8 + r) % 128] * wk[r * 8 + j] } } -> o;
+                t + 1 -> t;
+                -> loop;
+            }
+            -false-> o -> out;
+        }
+    }
+    out[0] -> println;
+    out[7] -> println;
+}
+";
+    let ir = lower(src);
+    let up = ir.unchanged_plan(ir.entry());
+    for name in ["xh", "kk"] {
+        let o = named(&ir, name);
+        assert!(!up.same_every_trip(o), "{name}: {up:?}");
+    }
+}
+
 /// The GPU emission on the rtx-5080, `place` off (every capable site on the
 /// device) and the emulator's rungs off, with `off` off too.
 fn device_emission(ir: &CategoryIr, off: &[&str]) -> Emission {
@@ -335,6 +376,84 @@ fn retained_history_on_the_emulator() {
     }
 }
 
+/// The loop cells launched and uploads copied on their loop's first trip
+/// only (`; mapal.move … same=N`, `retain-same`).
+fn same_cells(em: &Emission) -> u64 {
+    em.text
+        .lines()
+        .filter(|l| l.starts_with("; mapal.move "))
+        .filter_map(|l| l.split(" same=").nth(1))
+        .filter_map(|v| v.split_whitespace().next()?.parse::<u64>().ok())
+        .sum()
+}
+
+/// `retain-same`: a loop that re-lays out a carried array it never writes
+/// (a transpose of constants, every trip) uploads the transpose on the
+/// first trip only (nothing crosses after: `h2d=0`); the history's
+/// projection reads it. Every emulator mode and the OFF arm print the
+/// interpreter's values.
+#[test]
+fn same_every_trip_launches_once() {
+    let Some(clang) = emu::clang() else {
+        return;
+    };
+    let src = "fn main() {
+    64 -> iota -> i_w;
+    i_w -> map { t -> (t * 3 + 1) % 5 - 2 -> widen_f32 } -> w0;
+    256 -> iota -> i_h;
+    i_h -> map { t -> (t * 7 + 2) % 5 - 2 -> widen_f32 } -> h0;
+    64 -> iota -> rW;
+    256 -> iota -> rH;
+    8 -> iota -> rD;
+    mut wc: [f32; 64] <- w0;
+    mut hx: [f32; 256] <- h0;
+    mut t: i32 <- 0;
+    loop {
+        (t < 4) -> {
+            -true-> {
+                rW -> map { e -> wc[e % 8 * 8 + e / 8] } -> wt;
+                rH -> map { e -> e / 8 -> r; e % 8 -> j; (0.0, rD) -> fold { acc, k -> acc + hx[r * 8 + k] * wt[k * 8 + j] } } -> y;
+                rH -> map { e -> y[e] * 0.5 } -> hx;
+                wc -> wc;
+                t + 1 -> t;
+                -> loop;
+            }
+            -false-> hx -> out;
+        }
+    }
+    out[0] -> println;
+    out[255] -> println;
+}
+";
+    let ir = lower(src);
+    let want = interp(&ir);
+    let up = ir.unchanged_plan(ir.entry());
+    assert!(up.same_every_trip(named(&ir, "wt")), "{up:?}");
+    let em = device_emission(&ir, &[]);
+    assert_eq!(same_cells(&em), 1, "{}", em.text);
+    assert!(em.text.contains(" h2d=0 "), "{}", em.text);
+    let dev = em.device.as_deref().unwrap_or("");
+    let ex = emu::build_emulated(&clang, &em.text, dev);
+    for (mode, (got, _)) in MODES.iter().zip(ex.run_each(&MODES)) {
+        assert_eq!(got, want, "{mode:?}");
+    }
+    let off = device_emission(&ir, &["retain-same"]);
+    assert_eq!(same_cells(&off), 0);
+    assert!(off.text.contains(" h2d=256 "), "{}", off.text);
+    let got = emu::run_emulated(&clang, &off.text, off.device.as_deref().unwrap_or(""));
+    assert_eq!(got, want, "retain-same off");
+}
+
+/// The device arena's bytes (`@mapal_gpu_arena(…, i64 N)`), 0 without one.
+fn arena_bytes(em: &Emission) -> u64 {
+    em.text
+        .split("@mapal_gpu_arena(ptr %darena, i64 ")
+        .skip(1)
+        .filter_map(|r| r.split(')').next()?.parse::<u64>().ok())
+        .max()
+        .unwrap_or(0)
+}
+
 fn check_history(clang: &str, i: usize, p: &testgen::HistoryProg) -> Vec<(&'static str, u64)> {
     let src = testgen::history_prog_src(p);
     let ir = lower(&src);
@@ -370,6 +489,25 @@ fn check_history(clang: &str, i: usize, p: &testgen::HistoryProg) -> Vec<(&'stat
     let cells = dev.matches(" retain=").count() as u64;
     c.push(("retained-cell-kernels", cells));
     c.push(("retained", retained(&em)));
+    c.push(("same-cells", same_cells(&em)));
+    // `cone-span`: the loop's buffers take bytes of what died before the
+    // loop, never more than the whole-function placement.
+    let whole = device_emission(&ir, &["cone-span"]);
+    let (on_b, off_b) = (arena_bytes(&em), arena_bytes(&whole));
+    assert!(on_b <= off_b, "cone-span {on_b} > {off_b}\n{src}");
+    if on_b < off_b {
+        c.push(("cone-shared", 1));
+    }
+    // `arena-fit`: the members' smaller coloring of largest-first and birth
+    // order; the loop's buffers placed after them (`cone-span`) may land
+    // either way, so the whole arena is counted, not bounded.
+    let birth = arena_bytes(&device_emission(&ir, &["arena-fit"]));
+    if on_b < birth {
+        c.push(("fit-smaller", 1));
+    }
+    if on_b > birth {
+        c.push(("fit-larger", 1));
+    }
     if em.text.contains("call void @mapal_gpu_copy2d(") {
         c.push(("gathered-sites", 1));
     }
@@ -384,7 +522,14 @@ fn check_history(clang: &str, i: usize, p: &testgen::HistoryProg) -> Vec<(&'stat
     );
     assert_eq!(cpu, want, "cpu\n{src}");
     if i % 3 == 0 {
-        let arm = ["unchanged", "retain-cell", "retain-pieces"][(i / 3) % 3];
+        let arm = [
+            "unchanged",
+            "retain-cell",
+            "retain-pieces",
+            "retain-same",
+            "cone-span",
+            "arena-fit",
+        ][(i / 3) % 6];
         let off = device_emission(&ir, &[arm]);
         let got = emu::run_emulated(clang, &off.text, off.device.as_deref().unwrap_or(""));
         assert_eq!(got, want, "{arm} off\n{src}");
@@ -426,6 +571,9 @@ fn caching_on_generated_programs() {
         "retained-cell-kernels",
         "retained",
         "gathered-sites",
+        "same-cells",
+        "cone-shared",
+        "fit-smaller",
         "off-arm-runs",
     ] {
         assert!(c.get(key).copied().unwrap_or(0) > 0, "{key}: {c:?}");

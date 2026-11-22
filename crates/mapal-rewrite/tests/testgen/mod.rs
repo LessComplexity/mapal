@@ -5031,6 +5031,10 @@ pub struct HistoryProg {
     /// The row is written at the trip's end: the transforms read the history
     /// as the trip found it (its previous trip's row is the new one).
     pub late: bool,
+    /// The history's initial value is built before the loop through a
+    /// transform that dies there (a prebuilt cache's inputs): the loop's own
+    /// buffers may take its bytes (`cone-span`).
+    pub prebuilt: bool,
 }
 
 pub fn history_strategy() -> impl Strategy<Value = HistoryProg> {
@@ -5048,10 +5052,11 @@ pub fn history_strategy() -> impl Strategy<Value = HistoryProg> {
             any::<bool>(),
             any::<bool>(),
             any::<bool>(),
+            any::<bool>(),
         ),
     )
         .prop_map(
-            |(b, l, d, n, trips, p0, rows_form, (rowfold, same, rot, constant, late))| {
+            |(b, l, d, n, trips, p0, rows_form, (rowfold, same, rot, constant, late, prebuilt))| {
                 HistoryProg {
                     b,
                     l,
@@ -5065,6 +5070,7 @@ pub fn history_strategy() -> impl Strategy<Value = HistoryProg> {
                     rot,
                     constant,
                     late,
+                    prebuilt,
                 }
             },
         )
@@ -5093,8 +5099,26 @@ pub fn history_prog_src(p: &HistoryProg) -> String {
         b * d,
         d * n
     );
+    // A prebuilt history: a scaled copy (dead once the next map has read
+    // it, neighbour rows included), then the carried init.
+    let init = if p.prebuilt {
+        let hd = b * l * d;
+        // Small row values around it: one dies before the scaled copy is
+        // made, one lives past it (the arena's order of placement matters).
+        s += &format!(
+            "    rBL -> map {{ r -> h0[r * {d}] * 0.5 }} -> r1;\n    \
+             rBL -> map {{ r -> h0[r * {d} + {d} - 1] + 1.0 }} -> r0;\n    \
+             rBL -> map {{ r -> r0[r] * r0[(r + 1) % {bl}] }} -> m0;\n    \
+             rHD -> map {{ e -> h0[e] * g[e % {d}] + m0[e / {d}] }} -> hs;\n    \
+             rHD -> map {{ e -> hs[e] + hs[(e + {d}) % {hd}] + r1[e / {d}] }} -> hb;\n",
+            bl = b * l
+        );
+        "hb"
+    } else {
+        "h0"
+    };
     s += &format!(
-        "    mut hx: [f32; {}] <- h0;\n    mut x: [f32; {}] <- x0;\n",
+        "    mut hx: [f32; {}] <- {init};\n    mut x: [f32; {}] <- x0;\n",
         b * l * d,
         b * d
     );

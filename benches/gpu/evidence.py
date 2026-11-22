@@ -559,7 +559,7 @@ def move_facts(ll, trips=()):
     f = dict(loops=len(loops), per_loop=loops, arena=arena)
     for k in MOVE_KEYS:
         f[k] = sum(x[k] for x in loops)
-    for k in ('h2d', 'd2h', 'host_copy'):
+    for k in ('h2d', 'd2h', 'host_copy', 'same'):
         f['intent_' + k] = sum(int(x['intent'].get(k, 0)) for x in loops)
     carried = [c for x in loops for c in str(x['intent'].get('carried', '-')).split(',') if c != '-']
     f['carried'] = len(carried)

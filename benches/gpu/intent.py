@@ -495,6 +495,14 @@ INTENT = {
     'retain-pieces': dict(host=True, applies='host.calls.copy2d > 0', on=[
         ('the gathered rows are placed after their launch', 'host.calls.copy2d >= 1')],
         applies_off='host.move.loops > 0', off=[('no gathered rows placed', 'host.calls.copy2d == 0')]),
+    # caching-memory `retain-same`: a loop value the same on every trip (`unchanged_plan`'s `same`: a transform of a
+    # carried array the loop never writes) is launched (a device cell) or uploaded (a host map a device site reads) in
+    # the loop's first pass only (`; mapal.move … same=N`): its per-trip moves are the rest's (the move check's
+    # realized h2d per trip equals the intent's, which leaves it out). `.off-retain-same`: every trip.
+    'retain-same': dict(host=True, applies='host.move.intent_same > 0', on=[
+        ('per-trip uploads as the intent (a same value crosses once per loop entry)',
+         'host.move.h2d_b <= host.move.intent_h2d')],
+        applies_off='host.move.loops > 0', off=[('no first-pass-only value', 'host.move.intent_same == 0')]),
     # device-geometry `row-tree`: a row fold beside local folds that load nothing (RMSNorm's sum of squares, then
     # its Heron root) takes a warp's lanes (`cell-lanes`): lane l every 32nd element, a butterfly of shuffles.
     # `.off-row-tree`: such a row is one thread's serial fold.

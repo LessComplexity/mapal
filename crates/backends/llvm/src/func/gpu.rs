@@ -6493,7 +6493,7 @@ impl<'a> FnEmit<'a> {
                     "  {slot} = alloca i64\n  store i64 0, ptr {slot}\n"
                 ));
                 self.split_slots.push(slot.clone());
-                self.dallocs.push((slot.clone(), bytes));
+                self.dallocs.push((slot.clone(), bytes, 0));
                 slot
             }
         };
@@ -6742,7 +6742,7 @@ impl<'a> FnEmit<'a> {
                     "  {slot} = alloca i64\n  store i64 0, ptr {slot}\n"
                 ));
                 self.split_slots.push(slot.clone());
-                self.dallocs.push((slot.clone(), bytes));
+                self.dallocs.push((slot.clone(), bytes, 0));
                 let ws = self.tmp();
                 self.line(format!(
                     "{ws} = call i64 @mapal_gpu_alloc(ptr {slot}, i64 {bytes})"
@@ -7113,7 +7113,7 @@ impl<'a> FnEmit<'a> {
                         "  {slot} = alloca i64\n  store i64 0, ptr {slot}\n"
                     ));
                     self.split_slots.push(slot.clone());
-                    self.dallocs.push((slot.clone(), s * bytes_o));
+                    self.dallocs.push((slot.clone(), s * bytes_o, 0));
                     let ws = self.tmp();
                     self.line(format!(
                         "{ws} = call i64 @mapal_gpu_alloc(ptr {slot}, i64 {})",

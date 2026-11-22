@@ -801,8 +801,27 @@ impl CategoryIr {
                         || wd.values().any(|d| {
                             matches!(*d, Delta::Rows { next, .. } | Delta::Pieces { next, .. } if next == t)
                         });
+                    // (A back-edge value whose view is no seed — `write_delta`
+                    // keyed it on an image — takes its own delta: it changes
+                    // where this trip writes, never "unchanged".)
+                    let own = || {
+                        wd.values()
+                            .find_map(|d| match *d {
+                                Delta::Rows { next, .. } | Delta::Pieces { next, .. }
+                                    if next == t =>
+                                {
+                                    Some(Chg::Arr(*d))
+                                }
+                                _ => None,
+                            })
+                            .unwrap_or(if is_arr {
+                                Chg::Arr(Delta::Top)
+                            } else {
+                                Chg::Num
+                            })
+                    };
                     let c = if seeded {
-                        state_of(&st, t)
+                        st.get(t).copied().unwrap_or_else(own)
                     } else if !any {
                         Chg::Same
                     } else if gated.contains(&m) {
