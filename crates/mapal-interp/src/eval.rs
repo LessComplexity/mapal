@@ -208,10 +208,17 @@ pub(crate) fn eval_morphism(
             Ok(())
         }
         Operation::Add | Operation::Sub | Operation::Mul | Operation::Div | Operation::Mod => {
-            let tf32 = op == Operation::Mul
-                && WEAKEST.with(std::cell::Cell::get)
-                && ctx.ir.precision(m).admits_tf32();
-            let v = arith(ctx, source, op, tf32)?;
+            let weak = if op == Operation::Mul && WEAKEST.with(std::cell::Cell::get) {
+                let p = ctx.ir.precision(m);
+                match (p.half(), p.admits_tf32()) {
+                    (Some(n), _) => Weak::Narrow(n),
+                    (None, true) => Weak::Tf32,
+                    (None, false) => Weak::None,
+                }
+            } else {
+                Weak::None
+            };
+            let v = arith(ctx, source, op, weak)?;
             write(ctx, target, v);
             Ok(())
         }
@@ -628,8 +635,28 @@ pub(crate) fn round_tf32(x: f32) -> f32 {
     f32::from_bits(b.wrapping_add(0x0fff + ((b >> 13) & 1)) & !0x1fff)
 }
 
+/// The weakest member a product evaluates with under `--weakest`: its f32
+/// operands rounded first to TF32 (ADR-0041) or to a narrow format (ADR-0043
+/// D4: `bf16` / `f16`, ties to even — the oracle's `to_bf16` / `to_f16`).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Weak {
+    None,
+    Tf32,
+    Narrow(mapal_ir::NarrowFloat),
+}
+
+impl Weak {
+    fn round(self, x: f32) -> f32 {
+        match self {
+            Weak::None => x,
+            Weak::Tf32 => round_tf32(x),
+            Weak::Narrow(n) => mapal_ir::narrow::widen(n, mapal_ir::narrow::round(n, f64::from(x))),
+        }
+    }
+}
+
 /// `Add/Sub/Mul/Div/Mod` at the operand width; integer ÷/% by 0 ⇒ trap.
-fn arith(ctx: &EvalCtx, source: ObjectId, op: Operation, tf32: bool) -> Result<RValue, Abort> {
+fn arith(ctx: &EvalCtx, source: ObjectId, op: Operation, weak: Weak) -> Result<RValue, Abort> {
     let pair = read(ctx, source);
     let a = scalar(component(pair, 0));
     let b = scalar(component(pair, 1));
@@ -675,8 +702,8 @@ fn arith(ctx: &EvalCtx, source: ObjectId, op: Operation, tf32: bool) -> Result<R
         (Value::I32(x), Value::I32(y)) => int_arith!(Value::I32, *x, *y),
         (Value::I64(x), Value::I64(y)) => int_arith!(Value::I64, *x, *y),
         (Value::U8(x), Value::U8(y)) => int_arith!(Value::U8, *x, *y),
-        (Value::F32(x), Value::F32(y)) if tf32 => {
-            float_arith!(Value::F32, round_tf32(*x), round_tf32(*y))
+        (Value::F32(x), Value::F32(y)) if weak != Weak::None => {
+            float_arith!(Value::F32, weak.round(*x), weak.round(*y))
         }
         (Value::F32(x), Value::F32(y)) => float_arith!(Value::F32, *x, *y),
         (Value::F64(x), Value::F64(y)) => float_arith!(Value::F64, *x, *y),

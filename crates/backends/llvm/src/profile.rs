@@ -199,18 +199,17 @@ pub struct Caps {
     /// `cp.async` global→shared copies (4/8/16 B a thread, no register
     /// round trip).
     pub cp_async: bool,
-    /// The warp-level tensor-core product (`mma.sync`, TF32 operands in
-    /// registers, f32 accumulator in registers), and its shape per issuing
-    /// warp; `None` = none.
-    pub mma: Option<MmaShape>,
+    /// **The matrix instructions the SM issues** (tensor-core): each one's
+    /// `m × n × k` per issuing group, the operands' format, where each
+    /// operand and the accumulator live when it issues, and the measured
+    /// rounding of its accumulator ([`MatrixOp`]). The tile rule maps a site's
+    /// operand format and geometry onto whichever of these the part has
+    /// ([`Caps::matrix_op`]); empty = none.
+    pub matrix: &'static [MatrixOp],
     /// `ldmatrix`: a warp loads 8×8 b16 tiles from shared memory into the
-    /// `mma` fragment layout.
+    /// `mma` fragment layout (`.trans`: transposed, a `k × n` panel into the
+    /// `b` fragment).
     pub ldmatrix: bool,
-    /// The warpgroup-level tensor-core product (`wgmma.mma_async`: operands
-    /// from shared-memory descriptors, accumulator in registers), and its
-    /// shape per issuing warpgroup (`n` the largest; any multiple of 8 up to
-    /// it); `None` = none.
-    pub wgmma: Option<MmaShape>,
     /// `griddepcontrol`: a kernel may start while the one before it drains
     /// and wait at its entry (programmatic dependent launch).
     pub griddepcontrol: bool,
@@ -235,11 +234,117 @@ pub struct MmaShape {
     pub threads: u64,
 }
 
+/// The format both operands of a matrix instruction carry. Every product of
+/// two such values is exact in the f32 accumulator (ADR-0043 context 3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MmaFmt {
+    /// f32 storage read as TF32 (10 explicit significand bits).
+    Tf32,
+    Bf16,
+    F16,
+    /// OCP fp8: 4 exponent / 3 fraction bits, finite only.
+    E4m3,
+    /// OCP fp8: 5 exponent / 2 fraction bits.
+    E5m2,
+}
+
+impl MmaFmt {
+    /// Bytes one operand element occupies in a fragment.
+    pub fn bytes(self) -> u64 {
+        match self {
+            MmaFmt::Tf32 => 4,
+            MmaFmt::Bf16 | MmaFmt::F16 => 2,
+            MmaFmt::E4m3 | MmaFmt::E5m2 => 1,
+        }
+    }
+
+    /// The format a 16-bit member multiplies in (ADR-0043 D4).
+    pub fn of_narrow(n: mapal_ir::NarrowFloat) -> MmaFmt {
+        match n {
+            mapal_ir::NarrowFloat::Bf16 => MmaFmt::Bf16,
+            mapal_ir::NarrowFloat::F16 => MmaFmt::F16,
+        }
+    }
+
+    /// The PTX type name (`.bf16`, `.e4m3`, …).
+    pub fn ptx(self) -> &'static str {
+        match self {
+            MmaFmt::Tf32 => "tf32",
+            MmaFmt::Bf16 => "bf16",
+            MmaFmt::F16 => "f16",
+            MmaFmt::E4m3 => "e4m3",
+            MmaFmt::E5m2 => "e5m2",
+        }
+    }
+}
+
+/// Where a matrix instruction's operand or accumulator lives when it issues.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Home {
+    /// Each thread's registers, in the instruction's fragment layout.
+    Regs,
+    /// Shared memory, addressed by a matrix descriptor (layout, swizzle).
+    Smem,
+    /// Tensor memory: a per-SM accumulator store beside the register file
+    /// (allocated, loaded and stored by its own instructions).
+    Tmem,
+}
+
+/// **One matrix instruction, described by the geometry it executes**
+/// (hardware-properties): its shape per issuing group, its operand format,
+/// where `a`, `b` and the accumulator live at issue, and its accumulator's
+/// measured unit roundoff `u_a = 2^acc_u`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MatrixOp {
+    pub shape: MmaShape,
+    pub fmt: MmaFmt,
+    pub a: Home,
+    pub b: Home,
+    pub acc: Home,
+    /// The accumulator's unit roundoff as a power of two: −24 rounds each
+    /// addition to nearest, −23 truncates the aligned addends and the sum
+    /// (the RTX 5080's `mma.sync` bf16 / f16 / e4m3 / e5m2 — `1 + 1.5·2⁻²⁴ →
+    /// 1`, `1 − 2⁻²⁵ → 1 − 2⁻²⁴`, worst 4.0–5.3 units of `2⁻²⁴·M` per
+    /// instruction, `benches/local/mma_calib.cu`). ADR-0043 D4: a set whose
+    /// bound assumes `u_a` takes the instruction only where `acc_u` meets it.
+    pub acc_u: i32,
+}
+
+impl MatrixOp {
+    /// The accumulator meets the bound of a set that assumes `u_a = 2^u`.
+    pub fn acc_meets(&self, u: i32) -> bool {
+        self.acc_u <= u
+    }
+}
+
+/// [`MatrixOp::acc_u`] measured on the RTX 5080 (sm_120) for every warp
+/// `mma` format (`mma_calib.cu`: truncation): the unit is the same
+/// tensor-core datapath on every profiled part (truncating accumulators are
+/// also the published measurement of Volta / Turing / Ampere's); a part
+/// measured otherwise states its own.
+pub const MMA_ACC_U: i32 = -23;
+
 /// The `mma.sync.m16n8k8` TF32 product a warp issues.
 pub const MMA_SYNC_TF32: MmaShape = MmaShape {
     m: 16,
     n: 8,
     k: 8,
+    threads: 32,
+};
+
+/// The `mma.sync.m16n8k16` bf16 / f16 product a warp issues.
+pub const MMA_SYNC_16: MmaShape = MmaShape {
+    m: 16,
+    n: 8,
+    k: 16,
+    threads: 32,
+};
+
+/// The `mma.sync.m16n8k32` e4m3 / e5m2 product a warp issues.
+pub const MMA_SYNC_F8: MmaShape = MmaShape {
+    m: 16,
+    n: 8,
+    k: 32,
     threads: 32,
 };
 
@@ -251,48 +356,156 @@ pub const WGMMA_TF32: MmaShape = MmaShape {
     threads: 128,
 };
 
+/// `wgmma.m64nNk16` (bf16 / f16) and `m64nNk32` (fp8): 32 bytes of `k` a
+/// row, like the TF32 form's 8 × 4.
+pub const WGMMA_16: MmaShape = MmaShape {
+    k: 16,
+    ..WGMMA_TF32
+};
+pub const WGMMA_F8: MmaShape = MmaShape {
+    k: 32,
+    ..WGMMA_TF32
+};
+
+/// `tcgen05.mma` (`cta_group::1`): one thread issues an `M = 128` product
+/// whose accumulator lives in tensor memory, `N` ≤ 256, 32 bytes of `k`.
+pub const TCGEN05_16: MmaShape = MmaShape {
+    m: 128,
+    n: 256,
+    k: 16,
+    threads: 1,
+};
+
+const fn op(shape: MmaShape, fmt: MmaFmt, a: Home, b: Home, acc: Home) -> MatrixOp {
+    MatrixOp {
+        shape,
+        fmt,
+        a,
+        b,
+        acc,
+        acc_u: MMA_ACC_U,
+    }
+}
+
+const fn warp(shape: MmaShape, fmt: MmaFmt) -> MatrixOp {
+    op(shape, fmt, Home::Regs, Home::Regs, Home::Regs)
+}
+
+/// The warp products every SM with `mma.sync` issues: TF32 m16n8k8, bf16 /
+/// f16 m16n8k16 (operands and accumulator in registers).
+pub const MATRIX_WARP: [MatrixOp; 3] = [
+    warp(MMA_SYNC_TF32, MmaFmt::Tf32),
+    warp(MMA_SYNC_16, MmaFmt::Bf16),
+    warp(MMA_SYNC_16, MmaFmt::F16),
+];
+
+/// [`MATRIX_WARP`] and the fp8 warp products (m16n8k32 e4m3 / e5m2).
+pub const MATRIX_WARP_F8: [MatrixOp; 5] = [
+    MATRIX_WARP[0],
+    MATRIX_WARP[1],
+    MATRIX_WARP[2],
+    warp(MMA_SYNC_F8, MmaFmt::E4m3),
+    warp(MMA_SYNC_F8, MmaFmt::E5m2),
+];
+
+const fn group(shape: MmaShape, fmt: MmaFmt) -> MatrixOp {
+    op(shape, fmt, Home::Smem, Home::Smem, Home::Regs)
+}
+
+/// [`MATRIX_WARP_F8`] and the warpgroup products: `a` and `b` from
+/// shared-memory descriptors, the accumulator in registers.
+pub const MATRIX_WARPGROUP: [MatrixOp; 10] = [
+    MATRIX_WARP_F8[0],
+    MATRIX_WARP_F8[1],
+    MATRIX_WARP_F8[2],
+    MATRIX_WARP_F8[3],
+    MATRIX_WARP_F8[4],
+    group(WGMMA_TF32, MmaFmt::Tf32),
+    group(WGMMA_16, MmaFmt::Bf16),
+    group(WGMMA_16, MmaFmt::F16),
+    group(WGMMA_F8, MmaFmt::E4m3),
+    group(WGMMA_F8, MmaFmt::E5m2),
+];
+
+/// [`MATRIX_WARP_F8`] and the single-thread products whose accumulator lives
+/// in tensor memory (`a` from shared memory or tensor memory, `b` from
+/// shared memory). Modeled, not emitted: no rented part has one yet.
+pub const MATRIX_TMEM: [MatrixOp; 7] = [
+    MATRIX_WARP_F8[0],
+    MATRIX_WARP_F8[1],
+    MATRIX_WARP_F8[2],
+    MATRIX_WARP_F8[3],
+    MATRIX_WARP_F8[4],
+    op(TCGEN05_16, MmaFmt::Bf16, Home::Smem, Home::Smem, Home::Tmem),
+    op(TCGEN05_16, MmaFmt::F16, Home::Smem, Home::Smem, Home::Tmem),
+];
+
+impl Caps {
+    /// **The matrix instruction a product of `fmt` operands takes with `a`
+    /// from `a`** — the first the part lists (warp products before
+    /// warpgroup ones). `None`: the part has no such shape.
+    pub fn matrix_op(&self, fmt: MmaFmt, a: Home) -> Option<MatrixOp> {
+        self.matrix
+            .iter()
+            .copied()
+            .find(|o| o.fmt == fmt && o.a == a)
+    }
+}
+
 /// `cp.async`, warp `mma` with `ldmatrix`, `f64` reductions: the capability
-/// set the RTX 3090, A100, RTX 4090 profiles spell (compute capability 8.x).
+/// set the RTX 3090 and A100 profiles spell (compute capability 8.0 / 8.6).
 pub const CAPS_WARP_MMA: Caps = Caps {
     cp_async: true,
-    mma: Some(MMA_SYNC_TF32),
+    matrix: &MATRIX_WARP,
     ldmatrix: true,
-    wgmma: None,
     griddepcontrol: false,
     red_f64: true,
     ex2: Some(EX2_UNITS),
 };
 
-/// [`CAPS_WARP_MMA`] with `griddepcontrol`: the consumer Blackwell SM (the
-/// RTX 5090 and 5080 profiles).
-pub const CAPS_WARP_MMA_PDL: Caps = Caps {
-    griddepcontrol: true,
+/// [`CAPS_WARP_MMA`] with the fp8 warp products: the RTX 4090 (8.9).
+pub const CAPS_WARP_MMA_F8: Caps = Caps {
+    matrix: &MATRIX_WARP_F8,
     ..CAPS_WARP_MMA
 };
 
-/// [`CAPS_WARP_MMA_PDL`] with the warpgroup `wgmma` product: the
+/// [`CAPS_WARP_MMA_F8`] with `griddepcontrol`: the consumer Blackwell SM (the
+/// RTX 5090 and 5080 profiles).
+pub const CAPS_WARP_MMA_PDL: Caps = Caps {
+    griddepcontrol: true,
+    ..CAPS_WARP_MMA_F8
+};
+
+/// [`CAPS_WARP_MMA_PDL`] with the warpgroup `wgmma` products: the
 /// arch-specific Hopper target (the H100 profiles).
 pub const CAPS_WARPGROUP_MMA: Caps = Caps {
-    wgmma: Some(WGMMA_TF32),
+    matrix: &MATRIX_WARPGROUP,
     ..CAPS_WARP_MMA_PDL
 };
 
 /// **The PTX ISA's availability table, applied once to a device query's
 /// compute capability** (`major·10 + minor`, and whether the arch-specific
 /// `a` target is taken): the only place a capability is read off a version —
-/// the native profile's builder. `cp.async`, `mma.sync` TF32 and `ldmatrix`
-/// with it: sm_80; `griddepcontrol`: sm_90; `wgmma`: `sm_90a` alone;
-/// `atom.add.f64`: sm_60.
+/// the native profile's builder. `cp.async`, `mma.sync` TF32 / bf16 / f16 and
+/// `ldmatrix` with it: sm_80; `mma.sync` e4m3 / e5m2: sm_89; `griddepcontrol`:
+/// sm_90; `wgmma`: `sm_90a` alone; `tcgen05`: `sm_100a`; `atom.add.f64`:
+/// sm_60.
 pub const fn caps_of_cc(cc: u64, arch_specific: bool) -> Caps {
+    let matrix: &'static [MatrixOp] = if cc < 80 {
+        &[]
+    } else if cc < 89 {
+        &MATRIX_WARP
+    } else if cc == 90 && arch_specific {
+        &MATRIX_WARPGROUP
+    } else if (cc == 100 || cc == 103) && arch_specific {
+        &MATRIX_TMEM
+    } else {
+        &MATRIX_WARP_F8
+    };
     Caps {
         cp_async: cc >= 80,
-        mma: if cc >= 80 { Some(MMA_SYNC_TF32) } else { None },
+        matrix,
         ldmatrix: cc >= 80,
-        wgmma: if cc == 90 && arch_specific {
-            Some(WGMMA_TF32)
-        } else {
-            None
-        },
         griddepcontrol: cc >= 90,
         red_f64: cc >= 60,
         ex2: Some(EX2_UNITS),
@@ -839,7 +1052,7 @@ impl Gpu {
     /// The warp `mma` product and `cp.async` ([`Caps`]): the staged FMA
     /// tile's `cp.async` panels and the TF32 `mma.sync` kernel.
     pub fn has_mma_sync(&self) -> bool {
-        self.caps.mma.is_some() && self.caps.cp_async
+        self.caps.matrix_op(MmaFmt::Tf32, Home::Regs).is_some() && self.caps.cp_async
     }
 
     /// Warp schedulers per SM ([`Self::schedulers`] field; 1 when not given,
@@ -924,9 +1137,12 @@ impl Gpu {
         blocks * threads.div_ceil(self.warp) / (self.sms * self.schedulers())
     }
 
-    /// The warpgroup `wgmma` product ([`Caps::wgmma`]).
+    /// The warpgroup TF32 product, operands from shared memory and the
+    /// accumulator in registers ([`Caps::matrix`]: `wgmma`).
     pub fn has_wgmma(&self) -> bool {
-        self.caps.wgmma.is_some()
+        self.caps
+            .matrix_op(MmaFmt::Tf32, Home::Smem)
+            .is_some_and(|o| o.acc == Home::Regs)
     }
 
     /// **The block-row group height a tile grid is walked in (S54 `raster`)**,
@@ -996,7 +1212,7 @@ impl Face {
     /// The face a site is emitted on.
     pub fn of(contract: bool, reduced: Option<crate::Reduced>) -> Self {
         match (reduced, contract) {
-            (Some(crate::Reduced::Tf32), _) => Face::Tf32,
+            (Some(_), _) => Face::Tf32,
             // ADR-0040: the order axis runs the scalar kernels, so it reads
             // the Exact/Contract rules; its realizations are own rungs.
             (None, true) => Face::Contract,
@@ -1152,6 +1368,18 @@ pub struct GpuMmaTile {
     pub pad_a: u64,
     pub pad_b: u64,
     pub blocks_per_sm: u64,
+    /// The matrix instruction's operand format ([`MmaFmt`]): TF32's
+    /// `m16n8k8`, or a 16-bit `m16n8k16` (tensor-cores, ADR-0043 D6).
+    pub fmt: MmaFmt,
+    /// Bytes one element of the `a` / `b` panel holds in shared memory: the
+    /// operand's storage (a narrow array's 2, an f32 array's 4 — rounded to
+    /// the instruction's format as each fragment is read).
+    pub ea: u64,
+    pub eb: u64,
+    /// The `b` panel is stored `n × k` (its operand runs along `k`: `w[j·k
+    /// + q]`, attention's `K`, a `[out][in]` weight) — the `col` operand
+    /// `ldmatrix` reads without `.trans`; else `k × n`.
+    pub bt: bool,
 }
 
 /// Registers a tensor-core thread spends on addresses and loop state, beyond
@@ -1184,15 +1412,35 @@ impl GpuMmaTile {
         self.bk + self.pad_a
     }
     pub fn ldb(&self) -> u64 {
-        self.bn() + self.pad_b
+        if self.bt {
+            self.bk + self.pad_b
+        } else {
+            self.bn() + self.pad_b
+        }
+    }
+    /// Rows the `b` panel spans in shared memory (`bk`, or `bn` when `bt`).
+    pub fn b_rows(&self) -> u64 {
+        if self.bt { self.bn() } else { self.bk }
+    }
+    /// The instruction's `k` (TF32 8, 16-bit 16).
+    pub fn mma_k(&self) -> u64 {
+        32 / self.fmt.bytes()
     }
     /// 32-bit words one stage holds: the `bm × bk` A panel and the `bk × bn`
-    /// B panel, each at its padded row length.
+    /// B panel, each at its padded row length (TF32: 4-byte elements).
     pub fn stage_words(&self) -> u64 {
         self.bm() * self.lda() + self.bk * self.ldb()
     }
+    /// Bytes the A panel of one stage spans (where its B panel starts).
+    pub fn a_bytes(&self) -> u64 {
+        self.bm() * self.lda() * self.ea
+    }
+    /// Bytes one stage holds, each panel at its own element width.
+    pub fn stage_bytes(&self) -> u64 {
+        self.a_bytes() + self.b_rows() * self.ldb() * self.eb
+    }
     pub fn smem_bytes(&self) -> u64 {
-        self.stages * self.stage_words() * 4
+        self.stages * self.stage_bytes()
     }
 }
 
@@ -1294,6 +1542,27 @@ pub(crate) fn conflict_free_pad(ld: u64, pattern: impl Fn(u64) -> (u64, u64)) ->
             let (row, col) = pattern(lane);
             let bank = ((row * (ld + pad) + col) % 32) as usize;
             !std::mem::replace(&mut banks[bank], true)
+        })
+    })
+}
+
+/// The pad (in 2-byte elements) under which `ldmatrix`'s eight 16-byte rows
+/// of one 8×8 matrix, `ld` elements apart, fall in eight distinct 16-byte
+/// bank groups: a row stride of an odd number of 16-byte groups.
+pub(crate) fn ldmatrix_pad(ld: u64) -> u64 {
+    if (ld / 8) % 2 == 1 { 0 } else { 8 }
+}
+
+/// The pad (in 4-byte words) under which each half warp's `LDS.64` of an
+/// f32 `a` fragment pair (row `g`, words `2t, 2t+1`) hits 32 distinct banks,
+/// rows 16-byte aligned.
+pub(crate) fn pair_pad(ld: u64) -> Option<u64> {
+    (0..32).step_by(4).find(|pad| {
+        let mut banks = [false; 32];
+        (0..16).all(|lane| {
+            let w = (lane / 4) * (ld + pad) + 2 * (lane % 4);
+            let b = (w % 32) as usize;
+            !std::mem::replace(&mut banks[b], true) && !std::mem::replace(&mut banks[b + 1], true)
         })
     })
 }
@@ -2446,6 +2715,57 @@ impl TargetProfile {
         if !g.has_mma_sync() {
             return None;
         }
+        self.gpu_mma_geom(rows, c, k, wide, fill, MmaFmt::Tf32, 4, 4, false)
+    }
+
+    /// **The 16-bit tensor-core geometry** (tensor-cores, ADR-0043 D6): the
+    /// rules of [`Self::gpu_mma_tile`] over the part's warp product for
+    /// `fmt` (`mma.sync.m16n8k16`: the same `m16n8` tile and fragment
+    /// registers, `k` 16), with panels at their storage widths `ea` / `eb`
+    /// (2: a narrow operand copied as is by 16-byte `cp.async`, read by
+    /// `ldmatrix`; 4: an f32 operand rounded to `fmt` as its fragment is
+    /// read). The pads put an `ldmatrix` row (16 bytes) of every lane in its
+    /// own 16-byte bank group and the f32 fragment pairs (`LDS.64`) of each
+    /// half warp in distinct banks. `None` where the part lists no warp
+    /// product of `fmt` with `ldmatrix` and `cp.async`. `bt`: the `b` panel
+    /// is `n × k` ([`GpuMmaTile::bt`]).
+    #[allow(clippy::too_many_arguments)]
+    pub fn gpu_mma16_tile(
+        &self,
+        rows: u64,
+        c: u64,
+        k: u64,
+        wide: bool,
+        fill: bool,
+        fmt: MmaFmt,
+        ea: u64,
+        eb: u64,
+        bt: bool,
+    ) -> Option<GpuMmaTile> {
+        let g = self.gpu()?;
+        let op = g.caps.matrix_op(fmt, Home::Regs)?;
+        if !(g.caps.ldmatrix && g.caps.cp_async && op.shape.m == MMA_M && op.shape.n == MMA_N)
+            || op.shape.k != 32 / fmt.bytes()
+        {
+            return None;
+        }
+        self.gpu_mma_geom(rows, c, k, wide, fill, fmt, ea, eb, bt)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn gpu_mma_geom(
+        &self,
+        rows: u64,
+        c: u64,
+        k: u64,
+        wide: bool,
+        fill: bool,
+        fmt: MmaFmt,
+        ea: u64,
+        eb: u64,
+        bt: bool,
+    ) -> Option<GpuMmaTile> {
+        let g = self.gpu()?;
         let acc_per_tile = MMA_M * MMA_N / g.warp; // 4
         let (mt, nt, regs_est) = if wide {
             // nt = 2·mt keeps the warp tile square (16·mt = 8·nt).
@@ -2471,6 +2791,15 @@ impl TargetProfile {
             (mt, tiles / mt, 2 * tiles * acc_per_tile)
         };
         let (mut mt, mut nt) = (mt, nt);
+        // tensor-cores: a 16-bit tile's warp rows never pass the site's (a
+        // skinny site: decode's 32 rows under a 64-row warp tile); TF32
+        // keeps S52's rule (no tile).
+        while fmt != MmaFmt::Tf32 && mt > 1 && !rows.is_multiple_of(mt * MMA_M) {
+            mt /= 2;
+        }
+        while fmt != MmaFmt::Tf32 && nt > 1 && !c.is_multiple_of(nt * MMA_N) {
+            nt /= 2;
+        }
         while fill && (rows / (mt * MMA_M)) * (c / (nt * MMA_N)) < g.fill_warps() {
             if nt * MMA_N >= mt * MMA_M && nt > 1 {
                 nt /= 2;
@@ -2507,18 +2836,66 @@ impl TargetProfile {
             return None;
         }
         let threads = warps_x * warps_y * g.warp;
-        let blocks_per_sm = residency(g, regs_est, threads).max(1);
+        let resident = residency(g, regs_est, threads).max(1);
+        // tensor-cores: a 16-bit tile whose register residency leaves each
+        // block less shared memory than two panels (a one-warp block of a
+        // skinny site: 32 blocks an SM, 2 KB each) holds fewer blocks — the
+        // shared memory bounds the residency; TF32 keeps S52's rule (no
+        // tile where the register residency's share is too small).
+        let floor = if fmt == MmaFmt::Tf32 { resident } else { 1 };
+        (floor..=resident).rev().find_map(|blocks_per_sm| {
+            self.gpu_mma_panels(
+                k,
+                (mt, nt, warps_x, warps_y),
+                blocks_per_sm,
+                threads,
+                (fmt, ea, eb, bt),
+            )
+        })
+    }
+
+    /// [`Self::gpu_mma_geom`]'s panel depth, pads and stages for a block
+    /// tile at `blocks_per_sm`: `None` where no whole panel's two stages fit
+    /// the block's share of shared memory.
+    fn gpu_mma_panels(
+        &self,
+        k: u64,
+        (mt, nt, warps_x, warps_y): (u64, u64, u64, u64),
+        blocks_per_sm: u64,
+        threads: u64,
+        (fmt, ea, eb, bt): (MmaFmt, u64, u64, bool),
+    ) -> Option<GpuMmaTile> {
+        let g = self.gpu()?;
+        let mma_k = 32 / fmt.bytes();
+        let (bm, bn) = (warps_y * mt * MMA_M, warps_x * nt * MMA_N);
         let share = (g.smem_per_sm / blocks_per_sm)
             .saturating_sub(g.smem_reserved_per_block)
             .min(g.smem_per_block);
 
         // Fragment patterns of m16n8k8 (PTX ISA): lane = 4·group + t.
         // A (row-major): row = group, col = t.  B (k × n): row = t, col = group.
-        let pad_b = conflict_free_pad(bn, |l| (l % 4, l / 4))?;
+        // 16-bit panels: `ldmatrix` rows of 16 bytes ([`ldmatrix_pad`]); an
+        // f32 panel of a 16-bit product: `a` pairs (row g, k 2t..2t+1) as one
+        // `LDS.64`, `b` words (k 2t + j, n g).
+        // An `n × k` panel (`bt`) is read like `a`'s.
+        let pad_kn = match (fmt, eb) {
+            (MmaFmt::Tf32, _) => conflict_free_pad(bn, |l| (l % 4, l / 4)),
+            (_, 4) => conflict_free_pad(bn, |l| (2 * (l % 4), l / 4)),
+            _ => Some(ldmatrix_pad(bn)),
+        };
         let mut best = None;
-        let mut bk = MMA_K;
+        let mut bk = mma_k;
         while bk <= k {
-            let pad_a = conflict_free_pad(bk, |l| (l / 4, l % 4))?;
+            let pad_a = match (fmt, ea) {
+                (MmaFmt::Tf32, _) => conflict_free_pad(bk, |l| (l / 4, l % 4))?,
+                (_, 4) => pair_pad(bk)?,
+                _ => ldmatrix_pad(bk),
+            };
+            let pad_b = match (bt, eb) {
+                (false, _) => pad_kn?,
+                (true, 4) => pair_pad(bk)?,
+                (true, _) => ldmatrix_pad(bk),
+            };
             let geom = GpuMmaTile {
                 mt,
                 nt,
@@ -2529,9 +2906,17 @@ impl TargetProfile {
                 pad_a,
                 pad_b,
                 blocks_per_sm,
+                fmt,
+                ea,
+                eb,
+                bt,
             };
-            let whole =
-                (bm * bk / 4).is_multiple_of(threads) && (bk * bn / 4).is_multiple_of(threads);
+            // Whole 16-byte copies per thread, each panel row 16-byte aligned.
+            let (la, lb) = (GPU_VEC_BYTES / ea, GPU_VEC_BYTES / eb);
+            let whole = (bm * bk / la).is_multiple_of(threads)
+                && (bk * bn / lb).is_multiple_of(threads)
+                && (geom.lda() * ea).is_multiple_of(GPU_VEC_BYTES)
+                && (geom.ldb() * eb).is_multiple_of(GPU_VEC_BYTES);
             if geom.smem_bytes() > share {
                 break;
             }
@@ -2541,7 +2926,7 @@ impl TargetProfile {
             bk *= 2;
         }
         let geom = best?;
-        let stages = (share / (geom.stage_words() * 4)).min(k / geom.bk).max(2);
+        let stages = (share / geom.stage_bytes()).min(k / geom.bk).max(2);
         Some(GpuMmaTile { stages, ..geom })
     }
 
@@ -3542,7 +3927,7 @@ const ADA_SM: Gpu = Gpu {
     mem_clock_khz: 10_501_000,
     mem_bus_bits: 192,
     schedulers: 4,
-    caps: CAPS_WARP_MMA,
+    caps: CAPS_WARP_MMA_F8,
 };
 
 /// RTX 4090 — Ada (`sm_89`), 128 SMs. A rented part (S52): the profile is the
@@ -3940,6 +4325,7 @@ pub const RTX_3090: TargetProfile = TargetProfile {
         clock_khz: 1_561_000,
         mem_clock_khz: 9_751_000,
         mem_bus_bits: 384,
+        caps: CAPS_WARP_MMA,
         ..ADA_SM
     }),
     ..GENERIC
@@ -3985,6 +4371,7 @@ pub const A100: TargetProfile = TargetProfile {
         clock_khz: 1_410_000,
         mem_clock_khz: 1_215_000,
         mem_bus_bits: 5120,
+        caps: CAPS_WARP_MMA,
         ..ADA_SM
     }),
     ..GENERIC
@@ -6004,6 +6391,71 @@ mod tests {
     }
 
     /// The tensor-core geometry, worked by hand from the device facts.
+    #[test]
+    /// tensor-cores: capabilities are geometry — each matrix instruction's
+    /// shape, operand format and homes, and its measured accumulator; the
+    /// device query's table gives the warp 16-bit products from sm_80, fp8
+    /// from sm_89, the shared-memory `wgmma` forms on sm_90a and the
+    /// tensor-memory accumulator on sm_100a; every named profile lists what
+    /// its compute capability's table does.
+    fn matrix_instructions_are_geometry() {
+        let warp16 = caps_of_cc(86, false)
+            .matrix_op(MmaFmt::Bf16, Home::Regs)
+            .expect("sm_86: bf16 mma.sync");
+        assert_eq!(
+            (warp16.shape.m, warp16.shape.n, warp16.shape.k),
+            (16, 8, 16)
+        );
+        assert_eq!(warp16.shape.threads, 32);
+        assert_eq!((warp16.b, warp16.acc), (Home::Regs, Home::Regs));
+        assert!(
+            warp16.acc_meets(-23) && !warp16.acc_meets(-24),
+            "truncating (mma_calib.cu)"
+        );
+        assert!(
+            caps_of_cc(86, false)
+                .matrix_op(MmaFmt::E4m3, Home::Regs)
+                .is_none()
+        );
+        let f8 = caps_of_cc(120, false)
+            .matrix_op(MmaFmt::E4m3, Home::Regs)
+            .expect("sm_120: e4m3 mma.sync");
+        assert_eq!(f8.shape.k, 32);
+        assert!(
+            caps_of_cc(120, false)
+                .matrix_op(MmaFmt::Bf16, Home::Smem)
+                .is_none()
+        );
+        let wg = caps_of_cc(90, true)
+            .matrix_op(MmaFmt::Bf16, Home::Smem)
+            .expect("sm_90a: wgmma bf16");
+        assert_eq!((wg.shape.m, wg.shape.k, wg.shape.threads), (64, 16, 128));
+        assert_eq!((wg.b, wg.acc), (Home::Smem, Home::Regs));
+        assert!(
+            caps_of_cc(90, false)
+                .matrix_op(MmaFmt::Bf16, Home::Smem)
+                .is_none()
+        );
+        let tm = caps_of_cc(100, true)
+            .matrix_op(MmaFmt::Bf16, Home::Smem)
+            .expect("sm_100a: tcgen05");
+        assert_eq!((tm.acc, tm.shape.threads, tm.shape.m), (Home::Tmem, 1, 128));
+        assert!(caps_of_cc(75, false).matrix.is_empty());
+        for (p, cc, a) in [
+            (RTX_3090, 86, false),
+            (A100, 80, false),
+            (RTX_4090, 89, false),
+            (H100, 90, true),
+            (H100_PCIE, 90, true),
+            (RTX_5090, 120, false),
+            (RTX_5080, 120, false),
+        ] {
+            let g = p.gpu().expect("gpu");
+            assert_eq!(g.caps.matrix, caps_of_cc(cc, a).matrix, "{}", p.name);
+            assert_eq!(g.has_wgmma(), a, "{}", p.name);
+        }
+    }
+
     #[test]
     fn gpu_mma_tile_is_derived_from_device_facts() {
         let t = |p: &TargetProfile, n| {

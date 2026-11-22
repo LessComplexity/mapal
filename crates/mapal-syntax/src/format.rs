@@ -269,7 +269,7 @@ impl<'a> Formatter<'a> {
 }
 
 /// Only map/fold braces introduce parameters. Inspect the immediate opener,
-/// allowing its optional `: f32 | tf32` annotation; do not infer parameters
+/// allowing its optional `: f32 | tf32` annotation (or `bf16`, `f16`); do not infer parameters
 /// from a body's first chain, which can equally begin with an identifier.
 fn opens_map_fold(source: &str, tokens: &[Token], open: usize) -> bool {
     let is_op = |kind| matches!(kind, TokenKind::KwMap | TokenKind::KwFold);
@@ -280,7 +280,7 @@ fn opens_map_fold(source: &str, tokens: &[Token], open: usize) -> bool {
     while i > 0 {
         i -= 1;
         match (tokens[i].kind, token_text(source, &tokens[i])) {
-            (TokenKind::Ident, "f32" | "tf32") | (TokenKind::Error, "|") => {}
+            (TokenKind::Ident, "f32" | "tf32" | "bf16" | "f16") | (TokenKind::Error, "|") => {}
             (TokenKind::Colon, _) => return i > 0 && is_op(tokens[i - 1].kind),
             _ => return false,
         }

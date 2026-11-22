@@ -242,7 +242,7 @@ mod tests {
         assert_eq!(b.max as f32, f32::from_bits(0x7f7f_0000));
         assert_eq!(round(bf, f64::from(f32::MAX)), 0x7f80);
         assert_eq!(round(bf, 2f64.powi(-133)), 0x0001);
-        assert_eq!(widen(bf, 0x0001), 2f32.powi(-133));
+        assert_eq!(widen(bf, 0x0001), f32::from_bits(0x0001_0000)); // 2^-133 (`powi` overflows past 2^-128)
         assert_eq!(round(bf, 1e-300), 0);
     }
 

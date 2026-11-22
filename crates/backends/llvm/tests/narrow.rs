@@ -32,7 +32,21 @@ fn lower(src: &str) -> CategoryIr {
 /// emulator's rungs off and `place` off, so every capable map is a device
 /// cell (the `exp.rs` harness).
 fn emission(ir: &CategoryIr, target: &'static str, base: EmitOpts, off: &[&str]) -> Emission {
+    emission_on(ir, target, base, off, &[])
+}
+
+/// [`emission`] with the rungs `on` forced on.
+fn emission_on(
+    ir: &CategoryIr,
+    target: &'static str,
+    base: EmitOpts,
+    off: &[&str],
+    on: &[&str],
+) -> Emission {
     let mut gpu = GpuArms::default();
+    for r in on {
+        *gpu.on.rung(r).expect("rung") = true;
+    }
     for r in [
         "place",
         "async",
@@ -44,6 +58,7 @@ fn emission(ir: &CategoryIr, target: &'static str, base: EmitOpts, off: &[&str])
     ]
     .iter()
     .chain(off)
+    .filter(|r| !on.contains(r))
     {
         *gpu.off.rung(r).expect("rung") = true;
     }
@@ -225,6 +240,7 @@ struct Cover {
     post: u64,
     device_narrow_tile: u64,
     device_narrow_staged: u64,
+    device_narrow_streamed: u64,
     device_narrow_cell: u64,
     inf: u64,
     nan: u64,
@@ -244,6 +260,7 @@ impl std::ops::AddAssign for Cover {
         self.post += o.post;
         self.device_narrow_tile += o.device_narrow_tile;
         self.device_narrow_staged += o.device_narrow_staged;
+        self.device_narrow_streamed += o.device_narrow_streamed;
         self.device_narrow_cell += o.device_narrow_cell;
         self.inf += o.inf;
         self.nan += o.nan;
@@ -270,6 +287,21 @@ fn check_narrow(clang: &str, p: &testgen::NarrowProg) -> Cover {
     for mode in MODES {
         let (got, _) = built.run(&mode);
         assert_eq!(got, want, "exact device {mode:?}\n{src}");
+    }
+    // tensor-cores `narrow-async`: the `cp.async` pipeline forced on — a
+    // narrow `b` panel streamed in its format, widened per fragment — keeps
+    // each cell's order: the interpreter's bytes in every mode.
+    let st = emission_on(&ir, "rtx-5080", EmitOpts::exact(), &[], &["async"]);
+    let dev_st = st.device.as_deref().unwrap_or("").to_string();
+    let streamed = dev_st
+        .split("define ptx_kernel void @mapal_tile_")
+        .skip(1)
+        .filter(|k| k.contains("cp.async.ca.shared.global.8") && k.contains("fpext <"))
+        .count() as u64;
+    let built = emu::build_emulated(clang, &st.text, &dev_st);
+    for mode in MODES {
+        let (got, _) = built.run(&mode);
+        assert_eq!(got, want, "exact device, async forced {mode:?}\n{src}");
     }
     // Default face: the f32 sums within D2 (a relative 1e-4 at these k), the
     // values through a rounding within D3's flips (4 ulps of the format
@@ -332,6 +364,7 @@ fn check_narrow(clang: &str, p: &testgen::NarrowProg) -> Cover {
         post: u64::from(sites.sites.iter().any(|(_, s)| s.post.is_some())),
         device_narrow_tile: u64::from(tile_kernels > 0),
         device_narrow_staged: u64::from(staged > 0),
+        device_narrow_streamed: u64::from(streamed > 0),
         device_narrow_cell: u64::from(cell_kernels > 0),
         inf: u64::from(want.contains("inf")),
         nan: u64::from(want.contains("NaN")),
@@ -374,6 +407,7 @@ fn generated_programs_exact_bytes_and_default_bounds() {
         c.post,
         c.device_narrow_tile,
         c.device_narrow_staged,
+        c.device_narrow_streamed,
         c.device_narrow_cell,
         c.inf,
         c.nan,
@@ -382,4 +416,50 @@ fn generated_programs_exact_bytes_and_default_bounds() {
         c.looped,
     ];
     assert!(all.iter().all(|&x| x > 0), "{c:?}");
+}
+
+/// tensor-cores `narrow-radix`: a decode step over a `bf16` KV cache
+/// (`benches/algorithms/px_llm_dec_b2_l16_bf16kv`, the cache rows rounded
+/// once as written): attention's scores and `P·V` read the cache through its
+/// widening at the head digits — mixed-radix tile sites whose `b` is narrow
+/// (`tile_plan_radix`, a `narrow=b:bf16 … radix=b` plan); the exact face is
+/// the interpreter's bytes on the emulated device in every mode. OFF
+/// (`--gpu-off=narrow-radix`): no such site.
+#[test]
+fn bf16_cache_attention_is_a_narrow_radix_site() {
+    let src = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../../benches/algorithms/px_llm_dec_b2_l16_bf16kv.mapal"
+    ))
+    .expect("the bf16-cache decode twin");
+    let ir = lower(&src);
+    let narrow_radix = ir
+        .funcs()
+        .flat_map(|(f, _)| ir.tile_plan_radix(f).into_iter().map(|(_, s)| s))
+        .filter(|s| s.b.narrow == Some(NarrowFloat::Bf16) || s.a.narrow.is_some())
+        .count();
+    assert!(narrow_radix >= 2, "scores and P·V: {narrow_radix}");
+    let lines = |e: &Emission| {
+        e.device
+            .as_deref()
+            .unwrap_or("")
+            .lines()
+            .filter(|l| {
+                l.starts_with("; mapal.plan ") && l.contains(" narrow=") && l.contains(" radix=")
+            })
+            .count()
+    };
+    let ex = emission(&ir, "rtx-5080", EmitOpts::exact(), &[]);
+    assert!(lines(&ex) >= 2, "the narrow radix tiles");
+    let off = emission(&ir, "rtx-5080", EmitOpts::exact(), &["narrow-radix"]);
+    assert_eq!(lines(&off), 0, "OFF: per-cell maps");
+    let Some(clang) = emu::clang() else {
+        return;
+    };
+    let want = run(&ir, 4_000_000_000).output;
+    let built = emu::build_emulated(&clang, &ex.text, ex.device.as_deref().unwrap_or(""));
+    for mode in MODES {
+        let (got, _) = built.run(&mode);
+        assert_eq!(got, want, "exact device {mode:?}");
+    }
 }

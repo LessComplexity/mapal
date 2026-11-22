@@ -151,7 +151,10 @@ fn decode_merges_its_rows_and_query() {
         .lines()
         .filter(|l| l.trim().starts_with("; mapal.hz kernel="))
         .collect();
-    assert_eq!(specs.len(), 4, "{specs:?}");
+    // tensor-cores `staged-regs`: the rows' candidates whose register-staged
+    // panel spills (three of the four unsplit tuples: 5 kernels, ptxas) are
+    // refused — one merged tuple remains.
+    assert_eq!(specs.len(), 1, "{specs:?}");
     assert!(specs[0].contains("block=256 smem=0"), "{}", specs[0]);
     let dev = on.device.as_deref().unwrap();
     for s in &specs {
@@ -161,9 +164,11 @@ fn decode_merges_its_rows_and_query() {
             "{name}"
         );
     }
-    // A 32-thread row candidate in a 256-thread grid counts its own threads.
-    assert!(dev.contains("barrier.sync.cnt(i32 0, i32 32)"));
-    assert!(on.text.contains("@mapal_main.hz"), "the merged table");
+    // tensor-cores `staged-regs`: the 32-thread row candidates (whose
+    // register-staged panels spilled) are refused; the one tuple left is a
+    // 256-thread launch without a merged table.
+    assert!(!dev.contains("barrier.sync.cnt(i32 0, i32 32)"));
+    assert!(!on.text.contains("@mapal_main.hz"), "one tuple: no table");
     let off = shipped(&ir, "rtx-5080", false);
     assert!(host_line(&off).is_empty() && !off.text.contains("; mapal.hz"));
     assert!(!off.device.as_deref().unwrap().contains("@hz.mapal_tile_"));

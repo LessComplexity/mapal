@@ -161,9 +161,11 @@ fn decode_and_attention_fold_where_the_dataflow_allows() {
         on.text
     );
     // The rows' four tables (the first trip's whole sites, the row passes
-    // when the merge does not run), the `horizontal` group's merged table,
-    // then `s` and `o` flagged.
-    assert_eq!(site_flags(&on), vec![1, 1, 1, 1, 1, 3, 3]);
+    // when the merge does not run), then `s` and `o` flagged; the
+    // `horizontal` group keeps one merged tuple (tensor-cores `staged-regs`
+    // refuses the three whose register-staged panels spill), launched
+    // without a table.
+    assert_eq!(site_flags(&on), vec![1, 1, 1, 1, 3, 3]);
     let dev = on.device.as_deref().unwrap();
     // One kernel takes the tail (the merged kernel's copy is its device
     // function's, `@hz.<kernel>`).

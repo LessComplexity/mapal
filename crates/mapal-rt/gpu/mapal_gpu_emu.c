@@ -297,6 +297,95 @@ float emu_shfl_bfly(float v, int32_t off) {
   warp_meet(tid_x / 32);
   return r;
 }
+/* tensor-cores (ADR-0043 D6): the warp's 16-bit matrix instructions. Each lane
+ * posts its operands, the warp meets, each lane computes its own fragment from
+ * the posts, the warp meets again. Results are read back one register at a
+ * time (`emu_frag`), so no struct crosses the C ABI. */
+static _Thread_local uint32_t t_frag[4];
+static const uint8_t *w_addr[1024];
+static uint32_t w_ab[1024][6];
+static float w_c[1024][4];
+uint32_t emu_frag(int32_t i) { return t_frag[i]; }
+float emu_fragf(int32_t i) {
+  float f;
+  memcpy(&f, &t_frag[i], 4);
+  return f;
+}
+/* `ldmatrix.sync.aligned.m8n8.x<n>[.trans].shared.b16`: matrix q's row r is
+ * the 16 bytes at lane 8q + r's address; lane l receives (row l/4, columns
+ * 2(l%4), +1), or with `.trans` (rows 2(l%4), +1, column l/4). */
+void emu_ldsm(const uint8_t *p, int32_t n, int32_t trans) {
+  w_addr[tid_x] = p;
+  warp_meet(tid_x / 32);
+  int lane = tid_x & 31, base = tid_x & ~31;
+  for (int q = 0; q < n; q++) {
+    if (!trans) {
+      memcpy(&t_frag[q], w_addr[base + q * 8 + lane / 4] + 4 * (lane % 4), 4);
+    } else {
+      uint16_t lo, hi;
+      memcpy(&lo, w_addr[base + q * 8 + 2 * (lane % 4)] + 2 * (lane / 4), 2);
+      memcpy(&hi, w_addr[base + q * 8 + 2 * (lane % 4) + 1] + 2 * (lane / 4), 2);
+      t_frag[q] = lo | (uint32_t)hi << 16;
+    }
+  }
+  warp_meet(tid_x / 32);
+}
+static float b16f(uint32_t h, int32_t f16) {
+  if (f16) {
+    _Float16 x;
+    uint16_t b = (uint16_t)h;
+    memcpy(&x, &b, 2);
+    return (float)x;
+  }
+  uint32_t w = h << 16;
+  float x;
+  memcpy(&x, &w, 4);
+  return x;
+}
+/* `cvt.rn.{bf16,f16}x2.f32 d, hi, lo`: each rounded to nearest, ties to even
+ * (subnormals kept, NaN quiet), `lo` in the low half. */
+static uint32_t to_b16(float x, int32_t f16) {
+  if (f16) {
+    _Float16 h = (_Float16)x;
+    uint16_t b;
+    memcpy(&b, &h, 2);
+    return b;
+  }
+  uint32_t b;
+  memcpy(&b, &x, 4);
+  if ((b & 0x7fffffff) > 0x7f800000) return (b >> 16) | 0x40;
+  return (b + 0x7fff + ((b >> 16) & 1)) >> 16;
+}
+uint32_t emu_cvt_bf16x2(float hi, float lo) { return to_b16(lo, 0) | to_b16(hi, 0) << 16; }
+uint32_t emu_cvt_f16x2(float hi, float lo) { return to_b16(lo, 1) | to_b16(hi, 1) << 16; }
+/* `mma.sync.aligned.m16n8k16.row.col.f32.{bf16,f16}`: d = c + sum_k a b over
+ * the warp's fragments. The products are exact; the sum is formed exactly
+ * (double: 16 products of 8- or 11-bit significands and an f32) and truncated
+ * toward zero to f32, as the measured part does (`mma_calib.cu`). */
+void emu_mma16(int32_t f16, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t b0,
+               uint32_t b1, float c0, float c1, float c2, float c3) {
+  uint32_t *ab = w_ab[tid_x];
+  ab[0] = a0, ab[1] = a1, ab[2] = a2, ab[3] = a3, ab[4] = b0, ab[5] = b1;
+  w_c[tid_x][0] = c0, w_c[tid_x][1] = c1, w_c[tid_x][2] = c2, w_c[tid_x][3] = c3;
+  warp_meet(tid_x / 32);
+  int lane = tid_x & 31, base = tid_x & ~31, g = lane / 4, t = lane % 4;
+  for (int r = 0; r < 4; r++) {
+    int row = g + 8 * (r >> 1), col = 2 * t + (r & 1);
+    double s = w_c[tid_x][r];
+    for (int k = 0; k < 16; k++) {
+      /* A (row, k): lane 4(row%8) + (k%8)/2, register (row/8) + 2(k/8). */
+      uint32_t ar = w_ab[base + 4 * (row % 8) + (k % 8) / 2][(row / 8) + 2 * (k / 8)];
+      /* B (k, col): lane 4 col + (k%8)/2, register 4 + k/8. */
+      uint32_t br = w_ab[base + 4 * col + (k % 8) / 2][4 + k / 8];
+      float a = b16f((ar >> (16 * (k % 2))) & 0xffff, f16), b = b16f((br >> (16 * (k % 2))) & 0xffff, f16);
+      s += (double)a * (double)b;
+    }
+    float d = (float)s;
+    if (isfinite(d) && fabs((double)d) > fabs(s)) d = nextafterf(d, 0.0f);
+    memcpy(&t_frag[r], &d, 4);
+  }
+  warp_meet(tid_x / 32);
+}
 int32_t emu_ctaid_x(void) { return ctaid_x; }
 int32_t emu_nctaid_x(void) { return nctaid_x; }
 int32_t emu_ctaid_y(void) { return ctaid_y; }

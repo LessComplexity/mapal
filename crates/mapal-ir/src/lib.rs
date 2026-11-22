@@ -46,7 +46,7 @@ pub use algo::{
     MovePlan, MoveSite, Outside, PathPlan, PrecisionPlan, RadixAddr, RadixForm, RadixTile, Reach,
     Regroup, RescaleArg, RowDep, RowFoldOp, RowFoldSite, StepAlgebra, StepFlags, Tap, Task, TaskId,
     TaskKind, TileKSplit, TilePlan, TilePost, TileRead, TileSite, TripPhase, TripSplit,
-    UnchangedPlan, WaitEntry, bound_coef, gamma, uniform_at,
+    UnchangedPlan, WaitEntry, bound_coef, bound_coef_unit, gamma, uniform_at,
 };
 pub use builder::{Dest, FnBuilder, IrBuilder, IrError, LoopHandle};
 pub use facts::FactArms;

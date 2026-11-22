@@ -104,3 +104,38 @@ fn precision_plan_round_at_and_cross() {
     assert_eq!(crossed, [(Some(Value::F32(2.0)), Some(Operation::Mul))]);
     assert!(p.bound.is_empty(), "no tile site");
 }
+
+/// ADR-0043 D4: the narrow members `bf16` / `f16` — a step's set carries
+/// them (`Precision::half`, the weakest first), innermost wins as for
+/// `tf32`, and the formatter keeps the annotation on the opener.
+#[test]
+fn narrow_members() {
+    let half = |src: &str| -> Vec<Option<mapal_ir::NarrowFloat>> {
+        let ir: CategoryIr = lower_ok(src);
+        ir.morphisms()
+            .filter(|(_, m)| m.op == Operation::Mul)
+            .filter(|(_, m)| matches!(ir.object(m.target).map(|o| &o.ty), Some(Ty::Float { .. })))
+            .map(|(id, _)| ir.precision(id).half())
+            .collect()
+    };
+    let src = format!(
+        "fn main() {{ {ARR} (0.0, r) -> fold: bf16 | f32 {{ acc, k -> acc + a[k] * a[k] }} -> s; s -> println; }}"
+    );
+    let h = half(&src);
+    assert_eq!(h.iter().filter(|x| x.is_some()).count(), 1);
+    assert!(h.contains(&Some(mapal_ir::NarrowFloat::Bf16)));
+    let f = half(&src.replace("bf16 | f32", "f16 | f32"));
+    assert!(f.contains(&Some(mapal_ir::NarrowFloat::F16)));
+    // Both members: the weaker (`bf16`) is the set's semantics.
+    let b = half(&src.replace("bf16 | f32", "f16 | bf16 | f32"));
+    assert!(b.contains(&Some(mapal_ir::NarrowFloat::Bf16)));
+    let ir: CategoryIr = lower_ok(&src);
+    let unit = ir
+        .morphisms()
+        .find(|(id, _)| ir.precision(*id).half().is_some())
+        .map(|(id, _)| ir.precision(id).unit());
+    assert_eq!(unit, Some(Some(2f64.powi(-8))));
+    // The formatter keeps the opener's annotation.
+    let out = mapal_syntax::format_source(&src).expect("formats");
+    assert!(out.contains("-> fold: bf16 | f32 {"), "{out}");
+}

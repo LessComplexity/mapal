@@ -156,8 +156,12 @@ def llm_workload(stem, mode, ops=None):
     is called once with the layer's tensors (a leg's own RoPE tables)."""
     ops = ops or {}
     rms = ops.get('rms', llm_rms)
-    w16 = stem.endswith('_bf16w')
-    stem = stem.removesuffix('_bf16w')
+    # tensor-cores (gen_tiles.py): `_bf16kv` also stores the KV cache bf16 (its rows rounded once as written),
+    # `_bf16` is that storage under `: bf16 | f32` — the f32 legs compute on the stored values, the bf16 legs are
+    # bf16 throughout as for `_bf16w`.
+    w16 = stem.endswith(('_bf16w', '_bf16kv', '_bf16'))
+    kv16 = stem.endswith(('_bf16kv', '_bf16'))
+    stem = stem.removesuffix('_bf16w').removesuffix('_bf16kv').removesuffix('_bf16')
     P = LLM_PX if stem.startswith('px_') else LLM
     D, H, Hk, dh = P['D'], P['H'], P['Hk'], P['dh']
     G, KD, NQ = H // Hk, Hk * dh, (H + 2 * Hk) * dh
@@ -172,6 +176,9 @@ def llm_workload(stem, mode, ops=None):
         w = llm_tensors(P, B, L, B * L * KD, ffn, dt)
         if w16:
             w.update({k: v.to(torch.bfloat16).to(dt) for k, v in w.items() if k in LLM_WEIGHTS})
+        if kv16:
+            w.update({k: v.to(torch.bfloat16).to(dt) for k, v in w.items() if k in ('kc0', 'vc0')})
+        r16 = (lambda t: t.to(torch.bfloat16).to(dt)) if kv16 else (lambda t: t)  # a cache row as stored
         if 'tables' in ops:
             ops['tables'](w)
         kc, vc = w['kc0'].view(B, L, Hk, dh), w['vc0'].view(B, L, Hk, dh)
@@ -191,8 +198,8 @@ def llm_workload(stem, mode, ops=None):
                 o = ops['attn_dec'](q, k, qkv[:, D + KD:].view(B, Hk, dh), kc, vc, p, pv, ti)
                 h1 = x + o.reshape(B, D) @ w['wo']
                 return llm_ffn(w, h1, ops) if ffn else h1
-            kc.index_copy_(1, pv, k.view(B, 1, Hk, dh))
-            vc.index_copy_(1, pv, qkv[:, D + KD:].view(B, 1, Hk, dh))
+            kc.index_copy_(1, pv, r16(k.view(B, 1, Hk, dh)))
+            vc.index_copy_(1, pv, r16(qkv[:, D + KD:].view(B, 1, Hk, dh)))
             if sdpa and ti is not None:  # eager SDPA: the attended prefix of the cache (ti: the step, a host int)
                 n = ti + L - S + 1
                 o = sdpa_call(mode, q.view(B, H, 1, dh), kc[:, :n].transpose(1, 2), vc[:, :n].transpose(1, 2))
@@ -219,6 +226,8 @@ def llm_workload(stem, mode, ops=None):
     if m:
         ffn, T = m.group(1) == 'blkpre', int(m.group(2))
         w = llm_tensors(P, T, T, 0, ffn, dt)
+        if w16:
+            w.update({k: v.to(torch.bfloat16).to(dt) for k, v in w.items() if k in LLM_WEIGHTS})
         if 'tables' in ops:
             ops['tables'](w)
         grouped = H * T * T * 4 > (4 << 30) or m.group(1) == 'preg'  # the program's own split (gen_tiles.py)
@@ -338,11 +347,13 @@ def workload(stem, mode='eager'):
     form of the model-scale workloads (`llm_workload`) and the projections' bf16 reference."""
     if stem.startswith(('pt_llm_', 'px_llm_')):
         return llm_workload(stem.replace('_pv', ''), mode)
-    pj = re.fullmatch(r'pt_pj_m(\d+)_n(\d+)_k(\d+)', stem)
-    if pj:  # gen_tiles.py projection: M x K activations times a K x N weight
-        M, N, K = map(int, pj.groups())
+    pj = re.fullmatch(r'pt_pj_m(\d+)_n(\d+)_k(\d+)(_bf16)?', stem)
+    if pj:  # gen_tiles.py projection: M x K activations times a K x N weight (`_bf16`: the weight stored bf16)
+        M, N, K = map(int, pj.groups()[:3])
         dt = torch.bfloat16 if mode.startswith('bf16') else torch.float32
-        a, b = op('a', M * K).view(M, K).to(dt), op('b', K * N).view(K, N).to(dt)
+        b = op('b', K * N).view(K, N)
+        b = b.to(torch.bfloat16) if pj.group(4) else b
+        a, b = op('a', M * K).view(M, K).to(dt), b.to(dt)
         return (lambda a, b: corners(a @ b)), (a, b)
     m = re.fullmatch(r'pt_(\w+?)_(\d+)', stem)
     if stem.startswith('pt_rm_m'):
@@ -698,7 +709,8 @@ def main():
             tf = mode.endswith('-tf32')
             torch.backends.cuda.matmul.allow_tf32 = tf
             torch.backends.cudnn.allow_tf32 = tf
-            tol = 5e-2 if mode.startswith('bf16') else 1e-2 if scale and tf else 1e-3
+            # tensor-cores: a `: bf16 | f32` program's own values are bf16 products (D3, u_t = 2⁻⁸).
+            tol = 5e-2 if mode.startswith('bf16') or stem.endswith('_bf16') else 1e-2 if scale and tf else 1e-3
             graph = graph_mode(mode)
             own = scale or sdpa_ref or graph  # a CUDA-graph leg marks its tensors static: its own set
             cg = ''

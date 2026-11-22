@@ -14,16 +14,18 @@ pub struct PrecisionPlan {
     /// `set(m)`: every float product of the function whose set is not `{f32}`
     /// (the innermost `: compute` around the body it was lowered from).
     pub set: SecondaryMap<MorphismId, Precision>,
-    /// `round_at(v)`: values whose every reader is a product admitting `tf32`
-    /// — rounded once at the producer, not per use (compute once).
+    /// `round_at(v)`: values whose every reader is a product admitting a
+    /// reduced member (`tf32`, `bf16`, `f16`) — rounded once at the producer,
+    /// not per use (compute once).
     pub round_at: Vec<ObjectId>,
     /// `cross(e)`: `(v, reader)` where `v` also feeds a `tf32` product but
     /// `reader` does not admit `tf32` — no rounded copy of `v` may reach it.
     pub cross: Vec<(ObjectId, MorphismId)>,
     /// `bound(site)`: each tile site's coefficient of ADR-0040's
     /// `M = |seed| + Σ|a·b|` — D3's `(1 + u_t)²·(1 + γ_{K+1}(u_a)) − 1` where the
-    /// product admits `tf32` (`u_t = 2⁻¹¹`, `u_a = 2⁻²³`: a tensor-core
-    /// accumulator), else D2's `γ_{K+1}(2⁻²⁴)`.
+    /// product admits a reduced member (`u_t` its weakest's: `tf32` / `f16`
+    /// 2⁻¹¹, `bf16` 2⁻⁸; `u_a = 2⁻²³`: a tensor-core accumulator), else D2's
+    /// `γ_{K+1}(2⁻²⁴)` ([`bound_coef_unit`]).
     pub bound: SecondaryMap<MorphismId, f64>,
     /// ADR-0042 D6: each `Exp` of the function with its width's form — the
     /// oracle's constants and the default face's a-priori bound
@@ -44,11 +46,19 @@ pub fn gamma(n: u64, u: f64) -> f64 {
 
 /// The bound coefficient of a `k`-step fold whose products admit `tf32` or not.
 pub fn bound_coef(k: u64, tf32: bool) -> f64 {
-    if tf32 {
-        let ut = 2f64.powi(-11);
-        (1.0 + ut) * (1.0 + ut) * (1.0 + gamma(k + 1, 2f64.powi(-23))) - 1.0
-    } else {
-        gamma(k + 1, 2f64.powi(-24))
+    bound_coef_unit(k, tf32.then(|| 2f64.powi(-11)))
+}
+
+/// The bound coefficient of a `k`-step fold whose weakest member rounds each
+/// multiplicand with unit roundoff `ut` ([`Precision::unit`]): ADR-0041 D3's
+/// `(1 + u_t)²·(1 + γ_{K+1}(u_a)) − 1` with a tensor-core accumulator's
+/// `u_a = 2⁻²³` (one that truncates its aligned addends: the RTX 5080's
+/// `mma.sync` bf16 / f16 / fp8, `benches/local/mma_calib.cu`); `None` (exact
+/// f32 products): D2's `γ_{K+1}(2⁻²⁴)`.
+pub fn bound_coef_unit(k: u64, ut: Option<f64>) -> f64 {
+    match ut {
+        Some(ut) => (1.0 + ut) * (1.0 + ut) * (1.0 + gamma(k + 1, 2f64.powi(-23))) - 1.0,
+        None => gamma(k + 1, 2f64.powi(-24)),
     }
 }
 
@@ -84,7 +94,7 @@ impl CategoryIr {
         }
         // A value's readers: through the product a binary op takes (`Pair`
         // into its source tuple), the op; any other consumer as itself.
-        let tf32 = |m: MorphismId| self.precision(m).admits_tf32();
+        let tf32 = |m: MorphismId| self.precision(m).reduced();
         for o in self.func_objects(f) {
             if !matches!(self.objects.get(o).map(|x| &x.ty), Some(Ty::Float { .. })) {
                 continue;
@@ -120,7 +130,7 @@ impl CategoryIr {
             .chain(post.sites.iter())
             .chain(narrow.sites.iter())
         {
-            plan.bound.insert(m, bound_coef(s.k, s.tf32));
+            plan.bound.insert(m, bound_coef_unit(s.k, s.unit()));
         }
         plan
     }

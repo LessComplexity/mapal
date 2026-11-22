@@ -7,9 +7,10 @@ within relative 2·γ_{K+1} of the exact face's (which fails a correct result un
 `pt_rowsum_2048`: |exact| ≪ M). Non-numeric tokens equal.
 
 A program whose products admit TF32 (`: tf32 | f32`, ADR-0041) passes `--tf32`: D3's coefficient
-(1 + u_t)²·(1 + γ_{K+1}(2⁻²³)) − 1, u_t = 2⁻¹¹, replaces γ_{K+1}(2⁻²⁴).
+(1 + u_t)²·(1 + γ_{K+1}(2⁻²³)) − 1, u_t = 2⁻¹¹, replaces γ_{K+1}(2⁻²⁴); a 16-bit member (ADR-0043 D4:
+`: bf16 | f32`, `: f16 | f32`) passes `--bf16` (u_t = 2⁻⁸) / `--f16` (2⁻¹¹).
 
-usage: python3 value_gate.py <exact.expect> "<got, one line>" <K> [<xabs.expect>] [--tf32]
+usage: python3 value_gate.py <exact.expect> "<got, one line>" <K> [<xabs.expect>] [--tf32|--bf16|--f16]
 K is the program's longest fold chain (`tiles/<stem>.kmax`, else the probe stem's `_d<d>_h<h>`).
 Exit 0 inside the bound, 1 outside (the offending tokens printed)."""
 import sys
@@ -20,8 +21,12 @@ def gamma(n, u=2.0 ** -24):
 
 
 def coef(k, tf32=False):
-    """The bound's coefficient of M at fold length k: ADR-0040 D2, or ADR-0041 D3 under `tf32`."""
-    return (1 + 2.0 ** -11) ** 2 * (1 + gamma(k + 1, 2.0 ** -23)) - 1 if tf32 else gamma(k + 1)
+    """The bound's coefficient of M at fold length k: ADR-0040 D2, or ADR-0041 D3 under a reduced member —
+    `tf32` True (u_t = 2⁻¹¹) or the member's u_t itself (ADR-0043 D4: bf16 2⁻⁸, f16 2⁻¹¹)."""
+    if not tf32:
+        return gamma(k + 1)
+    ut = 2.0 ** -11 if tf32 is True else tf32
+    return (1 + ut) ** 2 * (1 + gamma(k + 1, 2.0 ** -23)) - 1
 
 
 def within(want, got, k, mags=None, tf32=False):
@@ -63,6 +68,9 @@ def demo():
     assert not within("100.0", "100.09", 576)[0]
     assert within("100.0", "100.09", 576, tf32=True)[0]
     assert not within("100.0", "100.3", 576, tf32=True)[0]
+    # ADR-0043 D4 (K 576): bf16 multiplicands, 2·(2·2⁻⁸) ≈ 1.6e-2 relative.
+    assert not within("100.0", "101.0", 576, tf32=True)[0]
+    assert within("100.0", "101.0", 576, tf32=2.0 ** -8)[0]
 
 
 if __name__ == "__main__":
@@ -70,8 +78,9 @@ if __name__ == "__main__":
         demo()
         print("ok")
         sys.exit(0)
-    tf32 = "--tf32" in sys.argv
-    argv = [a for a in sys.argv if a != "--tf32"]
+    flags = {"--tf32": True, "--bf16": 2.0 ** -8, "--f16": 2.0 ** -11}
+    tf32 = next((v for f, v in flags.items() if f in sys.argv), False)
+    argv = [a for a in sys.argv if a not in flags]
     mags = open(argv[4]).read() if len(argv) > 4 else None
     ok, bad = within(open(argv[1]).read(), argv[2], int(argv[3]), mags, tf32)
     print(("within" + (" (absolute, M)" if mags is not None else "")) if ok else "OUTSIDE " + "; ".join(bad))

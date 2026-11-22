@@ -2,8 +2,9 @@
 
 Date: 2026-11-21 · Status: **accepted-for-implementation** (sprint step "Half precision": "Real models run in
 bf16/fp16/fp8; Mapal has only f32/f64 (+ tf32 compute) … implement the first COMPLETE slice end to end"). Slice 1
-(D1–D3, D5–D8 for `bf16` / `f16` storage with f32 compute) is implemented; slices 2 (16-bit tensor-core products, D4/D6)
-and 3 (fp8) are decided here and open.
+(D1–D3, D5–D8 for `bf16` / `f16` storage with f32 compute) is implemented; slice 2 (16-bit tensor-core products, D4/D6)
+is implemented on the device (2026-11-23, "Implementation: slice 2" below); slice 3 (fp8) is modeled as capabilities and
+measured, its storage types open.
 Amends: ADR-0039 (candidate) — adopts its storage types and explicit conversions (D1, D2) as pipeline builtins;
 its D3 `block` class stays replaced by ADR-0041's compute sets, which gain the narrow members (D4). Builds on: ADR-0029
 (`widen_*` builtins), ADR-0040 (default face, D2 bound), ADR-0041 (compute precision on compute nodes,
@@ -103,6 +104,40 @@ half its weight stream.
 widening of a narrow array's element (`acc + x[i·k + k'] · (w[k'·n + j] -> widen_f32)`), with strided lanes and
 epilogues; each such read carries `TileRead::narrow`. Disjoint from every other tile plan, so their consumers read what
 they always read. `precision_plan.narrow` (D3). OFF arm: `--gpu-off=narrow-tile` (such a map is a per-cell kernel).
+
+## Implementation: slice 2 (2026-11-23, `local-rtx-5080`, evidence `tensor-cores.md`)
+
+- **D4 members.** `Precision` gains `bf16` / `f16` (syntax `: bf16 | f32`, `: f16 | f32` on any body opener; the
+  formatter keeps them); `Precision::half` (the weaker first), `unit` (`u_t`: bf16 2⁻⁸, f16 / tf32 2⁻¹¹), `TileSite::half`;
+  `precision_plan.bound` = `bound_coef_unit(K, u_t)` = `(1 + u_t)²·(1 + γ_{K+1}(2⁻²³)) − 1`; `round_at` / `cross` over every
+  reduced member. The interpreter's `--weakest` rounds an f32 multiplicand to the member (the oracle's `to_bf16`).
+- **The accumulator, measured.** `benches/local/mma_calib.cu` on the RTX 5080: `mma.sync` bf16 / f16 (m16n8k16) and
+  e4m3 / e5m2 (m16n8k32) all **truncate**: `1 + 1.5·2⁻²⁴ → 1`, `1 − 2⁻²⁵ → 1 − 2⁻²⁴`, addends below the largest one's
+  last bit dropped; worst 4.0–5.3 units of `2⁻²⁴·M` per instruction over 2²⁰ random ones. `MatrixOp::acc_u = −23` on
+  every profiled shape. Hence: **`{f32}` never takes the tensor core**, not even for two narrow operands (exact
+  products) — its bound needs `u_a = 2⁻²⁴`; the program's `: bf16 | f32` admits it (its bound has `u_a = 2⁻²³`).
+- **Capabilities as geometry.** `Caps::matrix` lists `MatrixOp`s: shape per issuing group (`m × n × k`, threads), operand
+  format (`MmaFmt`: tf32, bf16, f16, e4m3, e5m2), where `a`, `b` and the accumulator live (`Home::{Regs, Smem, Tmem}`) and
+  `acc_u`. Profiles: sm_80 / 86 warp tf32 + 16-bit; sm_89 / 120 + fp8 warp; sm_90a + `wgmma` (smem descriptors, all five
+  formats); sm_100a `tcgen05` (TMEM accumulator, one issuing thread) — modeled, not emitted. `caps_of_cc` stays the one
+  version-to-capability table (the device query); every rule reads `Caps::matrix_op(fmt, home)`.
+- **D6 realization (`half-tile`).** `mma.sync.m16n8k16.row.col.f32.{bf16,f16}` in the TF32 kernel's block / warp /
+  `m16n8` tiles: every panel by 16-byte `cp.async` in its storage format (a narrow operand 2 bytes, an f32 operand 4,
+  rounded per fragment pair by `cvt.rn.bf16x2.f32`), narrow fragments by `ldmatrix.x4` (`a`), `.x4.trans` / `.x2.trans`
+  (`b` stored `k × n`) or `.x4` (`b` stored `n × k`: attention's `K`, `[out][in]` weights); f32 accumulators in
+  registers. Taken where the site's member is bf16 and the part lists the format's warp product with `acc_meets(−23)`, or
+  both operands are f16 storage under `: f16 | f32` (an f32 operand is never rounded to f16: no value-range fact yet);
+  the order-free face only (exact / fixed faces keep the oracle's f32 products). The 16-bit tile caps its warp rows at
+  the site's (decode's 32 rows) and lets shared memory bound its residency. OFF: `--gpu-off=half-tile`.
+- **Narrow panels by `cp.async` (`narrow-async`).** The FMA tile streams a narrow `b` panel in its format (8-byte
+  `cp.async` of 4 elements, LDGSTS.E.64) and widens each fragment as read (LDS.64 + PRMT), on the `cp.async` path the
+  rules or a table candidate pick. OFF: the register-staged tile.
+- **The register budget (`staged-regs`).** A register-staged FMA tile whose panel (`(bm + bn)·bk / threads`) and tile
+  exceed the thread's registers is refused (the block decode's one-row narrow sites at 516 registers): no shipped or
+  candidate kernel of the bundle spills. OFF: `--gpu-off=staged-regs`.
+- **Open.** fp8 storage types (`f8e4m3`, `f8e5m2`, saturating `to_f8*`) and their `m16n8k32` realization; `wgmma` 16-bit
+  emission; swap-AB (`cᵀ = bᵀ·aᵀ`) for sites below 16 rows; the 16-bit tile over radix (attention head) sites; split-k
+  for the 16-bit tile; an f32 `a` panel rounded to bf16 as it is staged (half the shared memory, `ldmatrix`).
 
 ## Alternatives rejected
 

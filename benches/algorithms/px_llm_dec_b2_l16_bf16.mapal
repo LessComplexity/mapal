@@ -1,0 +1,183 @@
+fn main() {
+    128 -> iota -> i_x0;
+    i_x0 -> map {
+        t -> (t % 101 * 7 + 13) % 101 - 50 -> widen_f32 -> v;
+        v / 29.0
+    } -> x0;
+    64 -> iota -> i_g1;
+    i_g1 -> map {
+        t -> (t % 97 * 5 + 3) % 97 - 48 -> widen_f32 -> v;
+        1.0 + v / 400.0
+    } -> g1;
+    8192 -> iota -> i_wqkv;
+    i_wqkv -> map {
+        t -> (t % 103 * 11 + 57) % 103 - 51 -> widen_f32 -> v;
+        v / 232.0 -> to_bf16
+    } -> wqkv;
+    4096 -> iota -> i_wo;
+    i_wo -> map {
+        t -> (t % 97 * 5 + 3) % 97 - 48 -> widen_f32 -> v;
+        v / 232.0 -> to_bf16
+    } -> wo;
+    128 -> iota -> i_cs;
+    i_cs -> map {
+        t -> (t % 89 * 3 + 1) % 89 - 44 -> widen_f32 -> v;
+        v / 50.0
+    } -> cs;
+    128 -> iota -> i_sn;
+    i_sn -> map {
+        t -> (t % 107 * 13 + 7) % 107 - 53 -> widen_f32 -> v;
+        v / 50.0
+    } -> sn;
+    1024 -> iota -> i_kc0;
+    i_kc0 -> map {
+        t -> (t % 109 * 17 + 29) % 109 - 54 -> widen_f32 -> v;
+        v / 29.0 -> to_bf16
+    } -> kc0;
+    1024 -> iota -> i_vc0;
+    i_vc0 -> map {
+        t -> (t % 101 * 7 + 13) % 101 - 50 -> widen_f32 -> v;
+        v / 29.0 -> to_bf16
+    } -> vc0;
+    2 -> iota -> rR;
+    64 -> iota -> rD;
+    128 -> iota -> rRD;
+    256 -> iota -> rRQ;
+    16 -> iota -> rdh;
+    16 -> iota -> r16;
+    8 -> iota -> rBH;
+    128 -> iota -> rBHL;
+    1024 -> iota -> rC;
+    16 -> iota -> rL;
+    mut kc: [bf16; 1024] <- kc0;
+    mut vc: [bf16; 1024] <- vc0;
+    mut x: [f32; 128] <- x0;
+    mut t: i32 <- 0;
+    loop {
+        (t < 3) -> {
+            -true-> {
+                13 + t -> p;
+                rR -> map {
+                    b -> (0.0, rD) -> fold: bf16 | f32 {
+                        acc, i -> x[b * 64 + i] -> rv;
+                        acc + rv * rv
+                    } -> ss;
+                    ss / 64.0 + 0.00001 -> ra;
+                    0.5 + 0.5 * ra -> s0;
+                    (s0, r16) -> fold: bf16 | f32 {
+                        acc, k -> 0.5 * (acc + ra / acc)
+                    } -> sd;
+                    1.0 / sd
+                } -> rinv;
+                rRD -> map {
+                    e -> x[e] * rinv[e / 64] * g1[e % 64]
+                } -> xn;
+                rRQ -> map {
+                    e -> e / 128 -> b;
+                    e % 128 -> j;
+                    (0.0, rD) -> fold: bf16 | f32 {
+                        acc, k -> wqkv[k * 128 + j] -> widen_f32 -> wv;
+                        acc + xn[b * 64 + k] * wv
+                    }
+                } -> qkv;
+                rRD -> map {
+                    e -> e / 64 -> b;
+                    e % 64 -> c;
+                    c % 16 -> ri;
+                    (ri < 8) -> {
+                        -true-> qkv[b * 128 + c] * cs[p * 8 + ri] - qkv[b * 128 + c + 8] * sn[p * 8 + ri];
+                        -false-> qkv[b * 128 + c] * cs[p * 8 + ri - 8] + qkv[b * 128 + c - 8] * sn[p * 8 + ri - 8];
+                    }
+                } -> q;
+                rC -> map {
+                    c -> c / 512 -> b;
+                    c / 32 % 16 -> r;
+                    (r == p) -> {
+                        -true-> {
+                            c % 32 -> u;
+                            u % 16 -> ri;
+                            (ri < 8) -> {
+                                -true-> qkv[b * 128 + 64 + u] * cs[p * 8 + ri] - qkv[b * 128 + 64 + u + 8] * sn[p * 8 + ri];
+                                -false-> qkv[b * 128 + 64 + u] * cs[p * 8 + ri - 8] + qkv[b * 128 + 64 + u - 8] * sn[p * 8 + ri - 8];
+                            } -> kn;
+                            kn -> to_bf16
+                        }
+                        -false-> kc[c];
+                    }
+                } -> kc;
+                rC -> map {
+                    c -> c / 512 -> b;
+                    c / 32 % 16 -> r;
+                    (r == p) -> {
+                        -true-> qkv[b * 128 + 96 + c % 32] -> to_bf16;
+                        -false-> vc[c];
+                    }
+                } -> vc;
+                rBHL -> map {
+                    e -> e / 64 -> b;
+                    e / 16 % 4 -> h;
+                    e % 16 -> r;
+                    (r <= p) -> {
+                        -true-> {
+                            (0.0, rdh) -> fold: bf16 | f32 {
+                                acc, i -> kc[((b * 16 + r) * 2 + h / 2) * 16 + i] -> widen_f32 -> kv;
+                                acc + q[b * 64 + h * 16 + i] * kv
+                            } -> dt;
+                            dt / 4.0000000
+                        }
+                        -false-> -1000000000.0;
+                    }
+                } -> s;
+                rBH -> map {
+                    bh -> (-1000000000.0, rL) -> fold: bf16 | f32 {
+                        acc, r -> s[bh * 16 + r] -> se;
+                        (se > acc) -> {
+                            -true-> se;
+                            -false-> acc;
+                        }
+                    }
+                } -> mx;
+                rBHL -> map {
+                    e -> s[e] - mx[e / 16] -> exp
+                } -> pe;
+                rBH -> map {
+                    bh -> (0.0, rL) -> fold: bf16 | f32 {
+                        acc, r -> acc + pe[bh * 16 + r]
+                    }
+                } -> den;
+                rRD -> map {
+                    e -> e / 64 -> b;
+                    e % 64 -> c;
+                    c / 16 -> h;
+                    c % 16 -> i;
+                    (0.0, rL) -> fold: bf16 | f32 {
+                        acc, r -> vc[((b * 16 + r) * 2 + h / 2) * 16 + i] -> widen_f32 -> vv;
+                        acc + pe[(b * 4 + h) * 16 + r] * vv
+                    } -> av;
+                    av / den[b * 4 + h]
+                } -> att;
+                rRD -> map {
+                    e -> e / 64 -> b;
+                    e % 64 -> j;
+                    (0.0, rD) -> fold: bf16 | f32 {
+                        acc, k -> wo[k * 64 + j] -> widen_f32 -> wv;
+                        acc + att[b * 64 + k] * wv
+                    } -> y;
+                    x[e] + y
+                } -> x;
+                t + 1 -> t;
+                -> loop;
+            }
+            -false-> x -> out;
+        }
+    }
+    out[0] -> println;
+    out[65] -> println;
+    out[67] -> println;
+    out[127] -> println;
+    0.0 -> zero: f32;
+    (zero, out) -> fold: bf16 | f32 {
+        acc, v -> acc + v * v
+    } -> ssq;
+    ssq -> println;
+}

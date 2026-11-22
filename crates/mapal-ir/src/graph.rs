@@ -12,7 +12,7 @@
 use slotmap::{SecondaryMap, SlotMap};
 
 use crate::loc::SourceLoc;
-use crate::ty::{Ty, Value};
+use crate::ty::{NarrowFloat, Ty, Value};
 
 slotmap::new_key_type! {
     /// Stable key for an [`Object`].
@@ -182,22 +182,56 @@ pub struct Morphism {
 /// preference. `{f32}` is the default face (ADR-0040); `tf32` admits operands
 /// rounded to 10 explicit significand bits (accumulation stays f32). A set's
 /// semantics is its weakest member's bound (D3); stronger members are always
-/// admitted.
+/// admitted. ADR-0043 D4: the narrow members `bf16` / `f16` admit
+/// multiplicands rounded to that format (accumulation stays f32).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Precision {
     pub f32: bool,
     pub tf32: bool,
+    pub bf16: bool,
+    pub f16: bool,
 }
 
 impl Precision {
     pub const F32: Self = Self {
         f32: true,
         tf32: false,
+        bf16: false,
+        f16: false,
     };
 
     /// The weakest member admits TF32 operands.
     pub fn admits_tf32(self) -> bool {
         self.tf32
+    }
+
+    /// ADR-0043 D4: the 16-bit member a product admits, the weakest first
+    /// (`bf16`, 8 significand bits, before `f16`'s 11): multiplicands rounded
+    /// to it, accumulated in f32.
+    pub fn half(self) -> Option<NarrowFloat> {
+        if self.bf16 {
+            Some(NarrowFloat::Bf16)
+        } else if self.f16 {
+            Some(NarrowFloat::F16)
+        } else {
+            None
+        }
+    }
+
+    /// The weakest member's multiplicand unit roundoff `u_t` (ADR-0041 D3):
+    /// `bf16` 2⁻⁸, `f16` / `tf32` 2⁻¹¹; `None` for `{f32}` (exact products
+    /// of f32 operands, one rounding each).
+    pub fn unit(self) -> Option<f64> {
+        match (self.half(), self.tf32) {
+            (Some(n), _) => Some(crate::narrow::NarrowForm::of(n).u),
+            (None, true) => Some(2f64.powi(-11)),
+            (None, false) => None,
+        }
+    }
+
+    /// Some member rounds a multiplicand (`tf32`, `bf16`, `f16`).
+    pub fn reduced(self) -> bool {
+        self.unit().is_some()
     }
 }
 

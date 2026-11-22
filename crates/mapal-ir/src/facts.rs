@@ -100,6 +100,12 @@ pub struct FactArms {
     /// trip deltas reach through every map whose cells read rows of a
     /// changed array. Off: its trip deltas are `write_delta`'s alone.
     pub unchanged: bool,
+    /// tensor-cores `narrow-radix`: a mixed-radix tile site's operand may be
+    /// the exact widening of a narrow (`bf16` / `f16`) array element — a
+    /// `bf16` KV cache read by attention's head digits
+    /// ([`crate::CategoryIr::tile_plan_radix`], [`crate::TileRead::narrow`]).
+    /// Off: such a read has no form (the map is a per-cell kernel).
+    pub narrow_radix: bool,
 }
 
 impl Default for FactArms {
@@ -112,6 +118,7 @@ impl Default for FactArms {
             exp_rescale: true,
             uniform_base: true,
             unchanged: true,
+            narrow_radix: true,
         }
     }
 }

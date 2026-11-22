@@ -585,7 +585,7 @@ fn vec_llt(elem_llt: &str, tile_j: u64) -> String {
 
 /// The size in bytes of an emitted LLVM type text, under the LLVM data layout
 /// (`StructLayout`: each field at its own ABI alignment, tail-padded to the
-/// widest). The grammar is closed — `ty.rs` emits only `ptr`, `float`,
+/// widest). The grammar is closed — `ty.rs` emits only `ptr`, `float`, `bfloat`, `half`,
 /// `double`, `iN`, `[n x T]` and `{ T, … }` — and anything unrecognised sizes
 /// to `0`, which keeps it on the stack (the conservative direction).
 fn llt_bytes(llt: &str) -> u64 {
@@ -609,6 +609,11 @@ fn llt_bytes(llt: &str) -> u64 {
     match llt {
         "ptr" | "double" => 8,
         "float" => 4,
+        // ADR-0043: a narrow element is two bytes — counted, or a frame
+        // holding a `bf16` / `f16` array is allocated short of it (the 16 ×
+        // 6144 × 4096 projection's 50 MB `bf16` weight wrote past a 1 MB
+        // frame on the host).
+        "bfloat" | "half" => 2,
         _ => llt
             .strip_prefix('i')
             .and_then(|bits| bits.parse::<u64>().ok())
@@ -917,5 +922,23 @@ fn const_literal(v: &Value) -> String {
         Value::F64(x) => format!("0x{:016X}", x.to_bits()),
         Value::Narrow(n, b) => crate::narrow::literal(*n, *b),
         Value::Str(_) => unreachable!("Str is not a scalar operand"),
+    }
+}
+
+#[cfg(test)]
+mod llt_tests {
+    use super::{llt_align, llt_bytes};
+
+    /// ADR-0043: a narrow element sizes to two bytes in a frame's layout (an
+    /// unsized one let a `bf16` array's frame be allocated short of it).
+    #[test]
+    fn narrow_elements_are_two_bytes() {
+        assert_eq!(llt_bytes("[8 x bfloat]"), 16);
+        assert_eq!(llt_bytes("{ [3 x half], float }"), 12);
+        assert_eq!(
+            llt_bytes("{ [65536 x float], [25165824 x bfloat], double }"),
+            50_593_800
+        );
+        assert_eq!(llt_align("bfloat"), 2);
     }
 }

@@ -25,7 +25,7 @@ pub use algebra::{
 };
 pub use bounds::BoundsProof;
 pub use linear::LinearSite;
-pub use precision::{PrecisionPlan, bound_coef, gamma};
+pub use precision::{PrecisionPlan, bound_coef, bound_coef_unit, gamma};
 pub use radix::{AxisDigit, Digit, RadixAddr, RadixForm, RadixTile, uniform_at};
 pub use unchanged::UnchangedPlan;
 
@@ -671,12 +671,30 @@ pub struct TileSite {
     pub radix: Option<Box<RadixTile>>,
     /// ADR-0041 D1: the site's product admits `tf32` (`precision_plan.set`).
     pub tf32: bool,
+    /// ADR-0043 D4: the 16-bit member the site's product admits
+    /// ([`crate::Precision::half`]): multiplicands rounded to it, f32
+    /// accumulation — a tensor-core product where the part has the shape.
+    pub half: Option<crate::ty::NarrowFloat>,
     /// device-geometry `tile-post`: the map body goes on past its fold — the
     /// cell's other terms (a residual, a scale, a mask) computed from the
     /// fold's value, the cell index and captured arrays ([`TilePost`]).
     /// `None` on every [`CategoryIr::tile_plan`] / `tile_plan_strided` site;
     /// [`CategoryIr::tile_plan_post`] holds the sites that carry one.
     pub post: Option<TilePost>,
+}
+
+impl TileSite {
+    /// The weakest member's multiplicand unit roundoff (ADR-0041 D3,
+    /// [`crate::Precision::unit`]): `None` where the product is `{f32}`.
+    pub fn unit(&self) -> Option<f64> {
+        crate::Precision {
+            f32: true,
+            tf32: self.tf32,
+            bf16: self.half == Some(crate::ty::NarrowFloat::Bf16),
+            f16: self.half == Some(crate::ty::NarrowFloat::F16),
+        }
+        .unit()
+    }
 }
 
 /// **The cell work after a tile site's fold** (device-geometry `tile-post`,
@@ -3462,6 +3480,7 @@ impl CategoryIr {
             add_acc_first,
             radix: None,
             tf32: self.precision(mul.id).admits_tf32(),
+            half: self.precision(mul.id).half(),
             post: None,
         })
     }

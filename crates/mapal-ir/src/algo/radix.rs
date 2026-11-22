@@ -363,12 +363,18 @@ impl CategoryIr {
                 let mut out = SecondaryMap::new();
                 let strided = self.tile_plan_strided(f);
                 let post = self.tile_plan_post(f);
+                // tensor-cores `narrow-radix`: a narrow operand's plain site
+                // stays `tile_plan_narrow`'s (the plans stay disjoint).
+                let narrow = self.tile_plan_narrow(f);
                 for &m in self
                     .func(f)
                     .map(|fd| fd.morphisms.as_slice())
                     .unwrap_or(&[])
                 {
-                    if strided.sites.contains_key(m) || post.sites.contains_key(m) {
+                    if strided.sites.contains_key(m)
+                        || post.sites.contains_key(m)
+                        || narrow.sites.contains_key(m)
+                    {
                         continue;
                     }
                     if let Some(s) = self.radix_site(m) {
@@ -470,7 +476,7 @@ impl CategoryIr {
         };
         // One read: its map-capture slot, and its address as (base, t-digits,
         // k-digits), each digit `(stride, radix, coef)` of the raw index; its
-        // captured numbers' terms; the array's length.
+        // captured numbers' terms; the array's length; its narrow format.
         type Read = (
             u32,
             u64,
@@ -478,8 +484,19 @@ impl CategoryIr {
             Vec<(u64, u64, u64)>,
             u64,
             Vec<Digit>,
+            Option<crate::ty::NarrowFloat>,
         );
         let read = |value: ObjectId| -> Option<(Read, Ty)> {
+            // tensor-cores `narrow-radix` (ADR-0043): the product reads the
+            // exact widening of a narrow element — the read is the element's,
+            // the product's operand the widening's type.
+            let (value, narrow, widened) = match self.tile_definer(value, Operation::Widen) {
+                Some(w) if self.fact_arms().narrow_radix => match self.objects.get(w.source)?.ty {
+                    Ty::Narrow(n) => (w.source, Some(n), Some(self.objects.get(value)?.ty.clone())),
+                    _ => return None,
+                },
+                _ => (value, None, None),
+            };
             let index = self.tile_definer(value, Operation::Index)?;
             let array = self.pair_slot_source(index.source, 0)?;
             let addr = self.pair_slot_source(index.source, 1)?;
@@ -537,7 +554,10 @@ impl CategoryIr {
                     }
                 }
             }
-            Some(((slot, base, td, kd, *size, ud), (**elem).clone()))
+            Some((
+                (slot, base, td, kd, *size, ud, narrow),
+                widened.unwrap_or_else(|| (**elem).clone()),
+            ))
         };
         let (x, ex) = read(self.pair_slot_source(mul.source, 0)?)?;
         let (y, ey) = read(self.pair_slot_source(mul.source, 1)?)?;
@@ -659,7 +679,10 @@ impl CategoryIr {
         if addr_a.max().checked_add(ua)? >= a.4 || addr_b.max().checked_add(ub)? >= b.4 {
             return None;
         }
-        let tile_read = |slot: u32, r: &RadixAddr| -> (TileRead, Option<RadixAddr>) {
+        let tile_read = |slot: u32,
+                         r: &RadixAddr,
+                         narrow: Option<crate::ty::NarrowFloat>|
+         -> (TileRead, Option<RadixAddr>) {
             match (plain(&r.i, rows), plain(&r.lane, c), plain(&r.k, kn)) {
                 (Some(ci), Some(clane), Some(ck)) => (
                     TileRead {
@@ -669,7 +692,7 @@ impl CategoryIr {
                         ck,
                         clane,
                         ksplit: None,
-                        narrow: None,
+                        narrow,
                     },
                     None,
                 ),
@@ -681,17 +704,17 @@ impl CategoryIr {
                         ck: 0,
                         clane: 0,
                         ksplit: None,
-                        narrow: None,
+                        narrow,
                     },
                     Some(r.clone()),
                 ),
             }
         };
-        let (ra, ma) = tile_read(a.0, &addr_a);
+        let (ra, ma) = tile_read(a.0, &addr_a, a.6);
         // A `b` that reads row digits is never plain: its rows are the
         // batch's, block-uniform only through the digit form.
         let (rb, mb) = match addr_b.i.is_empty() {
-            true => tile_read(b.0, &addr_b),
+            true => tile_read(b.0, &addr_b, b.6),
             false => (
                 TileRead {
                     slot: b.0,
@@ -700,7 +723,7 @@ impl CategoryIr {
                     ck: 0,
                     clane: 0,
                     ksplit: None,
-                    narrow: None,
+                    narrow: b.6,
                 },
                 Some(addr_b.clone()),
             ),
@@ -727,6 +750,7 @@ impl CategoryIr {
             add_acc_first,
             radix: Some(Box::new(radix)),
             tf32: self.precision(mul.id).admits_tf32(),
+            half: self.precision(mul.id).half(),
             post,
         })
     }

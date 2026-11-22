@@ -5000,6 +5000,205 @@ pub fn narrow_src(p: &NarrowProg) -> (String, usize) {
     (s, tight)
 }
 
+// --- tensor-cores (ADR-0043 D4 / D6): 16-bit products ------------------------
+
+/// A sum of products whose multiplicands are 16-bit: operands stored `f32`,
+/// `bf16` or `f16` (`fa`, `fb`: 0 / 1 / 2), the fold under `{f32}`,
+/// `: bf16 | f32` or `: f16 | f32` (`set` 0 / 1 / 2). `attn`: an attention
+/// head instead of a GEMM — scores `q·kᵀ` (`b` read `n × k`, scaled: a tile
+/// site with an epilogue), a row softmax (`exp`), then `p·v` — both products
+/// under the set, `k` / `v` the stored cache; `bt` there: two heads (the
+/// sites read the head digit — `tile_plan_radix`). `bt` (GEMM): `b` read
+/// `n × k` (`b[j·k + q]`); `post` (GEMM): an epilogue `u·0.5 + a`.
+#[derive(Clone, Debug)]
+pub struct HalfProg {
+    pub dims: [u8; 3],
+    pub fa: u8,
+    pub fb: u8,
+    pub set: u8,
+    pub attn: bool,
+    pub bt: bool,
+    pub post: bool,
+    pub law: [u8; 2],
+}
+
+pub fn half_prog_strategy() -> impl Strategy<Value = HalfProg> {
+    (
+        (any::<u8>(), any::<u8>(), any::<u8>()),
+        prop::sample::select(vec![0u8, 1, 1, 2]),
+        prop::sample::select(vec![0u8, 1, 1, 2]),
+        prop::sample::select(vec![0u8, 1, 1, 1, 2]),
+        prop::bool::weighted(0.3),
+        prop::bool::weighted(0.3),
+        any::<bool>(),
+        (any::<u8>(), any::<u8>()),
+    )
+        .prop_map(|(d, fa, fb, set, attn, bt, post, (l0, l1))| HalfProg {
+            dims: [d.0, d.1, d.2],
+            // `: f16 | f32` rounds no f32 operand (no value-range fact, D4):
+            // half its programs store both operands `f16`.
+            fa: if set == 2 && l0 % 2 == 0 { 2 } else { fa },
+            fb: if set == 2 && l0 % 2 == 0 { 2 } else { fb },
+            set,
+            attn,
+            bt,
+            post,
+            law: [l0, l1],
+        })
+}
+
+/// The format a [`HalfProg`] operand is stored in (`None`: f32).
+pub fn half_fmt(f: u8) -> Option<&'static str> {
+    match f {
+        1 => Some("bf16"),
+        2 => Some("f16"),
+        _ => None,
+    }
+}
+
+/// [`HalfProg`]'s source and the checks its printed lines take: `(cells,
+/// k, k_out)` — each checked value is printed beside its `M = Σ|a·b|`
+/// (value, magnitude pairs) for the first `cells` pairs over a `k`-step
+/// fold. An attention program first prints the largest score magnitude,
+/// and its output pairs (a `k_out`-step fold) follow the scores' (their `p`
+/// passes through `exp` and the member's rounding: the test composes
+/// ADR-0043 D3).
+pub fn half_src(p: &HalfProg) -> (String, (usize, u64, u64)) {
+    let pick = |d: u8, v: &[u64]| v[usize::from(d) % v.len()];
+    let set = match p.set {
+        1 => ": bf16 | f32",
+        2 => ": f16 | f32",
+        _ => "",
+    };
+    let (a1, a2) = (
+        u64::from(p.law[0] % 13) * 2 + 3,
+        u64::from(p.law[1] % 11) * 2 + 5,
+    );
+    let store = |f: u8| half_fmt(f).map_or(String::new(), |n| format!(" -> to_{n}"));
+    let read = |f: u8, x: &str| match half_fmt(f) {
+        Some(_) => format!("{x} -> widen_f32"),
+        None => x.to_string(),
+    };
+    let abs = "(pv > 0.0) -> { -true-> pv; -false-> 0.0 - pv; } -> av; acc + av";
+    if !p.attn {
+        let m = pick(p.dims[0], &[16, 32, 48, 64, 128]);
+        let n = pick(p.dims[1], &[8, 16, 32, 64, 128]);
+        let k = pick(p.dims[2], &[16, 32, 48, 64, 128, 256]);
+        let bi = if p.bt {
+            format!("b[j * {k} + q]")
+        } else {
+            format!("b[q * {n} + j]")
+        };
+        let (ar, br) = (read(p.fa, &format!("a[i * {k} + q]")), read(p.fb, &bi));
+        let post = if p.post {
+            format!(
+                " -> u; a[i * {k}]{} -> r; u * 0.5 + r",
+                if p.fa > 0 { " -> widen_f32" } else { "" }
+            )
+        } else {
+            String::new()
+        };
+        let cells = [
+            u64::from(p.law[0]) * 7 % (m * n),
+            m * n / 2 + 1,
+            m * n - 1 - u64::from(p.law[1]) % n,
+        ];
+        let mut src = format!(
+            "fn main() {{
+    {mk} -> iota -> ia;
+    ia -> map {{ t -> (t * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0{sa} }} -> a;
+    {kn} -> iota -> ib;
+    ib -> map {{ t -> (t * {a2} + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0{sb} }} -> b;
+    {mn} -> iota -> ic;
+    {k} -> iota -> kr;
+    ic -> map {{ t -> t / {n} -> i; t % {n} -> j; (0.0, kr) -> fold{set} {{ acc, q -> {ar} -> x; {br} -> y; acc + x * y }}{post} }} -> y;
+    ic -> map: f32 {{ t -> t / {n} -> i; t % {n} -> j; (0.0, kr) -> fold {{ acc, q -> {ar} -> x; {br} -> y; x * y -> pv; {abs} }} }} -> mag;
+",
+            mk = m * k,
+            kn = k * n,
+            mn = m * n,
+            sa = store(p.fa),
+            sb = store(p.fb),
+        );
+        // An epilogue's `0.5·u + r`: M scales by one half, `r` exact.
+        for c in cells {
+            src += &format!("    y[{c}] -> println;\n    mag[{c}] -> println;\n");
+        }
+        src += "}\n";
+        return (src, (cells.len(), k, 0));
+    }
+    let s = pick(p.dims[0], &[16, 32, 64]);
+    let d = pick(p.dims[1], &[16, 32, 64]);
+    // `bt` (attention): two heads — the scores and `P·V` read `q`, `k`, `v`
+    // at the head digit (`tile_plan_radix`'s sites).
+    let hn: u64 = if p.bt { 2 } else { 1 };
+    // One head: the plain forms (no head digit), as `tile_plan_post` /
+    // `tile_plan_narrow` take them.
+    let hd = |x: &str| {
+        if hn == 1 {
+            String::new()
+        } else {
+            format!("h * {s} + {x}")
+        }
+    };
+    let row = |x: &str| match hn {
+        1 => x.to_string(),
+        _ => format!("({})", hd(x)),
+    };
+    let (qr, kr) = (
+        read(p.fa, &format!("qh[{} * {d} + e]", row("i"))),
+        read(p.fb, &format!("kc[{} * {d} + e]", row("j"))),
+    );
+    let vr = read(p.fb, &format!("vc[{} * {d} + c]", row("j")));
+    let (hsc, hso) = match hn {
+        1 => (format!("t / {s} -> i;"), format!("t / {d} -> i;")),
+        _ => (
+            format!("t / {} -> h; t / {s} % {s} -> i;", s * s),
+            format!("t / {} -> h; t / {d} % {s} -> i;", s * d),
+        ),
+    };
+    let prow = row("i");
+    let (ns, nd) = (hn * s * s, hn * s * d);
+    let cells = [
+        u64::from(p.law[0]) * 5 % ns,
+        ns - 1 - u64::from(p.law[1]) % s,
+    ];
+    let outs = [u64::from(p.law[1]) * 3 % nd, nd - 1];
+    let mut src = format!(
+        "fn main() {{
+    {nd} -> iota -> it;
+    it -> map {{ t -> (t * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v / 29.0{sa} }} -> qh;
+    it -> map {{ t -> (t * {a2} + 57) % 103 - 51 -> widen_f32 -> v; v / 31.0{sb} }} -> kc;
+    it -> map {{ t -> (t * 11 + 7) % 97 - 48 -> widen_f32 -> v; v / 13.0{sb} }} -> vc;
+    {ns} -> iota -> isc;
+    {d} -> iota -> dr;
+    {s} -> iota -> sr;
+    {hs} -> iota -> hr;
+    isc -> map {{ t -> {hsc} t % {s} -> j; (0.0, dr) -> fold{set} {{ acc, e -> {qr} -> x; {kr} -> y; acc + x * y }} -> u; u * 0.25 }} -> sc;
+    isc -> map: f32 {{ t -> {hsc} t % {s} -> j; (0.0, dr) -> fold {{ acc, e -> {qr} -> x; {kr} -> y; x * y -> pv; {abs} }} -> u; u * 0.25 }} -> smag;
+    hr -> map {{ r -> (-1000000000.0, sr) -> fold {{ m, j -> sc[r * {s} + j] -> x; (x > m) -> {{ -true-> x; -false-> m; }} }} }} -> mx;
+    isc -> map {{ t -> t / {s} -> r; sc[t] - mx[r] -> exp }} -> ex;
+    hr -> map {{ r -> (0.0, sr) -> fold {{ acc, j -> acc + ex[r * {s} + j] }} }} -> l;
+    isc -> map {{ t -> t / {s} -> r; ex[t] / l[r] }} -> pr;
+    it -> map {{ t -> {hso} t % {d} -> c; (0.0, sr) -> fold{set} {{ acc, j -> {vr} -> y; acc + pr[{prow} * {s} + j] * y }} }} -> o;
+    it -> map: f32 {{ t -> {hso} t % {d} -> c; (0.0, sr) -> fold {{ acc, j -> {vr} -> y; pr[{prow} * {s} + j] * y -> pv; {abs} }} }} -> omag;
+    (0.0, isc) -> fold {{ m, t -> smag[t] -> x; (x > m) -> {{ -true-> x; -false-> m; }} }} -> smax;
+    smax -> println;
+",
+        hs = hn * s,
+        sa = store(p.fa),
+        sb = store(p.fb),
+    );
+    for c in cells {
+        src += &format!("    sc[{c}] -> println;\n    smag[{c}] -> println;\n");
+    }
+    for c in outs {
+        src += &format!("    o[{c}] -> println;\n    omag[{c}] -> println;\n");
+    }
+    src += "}\n";
+    (src, (cells.len(), d, s))
+}
+
 /// caching-memory: a growing-history loop — the loop carries a history of `b`
 /// sequences × `l` rows × `d` cells and writes the step's input row into it
 /// at position `p0 + t` (one row of every sequence; past the end: no write),

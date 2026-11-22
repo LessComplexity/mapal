@@ -62,10 +62,13 @@ INTENT = {
     # bf16), its FFMA chain the f32 site's. OFF (`--gpu-off=narrow-tile`): no such site (a per-cell map): the arm's
     # diff.
     'narrow-tile': dict(applies="'narrow' in plan", on=[
-        ('the narrow operand is loaded in its format in the hot loop: one element (LDG.U16, one thread a cell) or '
-         'a 4-element vector (LDG.64, the register-staged tile, never LDG.128)',
-         "sass.hot.ldg16 > 0 if plan.kind == 'naive' else sass.hot.ldg64 > 0"),
-        ('a narrow panel is register-staged: no cp.async (LDGSTS)', "plan.kind == 'naive' or sass.hot.ldgsts == 0"),
+        ('the narrow operand is loaded in its format in the hot loop: one element (LDG.U16: one thread a cell, a '
+         'mixed-radix tile`s digit copies), a 4-element vector (LDG.64, the register-staged tile, never LDG.128), or '
+         'copied by cp.async (LDGSTS: `narrow-async`)',
+         "sass.hot.ldg16 > 0 if plan.kind == 'naive' or 'radix' in plan else "
+         "sass.hot.ldgsts > 0 if plan.stages >= 2 else sass.hot.ldg64 > 0"),
+        ('a narrow panel is register-staged (no cp.async, LDGSTS) unless the tile streams it (`stages` >= 2: '
+         'tensor-cores `narrow-async`)', "plan.kind == 'naive' or plan.stages >= 2 or sass.hot.ldgsts == 0"),
         ('the products are f32 (FFMA, or FMUL + FADD on a separate-step face): the widened values exact',
          'sass.hot.ffma + sass.hot.fmul > 0'),
         ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')]),
@@ -388,6 +391,28 @@ INTENT = {
         ('HMMA / HGMMA in SASS', 'sass.hmma + sass.hgmma > 0')],
         applies_off="plan.set == 'tf32|f32'", off=[
         ('the f32 FFMA tile: no mma.sync / wgmma', "ptx.mma == 0 and ptx.wgmma == 0 and plan.kind == 'tile'")]),
+    # tensor-cores `half-tile` (ADR-0043 D4 / D6): a site whose products admit a 16-bit member (`set=bf16|f32`)
+    # or whose operands are both one narrow format takes the part's `mma.sync.m16n8k16` (`op=m16n8k16.<fmt>`):
+    # 16-byte cp.async panels in each operand's storage (LDGSTS.128), the narrow panels' fragments by ldmatrix
+    # (LDSM), an f32 panel rounded once per fragment pair (F2FP), f32 accumulators in registers (HMMA). OFF
+    # (`.off-half-tile`): the FMA tile the set also admits.
+    'half-tile': dict(applies_on="'op' in plan and plan.op.startswith('m16n8k16')", on=[
+        ('mma.sync.m16n8k16 in PTX', 'ptx.mma > 0'),
+        ('HMMA in SASS', 'sass.hmma > 0'),
+        ('16-byte cp.async panels: LDGSTS in the hot loop, no LDG', 'sass.hot.ldgsts > 0 and sass.hot.ldg == 0'),
+        ('a narrow panel read by ldmatrix (LDSM)', 'plan.ea == 4 and plan.eb == 4 or sass.hot.ldsm > 0'),
+        ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')],
+        applies_off="'bf16|f32' in plan.get('set', '') or 'f16|f32' in plan.get('set', '')", off=[
+        ('no 16-bit mma: the FMA tile', "ptx.mma == 0 and plan.kind != 'mma'")]),
+    # tensor-cores `narrow-async`: a streamed (`stages` >= 2) FMA tile over a narrow `b` copies its panel in the
+    # format (8-byte LDGSTS, 4 elements) and widens each fragment as read. OFF: the register-staged tile.
+    'narrow-async': dict(applies_on="plan.kind == 'tile' and 'narrow' in plan and plan.stages >= 2", on=[
+        ('the narrow panel streams: LDGSTS in the hot loop, no LDG', 'sass.hot.ldgsts > 0 and sass.hot.ldg == 0'),
+        ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')]),
+    # tensor-cores `staged-regs`: no register-staged FMA tile whose panel and tile exceed the thread's registers —
+    # every shipped and candidate tile stays in registers.
+    'staged-regs': dict(applies_on="plan.kind == 'tile' and plan.stages < 2", on=[
+        ('a register-staged tile does not spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')]),
     # generic-fusion natural forms `range-map`: a map whose cells off a row / range / column / cell are a capture's
     # own runs in place over that set (`in_place_source`); its movement is the by-ref rows' (`host.move`).
     'range-map': dict(host=True, note='work per trip, not bytes: diff the `.off-range-map` arm (host insns, loops)'),

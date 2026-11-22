@@ -120,6 +120,7 @@ mod tests {
             add_acc_first: true,
             radix: None,
             tf32: false,
+            half: None,
             post: None,
         }
     }

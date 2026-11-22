@@ -87,6 +87,8 @@ fn ir_prec(p: Option<syn::Precision>, outer: mapal_ir::Precision) -> mapal_ir::P
     p.map_or(outer, |p| mapal_ir::Precision {
         f32: p.f32,
         tf32: p.tf32,
+        bf16: p.bf16,
+        f16: p.f16,
     })
 }
 

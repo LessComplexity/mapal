@@ -494,9 +494,10 @@ impl<'a> Parser<'a> {
 
     /// `compute := ':' member ('|' member)*` when the cursor is at `:` before
     /// a member (ADR-0041 D2) — on whatever opens a body; members `f32`,
-    /// `tf32`. The lone `|` the lexer flags (L0006) is this type's separator.
+    /// `tf32`, `bf16`, `f16` (ADR-0043 D4). The lone `|` the lexer flags
+    /// (L0006) is this type's separator.
     fn parse_compute(&mut self) -> Option<Precision> {
-        let member = |t: &str| t == "f32" || t == "tf32";
+        let member = |t: &str| matches!(t, "f32" | "tf32" | "bf16" | "f16");
         if !(self.at(TokenKind::Colon)
             && self.peek_kind(1) == TokenKind::Ident
             && member(self.text(self.peek(1).span)))
@@ -508,6 +509,8 @@ impl<'a> Parser<'a> {
         let mut p = Precision {
             f32: false,
             tf32: false,
+            bf16: false,
+            f16: false,
             span: self.cur_span(),
         };
         loop {
@@ -515,11 +518,13 @@ impl<'a> Parser<'a> {
             match (self.cur().kind, self.text(sp)) {
                 (TokenKind::Ident, "f32") => p.f32 = true,
                 (TokenKind::Ident, "tf32") => p.tf32 = true,
+                (TokenKind::Ident, "bf16") => p.bf16 = true,
+                (TokenKind::Ident, "f16") => p.f16 = true,
                 _ => {
                     self.diag(
                         "P0118",
                         sp,
-                        "expected a precision: `f32` or `tf32` (ADR-0041)",
+                        "expected a precision: `f32`, `tf32`, `bf16` or `f16` (ADR-0041, ADR-0043)",
                     );
                     break;
                 }

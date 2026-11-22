@@ -1065,10 +1065,12 @@ for stem in ("pt_convmc_8_64_56_3", "px_convmc_2_4_6_3", "pt_mlp_2048", "pt_mlp2
 # its chain's M (relu is 1-Lipschitz). The 4090 smoke failed pt_pc_32 and pt_mlp2_2048_tf32 on the relative
 # fallback under cancellation (|exact| << M) with the error inside D2 / D3 of M.
 def mabs(src):
-    out, n = re.subn(r'-> widen_f32 -> v; v / ([0-9.]+) \}',
-                     r'-> widen_f32 -> v; (v > 0.0) -> { -true-> v; -false-> 0.0 - v; } -> va; va / \1 }', src)
+    # A narrow input (`-> to_bf16`): the rounding of |v| is |rounding of v| (round to nearest is symmetric).
+    out, n = re.subn(r'-> widen_f32 -> v; v / ([0-9.]+)( -> to_bf16)? \}',
+                     r'-> widen_f32 -> v; (v > 0.0) -> { -true-> v; -false-> 0.0 - v; } -> va; va / \1\2 }', src)
     assert n > 0, "no closed-form input"
-    return out.replace("-> fold: tf32 | f32 {", "-> fold {")  # M is the exact face's
+    # M is the exact face's.
+    return out.replace("-> fold: tf32 | f32 {", "-> fold {").replace("-> fold: bf16 | f32 {", "-> fold {")
 
 
 for stem in ("pt_pc_32", "pt_pc_64", "pt_pc_128", "pt_mlp_2048", "pt_mlp2_2048", "pt_mlp_2048_tf32", "pt_mlp2_2048_tf32"):
@@ -1236,9 +1238,18 @@ def llm_rope_pv(src, base, c, pos, dh, closed=False):
 # value rounded once (`-> to_bf16`), read through its exact widening (`w[i] -> widen_f32`), products and folds f32:
 # half the weight bytes a decode step moves. The torch legs build the same tensors (`.to(bfloat16)`).
 LLM_WEIGHTS = ("wqkv", "wo", "wg", "wu", "wd")
+# tensor-cores: `kv16` stores the KV cache as `bf16` too (its initial rows and each step's new row rounded once,
+# read through the exact widening) — the bytes attention moves a step, halved; `bf16_folds` admits bf16 products in
+# every fold (`: bf16 | f32`, ADR-0043 D4: multiplicands rounded to bf16, f32 accumulation — the tensor cores'
+# `mma.sync.m16n8k16` where a site's operands fit the tile), the face of torch's bf16 legs.
+LLM_CACHE = ("kc0", "vc0")
 
 
-def llm_ops(P, rows, positions, cache, ffn, w16=False):
+def bf16_folds(src):
+    return src.replace("-> fold {", "-> fold: bf16 | f32 {")
+
+
+def llm_ops(P, rows, positions, cache, ffn, w16=False, kv16=False):
     """The layer's inputs: (name, length, key, body of v)."""
     D, H, Hk, dh, F = P["D"], P["H"], P["Hk"], P["dh"], P["F"]
     NQ, half = (H + 2 * Hk) * dh, dh // 2
@@ -1252,6 +1263,8 @@ def llm_ops(P, rows, positions, cache, ffn, w16=False):
                 ("wu", D * F, "g", f"v / {llm_div(D)}"), ("wd", F * D, "p", f"v / {llm_div(F)}")]
     if w16:
         ops = [(n, ln, k, f"{b} -> to_bf16" if n in LLM_WEIGHTS else b) for n, ln, k, b in ops]
+    if kv16:
+        ops = [(n, ln, k, f"{b} -> to_bf16" if n in LLM_CACHE else b) for n, ln, k, b in ops]
     return ops
 
 
@@ -1306,17 +1319,26 @@ def llm_loop(cond, body, step, exit_):
             f"                {step};\n                -> loop;\n            }}\n            -false-> {exit_};\n        }}\n    }}\n")
 
 
-def llm_decode(B, L, S, ffn, timed=True, P=LLM, pv=False, w16=False):
-    """S decode steps of B sequences against a KV cache of capacity L (`w16`: bf16 weights, ADR-0043)."""
+def llm_decode(B, L, S, ffn, timed=True, P=LLM, pv=False, w16=False, kv16=False):
+    """S decode steps of B sequences against a KV cache of capacity L (`w16`: bf16 weights, ADR-0043; `kv16`: a
+    bf16 KV cache)."""
     D, H, Hk, dh = P["D"], P["H"], P["Hk"], P["dh"]
     G, KD, NQ, sq = H // Hk, Hk * dh, (H + 2 * Hk) * dh, f"{dh ** 0.5:.7f}"
     C = B * L * KD
     rope = (lambda *a: llm_rope_pv(*a, closed=True)) if pv else llm_rope
     (bq, vq), (bo, vo) = llm_w("wqkv", f"k * {NQ} + j", w16), llm_w("wo", f"k * {D} + j", w16)
-    s = "fn main() {\n" + "".join(llm_law(*o) for o in llm_ops(P, B, L, C, ffn, w16))
+    # `kv16`: a cache element's read binds its widening; a new row is rounded once into the format.
+    (bk_, vk_), (bv_, vv_) = (llm_w("kc", f"((b * {L} + r) * {Hk} + h / {G}) * {dh} + i", kv16),
+                              llm_w("vc", f"((b * {L} + r) * {Hk} + h / {G}) * {dh} + i", kv16))
+    if kv16:
+        bk_, bv_ = bk_.replace("wv;", "kv;"), bv_.replace("wv;", "vv;")
+        vk_, vv_ = "kv", "vv"
+    to16 = " -> to_bf16" if kv16 else ""
+    ct = "bf16" if kv16 else "f32"
+    s = "fn main() {\n" + "".join(llm_law(*o) for o in llm_ops(P, B, L, C, ffn, w16, kv16))
     s += llm_head(P, B, ffn, f"    {B * H} -> iota -> rBH;\n    {B * H * L} -> iota -> rBHL;\n"
                              f"    {C} -> iota -> rC;\n    {L} -> iota -> rL;\n")
-    s += (f"    mut kc: [f32; {C}] <- kc0;\n    mut vc: [f32; {C}] <- vc0;\n    mut x: [f32; {B * D}] <- x0;\n"
+    s += (f"    mut kc: [{ct}; {C}] <- kc0;\n    mut vc: [{ct}; {C}] <- vc0;\n    mut x: [f32; {B * D}] <- x0;\n"
           f"    mut t: i32 <- 0;\n")
     s += "    () -> time -> t0;\n" if timed else ""
     body = (
@@ -1326,15 +1348,15 @@ def llm_decode(B, L, S, ffn, timed=True, P=LLM, pv=False, w16=False):
         f"    rRQ -> map {{ e -> e / {NQ} -> b; e % {NQ} -> j; (0.0, rD) -> fold {{ acc, k -> {bq}acc + xn[b * {D} + k] * {vq} }} }} -> qkv;\n"
         f"    rRD -> map {{ e -> e / {D} -> b; e % {D} -> c; {rope('qkv', f'b * {NQ}', 'c', 'p', dh)} }} -> q;\n"
         f"    rC -> map {{ c -> c / {L * KD} -> b; c / {KD} % {L} -> r; (r == p) -> {{ -true-> {{ c % {KD} -> u; "
-        f"{rope('qkv', f'b * {NQ} + {D}', 'u', 'p', dh)} }} -false-> kc[c]; }} }} -> kc;\n"
-        f"    rC -> map {{ c -> c / {L * KD} -> b; c / {KD} % {L} -> r; (r == p) -> {{ -true-> qkv[b * {NQ} + {D + KD} + c % {KD}]; -false-> vc[c]; }} }} -> vc;\n"
+        f"{rope('qkv', f'b * {NQ} + {D}', 'u', 'p', dh)} -> kn; kn{to16} }} -false-> kc[c]; }} }} -> kc;\n"
+        f"    rC -> map {{ c -> c / {L * KD} -> b; c / {KD} % {L} -> r; (r == p) -> {{ -true-> qkv[b * {NQ} + {D + KD} + c % {KD}]{to16}; -false-> vc[c]; }} }} -> vc;\n"
         f"    rBHL -> map {{ e -> e / {H * L} -> b; e / {L} % {H} -> h; e % {L} -> r; (r <= p) -> {{ -true-> {{ (0.0, rdh) -> fold {{ acc, i -> "
-        f"acc + q[b * {D} + h * {dh} + i] * kc[((b * {L} + r) * {Hk} + h / {G}) * {dh} + i] }} -> dt; dt / {sq} }} -false-> -1000000000.0; }} }} -> s;\n"
+        f"{bk_}acc + q[b * {D} + h * {dh} + i] * {vk_} }} -> dt; dt / {sq} }} -false-> -1000000000.0; }} }} -> s;\n"
         f"    rBH -> map {{ bh -> (-1000000000.0, rL) -> fold {{ acc, r -> s[bh * {L} + r] -> se; (se > acc) -> {{ -true-> se; -false-> acc; }} }} }} -> mx;\n"
         f"    rBHL -> map {{ e -> {llm_exp(f's[e] - mx[e / {L}]', 'x')} }} -> pe;\n"
         f"    rBH -> map {{ bh -> (0.0, rL) -> fold {{ acc, r -> acc + pe[bh * {L} + r] }} }} -> den;\n"
         f"    rRD -> map {{ e -> e / {D} -> b; e % {D} -> c; c / {dh} -> h; c % {dh} -> i; (0.0, rL) -> fold {{ acc, r -> "
-        f"acc + pe[(b * {H} + h) * {L} + r] * vc[((b * {L} + r) * {Hk} + h / {G}) * {dh} + i] }} -> av; av / den[b * {H} + h] }} -> att;\n"
+        f"{bv_}acc + pe[(b * {H} + h) * {L} + r] * {vv_} }} -> av; av / den[b * {H} + h] }} -> att;\n"
         f"    rRD -> map {{ e -> e / {D} -> b; e % {D} -> j; (0.0, rD) -> fold {{ acc, k -> {bo}acc + att[b * {D} + k] * {vo} }} -> y; x[e] + y }} -> {'h1' if ffn else 'x'};\n")
     if ffn:
         body += llm_ffn(P, "h1", "x", w16)
@@ -1433,13 +1455,15 @@ def llm_decode_kv(B, L, S, ffn, naive, timed=True, P=LLM):
     return s + llm_tail(P, B, timed)
 
 
-def llm_prefill(T, ffn, groups=False, timed=True, P=LLM, pv=False):
-    """Causal prefill of T tokens; `groups`: the attention as a loop over the KV-head groups."""
+def llm_prefill(T, ffn, groups=False, timed=True, P=LLM, pv=False, w16=False):
+    """Causal prefill of T tokens; `groups`: the attention as a loop over the KV-head groups (`w16`: bf16
+    weights)."""
     D, H, Hk, dh = P["D"], P["H"], P["Hk"], P["dh"]
     G, KD, NQ, sq = H // Hk, Hk * dh, (H + 2 * Hk) * dh, f"{dh ** 0.5:.7f}"
     nh = G if groups else H  # query heads per score array
     rope = llm_rope_pv if pv else llm_rope
-    s = "fn main() {\n" + "".join(llm_law(*o) for o in llm_ops(P, T, T, 0, ffn))
+    (bq, vq), (bo, vo) = llm_w("wqkv", f"k * {NQ} + j", w16), llm_w("wo", f"k * {D} + j", w16)
+    s = "fn main() {\n" + "".join(llm_law(*o) for o in llm_ops(P, T, T, 0, ffn, w16))
     s += llm_head(P, T, ffn, f"    {T} -> iota -> rT;\n    {T * KD} -> iota -> rTK;\n"
                              f"    {nh * T} -> iota -> rHT;\n    {nh * T * T} -> iota -> rHTT;\n")
     if groups:
@@ -1447,7 +1471,7 @@ def llm_prefill(T, ffn, groups=False, timed=True, P=LLM, pv=False):
     s += "    () -> time -> t0;\n" if timed else ""
     s += (f"    rR -> map {{ b -> {llm_rms(f'x0[b * {D} + i]', D)} }} -> rinv;\n"
           f"    rRD -> map {{ e -> x0[e] * rinv[e / {D}] * g1[e % {D}] }} -> xn;\n"
-          f"    rRQ -> map {{ e -> e / {NQ} -> i; e % {NQ} -> j; (0.0, rD) -> fold {{ acc, k -> acc + xn[i * {D} + k] * wqkv[k * {NQ} + j] }} }} -> qkv;\n"
+          f"    rRQ -> map {{ e -> e / {NQ} -> i; e % {NQ} -> j; (0.0, rD) -> fold {{ acc, k -> {bq}acc + xn[i * {D} + k] * {vq} }} }} -> qkv;\n"
           f"    rRD -> map {{ e -> e / {D} -> i; e % {D} -> c; {rope('qkv', f'i * {NQ}', 'c', 'i', dh)} }} -> q;\n"
           f"    rTK -> map {{ e -> e / {KD} -> i; e % {KD} -> u; {rope('qkv', f'i * {NQ} + {D}', 'u', 'i', dh)} }} -> kr;\n")
     hq = f"g * {G} + hh" if groups else "hh"  # a score array's head -> its query head, and that head's KV head
@@ -1471,10 +1495,10 @@ def llm_prefill(T, ffn, groups=False, timed=True, P=LLM, pv=False):
         assert not ffn, "the grouped attention's output is the program's"
         return s + llm_tail(P, T, timed)
     s += attn + f"    rRD -> map {{ e -> e / {D} -> i; e % {D} -> c; c / {dh} -> hh; c % {dh} -> u; {pv} }} -> attf;\n"
-    s += (f"    rRD -> map {{ e -> e / {D} -> i; e % {D} -> j; (0.0, rD) -> fold {{ acc, k -> acc + attf[i * {D} + k] * wo[k * {D} + j] }} -> y; "
+    s += (f"    rRD -> map {{ e -> e / {D} -> i; e % {D} -> j; (0.0, rD) -> fold {{ acc, k -> {bo}acc + attf[i * {D} + k] * {vo} }} -> y; "
           f"x0[e] + y }} -> {'h1' if ffn else 'out'};\n")
     if ffn:
-        s += llm_ffn(P, "h1", "out")
+        s += llm_ffn(P, "h1", "out", w16)
     return s + llm_tail(P, T, timed)
 
 
@@ -1505,6 +1529,21 @@ for B in (1, 8, 32):
                                                    llm_kmax(LLM, False, L, LLM_STEPS))
 llm_progs["pt_llm_blkdec_b1_l4096_bf16w"] = (llm_decode(1, 4096, LLM_STEPS, True, w16=True),
                                             llm_kmax(LLM, True, 4096, LLM_STEPS))
+# tensor-cores: the bf16 KV cache (`_bf16kv`: weights and cache bf16, f32 compute — the default face) and the bf16
+# face of torch's bf16 legs (`_bf16`: the same storage, every fold `: bf16 | f32`); the prefills with bf16 weights
+# (`_bf16w`) and their bf16 face.
+for B in (1, 8, 32):
+    for L in (2048, 8192):
+        src = llm_decode(B, L, LLM_STEPS, False, w16=True, kv16=True)
+        llm_progs[f"pt_llm_dec_b{B}_l{L}_bf16kv"] = (src, llm_kmax(LLM, False, L, LLM_STEPS))
+        llm_progs[f"pt_llm_dec_b{B}_l{L}_bf16"] = (bf16_folds(src), llm_kmax(LLM, False, L, LLM_STEPS))
+src = llm_decode(1, 4096, LLM_STEPS, True, w16=True, kv16=True)
+llm_progs["pt_llm_blkdec_b1_l4096_bf16kv"] = (src, llm_kmax(LLM, True, 4096, LLM_STEPS))
+llm_progs["pt_llm_blkdec_b1_l4096_bf16"] = (bf16_folds(src), llm_kmax(LLM, True, 4096, LLM_STEPS))
+for stem, ffn in (("pt_llm_pre_t2048", False), ("pt_llm_blkpre_t2048", True)):
+    src = llm_prefill(2048, ffn, w16=True)
+    llm_progs[f"{stem}_bf16w"] = (src, llm_kmax(LLM, ffn, 2048, 1))
+    llm_progs[f"{stem}_bf16"] = (bf16_folds(src), llm_kmax(LLM, ffn, 2048, 1))
 # caching-memory: the explicit-cache (`kvx`) and naive (`kvn`) twins over a history (`llm_decode_kv`): the attention
 # half at the decode shapes whose naive state fits 16 GB, and the block.
 for B, L in ((1, 2048), (1, 8192), (8, 2048), (8, 8192), (32, 2048)):
@@ -1530,6 +1569,12 @@ llm_progs["px_llm_dec_b2_l16_bf16w"] = (llm_decode(2, 16, 3, False, False, LLM_P
                                        llm_kmax(LLM_PX, False, 16, 3, 128))
 llm_progs["px_llm_blkdec_b2_l16_bf16w"] = (llm_decode(2, 16, 3, True, False, LLM_PX, w16=True),
                                           llm_kmax(LLM_PX, True, 16, 3, 128))
+for ffn, name in ((False, "dec"), (True, "blkdec")):
+    src = llm_decode(2, 16, 3, ffn, False, LLM_PX, w16=True, kv16=True)
+    llm_progs[f"px_llm_{name}_b2_l16_bf16kv"] = (src, llm_kmax(LLM_PX, ffn, 16, 3, 128))
+    llm_progs[f"px_llm_{name}_b2_l16_bf16"] = (bf16_folds(src), llm_kmax(LLM_PX, ffn, 16, 3, 128))
+llm_progs["px_llm_pre_t12_bf16"] = (bf16_folds(llm_prefill(12, False, timed=False, P=LLM_PX, w16=True)),
+                                    llm_kmax(LLM_PX, False, 12, 1, 768))
 for kind in ("kvx", "kvn"):
     llm_progs[f"px_llm_{kind}_b2_l16"] = (llm_decode_kv(2, 16, 3, False, kind == "kvn", False, LLM_PX),
                                          llm_kmax(LLM_PX, False, 16, 4, 128))
@@ -1543,9 +1588,21 @@ for M in (1, 16, 128, 2048):
     for N, K in ((6144, 4096), (4096, 4096), (28672, 4096), (4096, 14336)):
         llm_progs[f"pt_pj_m{M}_n{N}_k{K}"] = (
             composed([("a", M * K, 'a'), ("b", K * N, 'b')], gsite("c", "a", "b", M, N, K), [("c", M * N)]), K)
+# tensor-cores: the projections with bf16 weights under the bf16 face (`_bf16`: `b` stored `-> to_bf16`, read
+# through its widening, `: bf16 | f32`) — torch's bf16 GEMM (cuBLASLt) is the competitor.
+for M in (1, 16, 128, 2048):
+    for N, K in ((6144, 4096), (4096, 4096), (28672, 4096), (4096, 14336)):
+        src = llm_progs[f"pt_pj_m{M}_n{N}_k{K}"][0]
+        src = src.replace("v / ", "v / ", 1)
+        lines = src.split("\n")
+        lines = [ln.replace("} -> b;", "-> to_bf16 } -> b;") if "-> b;" in ln and "i_b" in ln else ln for ln in lines]
+        src = "\n".join(lines).replace("acc + a[i * {K} + k] * b[k * {N} + j]".format(K=K, N=N),
+                                        "b[k * {N} + j] -> widen_f32 -> wv; acc + a[i * {K} + k] * wv".format(K=K, N=N))
+        llm_progs[f"pt_pj_m{M}_n{N}_k{K}_bf16"] = (bf16_folds(src), K)
 # The TF32 face (ADR-0041: `: tf32 | f32` on every fold) where GEMM products dominate: the prefills, the prefill
 # block and the m >= 128 projections.
-for stem in [s for s in llm_progs if s.startswith(("pt_llm_pre_t2048", "pt_llm_blkpre", "pt_pj_m128_", "pt_pj_m2048_"))]:
+for stem in [s for s in llm_progs if s.startswith(("pt_llm_pre_t2048", "pt_llm_blkpre", "pt_pj_m128_", "pt_pj_m2048_"))
+             and not s.endswith(("_bf16", "_bf16w"))]:
     src, k = llm_progs[stem]
     llm_progs[f"{stem}_tf32"] = (tf32_folds(src), k)
 for stem, (src, k) in llm_progs.items():

@@ -781,6 +781,36 @@ pub struct GpuRungs {
     /// tighter packing may put a member between a site's zero and the
     /// site). Off (`--gpu-off=arena-fit`): birth order only.
     pub arena_fit: bool,
+    /// tensor-cores (ADR-0043 D4 / D6): a tile site whose product admits a
+    /// 16-bit member (`: bf16 | f32`, `: f16 | f32`) takes the part's
+    /// matrix instruction for that format (`mma.sync.m16n8k16`, `Caps::matrix`):
+    /// 16-byte `cp.async` panels of a narrow operand, an f32 operand rounded
+    /// once as its panel is staged, `ldmatrix` fragments, f32 accumulators.
+    /// Off (`--gpu-off=half-tile`): the f32 / narrow FMA tile it also admits.
+    pub half_tile: bool,
+    /// tensor-cores: a narrow (`bf16` / `f16`) operand's FMA-tile panel is
+    /// copied in its own format by 16-byte `cp.async` and widened as each
+    /// fragment is read from shared memory, on the `cp.async` path the rules
+    /// pick (`async`). Off (`--gpu-off=narrow-async`): the register-staged
+    /// tile that widens each panel as it copies it (slice 1).
+    pub narrow_async: bool,
+    /// tensor-cores `staged-regs`: a register-staged FMA tile whose panel
+    /// (every copy's value live from load to store) and tile exceed the
+    /// thread's registers is refused — the spilling geometry (the block
+    /// decode's one-row narrow sites, 516 registers at `bk` 128). Off
+    /// (`--gpu-off=staged-regs`): the rules' tile however large its panel.
+    pub staged_regs: bool,
+    /// tensor-cores `half-fill`: the 16-bit tile is taken where the site's
+    /// flops per operand byte reach the part's FFMA balance or its own grid
+    /// fills the warp schedulers; elsewhere the FMA tile, which splits `k`
+    /// to fill the part. Off (`--gpu-off=half-fill`): the 16-bit tile
+    /// wherever it fits.
+    pub half_fill: bool,
+    /// tensor-cores `narrow-radix` (a fact arm, `mapal_ir::FactArms`): a
+    /// mixed-radix tile site may read the exact widening of a narrow element
+    /// (attention over a `bf16` KV cache). Off (`--gpu-off=narrow-radix`):
+    /// such a map is a per-cell kernel.
+    pub narrow_radix: bool,
 }
 
 impl GpuRungs {
@@ -892,11 +922,16 @@ impl GpuRungs {
         retain_same: true,
         cone_span: true,
         arena_fit: true,
+        half_tile: true,
+        narrow_async: true,
+        staged_regs: true,
+        half_fill: true,
+        narrow_radix: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 106] = [
+    pub const NAMES: [&'static str; 111] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1003,6 +1038,11 @@ impl GpuRungs {
         "retain-same",
         "cone-span",
         "arena-fit",
+        "half-tile",
+        "narrow-async",
+        "staged-regs",
+        "half-fill",
+        "narrow-radix",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -1114,6 +1154,11 @@ impl GpuRungs {
             "retain-same" => &mut self.retain_same,
             "cone-span" => &mut self.cone_span,
             "arena-fit" => &mut self.arena_fit,
+            "half-tile" => &mut self.half_tile,
+            "narrow-async" => &mut self.narrow_async,
+            "staged-regs" => &mut self.staged_regs,
+            "half-fill" => &mut self.half_fill,
+            "narrow-radix" => &mut self.narrow_radix,
             _ => return None,
         })
     }
@@ -1235,6 +1280,9 @@ pub enum Reduced {
     /// f32 storage, operands rounded to TF32 (10-bit mantissa, `cvt.rna`),
     /// f32 accumulation — `mma.sync.m16n8k8.tf32` on sm_80+.
     Tf32,
+    /// ADR-0043 D4: multiplicands rounded to a 16-bit format (`bf16`, `f16`),
+    /// f32 accumulation — `mma.sync.m16n8k16` where the part lists it.
+    Half(mapal_ir::NarrowFloat),
 }
 
 /// The order a tile site's `k` fold may be evaluated in (ADR-0040 D1): the
@@ -1458,6 +1506,7 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
         exp_rescale: !opts.gpu.off.exp_rescale,
         uniform_base: !opts.gpu.off.uniform_base,
         unchanged: !opts.gpu.off.unchanged,
+        narrow_radix: !opts.gpu.off.narrow_radix,
     };
     if arms != ir.fact_arms() {
         return emit_detailed(&ir.refacted(arms), opts);
@@ -1498,10 +1547,13 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     // ADR-0041 D4: a tensor core's k-step sums in the hardware's order, so a
     // `tf32` product takes it only where the order is free; a sequential or
     // fixed face realizes it as f32 (a member of every set): the FFMA tile.
+    // The same for a 16-bit member (ADR-0043 D4, `half-tile`): the exact and
+    // fixed-order faces keep the oracle's order and its f32 products.
     let mut face = *opts;
     face.gpu.free = opts.order == Order::Free;
     if !face.gpu.free {
         face.gpu.off.tf32_tile = true;
+        face.gpu.off.half_tile = true;
     }
     let opts = &face;
     // S62 `hostopt`: everything outside a device site is emitted against the

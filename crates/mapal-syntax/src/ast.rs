@@ -54,10 +54,14 @@ pub struct FnDecl {
 /// `seq: … { … }`, a function after its output `fn f(a) -> T: tf32 | f32 { … }`
 /// (ADR-0041 D2): the products that body admits (D1), nested bodies included
 /// unless they carry their own (innermost wins; `: f32` restores the default).
+/// ADR-0043 D4: the narrow members `bf16` / `f16` (multiplicands rounded to
+/// the format, f32 accumulation).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Precision {
     pub f32: bool,
     pub tf32: bool,
+    pub bf16: bool,
+    pub f16: bool,
     pub span: SourceLoc,
 }
 

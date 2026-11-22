@@ -63,6 +63,9 @@ impl Drop for Slot {
 /// `emu_cp_wait`), so a missing wait reads stale shared memory.
 pub fn host_device(dev: &str) -> String {
     let mut out = String::new();
+    // tensor-cores: an `ldmatrix` operand's 32-bit shared address, back to the
+    // pointer it was cast from (`emu_ldsm` reads the emulator's shared memory).
+    let mut shared32: std::collections::HashMap<String, String> = Default::default();
     // kernel-merging `calls`: the grid barrier is the emulator's
     // (`mapal_gsync` in `mapal_gpu_emu.c`), its PTX body dropped.
     let mut in_gsync = false;
@@ -122,6 +125,66 @@ pub fn host_device(dev: &str) -> String {
                 l = format!("{}@emu_cp_async({args}, i32 {n})", &l[..i]);
             }
         }
+        // tensor-cores (ADR-0043 D6): the 16-bit matrix instructions as the
+        // emulator's warp meets; a struct result rebuilt from `emu_frag`.
+        if let Some((lhs, rest)) = l.split_once(" = ptrtoint ptr ")
+            && let Some(p) = rest.strip_suffix(" to i32")
+        {
+            shared32.insert(lhs.trim().to_string(), p.to_string());
+        }
+        for (f, e) in [("bf16", "bf16x2"), ("f16", "f16x2")] {
+            let asm = format!("asm \"cvt.rn.{f}x2.f32 $0, $1, $2;\", \"=r,f,f\"(");
+            l = l.replace(&asm, &format!("@emu_cvt_{e}("));
+        }
+        if let Some(i) = l.find("asm sideeffect \"ldmatrix.sync.aligned.m8n8.x")
+            && let Some((lhs, _)) = l.split_once(" = call ")
+        {
+            let n: usize = l[i + "asm sideeffect \"ldmatrix.sync.aligned.m8n8.x".len()..][..1]
+                .parse()
+                .expect("x1/x2/x4");
+            let trans = u8::from(l[i..].contains(".trans"));
+            let a = l
+                .rsplit_once("(i32 ")
+                .expect("address")
+                .1
+                .trim_end_matches(')');
+            let p = shared32.get(a).expect("the address's pointer").clone();
+            let lhs = lhs.trim();
+            let ty = vec!["i32"; n].join(", ");
+            let mut text = format!("  call void @emu_ldsm(ptr {p}, i32 {n}, i32 {trans})\n");
+            let mut prev = "poison".to_string();
+            for j in 0..n {
+                let (x, s) = (format!("{lhs}_x{j}"), format!("{lhs}_s{j}"));
+                let s = if j + 1 == n { lhs.to_string() } else { s };
+                text += &format!(
+                    "  {x} = call i32 @emu_frag(i32 {j})\n  {s} = insertvalue {{ {ty} }} {prev}, i32 {x}, {j}\n"
+                );
+                prev = s;
+            }
+            l = text.trim_end().to_string();
+        }
+        for (f, f16) in [("bf16", 0), ("f16", 1)] {
+            let asm = format!("asm \"mma.sync.aligned.m16n8k16.row.col.f32.{f}.{f}.f32 ");
+            if let Some(i) = l.find(&asm)
+                && let Some((lhs, _)) = l.split_once(" = call ")
+                && let Some(j) = l[i..].find("\"(")
+            {
+                let args = l[i + j + 2..].trim_end_matches(')').to_string();
+                let lhs = lhs.trim();
+                let ty = "{ float, float, float, float }";
+                let mut text = format!("  call void @emu_mma16(i32 {f16}, {args})\n");
+                let mut prev = "poison".to_string();
+                for q in 0..4 {
+                    let (x, s) = (format!("{lhs}_x{q}"), format!("{lhs}_s{q}"));
+                    let s = if q == 3 { lhs.to_string() } else { s };
+                    text += &format!(
+                        "  {x} = call float @emu_fragf(i32 {q})\n  {s} = insertvalue {ty} {prev}, float {x}, {q}\n"
+                    );
+                    prev = s;
+                }
+                l = text.trim_end().to_string();
+            }
+        }
         // ADR-0042: the hardware `exp` form's `ex2.approx` is the host's `exp2f`.
         l = l.replace("@llvm.nvvm.ex2.approx.ftz.f(", "@emu_ex2(");
         l = l
@@ -167,7 +230,10 @@ pub fn host_device(dev: &str) -> String {
            declare i32 @emu_laneid()\ndeclare float @emu_shfl_bfly(float, i32)\n\
            declare void @emu_barrier()\ndeclare void @emu_barrier_n(i32)\n@emu_smem = external global [0 x i8], align 16\n\
            declare void @emu_cp_async(ptr, ptr, i32)\ndeclare void @emu_cp_commit()\n\
-           declare void @emu_cp_wait(i32)\ndeclare float @emu_ex2(float)\n"
+           declare void @emu_cp_wait(i32)\ndeclare float @emu_ex2(float)\n\
+           declare void @emu_ldsm(ptr, i32, i32)\ndeclare i32 @emu_frag(i32)\ndeclare float @emu_fragf(i32)\n\
+           declare i32 @emu_cvt_bf16x2(float, float)\ndeclare i32 @emu_cvt_f16x2(float, float)\n\
+           declare void @emu_mma16(i32, i32, i32, i32, i32, i32, i32, float, float, float, float)\n"
 }
 
 /// Emulation runs every device thread on the host, so it gets 8x the native timeout.

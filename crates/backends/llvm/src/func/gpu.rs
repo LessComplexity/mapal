@@ -25,9 +25,9 @@
 use super::resident::Window;
 use super::*;
 use crate::profile::{
-    Face, GPU_RESIDENT_BLOCKS, GPU_VEC_BYTES, Gpu, GpuMmaTile, GpuTile, GpuWgmmaTile, MMA_K, MMA_M,
-    MMA_N, NAIVE_UNROLL, PlanComb, PlanCost, PlanShape, WARPGROUP_WARPS, WGMMA_ATOM_ROWS, WGMMA_K,
-    WGMMA_M, WGMMA_SWIZZLE_BYTES, bank_degree, fma_held_regs,
+    Face, GPU_RESIDENT_BLOCKS, GPU_VEC_BYTES, Gpu, GpuMmaTile, GpuTile, GpuWgmmaTile, Home, MMA_K,
+    MMA_M, MMA_N, MmaFmt, NAIVE_UNROLL, PlanComb, PlanCost, PlanShape, WARPGROUP_WARPS,
+    WGMMA_ATOM_ROWS, WGMMA_K, WGMMA_M, WGMMA_SWIZZLE_BYTES, bank_degree, fma_held_regs,
 };
 use crate::{Order, Reduced};
 use mapal_ir::{RowFoldOp, RowFoldSite};
@@ -697,6 +697,8 @@ pub(crate) enum Arithmetic {
     OrderedFma,
     Tf32Mma,
     Tf32Wgmma,
+    /// tensor-cores: `mma.sync.m16n8k16` over a 16-bit member (ADR-0043 D4).
+    HalfMma,
 }
 
 impl Arithmetic {
@@ -726,7 +728,7 @@ impl Arithmetic {
         match self {
             Self::SeparateMulAdd => Face::Exact,
             Self::OrderedFma => Face::Contract,
-            Self::Tf32Mma | Self::Tf32Wgmma => Face::Tf32,
+            Self::Tf32Mma | Self::Tf32Wgmma | Self::HalfMma => Face::Tf32,
         }
     }
 }
@@ -867,7 +869,61 @@ pub(crate) fn launch_split(
     // digit-affine addresses (`wgmma`'s swizzled 16-byte panels have none).
     let rx = site.radix.as_deref();
     let radix_ok = |rungs: crate::GpuRungs| rx.is_none() || rungs.tf32_radix;
-    if site_reduced(site) == Some(Reduced::Tf32)
+    // tensor-cores (ADR-0043 D4 / D6): a product of 16-bit multiplicands on
+    // the part's warp instruction for that format ([`half_operands`]): the
+    // `m16n8` tile of the TF32 kernel at `k` 16, its panels at their storage
+    // widths. Off (`half-tile`), or where no tile divides the site: the TF32
+    // kernel the set may also admit, else the FMA tile.
+    if let Some((fmt, ea, eb)) = half_operands(site, gpu)
+        && shaped
+        && rx.is_none()
+    {
+        let rungs = site_rungs(profile, wps, Face::Tf32, arms, site);
+        let bt = site.b.clane != 1;
+        let tile = (rungs.mma && rungs.half_tile)
+            .then(|| {
+                profile.gpu_mma16_tile(
+                    grows, site.c, site.k, rungs.wide, rungs.fill, fmt, ea, eb, bt,
+                )
+            })
+            .flatten();
+        // tensor-cores: the 16-bit tile pays where the FMA tile would be
+        // bound by its FFMA issue — the site's flops per operand byte at or
+        // above the part's balance ([`Gpu::ffma_per_dram_byte_pm`]) — or
+        // where its own grid gives every warp scheduler its warps
+        // ([`Gpu::fill_warps`]). Below the balance with an under-filled grid
+        // the bytes in flight decide, and the FMA tile splits `k` to fill
+        // the part (RTX 5080, 16 × 6144 × 4096: 15.9 flop / B against 54.9,
+        // 96 one-warp blocks: 50.5 us against the FMA tile's 36.9; 128 rows:
+        // 116 flop / B, 768 warps: 110.8 against 174.0 us). Open: the split
+        // 16-bit tile.
+        let bytes = site.rows * site.k * ea + site.k * site.c * eb + site.rows * site.c * 4;
+        let balanced = gpu
+            .ffma_per_dram_byte_pm()
+            .is_none_or(|b| 2 * site.rows * site.c * site.k * 1000 >= b * bytes);
+        let filled = |m: &GpuMmaTile| {
+            !rungs.half_fill
+                || balanced
+                || (site.rows / m.bm()) * (site.c / m.bn()) * m.warps_x * m.warps_y
+                    >= gpu.fill_warps()
+        };
+        if let Some(m) = tile.filter(filled) {
+            return Launch {
+                arithmetic: Arithmetic::HalfMma,
+                tiled: None,
+                mma: Some(m),
+                wgmma: None,
+                gx: site.c / m.bn(),
+                gy: site.rows / m.bm(),
+                block: m.threads(gpu.warp),
+                smem: m.smem_bytes(),
+                raster: raster(rungs, m.bm(), m.bn(), m.blocks_per_sm),
+                rungs,
+                combine: Combine::None,
+            };
+        }
+    }
+    if site.tf32
         && site.elem == Ty::f32()
         && shaped
         && !narrow
@@ -962,13 +1018,13 @@ pub(crate) fn launch_split(
             kmajor: kmajor && g.tx >= GPU_WAVEFRONT_BYTES / GPU_VEC_BYTES,
             ..g
         })
-        .map(|g| {
+        .and_then(|g| {
             // ADR-0034 D1: a forced stage count picks the pipeline (1 =
             // register staging, >= 2 = `cp.async`) over the rung.
             let stream = match gpu.geom.stages {
                 0 => rungs.cp_async,
                 s => s >= 2,
-            } && !narrow;
+            } && (!narrow || narrow_streams(site, &rungs));
             let streamed = stream
                 .then(|| profile.gpu_tile_async(g, site.k, &site.elem))
                 .flatten()
@@ -984,7 +1040,7 @@ pub(crate) fn launch_split(
                 rungs.async_depth && gpu.geom.bk == 0 && a.bk < floor && !arms.on.cp_async
             };
             if let Some(a) = streamed.filter(|a| !shallow(a)) {
-                return a;
+                return Some(a);
             }
             // Register staging: the prefetch panel takes what a whole-file tile
             // leaves of the file (`wide-fma`), else (S62 `panel-regs`) what the
@@ -1011,8 +1067,17 @@ pub(crate) fn launch_split(
                 kpad(g)
             };
             match streamed {
-                Some(a) if a.bk >= staged.bk => a,
-                _ => staged,
+                Some(a) if a.bk >= staged.bk => Some(a),
+                // tensor-cores `staged-regs`: a register-staged panel the
+                // thread cannot hold beside its tile — every copy's value
+                // live from its load to its store, `(bm + bn)·bk / threads`
+                // registers — spills (the block decode's narrow 1 × 4096 ×
+                // 14336 site: one-row `a` panels whole at `bk` 128 over 32
+                // threads, 516 registers, 216–244 B spilled on every rented
+                // part). No such tile: the stream where the rules give one,
+                // else the next kernel.
+                _ if rungs.staged_regs && !staged_fits(gpu, &staged, e) => streamed,
+                _ => Some(staged),
             }
         })
         // S62 `asyncstage`: stages from the blocks this grid puts on an SM.
@@ -1023,10 +1088,13 @@ pub(crate) fn launch_split(
         .map(|g| {
             let blocks = (site.rows / g.bm()) * (site.c / g.bn()) * split;
             // per-site-choice D2: `async` forced off is register staging.
-            (rungs.async_stage && gpu.geom.stages == 0 && !arms.off.cp_async && !narrow)
-                .then(|| profile.gpu_tile_stages(g, blocks, site.k, &site.elem))
-                .flatten()
-                .unwrap_or(g)
+            (rungs.async_stage
+                && gpu.geom.stages == 0
+                && !arms.off.cp_async
+                && (!narrow || narrow_streams(site, &rungs)))
+            .then(|| profile.gpu_tile_stages(g, blocks, site.k, &site.elem))
+            .flatten()
+            .unwrap_or(g)
         })
         .map(kpad);
     // per-site-choice A4 (register rule): the k-major panel is taken where its
@@ -1184,6 +1252,20 @@ fn plan_line(
             " mt={} nt={} warps_x={} warps_y={} bk={} stages={} blocks_per_sm={}",
             m.mt, m.nt, m.warps_x, m.warps_y, m.bk, m.stages, m.blocks_per_sm
         );
+        // tensor-cores: the instruction and each panel's storage bytes
+        // (intent.py `half-tile`); the TF32 line unchanged.
+        if m.fmt != MmaFmt::Tf32 {
+            f += &format!(
+                " op=m16n8k{}.{} ea={} eb={}",
+                m.mma_k(),
+                m.fmt.ptx(),
+                m.ea,
+                m.eb
+            );
+            if m.bt {
+                f += " bt=1";
+            }
+        }
     }
     if let Some(w) = l.wgmma {
         f += &format!(
@@ -1228,7 +1310,13 @@ fn plan_line(
     }
     // recurrence-precision `tf32-tile`: the site's product set when it admits
     // TF32 (ADR-0041 D5 `set`, intent.py `tf32-tile`); f32-only lines unchanged.
-    if site.tf32 {
+    if let Some(n) = site.half {
+        f += &format!(
+            " set={}{}|f32",
+            n.name(),
+            if site.tf32 { "|tf32" } else { "" }
+        );
+    } else if site.tf32 {
         f += " set=tf32|f32";
     }
     let (c, s, ctas, iters) = match combine {
@@ -1987,6 +2075,14 @@ fn launch_key(l: &Launch) -> String {
         .replace(", calls: false", "")
         // half-precision: `narrow-tile` decides which sites exist (no kernel text).
         .replace(", narrow_tile: false", "")
+        // tensor-cores: `half-tile` / `narrow-async` choose the kernel (no
+        // kernel rung), and a TF32 tile keys as it did before its format.
+        .replace(", half_tile: false", "")
+        .replace(", narrow_async: false", "")
+        .replace(", staged_regs: false", "")
+        .replace(", half_fill: false", "")
+        .replace(", narrow_radix: false", "")
+        .replace(", fmt: Tf32, ea: 4, eb: 4, bt: false", "")
 }
 
 /// A candidate's kernel ids `(main, reduce)`, `reduce` 0 without a
@@ -2149,7 +2245,7 @@ pub(crate) fn concat_plan(
     for s in (1..=panels.min(64)).filter(|&s| panels.is_multiple_of(s)) {
         let c = Combine::Atomic { s };
         let r = resized(site, profile, contract, arms, l, c);
-        if mapal_ir::bound_coef(site.k / s + s * terms - 1, site.tf32) > bound
+        if mapal_ir::bound_coef_unit(site.k / s + s * terms - 1, site.unit()) > bound
             || !(site.k / s).is_multiple_of(r.tiled.map_or(1, |g| g.bk))
         {
             continue;
@@ -2321,6 +2417,20 @@ fn combine(
 /// the register tile leaves of the file (`wide-fma`, S53). Halve `bk` until it
 /// fits; a halved power of two still divides `k` and still loads in whole
 /// vectors per thread.
+/// tensor-cores `staged-regs`: a register-staged tile's panel — each copy's
+/// value held from its load to its store, `(bm + bn)·bk` elements over the
+/// block's threads — fits the registers a thread may hold. The panel alone:
+/// ptxas shares the tile's fragment registers with the copies it has stored
+/// (the B8 projection's 8 × 8 tile, 132 panel + 128 tile registers, compiles
+/// without a spill), while a panel past the file spills whatever the tile
+/// needs (the block decode's one-row sites, 516: 216–244 B; the 5090's 1 ×
+/// 18432 × 7168 GEMV, 516: 2512 B). A cp.async tile holds no panel in
+/// registers.
+fn staged_fits(gpu: &Gpu, g: &GpuTile, elem_bytes: u64) -> bool {
+    g.stages >= 2
+        || (g.bm() + g.bn()) * g.bk * elem_bytes.div_ceil(4) / g.threads() <= gpu.regs_per_thread
+}
+
 fn prefetch_depth(g: GpuTile, elem_bytes: u64, budget: u64) -> GpuTile {
     let lanes = GPU_VEC_BYTES / elem_bytes;
     let regs = |bk: u64| (g.bm() + g.bn()) * bk * elem_bytes.div_ceil(4) / g.threads();
@@ -2374,14 +2484,86 @@ fn site_key(site: &TileSite) -> String {
     format!("{site:?}")
         .replace(", radix: None", "")
         .replace(", tf32: false", "")
+        .replace(", half: None", "")
         .replace(", post: None", "")
 }
 
 /// ADR-0041 D6: the reduced realization a site's products admit — `tf32` in
-/// `precision_plan.set` of its product ([`TileSite::tf32`]) — keyed from the
+/// `precision_plan.set` of its product ([`TileSite::tf32`]), or a 16-bit
+/// member ([`TileSite::half`], ADR-0043 D4, the weaker) — keyed from the
 /// program, never a flag (D7).
 pub(crate) fn site_reduced(site: &TileSite) -> Option<Reduced> {
-    site.tf32.then_some(Reduced::Tf32)
+    site.half
+        .map(Reduced::Half)
+        .or(site.tf32.then_some(Reduced::Tf32))
+}
+
+/// tensor-cores `narrow-async`: the FMA tile streams a narrow `b` panel in
+/// its own format — an 8-byte `cp.async` per 4-element vector (a 2-byte copy
+/// has no `cp.async`), widened as each fragment is read from shared memory —
+/// where `b` is the one narrow operand, its rows unit-stride and vector
+/// aligned, and the rules stream the panel (`async`). A narrow `a` (the
+/// transposed panel's scatter) stays register-staged.
+fn narrow_streams(site: &TileSite, rungs: &crate::GpuRungs) -> bool {
+    rungs.narrow_async
+        && site.a.narrow.is_none()
+        && site.b.narrow.is_some()
+        && vector_b(site)
+        && site.radix.is_none()
+}
+
+/// **The 16-bit matrix product a site's operands admit** (tensor-cores,
+/// ADR-0043 D4): the format and each panel's storage width in shared
+/// memory, or `None`.
+///
+/// - A site whose product admits a 16-bit member ([`TileSite::half`]) takes
+///   it where the part lists a warp product of that format whose
+///   accumulator meets the set's `u_a = 2⁻²³` ([`profile::MatrixOp::acc_meets`]):
+///   a narrow operand of that format is copied as is (2 bytes), an f32
+///   operand is rounded once to `bf16` (4 bytes, rounded as its fragment is
+///   read). An `f16` member rounds no f32 operand: D4 admits it only where a
+///   value-range fact proves the operand below 65504, and none is stated yet.
+/// - A `{f32}` product of two operands of one narrow format is exact on the
+///   tensor core; it takes the instruction only where its accumulator meets
+///   the default face's `u_a = 2⁻²⁴` (every measured part truncates:
+///   `mma_calib.cu`, so none does).
+///
+/// Each panel's rows must be 16-byte copies: unit stride along `k` (`a`;
+/// `b` stored `n × k`, [`GpuMmaTile::bt`]) or the lane (`b` stored `k × n`),
+/// stride and base whole 16-byte chunks of its storage.
+fn half_operands(site: &TileSite, gpu: &Gpu) -> Option<(MmaFmt, u64, u64)> {
+    if site.elem != Ty::f32() {
+        return None;
+    }
+    let (fmt, u_a) = match site.half {
+        Some(n) => (MmaFmt::of_narrow(n), -23),
+        None => match (site.a.narrow, site.b.narrow) {
+            (Some(x), Some(y)) if x == y => (MmaFmt::of_narrow(x), -24),
+            _ => return None,
+        },
+    };
+    let op = gpu.caps.matrix_op(fmt, Home::Regs)?;
+    if !op.acc_meets(u_a) {
+        return None;
+    }
+    let width = |r: &mapal_ir::TileRead| match r.narrow {
+        Some(n) if MmaFmt::of_narrow(n) == fmt => Some(2),
+        Some(_) => None,
+        None if fmt == MmaFmt::Bf16 => Some(4),
+        None => None,
+    };
+    let (ea, eb) = (width(&site.a)?, width(&site.b)?);
+    let lanes = |e: u64| GPU_VEC_BYTES / e;
+    let rows_a = site.a.ck == 1
+        && site.a.ci.is_multiple_of(lanes(ea))
+        && site.a.base.is_multiple_of(lanes(ea));
+    let rows_b = site.b.base.is_multiple_of(lanes(eb))
+        && match (site.b.clane, site.b.ck) {
+            (1, ck) => ck.is_multiple_of(lanes(eb)),
+            (cl, 1) => cl.is_multiple_of(lanes(eb)),
+            _ => false,
+        };
+    (rows_a && rows_b).then_some((fmt, ea, eb))
 }
 
 /// A stable id for a site's kernel: FNV-1a over everything the kernel text
@@ -3688,6 +3870,7 @@ fn kernel_text(
     }
     match (l.wgmma, l.mma, l.tiled) {
         (Some(w), _, _) => k.wgmma(name, w),
+        (None, Some(m), _) if m.fmt != MmaFmt::Tf32 => k.mma16(name, m),
         (None, Some(m), _) => k.mma(name, m),
         (None, None, Some(g)) => k.tiled(name, g),
         (None, None, None) => k.naive(name, l.block),
@@ -5703,6 +5886,403 @@ impl Kernel<'_> {
         self.out.push_str("  ret void\n}\n");
     }
 
+    /// **The 16-bit tensor-core kernel** (tensor-cores, ADR-0043 D6):
+    /// [`Self::mma`]'s block, warp and `m16n8` tiles over
+    /// `mma.sync.m16n8k16.row.col.f32.{bf16,f16}` with f32 accumulators in
+    /// registers. Every panel lands by 16-byte `cp.async` in its storage
+    /// format (`g.ea`, `g.eb`): a narrow panel's fragments are read by
+    /// `ldmatrix` (`a`: `.x4`, row-major `m × k`; `b`: `.x4.trans` / `.x2.trans`
+    /// of the `k × n` panel — two `n8` tiles a load); an f32 panel's pairs
+    /// are loaded and rounded once to the format (`cvt.rn.bf16x2.f32`: the
+    /// member the site's product admits, ADR-0043 D4).
+    ///
+    /// Fragment layouts are the PTX ISA's for m16n8k16 (`group = lane / 4`,
+    /// `t = lane % 4`, two elements a register, the lower `k` in the low
+    /// half): A `a0..a3` = (g, 2t), (g+8, 2t), (g, 2t+8), (g+8, 2t+8); B
+    /// `b0, b1` = (k 2t, n g), (k 2t+8, n g); C as m16n8k8's.
+    fn mma16(&mut self, name: &str, g: GpuMmaTile) {
+        let s = self.site;
+        let seed = const_literal(&s.seed);
+        let warp = self.profile_gpu.warp;
+        let threads = g.threads(warp);
+        let (bm, bn, bk, lda, ldb) = (g.bm(), g.bn(), g.bk, g.lda(), g.ldb());
+        let (mt, nt) = (g.mt as usize, g.nt as usize);
+        let (ea, eb, ab) = (g.ea, g.eb, g.a_bytes());
+        let stage_bytes = g.stage_bytes();
+        let ptx = g.fmt.ptx();
+        let mk = g.mma_k();
+        let nk = s.k / bk;
+        let blocks = if self.rungs.min_blocks {
+            g.blocks_per_sm
+        } else {
+            0
+        };
+        self.header(name, threads, GPU_VEC_BYTES, blocks);
+        let smem = "@mapal_smem";
+        let ety = |e: u64| if e == 2 { "i16" } else { "float" };
+
+        let tid = self.sreg("tid.x");
+        let (bx, by) = self.block_ids();
+        let warp_id = self.op("udiv", &tid, warp);
+        let lane = self.op("urem", &tid, warp);
+        let wr = self.op("udiv", &warp_id, g.warps_x);
+        let wc = self.op("urem", &warp_id, g.warps_x);
+        let grp = self.op("udiv", &lane, 4);
+        let t4 = self.op("urem", &lane, 4);
+        let row0 = self.op("mul", &by, bm);
+        let col0 = self.op("mul", &bx, bn);
+
+        let accs = mt * nt * 4;
+        let acc = self.tmp();
+        self.line(format!("{acc} = alloca [{accs} x float], align 16"));
+        let acc_slot = |k: &mut Self, idx: usize| {
+            let p = k.tmp();
+            k.line(format!(
+                "{p} = getelementptr inbounds [{accs} x float], ptr {acc}, i64 0, i64 {idx}"
+            ));
+            p
+        };
+        for idx in 0..accs {
+            let p = acc_slot(self, idx);
+            self.line(format!("store float {seed}, ptr {p}, align 4"));
+        }
+
+        // cp.async: (is_a, global element index at k0 = 0, shared byte in
+        // stage 0), one per 16-byte chunk this thread copies, A then B.
+        let mut copies: Vec<(bool, String, String)> = Vec::new();
+        let (la, lb) = (GPU_VEC_BYTES / ea, GPU_VEC_BYTES / eb);
+        for p in 0..bm * bk / la / threads {
+            let li = self.op("add", &tid, p * threads);
+            let r = self.op("udiv", &li, bk / la);
+            let kc0 = self.op("urem", &li, bk / la);
+            let kc = self.op("mul", &kc0, la);
+            let grow = self.op("add", &row0, &r);
+            let gr = self.op("mul", &grow, s.a.ci);
+            let g0 = self.op("add", &gr, &kc);
+            let gsrc = self.op("add", &g0, s.a.base);
+            let sr = self.op("mul", &r, lda);
+            let se = self.op("add", &sr, &kc);
+            copies.push((true, gsrc, self.op("mul", &se, ea)));
+        }
+        for p in 0..bk * bn / lb / threads {
+            let li = self.op("add", &tid, p * threads);
+            // `bt`: rows `n`, 16-byte chunks along `k` (as `a`'s).
+            let chunks = if g.bt { bk / lb } else { bn / lb };
+            let r = self.op("udiv", &li, chunks);
+            let c0 = self.op("urem", &li, chunks);
+            let cc = self.op("mul", &c0, lb);
+            let g0 = if g.bt {
+                let gn = self.op("add", &col0, &r);
+                let gr = self.op("mul", &gn, s.b.clane);
+                self.op("add", &gr, &cc)
+            } else {
+                let gk = self.op("mul", &r, s.b.ck);
+                let gc = self.op("add", &col0, &cc);
+                self.op("add", &gk, &gc)
+            };
+            let gsrc = self.op("add", &g0, s.b.base);
+            let sk = self.op("mul", &r, ldb);
+            let sn = self.op("add", &sk, &cc);
+            let sb = self.op("mul", &sn, eb);
+            copies.push((false, gsrc, self.op("add", &sb, ab)));
+        }
+        let issue = |k: &mut Self, tile: &str, stage: &str| {
+            let k0 = k.op("mul", tile, bk);
+            let ka = k.op("mul", &k0, s.a.ck);
+            let kb = k.op("mul", &k0, s.b.ck);
+            let so = k.op("mul", stage, stage_bytes);
+            for (is_a, gsrc, sdst) in &copies {
+                let (arr, off, e) = if *is_a {
+                    ("%a", &ka, ea)
+                } else {
+                    ("%b", &kb, eb)
+                };
+                let gi = k.op("add", gsrc, off);
+                let gp = k.gep_ty(1, ety(e), arr, &gi);
+                let si = k.op("add", sdst, &so);
+                let sp = k.gep_ty(3, "i8", smem, &si);
+                k.line(format!(
+                    "call void @llvm.nvvm.cp.async.cg.shared.global.16(ptr addrspace(3) {sp}, ptr addrspace(1) {gp})"
+                ));
+            }
+        };
+        for st in 0..(g.stages - 1).min(nk) {
+            issue(self, &st.to_string(), &st.to_string());
+            self.line("call void @llvm.nvvm.cp.async.commit.group()");
+        }
+        for _ in nk..g.stages - 1 {
+            self.line("call void @llvm.nvvm.cp.async.commit.group()");
+        }
+        // Per-thread fragment origins inside a stage, in bytes. `ldmatrix`:
+        // lane `l` gives row `l % 8` of matrix `l / 8`.
+        let q = self.op("udiv", &lane, 8);
+        let i8l = self.op("urem", &lane, 8);
+        let qr = self.op("urem", &q, 2);
+        let qk = self.op("udiv", &q, 2);
+        let wrow = self.op("mul", &wr, g.wm());
+        let wcol = self.op("mul", &wc, g.wn());
+        let a_org = if ea == 2 {
+            // a: matrices (rows 0-7 | 8-15) × (k 0-7 | 8-15), row-major.
+            let r = self.op("mul", &qr, 8);
+            let r = self.op("add", &r, &i8l);
+            let r = self.op("add", &r, &wrow);
+            let r = self.op("mul", &r, lda);
+            let kq = self.op("mul", &qk, 8);
+            let o = self.op("add", &r, &kq);
+            self.op("mul", &o, 2)
+        } else {
+            // a: the pair (row g, k 2t..2t+1).
+            let r = self.op("add", &wrow, &grp);
+            let r = self.op("mul", &r, lda);
+            let t2 = self.op("mul", &t4, 2);
+            let o = self.op("add", &r, &t2);
+            self.op("mul", &o, 4)
+        };
+        let b_org = if g.bt {
+            // `n × k`: as `a` — `ldmatrix` matrix `q` is n rows `(q / 2)·8
+            // ..+8` (two n tiles) at k `(q % 2)·8`; an f32 pair (n g, k 2t).
+            let (n, kq, e) = if eb == 2 {
+                let n = self.op("mul", &qk, MMA_N);
+                let n = self.op("add", &n, &i8l);
+                (n, self.op("mul", &qr, 8), 2)
+            } else {
+                (grp.clone(), self.op("mul", &t4, 2), 4)
+            };
+            let n = self.op("add", &n, &wcol);
+            let r = self.op("mul", &n, ldb);
+            let o = self.op("add", &r, &kq);
+            let o = self.op("mul", &o, e);
+            self.op("add", &o, ab)
+        } else if eb == 2 {
+            // b (`.trans`): matrix `q` is k rows `(q % 2)·8 ..+8` of n tile
+            // `q / 2`; lane `l` gives its row `l % 8`.
+            let kr = self.op("mul", &qr, 8);
+            let kr = self.op("add", &kr, &i8l);
+            let kr = self.op("mul", &kr, ldb);
+            let nq = self.op("mul", &qk, MMA_N);
+            let n = self.op("add", &wcol, &nq);
+            let o = self.op("add", &kr, &n);
+            let o = self.op("mul", &o, 2);
+            self.op("add", &o, ab)
+        } else {
+            // b: the words (k 2t + j, n g).
+            let kr = self.op("mul", &t4, 2);
+            let kr = self.op("mul", &kr, ldb);
+            let n = self.op("add", &wcol, &grp);
+            let o = self.op("add", &kr, &n);
+            let o = self.op("mul", &o, 4);
+            self.op("add", &o, ab)
+        };
+        self.line("br label %kt");
+
+        self.out.push_str("kt:\n");
+        let (it, itn) = (self.tmp(), self.tmp());
+        self.line(format!("{it} = phi i64 [0, %entry], [{itn}, %issued]"));
+        self.line(format!(
+            "call void @llvm.nvvm.cp.async.wait.group(i32 {})",
+            g.stages - 2
+        ));
+        self.line("call void @llvm.nvvm.barrier0()");
+        let nxt = self.op("add", &it, g.stages - 1);
+        let more = self.tmp();
+        self.line(format!("{more} = icmp ult i64 {nxt}, {nk}"));
+        self.line(format!("br i1 {more}, label %issue, label %issued"));
+        self.out.push_str("issue:\n");
+        let nst = self.op("urem", &nxt, g.stages);
+        issue(self, &nxt, &nst);
+        self.line("br label %issued");
+        self.out.push_str("issued:\n");
+        self.line("call void @llvm.nvvm.cp.async.commit.group()");
+        let cst = self.op("urem", &it, g.stages);
+        let cbase = self.op("mul", &cst, stage_bytes);
+        let a_base = self.op("add", &cbase, &a_org);
+        let b_base = self.op("add", &cbase, &b_org);
+        // `ldmatrix` of `n` b16 matrices at shared byte `base + off`.
+        let ldsm = |k: &mut Self, base: &str, off: u64, n: usize, trans: bool| -> Vec<String> {
+            let i = k.op("add", base, off);
+            let p = k.gep_ty(3, "i8", smem, &i);
+            let a32 = k.tmp();
+            k.line(format!("{a32} = ptrtoint ptr addrspace(3) {p} to i32"));
+            let ty = vec!["i32"; n].join(", ");
+            let outs = (0..n)
+                .map(|j| format!("${j}"))
+                .collect::<Vec<_>>()
+                .join(",");
+            let cons = vec!["=r"; n].join(",");
+            let m = k.tmp();
+            k.line(format!(
+                "{m} = call {{ {ty} }} asm sideeffect \"ldmatrix.sync.aligned.m8n8.x{n}{}.shared.b16 {{{outs}}}, [${n}];\", \"{cons},r\"(i32 {a32})",
+                if trans { ".trans" } else { "" }
+            ));
+            (0..n)
+                .map(|j| {
+                    let x = k.tmp();
+                    k.line(format!("{x} = extractvalue {{ {ty} }} {m}, {j}"));
+                    x
+                })
+                .collect()
+        };
+        // Two f32 values rounded once into one register of the format, the
+        // lower `k` in the low half.
+        let pack = |k: &mut Self, lo: &str, hi: &str| -> String {
+            let r = k.tmp();
+            k.line(format!(
+                "{r} = call i32 asm \"cvt.rn.{ptx}x2.f32 $0, $1, $2;\", \"=r,f,f\"(float {hi}, float {lo})"
+            ));
+            r
+        };
+        let lds = |k: &mut Self, base: &str, off: u64| -> String {
+            let i = k.op("add", base, off);
+            let p = k.gep_ty(3, "i8", smem, &i);
+            let x = k.tmp();
+            k.line(format!("{x} = load float, ptr addrspace(3) {p}, align 4"));
+            x
+        };
+        for kk in 0..bk / mk {
+            let k16 = kk * mk;
+            let mut af = Vec::new();
+            for mi in 0..mt as u64 {
+                if ea == 2 {
+                    let f = ldsm(self, &a_base, (mi * MMA_M * lda + k16) * 2, 4, false);
+                    af.push([f[0].clone(), f[1].clone(), f[2].clone(), f[3].clone()]);
+                    continue;
+                }
+                let mut q = Vec::new();
+                for (rr, kc) in [(0u64, 0u64), (8, 0), (0, 8), (8, 8)] {
+                    let off = ((mi * MMA_M + rr) * lda + k16 + kc) * 4;
+                    let i = self.op("add", &a_base, off);
+                    let p = self.gep_ty(3, "i8", smem, &i);
+                    let v = self.tmp();
+                    self.line(format!(
+                        "{v} = load <2 x float>, ptr addrspace(3) {p}, align 8"
+                    ));
+                    let (x0, x1) = (self.tmp(), self.tmp());
+                    self.line(format!("{x0} = extractelement <2 x float> {v}, i64 0"));
+                    self.line(format!("{x1} = extractelement <2 x float> {v}, i64 1"));
+                    q.push(pack(self, &x0, &x1));
+                }
+                af.push([q[0].clone(), q[1].clone(), q[2].clone(), q[3].clone()]);
+            }
+            let mut bf: Vec<[String; 2]> = Vec::new();
+            let mut ni = 0u64;
+            while ni < nt as u64 {
+                let off = match g.bt {
+                    true => ni * MMA_N * ldb + k16,
+                    false => k16 * ldb + ni * MMA_N,
+                };
+                if g.bt && eb == 4 {
+                    let mut q = Vec::new();
+                    for kc in [0u64, 8] {
+                        let i = self.op("add", &b_base, (off + kc) * 4);
+                        let p = self.gep_ty(3, "i8", smem, &i);
+                        let v = self.tmp();
+                        self.line(format!(
+                            "{v} = load <2 x float>, ptr addrspace(3) {p}, align 8"
+                        ));
+                        let (x0, x1) = (self.tmp(), self.tmp());
+                        self.line(format!("{x0} = extractelement <2 x float> {v}, i64 0"));
+                        self.line(format!("{x1} = extractelement <2 x float> {v}, i64 1"));
+                        q.push(pack(self, &x0, &x1));
+                    }
+                    bf.push([q[0].clone(), q[1].clone()]);
+                    ni += 1;
+                    continue;
+                }
+                if eb == 2 {
+                    let pair = ni + 1 < nt as u64;
+                    let f = ldsm(self, &b_base, off * 2, if pair { 4 } else { 2 }, !g.bt);
+                    bf.push([f[0].clone(), f[1].clone()]);
+                    if pair {
+                        bf.push([f[2].clone(), f[3].clone()]);
+                        ni += 1;
+                    }
+                    ni += 1;
+                    continue;
+                }
+                let mut q = Vec::new();
+                for kc in [0u64, 8] {
+                    let x0 = lds(self, &b_base, (off + kc * ldb) * 4);
+                    let x1 = lds(self, &b_base, (off + (kc + 1) * ldb) * 4);
+                    q.push(pack(self, &x0, &x1));
+                }
+                bf.push([q[0].clone(), q[1].clone()]);
+                ni += 1;
+            }
+            for mi in 0..mt {
+                for (ni, [b0, b1]) in bf.iter().enumerate() {
+                    let base = (mi * nt + ni) * 4;
+                    let mut cur = Vec::new();
+                    for q in 0..4 {
+                        let p = acc_slot(self, base + q);
+                        let v = self.tmp();
+                        self.line(format!("{v} = load float, ptr {p}, align 4"));
+                        cur.push((p, v));
+                    }
+                    let r = self.tmp();
+                    let [a0, a1, a2, a3] = &af[mi];
+                    self.line(format!(
+                        "{r} = call {{ float, float, float, float }} asm \"mma.sync.aligned.m16n8k16.row.col.f32.{ptx}.{ptx}.f32 {{$0,$1,$2,$3}}, {{$4,$5,$6,$7}}, {{$8,$9}}, {{$10,$11,$12,$13}};\", \"=f,=f,=f,=f,r,r,r,r,r,r,0,1,2,3\"(i32 {a0}, i32 {a1}, i32 {a2}, i32 {a3}, i32 {b0}, i32 {b1}, float {}, float {}, float {}, float {})",
+                        cur[0].1, cur[1].1, cur[2].1, cur[3].1
+                    ));
+                    for (q, (p, _)) in cur.iter().enumerate() {
+                        let d = self.tmp();
+                        self.line(format!(
+                            "{d} = extractvalue {{ float, float, float, float }} {r}, {q}"
+                        ));
+                        self.line(format!("store float {d}, ptr {p}, align 4"));
+                    }
+                }
+            }
+        }
+        self.line(format!("{itn} = add i64 {it}, 1"));
+        let fin = self.tmp();
+        self.line(format!("{fin} = icmp eq i64 {itn}, {nk}"));
+        self.line(format!("br i1 {fin}, label %done, label %kt"));
+
+        // C fragments: (g, 2t..2t+1) and (g+8, 2t..2t+1) of every m16n8 tile.
+        self.out.push_str("done:\n");
+        let orow = self.op("add", &wrow, &row0);
+        let orow = self.op("add", &orow, &grp);
+        let ocol = self.op("add", &wcol, &col0);
+        let t2 = self.op("mul", &t4, 2);
+        let ocol = self.op("add", &ocol, &t2);
+        for mi in 0..mt {
+            for half in 0..2u64 {
+                let r = self.op("add", &orow, mi as u64 * MMA_M + half * 8);
+                let rr = self.op("mul", &r, s.c);
+                let rc = self.op("add", &rr, &ocol);
+                for ni in 0..nt {
+                    let base = (mi * nt + ni) * 4 + half as usize * 2;
+                    let mut xs = Vec::new();
+                    for j in 0..2 {
+                        let p = acc_slot(self, base + j);
+                        let x = self.tmp();
+                        self.line(format!("{x} = load float, ptr {p}, align 4"));
+                        xs.push(x);
+                    }
+                    let oi = self.op("add", &rc, ni as u64 * MMA_N);
+                    if self.epi.is_some() {
+                        self.store_cells(&xs, &oi);
+                        continue;
+                    }
+                    let mut vec = "poison".to_string();
+                    for (j, x) in xs.iter().enumerate() {
+                        let nv = self.tmp();
+                        self.line(format!(
+                            "{nv} = insertelement <2 x float> {vec}, float {x}, i64 {j}"
+                        ));
+                        vec = nv;
+                    }
+                    let op = self.gep_ty(1, "float", "%o", &oi);
+                    self.line(format!(
+                        "store <2 x float> {vec}, ptr addrspace(1) {op}, align 8"
+                    ));
+                }
+            }
+        }
+        self.out.push_str("  ret void\n}\n");
+    }
+
     /// The tiled kernel: block `(bx, by)` owns the `bm × bn` output tile at
     /// `(by·bm, bx·bn)`; thread `(trow, tcol)` owns a `tm × tn` register tile
     /// inside it. Per `bk` step of the reduction, the block stages
@@ -5765,11 +6345,14 @@ impl Kernel<'_> {
         let col0 = self.op("mul", &bx, bn);
         let smem = "@mapal_smem";
         let streamed = g.stages >= 2;
-        // ADR-0043: a `cp.async` copy cannot widen (`launch_split` refuses it).
+        // ADR-0043: a `cp.async` copy cannot widen: a streamed narrow `b`
+        // panel stays narrow in shared memory (`narrow-async`), read and
+        // widened per fragment; a narrow `a` is register-staged.
         assert!(
-            !(streamed && (s.a.narrow.is_some() || s.b.narrow.is_some())),
-            "a narrow operand's panel is register-staged"
+            !(streamed && s.a.narrow.is_some()),
+            "a narrow `a` panel is register-staged"
         );
+        let nb = s.b.narrow.filter(|_| streamed);
         let kmaj = g.kmajor && !self.col;
         let sa = panel_sa(&g, kmaj);
         let bs_off = g.a_elems();
@@ -6016,6 +6599,23 @@ impl Kernel<'_> {
                 }
                 for (p, (gsrc, goff, sdst, soff)) in b_src.iter().enumerate() {
                     let gi = gidx(k, rb, &b_kc, p, gsrc, *goff, &k0, &kb);
+                    // `narrow-async`: the `b` region keeps its place in the
+                    // stage, its elements narrow: element `si` of the f32
+                    // layout is narrow element `si + so + bs_off`.
+                    if let Some(n) = nb {
+                        let nt = crate::narrow::llvm_ty(n);
+                        let gp = k.gep_ty(1, nt, "%b", &gi);
+                        let si = k.op("add", sdst, &so);
+                        let si = k.plus(si, *soff);
+                        let ni = k.op("add", &si, &so);
+                        let ni = k.plus(ni, bs_off);
+                        let sp = k.gep_ty(3, nt, smem, &ni);
+                        k.line(format!(
+                            "call void @llvm.nvvm.cp.async.ca.shared.global.{}(ptr addrspace(3) {sp}, ptr addrspace(1) {gp})",
+                            lanes * n.bytes()
+                        ));
+                        continue;
+                    }
                     let gp = k.gep(1, "%b", &gi);
                     let si = k.op("add", sdst, &so);
                     let si = k.plus(si, *soff);
@@ -6142,11 +6742,26 @@ impl Kernel<'_> {
         self.out.push_str("kk:\n");
         let (kk, kkn) = (self.tmp(), self.tmp());
         self.line(format!("{kk} = phi {ix} [0, %{pre}], [{kkn}, %kk]"));
-        let frag = |k: &mut Self, ki: &str, row: u64, first: &str, n: u64, off: u64, chunk: u64| {
+        let frag = |k: &mut Self,
+                    ki: &str,
+                    row: u64,
+                    first: &str,
+                    n: u64,
+                    off: u64,
+                    chunk: u64,
+                    narrow: Option<mapal_ir::NarrowFloat>| {
             let r = k.op("mul", ki, row);
             let r = k.op("add", &r, first);
             let r = k.op("add", &r, off);
             let r = k.op("add", &r, &cbase);
+            // `narrow-async`: the stage's narrow `b` region (see `issue`).
+            let r = match narrow {
+                Some(_) => {
+                    let x = k.op("add", &r, &cbase);
+                    k.plus(x, bs_off)
+                }
+                None => r,
+            };
             // `w` elements per load: a vector, or (`fill-rows`) the whole
             // fragment when it is narrower than one — `w = 1` a scalar.
             let w = n.min(lanes);
@@ -6158,12 +6773,30 @@ impl Kernel<'_> {
             let mut vals = Vec::new();
             for v in 0..n / w {
                 let si = k.op("add", &r, v * chunk);
-                let sp = k.gep(3, smem, &si);
-                let x = k.tmp();
-                k.line(format!(
-                    "{x} = load {wt}, ptr addrspace(3) {sp}, align {}",
-                    w * e
-                ));
+                let x = if let Some(nf) = narrow {
+                    let nt = crate::narrow::llvm_ty(nf);
+                    let nwt = if w == 1 {
+                        nt.to_string()
+                    } else {
+                        format!("<{w} x {nt}>")
+                    };
+                    let sp = k.gep_ty(3, nt, smem, &si);
+                    let (y, x) = (k.tmp(), k.tmp());
+                    k.line(format!(
+                        "{y} = load {nwt}, ptr addrspace(3) {sp}, align {}",
+                        w * nf.bytes()
+                    ));
+                    k.line(format!("{x} = fpext {nwt} {y} to {wt}"));
+                    x
+                } else {
+                    let sp = k.gep(3, smem, &si);
+                    let x = k.tmp();
+                    k.line(format!(
+                        "{x} = load {wt}, ptr addrspace(3) {sp}, align {}",
+                        w * e
+                    ));
+                    x
+                };
                 if w == 1 {
                     vals.push(x);
                     continue;
@@ -6216,13 +6849,13 @@ impl Kernel<'_> {
             for j in 0..lanes as usize {
                 let kj = self.op("mul", &kk, lanes);
                 let kj = self.op("add", &kj, j as u64);
-                let bv = frag(self, &kj, bn, &b_frag0, tn, bs_off, b_chunk);
+                let bv = frag(self, &kj, bn, &b_frag0, tn, bs_off, b_chunk, nb);
                 let av: Vec<String> = rows.iter().map(|r| r[j].clone()).collect();
                 fma(self, &av, &bv);
             }
         } else {
-            let av = frag(self, &kk, sa, &a_frag0, tm, 0, a_chunk);
-            let bv = frag(self, &kk, bn, &b_frag0, tn, bs_off, b_chunk);
+            let av = frag(self, &kk, sa, &a_frag0, tm, 0, a_chunk, None);
+            let bv = frag(self, &kk, bn, &b_frag0, tn, bs_off, b_chunk, nb);
             fma(self, &av, &bv);
         }
         self.line(format!("{kkn} = add {ix} {kk}, 1"));
@@ -7302,6 +7935,7 @@ mod tests {
             add_acc_first: true,
             radix: None,
             tf32: false,
+            half: None,
             post: None,
         }
     }

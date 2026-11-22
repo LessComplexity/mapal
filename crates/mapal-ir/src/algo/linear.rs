@@ -7,7 +7,7 @@
 
 use slotmap::SecondaryMap;
 
-use super::{CellSite, Footprint, LastUsePlan, TilePlan, bound_coef};
+use super::{CellSite, Footprint, LastUsePlan, TilePlan, bound_coef_unit};
 use crate::graph::{CategoryIr, FuncId, MorphismId, ObjectId, Operation};
 use crate::ty::Value;
 
@@ -95,7 +95,7 @@ impl CategoryIr {
         }
         let (mut terms, mut operands) = (Vec::new(), Vec::new());
         let mut first: Option<&super::TileSite> = None;
-        let mut tf32 = false;
+        let mut unit: Option<f64> = None;
         for slot in slots {
             let arr = self.pair_slot_source(map.source, slot)?;
             let [p] = *self.in_edges(arr) else {
@@ -125,12 +125,15 @@ impl CategoryIr {
                 self.pair_slot_source(src, site.b.slot)?,
             ));
             terms.push(p);
-            tf32 |= site.tf32;
+            unit = match (unit, site.unit()) {
+                (Some(x), Some(y)) => Some(x.max(y)),
+                (x, y) => x.or(y),
+            };
             first.get_or_insert(site);
         }
         let k = first?.k;
         Some(LinearSite {
-            bound: bound_coef(k + terms.len() as u64 - 1, tf32),
+            bound: bound_coef_unit(k + terms.len() as u64 - 1, unit),
             terms,
             operands,
         })
