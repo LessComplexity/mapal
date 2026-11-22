@@ -634,5 +634,93 @@ class PlanCostFoldTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
 
+class CompetitorTests(unittest.TestCase):
+    """comp_bench.py's legs per stem and matrix.py's competitor families, fairness and every-leg tables (no CUDA)."""
+
+    def test_comp_legs_apply_at_the_row_precision(self):
+        import sys
+        from unittest import mock
+        sys.path.insert(0, str(HERE))
+        with mock.patch.dict(sys.modules, {'torch': mock.MagicMock()}):
+            sys.modules.pop('comp_bench', None)
+            sys.modules.pop('torch_bench', None)
+            import comp_bench as cb
+            legs = cb.legs_for
+            bf = ['liger-bf16', 'fa2-bf16', 'fa3-bf16', 'flashinfer-bf16', 'trtllm-bf16']
+            self.assertEqual(legs('pt_llm_dec_b8_l2048'), ['liger'] + bf)            # + the bf16 reference legs
+            self.assertEqual(legs('pt_llm_dec_b8_l2048_bf16w'), bf)                  # the fair legs only
+            self.assertEqual(legs('pt_llm_pre_t2048_tf32'), ['liger-tf32', 'triton-tf32'])
+            self.assertIn('triton-bf16', legs('pt_llm_blkpre_t2048'))
+            self.assertEqual(legs('pt_pj_m1_n4096_k4096_tf32'), ['triton-tf32'])
+            self.assertEqual(legs('mm_4096x4096x4096'), ['triton'])
+            for s in ('pt_attn_1024_64', 'pt_softmax_rows_4096', 'pt_lsm_1_131072', 'pt_mlp2_2048', 'pt_epi_4096'):
+                self.assertEqual(legs(s), ['triton'], s)
+            for s in ('pt_ew_4096', 'pt_conv_2048_5', 'pt_decode_1024_256', 'pt_llm_kvx_b1_l2048', 'pt_fanout_2048'):
+                self.assertEqual(legs(s), [], s)                                     # no library leg applies
+            for leg, (fam, prec) in cb.LEGS.items():                                 # names carry the precision
+                self.assertEqual(prec, 'bf16' if leg.endswith('-bf16') else 'tf32' if leg.endswith('-tf32') else 'f32')
+            sys.modules.pop('comp_bench', None)
+            sys.modules.pop('torch_bench', None)
+
+    def test_matrix_lists_every_leg_by_family_and_keeps_precision(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('matrix', HERE.parent / 'local' / 'matrix.py')
+        mx = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mx)
+        fam = {'torch-compile-cg': 'cg', 'torch-compile-ro-tf32': 'ro', 'torch-sdpa-compile-cg': 'cg',
+               'torch-bf16-cudnn': 'sdpa', 'torch-sdpa-efficient': 'sdpa', 'torch-bf16-compile': 'compile',
+               'torch-bf16': 'eager', 'fa2-bf16': 'fa', 'fa3-bf16': 'fa', 'flashinfer-bf16': 'flashinfer',
+               'triton-tf32': 'triton', 'liger': 'liger', 'chain-fused': 'cuda', 'chain-lt': 'vendor',
+               'lt-tf32-fresh': 'vendor', 'cutlass-tuned': 'vendor'}
+        for leg, f in fam.items():
+            self.assertEqual(mx.cfam(leg), f, leg)
+        self.assertEqual([mx.leg_prec(x) for x in ('fa2-bf16', 'torch-bf16-compile-cg', 'triton-tf32', 'liger')],
+                         ['bf16', 'bf16', 'tf32', 'f32'])
+        self.assertFalse(mx.is_new('torch-compile') or mx.is_new('cublas-fresh') or mx.is_new('torch-bf16'))
+        self.assertTrue(mx.is_new('torch-compile-ro') and mx.is_new('triton') and mx.is_new('torch-bf16-cudnn'))
+        res = self.root_file('a.txt', [
+            'probe prog=pt_attn_1024_64 face=_default arm=on rep=1 out=[1 iter ms=0.05]',
+            'probe prog=pt_attn_1024_64 face=_default arm=null rep=1 out=[1 iter ms=0.05]',
+            'torch prog=pt_attn_1024_64 mode=compile n=3 min_ms=0.04 med_ms=0.04 max_ms=0.05 within=yes maxdev=0',
+            'torch prog=pt_attn_1024_64 mode=compile-cg n=3 min_ms=0.02 med_ms=0.02 max_ms=0.03 within=yes maxdev=0 '
+            'cg=skipped(1)',
+            'torch prog=pt_attn_1024_64 mode=compile-ro n=3 min_ms=0.03 med_ms=0.03 max_ms=0.03 within=yes maxdev=0 '
+            'cg=on',
+            'comp prog=pt_attn_1024_64 leg=triton family=triton prec=f32 n=3 min_ms=0.06 med_ms=0.06 max_ms=0.06 '
+            'within=no maxdev=1 tol=0.001',
+            'comp prog=pt_attn_1024_64 leg=fa2-bf16 family=fa2 prec=bf16 n=3 min_ms=0.01 med_ms=0.01 max_ms=0.01 '
+            'within=yes maxdev=0 tol=0.05'])
+        other = self.root_file('b.txt', [
+            'probe prog=pt_attn_1024_64 face=_default arm=on rep=1 out=[1 iter ms=0.05]',
+            'torch prog=pt_attn_1024_64 mode=compile n=3 min_ms=0.04 med_ms=0.04 max_ms=0.05 within=yes maxdev=0',
+            'comp family=triton unavailable reason="x"'])
+        out = Path(self.tmp.name)
+        r = subprocess.run(['python3', str(HERE.parent / 'local' / 'matrix.py'), '--out', str(out), f'p1={res}@aaaaaaaa',
+                            f'p2={other}@bbbbbbbb'], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        rows = {x['part']: x for x in json.loads((out / 'matrix.json').read_text())['rows']}
+        p1 = rows['p1']
+        # the CUDA-graph leg Inductor skipped and the gate failure never count; the bf16 leg is not an f32 row's best
+        self.assertEqual((p1['best_leg'], p1['best_ms']), ('torch-compile-ro', 0.03))
+        self.assertEqual((p1['base_best_leg'], p1['base_ratio']), ('torch-compile', 1.25))
+        self.assertEqual(p1['every_leg']['torch-compile-cg'][1], 'cg-skipped')
+        self.assertEqual(p1['every_leg']['triton'][1], 'gate')
+        self.assertNotIn('fa2-bf16', p1['every_leg'])
+        md = (out / 'matrix.md').read_text()
+        self.assertIn('**torch-compile-ro 0.03 (1.67)**', md)
+        line = next(x for x in md.splitlines() if x.startswith('| attn_1024_64 | p2 |'))
+        self.assertIn('not run', line)                                   # p2: the CUDA-graph families
+        self.assertIn('unavailable', line)                               # p2: Triton reported missing
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def root_file(self, name, lines):
+        p = Path(self.tmp.name) / name
+        p.write_text('\n'.join(lines) + '\n')
+        return p
+
+
 if __name__ == "__main__":
     unittest.main()
