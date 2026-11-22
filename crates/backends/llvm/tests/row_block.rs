@@ -381,7 +381,11 @@ fn bench(name: &str) -> CategoryIr {
 }
 
 /// The shipped arms on `target` (the emulator's rung offs change the split's
-/// plans), the row-block rung forced on (`rung`), its rows forced to `b`.
+/// plans), the row-block rung forced on (`rung`), its rows forced to `b`. The
+/// host is named (`generic`, no dispatch economics), never the default
+/// `native`: a native host is priced by this machine's measured dispatch
+/// (`MAPAL_NATIVE_DISPATCH`), so `place` would move small sites to the CPU
+/// on one box and not another.
 fn shipped(ir: &CategoryIr, target: &'static str, rung: bool, b: u64) -> Emission {
     let mut gpu = GpuArms::default();
     gpu.on.row_block = rung;
@@ -390,6 +394,7 @@ fn shipped(ir: &CategoryIr, target: &'static str, rung: bool, b: u64) -> Emissio
     *gpu.off.rung("calls").expect("rung") = true;
     let opts = EmitOpts {
         target,
+        host: "generic",
         gpu,
         ..EmitOpts::default()
     };
@@ -514,6 +519,7 @@ fn attn_1024_on_rtx_5080_keeps_the_boundary_by_cost() {
         &ir,
         &EmitOpts {
             target: "rtx-5080",
+            host: "generic",
             gpu,
             ..EmitOpts::default()
         },

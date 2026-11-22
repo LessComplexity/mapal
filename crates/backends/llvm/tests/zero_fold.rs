@@ -38,7 +38,8 @@ fn bench(name: &str) -> CategoryIr {
     )
 }
 
-/// The shipped emission on `target` (default face), the rung `on`.
+/// The shipped emission on `target` (default face), the rung `on`, on a named
+/// host: a `native` one is priced by this machine's measured dispatch.
 fn shipped(ir: &CategoryIr, target: &'static str, on: bool) -> Emission {
     let mut gpu = GpuArms::default();
     *gpu.off.rung("zero-fold").unwrap() = !on;
@@ -48,6 +49,7 @@ fn shipped(ir: &CategoryIr, target: &'static str, on: bool) -> Emission {
         ir,
         &EmitOpts {
             target,
+            host: "generic",
             gpu,
             ..EmitOpts::default()
         },

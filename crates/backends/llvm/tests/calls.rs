@@ -135,6 +135,7 @@ fn decode_runs_its_trip_as_one_persistent_kernel() {
         emit_detailed(
             &ir,
             &EmitOpts {
+                host: "generic",
                 target: "rtx-5080",
                 gpu,
                 ..EmitOpts::default()
@@ -208,6 +209,7 @@ fn decode_runs_its_trip_as_one_persistent_kernel() {
     let p5090 = emit_detailed(
         &ir,
         &EmitOpts {
+            host: "generic",
             target: "rtx-5090",
             gpu,
             ..EmitOpts::default()
@@ -256,6 +258,7 @@ fn every_part_prices_chains() {
     }
     let emit = |ir: &CategoryIr, target: &'static str, clock: Option<u64>| {
         let mut opts = EmitOpts {
+            host: "generic",
             target,
             ..EmitOpts::default()
         };
