@@ -545,7 +545,11 @@ fi
 if [ -n "${TORCH_PID:-}" ]; then
     say "-- torch: PyTorch eager + torch.compile legs (torch_bench.py, reps=$REPS)"
     wait "$TORCH_PID"; say "torch install: $(tail -2 torch-install.log | tr '\n' ' ')"
-    tp=$(ls vals 2>/dev/null | sed 's/\.txt$//' | tr '\n' ' ')
+    # cross-arch 60f0f8ce: a box whose TORCH_MIN ends the legs early keeps the rows that need them: the bf16-weight
+    # rows (torch bf16 is their only reference) first, then the README rows, the f32 layer, the projections last
+    # (their gemm_lib legs are the like-for-like competitor already).
+    tp=$(ls vals 2>/dev/null | sed 's/\.txt$//' | awk '{ k = /_bf16w$/ ? 0 : /^pt_pj_/ ? 3 : /^pt_llm_/ ? 2 : 1; print k, $0 }' |
+        sort -s -k1,1n | cut -d' ' -f2 | tr '\n' ' ')
     # shellcheck disable=SC2086  # the stems are separate arguments
     [ -n "$tp" ] && timeout "${TORCH_MIN:-15}m" "${TORCH_PY:-python3}" torch_bench.py "$REPS" vals $tp 2>torch.err | tee -a "$LOG"
     say "torch exit=${PIPESTATUS[0]} $(tail -c 300 torch.err | tr '\n' ' ')"

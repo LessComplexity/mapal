@@ -272,6 +272,9 @@ for spec in "$@"; do
         # tile-efficiency: `<stem>:<face>:<off-rungs>:pcoff` is plan-cost,linear ON with those rungs OFF (full-tile: arm PC), tag pc-off-<rungs>.
         if [ "$dir" = pcoff ]; then flag="--gpu-on=plan-cost,linear --gpu-off=$rung"; tag="pc-off-${rung//,/+}"; fi
         if [ "$dir" = geom ]; then flag="--geom=$rung"; tag=$(tr '=.' '-p' <<< "on-g-$rung"); fi
+        # cross-arch: `<stem>:<face>:<rung>:force` is the measurement override `--<rung>=force` (`--calls=force`: the
+        # chains the price refuses, formed), tag on-<rung>-force.
+        if [ "$dir" = force ]; then flag="--$rung=force"; tag="on-$rung-force"; fi
         f="$OUT/tiles/$stem.mapal"; b="$d/$stem$face"; s="$b.$tag"
         [ "$face" = _tf ] && f=$(tf32_src "$f")
         [ -f "$b.host.ll" ] || emit_one "$f" "$b" "$prof" "$sm" $(flags_of "$face")
