@@ -179,14 +179,14 @@ if [ -f gemm_lib.cu ]; then
     nvcc -O3 -std=c++17 -arch="${SM%a}" gemm_lib.cu -lcublasLt -lcublas -o gemm_lib 2>&1 | grep -v Wno | tail -5 | tee -a "$LOG"
     [ -x gemm_lib ] || say "GEMM HARNESS BUILD FAILED"
 fi
-# cross-arch: the device calibration (calib.cu, every kind once, then `gsync` and `copy` twice more: the medians
-# of three the profile's launch and copy properties cite) -> calib-<profile>.txt, while the GPU is idle (the torch
+# cross-arch: the device calibration (calib.cu, every kind once, then `gsync`, `copy` and `body` twice more: the medians
+# of three the profile's launch, copy and body properties cite) -> calib-<profile>.txt, while the GPU is idle (the torch
 # install downloads beside it). CALIB=0 skips it.
 if [ "${CALIB:-1}" = 1 ] && [ -f calib.cu ]; then
     nvcc -O3 -std=c++17 -arch="${SM%a}" -rdc=true calib.cu -o calib -lcudadevrt 2>&1 | grep -v Wno | tail -5 | tee -a "$LOG"
     if [ -x calib ]; then
-        { timeout 20m ./calib; for r in 2 3; do timeout 5m ./calib gsync copy | sed "s/^/run=$r /"; done; } > "calib-$PROF.txt" 2>&1
-        say "calib: $(grep -c '' "calib-$PROF.txt") lines; $(grep -m1 '^facts' "calib-$PROF.txt"); $(grep -m1 '^ffma' "calib-$PROF.txt"); $(grep -m1 '^copy pageable_pm' "calib-$PROF.txt")"
+        { timeout 20m ./calib; for r in 2 3; do timeout 5m ./calib gsync copy body | sed "s/^/run=$r /"; done; } > "calib-$PROF.txt" 2>&1
+        say "calib: $(grep -c '' "calib-$PROF.txt") lines; $(grep -m1 '^facts' "calib-$PROF.txt"); $(grep -m1 '^ffma' "calib-$PROF.txt"); $(grep -m1 '^copy pageable_pm' "calib-$PROF.txt"); $(grep -m1 '^body coop_body_cycles' "calib-$PROF.txt")"
     else
         say "CALIB BUILD FAILED"
     fi

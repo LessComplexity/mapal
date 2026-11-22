@@ -23,8 +23,26 @@
 //           sms x 256 threads, host-timed from the first launch to the synchronize, median of 400, PDL and plain
 //           interleaved) — `pdl_head_ns`: what a chain launched programmatically costs beyond a plain one at its head,
 //           where the host issue, not the device, is exposed (the n = 1 difference; positive = PDL slower)
+//   body    kernel-merging `calls`: what a chain's member bodies cost inside one persistent kernel against their own
+//           launches — `coop_body_cycles`. The chain: level 0 two one-block row folds side by side (decode's rows: 256
+//           threads, k = 256 over a 256 x 256 matrix, 8 loads in flight a thread), then levels of one wide fold each
+//           (`nb` blocks, a thread one output over 8 loads in flight), every level reading the one before. Separate:
+//           one launch a level, `__restrict__` parameters (Mapal's launch kernels: noalias, the read-only path).
+//           Persistent (`calls.rs persistent_kernel`): one cooperative launch, the bodies inlined over their blocks —
+//           the first block straight-line, the rest in a grid-stride loop — a grid barrier between levels, parameters
+//           without `__restrict__`. Shapes: every level within one round of the persistent grid (`rounds=1`, 2 / 3 / 4
+//           levels; the wide levels 1.5 x sms blocks, decode's 128 on 84) and 3 levels whose wide levels take 2 / 4
+//           rounds of the grid (the grid-stride form: `nb` = rounds x the persistent wave). Each arm runs 129 chains
+//           back to back, device-bound behind a 10 ms spin, with work and with the bodies skipped (a runtime flag: the
+//           same code), ABBA-rotated, 15 reps: per chain, start to start and its span (the first block's start to the
+//           last block's end — no launch of its own, so not the cooperative launch's dispatch, which starts on a
+//           2.048 us grid on the RTX 5080). body_ns = (pers - pers_empty) - (sep - sep_empty) of the spans (the empty
+//           arms are the boundaries the rule prices: the barriers against the launches between levels; body_ss_ns the
+//           same of start to start, with the launches), median [quartiles]; body_cycles at the sustained clock (`ffma`,
+//           run first when not selected); run_khz the SM clock during the chains (clock64 over globaltimer, block 0).
+//           The `coop_body_cycles` line is the 4-round chain's: the grid-stride form, the bodies' largest change here.
 // The `calib device=` line carries the device query's physical facts the rung rules read (`DeviceQuery`).
-// usage: calib [chase|bw|loaded|lds|gsync|copy|ffma|head ...]   (all when none).  Output: `<kind> k=v ...` lines, one per point.
+// usage: calib [chase|bw|loaded|lds|gsync|copy|ffma|head|body ...]   (all when none).  Output: `<kind> k=v ...` lines, one per point.
 // build: nvcc -O3 -arch=sm_<cc> -std=c++17 -rdc=true calib.cu -o calib -lcudadevrt   (rdc for the tail launch)
 #include <chrono>
 #include <cmath>
@@ -39,6 +57,7 @@
 #include <vector>
 #define CK(x) do { cudaError_t e = (x); if (e != cudaSuccess) { printf("CUDA error %s at %d\n", cudaGetErrorString(e), __LINE__); exit(1); } } while (0)
 static int sms, clk_khz;
+static double sus_khz;  // `ffma`'s sustained clock, once measured (`body` converts ns to cycles at it)
 
 __device__ __forceinline__ unsigned ldcg(const unsigned* p) { unsigned v; asm volatile("ld.global.cg.u32 %0, [%1];" : "=r"(v) : "l"(p)); return v; }
 __device__ __forceinline__ uint4 ldcg4(const uint4* p) { uint4 v; asm volatile("ld.global.cg.v4.u32 {%0,%1,%2,%3}, [%4];" : "=r"(v.x), "=r"(v.y), "=r"(v.z), "=r"(v.w) : "l"(p)); return v; }
@@ -386,6 +405,7 @@ static void ffma_run(int cc) {
     std::vector<double> last(win.end() - std::min<size_t>(10, win.size()), win.end());
     std::sort(last.begin(), last.end());
     const double sus = last[last.size() / 2];
+    sus_khz = sus / (2.0 * sms * lanes) * 1e6;
     size_t settle = win.size();
     while (settle > 0 && std::fabs(win[settle - 1] / sus - 1) < 0.02) settle--;
     printf("ffma sustained_flops_per_ns=%.0f sustained_clock_khz=%.0f settle_ms=%zu windows=%zu first=%.0f\n", sus,
@@ -429,6 +449,150 @@ static void head_run() {
     }
     CK(cudaFree(o));
 }
+// body: the chain's members (header), inlined into both forms; a block is 256 threads.
+__device__ __forceinline__ unsigned long long gtime() { unsigned long long g; asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(g)); return g; }
+// a row fold: one block, thread j sums x[k] * w[k * 256 + j] over k < 256 (decode's rows level)
+__device__ __forceinline__ void row_fold(const float* x, const float* w, float* y) {
+    const int j = threadIdx.x; float acc = 0.f;
+#pragma unroll 8
+    for (int k = 0; k < 256; k++) acc = fmaf(x[k], w[k * 256 + j], acc);
+    y[j] = acc;
+}
+// a wide fold: block b, thread one output j = b * 256 + t over 8 loads of w (and 8 broadcast reads of the level before)
+__device__ __forceinline__ void wide_fold(const float* x, int nx, const float* w, float* y, unsigned b, int n) {
+    const int j = b * 256 + threadIdx.x; float acc = 0.f;
+#pragma unroll
+    for (int k = 0; k < 8; k++) acc = fmaf(x[(b * 8 + k) % nx], w[k * n + j], acc);
+    y[j] = acc;
+}
+__global__ void __launch_bounds__(256) row_k(const float* __restrict__ x, const float* __restrict__ w0, const float* __restrict__ w1,
+                                             float* __restrict__ r0, float* __restrict__ r1, int work, unsigned long long* t, int i) {
+    if (blockIdx.x == 0 && threadIdx.x == 0) t[i] = gtime();
+    if (!work) return;
+    if (blockIdx.x == 0) row_fold(x, w0, r0); else row_fold(x, w1, r1);
+}
+// the chain's end: every block of its last level stamps its end (the latest wins)
+__device__ __forceinline__ void stamp_end(unsigned long long* e, int i) { __syncthreads(); if (threadIdx.x == 0) atomicMax(e + i, gtime()); }
+__global__ void __launch_bounds__(256) wide_k(const float* __restrict__ x, int nx, const float* __restrict__ w, float* __restrict__ y, int n, int work,
+                                              unsigned long long* e, int i) {
+    if (work) wide_fold(x, nx, w, y, blockIdx.x, n);
+    if (e) stamp_end(e, i);
+}
+struct BodyP { const float *x, *w0, *w1, *ww[3]; float *r0, *r1, *p[3]; };
+template <int L>
+__global__ void __launch_bounds__(256) pers_k(BodyP a, int nb, int work, unsigned* ctr, unsigned long long* t, int i, unsigned long long* ck,
+                                              unsigned long long* e) {
+    unsigned long long g0 = 0, c0 = 0;
+    if (blockIdx.x == 0 && threadIdx.x == 0) { g0 = gtime(); c0 = clock64(); t[i] = g0; }
+    const unsigned g = gridDim.x;
+    auto row = [&](unsigned b) { if (b == 0) row_fold(a.x, a.w0, a.r0); else row_fold(a.x, a.w1, a.r1); };
+    if (work) {  // the first block straight-line, then the grid-stride rest (none at level 0: the grid holds both)
+        if (blockIdx.x < 2) row(blockIdx.x);
+        __syncthreads();
+        for (unsigned b = blockIdx.x + g; b < 2; b += g) { row(b); __syncthreads(); }
+    }
+#pragma unroll
+    for (int l = 1; l < L; l++) {
+        gsync<1>(ctr, g);
+        if (work) {
+            const float* in = l == 1 ? a.r0 : a.p[l - 2]; const int nx = l == 1 ? 256 : nb * 256;
+            if (blockIdx.x < (unsigned)nb) wide_fold(in, nx, a.ww[l - 1], a.p[l - 1], blockIdx.x, nb * 256);
+            __syncthreads();
+            for (unsigned b = blockIdx.x + g; b < (unsigned)nb; b += g) { wide_fold(in, nx, a.ww[l - 1], a.p[l - 1], b, nb * 256); __syncthreads(); }
+        }
+    }
+    if (blockIdx.x == 0 && threadIdx.x == 0) { ck[2 * i] = clock64() - c0; ck[2 * i + 1] = gtime() - g0; }
+    stamp_end(e, i);
+}
+__global__ void fill_k(float* v, size_t n) { for (size_t i = blockIdx.x * (size_t)blockDim.x + threadIdx.x; i < n; i += (size_t)gridDim.x * blockDim.x) v[i] = (float)(i % 17) * 0.01f - 0.08f; }
+static void body_run(int cc) {
+    if (sus_khz == 0) ffma_run(cc);
+    const int R = 128, reps = 15, one = sms * 3 / 2;
+    int per[5] = {}, per_w = 0, regs[5] = {};
+    void* fn[5] = {nullptr, nullptr, (void*)pers_k<2>, (void*)pers_k<3>, (void*)pers_k<4>};
+    for (int L = 2; L <= 4; L++) {
+        CK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&per[L], fn[L], 256, 0));
+        cudaFuncAttributes fa; CK(cudaFuncGetAttributes(&fa, fn[L])); regs[L] = fa.numRegs;
+    }
+    CK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&per_w, wide_k, 256, 0));
+    cudaFuncAttributes fr, fw; CK(cudaFuncGetAttributes(&fr, row_k)); CK(cudaFuncGetAttributes(&fw, wide_k));
+    const int nbmax = std::max(one, 4 * per[3] * sms);
+    const size_t n = (size_t)nbmax * 256;
+    BodyP P; float* buf;
+    const size_t tot = 256 + 2 * 65536 + 3 * 8 * n + 2 * 256 + 3 * n;
+    CK(cudaMalloc(&buf, tot * 4)); fill_k<<<sms * 8, 256>>>(buf, tot);
+    float* q = buf; P.x = q; q += 256; P.w0 = q; q += 65536; P.w1 = q; q += 65536;
+    for (int l = 0; l < 3; l++) { P.ww[l] = q; q += 8 * n; }
+    P.r0 = q; q += 256; P.r1 = q; q += 256;
+    for (int l = 0; l < 3; l++) { P.p[l] = q; q += n; }
+    unsigned* ctr; unsigned long long *t, *ck, *ends;
+    CK(cudaMalloc(&ctr, 4)); CK(cudaMemset(ctr, 0, 4)); CK(cudaMalloc(&t, (R + 1) * 8)); CK(cudaMalloc(&ck, 2 * (R + 1) * 8));
+    CK(cudaMalloc(&ends, (R + 1) * 8));
+    double run_clk = 0, run_ns = 0, line = 0;
+    // one arm: 129 chains back to back behind the spin: start to start a chain, and a chain's own span (its first
+    // block's start to its last block's end: no launch of the chain's own, so no cooperative-launch dispatch in it)
+    auto arm = [&](int L, int nb, int grid, bool pers, int work, double* span) {
+        CK(cudaMemset(ends, 0, (R + 1) * 8));
+        spin_k<<<1, 32>>>((long long)clk_khz * 10);
+        for (int i = 0; i <= R; i++) {
+            if (pers) {
+                void* a[] = {&P, &nb, &work, &ctr, &t, &i, &ck, &ends};
+                CK(cudaLaunchCooperativeKernel(fn[L], grid, 256, a, 0, 0));
+            } else {
+                row_k<<<2, 256>>>(P.x, P.w0, P.w1, P.r0, P.r1, work, t, i);
+                for (int l = 1; l < L; l++)
+                    wide_k<<<nb, 256>>>(l == 1 ? P.r0 : P.p[l - 2], l == 1 ? 256 : nb * 256, P.ww[l - 1], P.p[l - 1], nb * 256, work,
+                                        l == L - 1 ? ends : nullptr, i);
+            }
+        }
+        CK(cudaGetLastError()); CK(cudaDeviceSynchronize());
+        std::vector<unsigned long long> h(R + 1), z(R + 1);
+        CK(cudaMemcpy(h.data(), t, (R + 1) * 8, cudaMemcpyDeviceToHost)); CK(cudaMemcpy(z.data(), ends, (R + 1) * 8, cudaMemcpyDeviceToHost));
+        if (pers && work) {
+            std::vector<unsigned long long> c(2 * (R + 1)); CK(cudaMemcpy(c.data(), ck, c.size() * 8, cudaMemcpyDeviceToHost));
+            for (int i = 0; i <= R; i++) { run_clk += (double)c[2 * i]; run_ns += (double)c[2 * i + 1]; }
+        }
+        double sp = 0; for (int i = 0; i <= R; i++) sp += (double)(z[i] - h[i]);
+        *span = sp / (R + 1);
+        return (double)(h[R] - h[0]) / R;
+    };
+    struct Sh { int L, nb; };
+    const int wave = per[3] * sms;
+    for (Sh s : {Sh{2, one}, Sh{3, one}, Sh{4, one}, Sh{3, 2 * wave}, Sh{3, 4 * wave}}) {
+        const int grid = std::min(per[s.L] * sms, std::max(2, s.nb)), rounds = (s.nb + grid - 1) / grid;
+        // the two forms compute the same chain (the last level's output, bit for bit)
+        const size_t on = (size_t)s.nb * 256; std::vector<float> o[2]; double sp;
+        for (int f = 0; f < 2; f++) {
+            CK(cudaMemset(P.p[s.L - 2], 0, on * 4)); arm(s.L, s.nb, grid, f == 1, 1, &sp);
+            o[f].resize(on); CK(cudaMemcpy(o[f].data(), P.p[s.L - 2], on * 4, cudaMemcpyDeviceToHost));
+        }
+        const int match = memcmp(o[0].data(), o[1].data(), on * 4) == 0;
+        run_clk = run_ns = 0;
+        std::vector<double> v[4], w[4], body, bin;  // sep, pers, sep0, pers0: start to start (v) and span (w)
+        for (int rep = 0; rep < reps; rep++) {
+            double m[4], n[4];
+            for (int k = 0; k < 4; k++) { const int a = (k + rep) % 4; m[a] = arm(s.L, s.nb, grid, a & 1, a < 2, &n[a]); }
+            for (int a = 0; a < 4; a++) { v[a].push_back(m[a]); w[a].push_back(n[a]); }
+            body.push_back((m[1] - m[3]) - (m[0] - m[2]));
+            bin.push_back((n[1] - n[3]) - (n[0] - n[2]));
+        }
+        for (auto& x : v) std::sort(x.begin(), x.end());
+        for (auto& x : w) std::sort(x.begin(), x.end());
+        std::sort(body.begin(), body.end()); std::sort(bin.begin(), bin.end());
+        const int md = reps / 2, lo = reps / 4, hi = reps - 1 - reps / 4;
+        const double b = bin[md], rk = run_clk / run_ns * 1e6;
+        printf("body levels=%d rounds=%d blocks=%d grid=%d per_sm=%d per_sm_alone=%d regs_sep=%d/%d regs_pers=%d match=%d "
+               "sep_ns=%.0f sep0_ns=%.0f pers_ns=%.0f pers0_ns=%.0f body_ss_ns=%.0f [%.0f-%.0f] span_sep=%.0f span_sep0=%.0f "
+               "span_pers=%.0f span_pers0=%.0f body_ns=%.0f [%.0f-%.0f] run_khz=%.0f body_cycles=%.0f\n",
+               s.L, rounds, s.nb, grid, per[s.L], per_w, fr.numRegs, fw.numRegs, regs[s.L], match, v[0][md], v[2][md], v[1][md],
+               v[3][md], body[md], body[lo], body[hi], w[0][md], w[2][md], w[1][md], w[3][md], b, bin[lo], bin[hi], rk,
+               b * sus_khz / 1e6);
+        if (s.L == 3 && rounds == 4) line = b;
+    }
+    printf("body coop_body_cycles=%.0f coop_body_ns=%.0f sustained_clock_khz=%.0f (levels=3 rounds=4)\n", line * sus_khz / 1e6, line,
+           sus_khz);
+    CK(cudaFree(buf)); CK(cudaFree(ctr)); CK(cudaFree(t)); CK(cudaFree(ck)); CK(cudaFree(ends));
+}
 int main(int argc, char** argv) {
     cudaDeviceProp p; CK(cudaGetDeviceProperties(&p, 0)); sms = p.multiProcessorCount;
     CK(cudaDeviceGetAttribute(&clk_khz, cudaDevAttrClockRate, 0));
@@ -451,5 +615,6 @@ int main(int argc, char** argv) {
     if (on("copy")) copy_run();
     if (on("ffma")) ffma_run(p.major * 10 + p.minor);
     if (on("head")) head_run();
+    if (on("body")) body_run(p.major * 10 + p.minor);
     return 0;
 }

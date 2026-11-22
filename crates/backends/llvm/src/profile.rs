@@ -409,15 +409,25 @@ pub struct DeviceCost {
     /// H100 SXM 147, A100 81, RTX 4090 77, RTX 3090 62, RTX 5080 94). 0 = not
     /// measured: the split is not priced (the property rule alone).
     pub sm_bytes_per_ns: u64,
-    /// kernel-merging `calls`: the most a persistent chain was measured to
-    /// cost a trip beyond the priced boundaries (`coop_launch_ns`, the grid
-    /// barriers, the dependent launches it replaces), in ns — its member
-    /// bodies' change inside one kernel, which no term models: the forced
-    /// suite chains (`--calls=force`) against the shipped build, ABBA per
-    /// trip less the price difference, per chain (`review-fixes.md`). 0 =
-    /// not measured: a chain's bodies are unpriced and none forms.
-    pub coop_body_ns: u64,
+    /// kernel-merging `calls`: what a chain's member bodies cost inside one
+    /// persistent kernel beyond their own launches, in SM clock cycles (at
+    /// [`Gpu::clock_khz`]) — `benches/gpu/calib.cu body`: a synthetic chain
+    /// run as separate launches and as one cooperative persistent kernel,
+    /// less the boundaries the rule already prices (the barriers against the
+    /// launches), its wide levels in the grid-stride form. 0 = not measured
+    /// on this part: derived — [`COOP_BODY_CYCLES_RTX_5080`] at this part's
+    /// clock ([`Gpu::coop_body_ns`]); never unpriced.
+    pub coop_body_cycles: u64,
 }
+
+/// kernel-merging `calls`: the measured member-body change of a persistent
+/// chain on the rtx-5080 — `calib.cu body`'s 4-round chain (its wide levels
+/// in the grid-stride form), the median of six runs' span change, 1792 ns
+/// [1083–2596], 2026-11-22 (`review-fixes.md` §5) — in cycles of the part's
+/// 2.45 GHz profile clock, so the part prices what it measured. The source
+/// every part without its own measurement derives its price from
+/// ([`Gpu::coop_body_ns`]).
+pub const COOP_BODY_CYCLES_RTX_5080: u64 = 4390;
 
 /// A [`DeviceCost`] without the plan-cost rates: the parts that keep the
 /// rules' plans (D8). `..NO_PLAN` fills them.
@@ -447,7 +457,7 @@ pub const NO_PLAN: DeviceCost = DeviceCost {
     row_iter_ns: 0,
     coop_first_ns: 0,
     sm_bytes_per_ns: 0,
-    coop_body_ns: 0,
+    coop_body_cycles: 0,
 };
 
 impl DeviceCost {
@@ -482,7 +492,7 @@ impl DeviceCost {
         "row_iter_ns",
         "coop_first_ns",
         "sm_bytes_per_ns",
-        "coop_body_ns",
+        "coop_body_cycles",
         "fp32_lanes",
         "clock_khz",
         "sms",
@@ -574,7 +584,7 @@ impl Gpu {
                 "row_iter_ns" => &mut d.row_iter_ns,
                 "coop_first_ns" => &mut d.coop_first_ns,
                 "sm_bytes_per_ns" => &mut d.sm_bytes_per_ns,
-                "coop_body_ns" => &mut d.coop_body_ns,
+                "coop_body_cycles" => &mut d.coop_body_cycles,
                 "fp32_lanes" => &mut self.fp32_lanes,
                 "clock_khz" => &mut self.clock_khz,
                 "sms" => &mut self.sms,
@@ -623,7 +633,7 @@ impl Gpu {
             "row_iter_ns" => d.row_iter_ns,
             "coop_first_ns" => d.coop_first_ns,
             "sm_bytes_per_ns" => d.sm_bytes_per_ns,
-            "coop_body_ns" => d.coop_body_ns,
+            "coop_body_cycles" => d.coop_body_cycles,
             "fp32_lanes" => self.fp32_lanes,
             "clock_khz" => self.clock_khz,
             "sms" => self.sms,
@@ -841,6 +851,24 @@ impl Gpu {
     /// `griddepcontrol` ([`Caps::griddepcontrol`]).
     pub fn has_griddepcontrol(&self) -> bool {
         self.caps.griddepcontrol
+    }
+
+    /// kernel-merging `calls`: the member bodies' change a persistent chain
+    /// costs, in SM cycles, and whether this part measured it — its own
+    /// [`DeviceCost::coop_body_cycles`], else the rtx-5080's measurement
+    /// ([`COOP_BODY_CYCLES_RTX_5080`]): derived, never unpriced.
+    pub fn coop_body_cycles(&self) -> (u64, bool) {
+        match self.cost.map_or(0, |d| d.coop_body_cycles) {
+            0 => (COOP_BODY_CYCLES_RTX_5080, false),
+            c => (c, true),
+        }
+    }
+
+    /// [`Self::coop_body_cycles`] in ns at this part's clock
+    /// ([`Self::clock_khz`], the clock it sustains under load): a part with a
+    /// slower clock spends more time on the same cycles.
+    pub fn coop_body_ns(&self) -> f64 {
+        self.coop_body_cycles().0 as f64 * 1e6 / self.clock_khz.max(1) as f64
     }
 
     /// hardware-properties: the FFMA peak, flops per ns (`sms · fp32_lanes ·
@@ -3577,7 +3605,9 @@ pub const RTX_4090: TargetProfile = TargetProfile {
             row_iter_ns: 0,
             coop_first_ns: 0,
             sm_bytes_per_ns: 77,
-            coop_body_ns: 0,
+            // kernel-merging `calls`: not measured here — derived, the
+            // rtx-5080's 4390 cycles at 2.52 GHz = 1742 ns a chain.
+            coop_body_cycles: 0,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_89), 2.52 GHz under load. The
         // cross-arch box (power limit 250 W of the part's 450) sustained
@@ -3622,6 +3652,10 @@ pub const H100: TargetProfile = TargetProfile {
             pdl_launch_ns: 734,
             coop_launch_ns: 1839,
             sm_bytes_per_ns: 147,
+            // kernel-merging `calls`: `coop_body_cycles` not measured here —
+            // derived, the rtx-5080's 4390 cycles at 1.807 GHz = 2429 ns a
+            // chain: smlp / firew_rowsum's chains (1.55 / 2.3x slower when
+            // formed on the boundaries alone, cross-arch 7a2b67bf) save 695.
             ..NO_PLAN
         }),
         // HBM3 3.35 TB/s on 5120 bits (datasheet; query `mem=2619000x5120`);
@@ -3661,6 +3695,8 @@ pub const H100_PCIE: TargetProfile = TargetProfile {
             flops_per_ns: 49070,
             bytes_per_ns: 135,
             launch_ns: 11315,
+            // `coop_body_cycles` derived (the rtx-5080's 4390 at 1.755 GHz =
+            // 2501 ns); no barrier or launch measured: no chain is priced.
             ..NO_PLAN
         }),
         // Datasheet (H100 PCIe 80 GB): HBM2e 2.04 TB/s on 5120 bits (device
@@ -3732,7 +3768,10 @@ pub const RTX_5090: TargetProfile = TargetProfile {
             row_iter_ns: 0,
             coop_first_ns: 0,
             sm_bytes_per_ns: 0,
-            coop_body_ns: 0,
+            // kernel-merging `calls`: not measured here — derived, the
+            // rtx-5080's 4390 cycles at 2.41 GHz = 1822 ns a chain (no
+            // barrier or launch measured: no chain is priced).
+            coop_body_cycles: 0,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_120), 2.41 GHz under load.
         fp32_lanes: 128,
@@ -3837,15 +3876,18 @@ pub const RTX_5080: TargetProfile = TargetProfile {
             // cross-arch `row-split`: one SM alone streams 94 B/ns from L2
             // (`calib.cu bw`, the best `sms=1` point, 2026-11-21).
             sm_bytes_per_ns: 94,
-            // kernel-merging `calls`: the forced chains against the shipped
-            // build (ABBA, 2026-11-22), a trip's cost beyond the priced
-            // boundaries, per chain: rt_mlp2_1024 2510 ns (its GEMM pairs at
-            // 127-128 registers against 95-96: 165.3 / 166.5 us against
-            // 161.0 / 163.7 us of their kernels), decode_1024_256 1970 ns (the
-            // rows level 5.0 us against 4.2 alone; not the barrier spin, not
-            // the non-coherent path); causal / gen / prefill -660..-810 ns
-            // (bodies faster). The largest.
-            coop_body_ns: 2500,
+            // kernel-merging `calls`: measured (`calib.cu body`, six runs,
+            // 2026-11-22, `review-fixes.md` §5): a 3-level chain whose wide
+            // levels take 4 rounds of the persistent grid (the grid-stride
+            // form) spends 1792 ns [1083–2596] more in its bodies than as
+            // separate launches, the barriers against the launches aside
+            // (one round: 292–420 ns); 4390 cycles at 2.45 GHz. The suite's
+            // forced chains against the shipped build (ABBA, per chain beyond
+            // the priced boundaries): rt_mlp2_1024 2510 ns (its GEMM pairs at
+            // 127-128 registers against 95-96), decode_1024_256 1970 ns (the
+            // rows level 5.0 us against 4.2 alone), causal / gen / prefill
+            // -660..-810 ns (bodies faster).
+            coop_body_cycles: COOP_BODY_CYCLES_RTX_5080,
         }),
         // 128 FP32 lanes per SM (sm_120); E1 peak FFMA median 52.7 Tflop/s
         // [50.3–57.6] / (84 SMs · 128 · 2) = 2.45 GHz under load.
@@ -3888,6 +3930,8 @@ pub const RTX_3090: TargetProfile = TargetProfile {
             dep_launch_ns: 1472,
             coop_launch_ns: 2866,
             sm_bytes_per_ns: 62,
+            // kernel-merging `calls`: `coop_body_cycles` not measured here —
+            // derived, the rtx-5080's 4390 cycles at 1.561 GHz = 2812 ns.
             ..NO_PLAN
         }),
         // GDDR6X at 19.5 Gb/s on 384 bits (936 GB/s); the FFMA peak under
@@ -3930,6 +3974,8 @@ pub const A100: TargetProfile = TargetProfile {
             dep_launch_ns: 2050,
             coop_launch_ns: 4714,
             sm_bytes_per_ns: 81,
+            // kernel-merging `calls`: `coop_body_cycles` not measured here —
+            // derived, the rtx-5080's 4390 cycles at 1.41 GHz = 3113 ns.
             ..NO_PLAN
         }),
         // Datasheet (A100 40 GB): 64 FP32 lanes per SM, 1.41 GHz boost (the

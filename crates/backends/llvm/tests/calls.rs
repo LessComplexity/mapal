@@ -217,56 +217,82 @@ fn decode_runs_its_trip_as_one_persistent_kernel() {
     assert!(host_line(&p5090).is_empty() && specs(&p5090).is_empty());
 }
 
-/// The parts whose barrier and launch costs were measured but whose
-/// persistent bodies nobody timed (rtx-4090, rtx-3090, a100) form no chain
-/// in a shipped build: the boundaries alone priced decode, causal, gen,
-/// prefill and rt_mlp2's chains as wins there, while on the rtx-5080 every
-/// forced chain lost by more than its boundaries say (decode 1970 ns a trip,
-/// rt_mlp2 2510 ns a chain) — the bodies' price (`coop_body_ns`) is required
-/// (`refused=unpriced`). Forced (`--calls=force`, the arm that measures it),
-/// they still form; the rtx-5080 refuses by cost as before.
+/// **Every part prices a chain's bodies** (`calib.cu body`): the rtx-5080
+/// measured them (4390 cycles at its 2.45 GHz); every other GPU profile
+/// derives them from those cycles at its own clock — never `unpriced`. On the
+/// suite's chains: the rtx-5080 refuses every one by cost (a cooperative
+/// launch of 2044 ns against launches of 486 / 650); decode's chain is refused
+/// on every part (656 / 522 ns saved on the 4090 / 3090 against 1742 / 2812 of
+/// bodies); the H100's smlp / firew_rowsum chains — formed on the boundaries
+/// alone in the cross-arch 7a2b67bf round, 1.55 / 2.3x slower — are refused
+/// (695 ns saved against 2429); causal's six-launch chain forms on the 4090
+/// and the 3090, not on the a100 or the H100. The derivation follows the
+/// clock (`--cost=clock_khz=`): the a100 at 2.3 GHz forms causal's chain, the
+/// 3090 at 1.0 GHz refuses it.
 #[test]
-fn unmeasured_bodies_form_no_chain() {
-    let progs = [
-        "pt_decode_1024_256",
-        "pt_causal_1024_256",
-        "pt_gen_1024_512_256",
-        "pt_rt_mlp2_1024",
-    ];
-    let irs: Vec<CategoryIr> = progs.iter().map(|p| bench(p)).collect();
-    let emit = |ir: &CategoryIr, target: &'static str, force: bool| {
-        let mut gpu = GpuArms::default();
-        gpu.calls_force = force;
-        emit_detailed(
-            ir,
-            &EmitOpts {
-                target,
-                gpu,
-                ..EmitOpts::default()
-            },
-        )
-        .expect("emits")
+fn every_part_prices_chains() {
+    use mapal_backend_llvm::TargetProfile;
+    let gpu = |n: &str| TargetProfile::named(n).and_then(|p| p.gpu()).expect(n);
+    let five = gpu("rtx-5080").coop_body_cycles();
+    assert!(five.1 && five.0 > 0, "the rtx-5080 measured it: {five:?}");
+    for n in [
+        "cuda-ada",
+        "rtx-4090",
+        "h100",
+        "h100-pcie",
+        "rtx-5090",
+        "rtx-5080",
+        "rtx-3090",
+        "a100",
+    ] {
+        let g = gpu(n);
+        assert_eq!(g.coop_body_cycles(), (five.0, n == "rtx-5080"), "{n}");
+        let ns = five.0 as f64 * 1e6 / g.clock_khz as f64;
+        assert!(
+            (g.coop_body_ns() - ns).abs() < 1e-6,
+            "{n}: {}",
+            g.coop_body_ns()
+        );
+    }
+    let emit = |ir: &CategoryIr, target: &'static str, clock: Option<u64>| {
+        let mut opts = EmitOpts {
+            target,
+            ..EmitOpts::default()
+        };
+        if let Some(c) = clock {
+            let f = format!("--cost=clock_khz={c}");
+            assert!(mapal_backend_llvm::flags::apply(&mut opts, &f).expect("a flag"));
+        }
+        host_line(&emit_detailed(ir, &opts).expect("emits"))
     };
-    for target in ["rtx-4090", "rtx-3090", "a100"] {
-        let mut forced = 0;
-        for (p, ir) in progs.iter().zip(&irs) {
-            let h = host_line(&emit(ir, target, false));
-            assert!(
-                h.is_empty() || field(&h, "formed") == "0",
-                "{target} {p}: {h}"
-            );
-            if !h.is_empty() && field(&h, "refused").contains("unpriced") {
-                forced += usize::from(field(&host_line(&emit(ir, target, true)), "formed") != "0");
+    // `(program, the parts whose chain forms)`, over the parts with the
+    // measured barrier and launch costs.
+    let parts = ["rtx-5080", "rtx-4090", "rtx-3090", "a100", "h100"];
+    let want: [(&str, &[&str]); 5] = [
+        ("pt_decode_1024_256", &[]),
+        ("pt_causal_1024_256", &["rtx-4090", "rtx-3090"]),
+        ("pt_smlp_4096_256_1024", &[]),
+        ("pt_firew_rowsum_2048x2048_16", &[]),
+        ("pt_rt_mlp2_1024", &[]),
+    ];
+    for (p, forms) in want {
+        let ir = bench(p);
+        for part in parts {
+            let h = emit(&ir, part, None);
+            assert!(!h.contains("unpriced"), "{part} {p}: {h}");
+            let formed = !h.is_empty() && field(&h, "formed") != "0";
+            assert_eq!(formed, forms.contains(&part), "{part} {p}: {h}");
+            if !h.is_empty() && !formed && field(&h, "chains") != "0" {
+                assert!(field(&h, "refused").contains("cost"), "{part} {p}: {h}");
             }
         }
-        assert!(forced >= 2, "{target}: forced chains {forced}");
-    }
-    for (p, ir) in progs.iter().zip(&irs) {
-        let h = host_line(&emit(ir, "rtx-5080", false));
-        assert!(
-            field(&h, "formed") == "0" && !field(&h, "refused").contains("unpriced"),
-            "rtx-5080 {p}: {h}"
-        );
+        if p == "pt_causal_1024_256" {
+            assert_ne!(field(&emit(&ir, "a100", Some(2_300_000)), "formed"), "0");
+            assert_eq!(
+                field(&emit(&ir, "rtx-3090", Some(1_000_000)), "formed"),
+                "0"
+            );
+        }
     }
 }
 
