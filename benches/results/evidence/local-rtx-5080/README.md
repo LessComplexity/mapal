@@ -197,3 +197,14 @@ get a new best (CUDA graphs 20, Liger 4, Triton 2, FlashInfer 1, cuDNN 1): geome
 disappears; the f32 prefills go even → loss (1.19, 1.53) and the TF32 prefill 1.23 → 1.64 — fused attention kernels
 (the CUTLASS memory-efficient f32 kernel, the Triton flash tutorial) against Mapal's three-kernel attention with the
 scores through DRAM (long-prefill open 1–2). ABBA and CUPTI for every move > 2 %.
+
+**gemv-tma** (`gemv-tma.md`): cross-arch gap items 3–4. A measured property — the bytes in flight per SM at which a
+grid on every SM reads DRAM at 90 % of peak (`calib.cu bw` `fly`: 4090 4 KiB, 5080 / 3090 / 5090 8, A100 16, H100 32;
+the warp fill gave every part 8) — sizes a streaming one-thread-per-cell site's `k` split (`stream-fly`), and the
+layout facts give a thread the lanes one 16-byte load of `b` covers (`vec-cells`, LDG.128, at least `VEC_MIN_TRIPS`
+trips a partition). RTX 5080: bf16-weight GEMVs 1.16–1.43× (0.52–0.95× torch bf16), f32 1.01–1.14× (0.96–1.73×
+cuBLASLt-fresh), decode B1 1.01–1.04×; the H100's 1 × 4096 × 4096 now 64 vector partitions (intents only). TMA as
+capability geometry (`Caps::bulk`: granule, box dims, swizzle spans, transaction bytes, clusters of 8, multicast;
+probed on sm_120: UTMALDG, SYNCS, clusters, multicast); its row-copy staging of the TF32 tile (`bulk-stage`) is exact
+but 4.3–14.5× slower, shipped off. Open: tensor-box staging (a host descriptor), the ordered epilogue GEMV's split,
+the L2 knee, `n × k` weights.
