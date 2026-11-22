@@ -4586,6 +4586,23 @@ fn sysfs_u64(path: &str) -> Option<u64> {
     }
 }
 
+/// The CPUs a sysfs CPU list names: "0-1" -> 2, "0,4" -> 2, "0" -> 1; at
+/// least 1.
+#[cfg(target_os = "linux")]
+fn cpu_list_len(list: &str) -> u64 {
+    list.trim()
+        .split(',')
+        .map(|part| match part.split_once('-') {
+            Some((a, b)) => match (a.parse::<u64>(), b.parse::<u64>()) {
+                (Ok(a), Ok(b)) if b >= a => b - a + 1,
+                _ => 1,
+            },
+            None => 1,
+        })
+        .sum::<u64>()
+        .max(1)
+}
+
 /// The same facts on Linux — a different parser, not a different idea.
 ///
 /// `index0` is the L1 data cache and `index2` the unified L2 on every part this
@@ -4601,25 +4618,8 @@ fn sysfs_u64(path: &str) -> Option<u64> {
 fn detect() -> Option<TargetProfile> {
     let l1 = "/sys/devices/system/cpu/cpu0/cache/index0";
     let l2 = "/sys/devices/system/cpu/cpu0/cache/index2";
-    let count = |path: &str| -> u64 {
-        // "0-1" -> 2, "0,4" -> 2, "0" -> 1.
-        std::fs::read_to_string(path)
-            .ok()
-            .map(|s| {
-                s.trim()
-                    .split(',')
-                    .map(|part| match part.split_once('-') {
-                        Some((a, b)) => match (a.parse::<u64>(), b.parse::<u64>()) {
-                            (Ok(a), Ok(b)) if b >= a => b - a + 1,
-                            _ => 1,
-                        },
-                        None => 1,
-                    })
-                    .sum()
-            })
-            .unwrap_or(1)
-            .max(1)
-    };
+    let count =
+        |path: &str| -> u64 { std::fs::read_to_string(path).map_or(1, |s| cpu_list_len(&s)) };
     let smt = count("/sys/devices/system/cpu/cpu0/topology/thread_siblings_list");
     Some(TargetProfile {
         name: "native",
@@ -4663,6 +4663,13 @@ fn detect() -> Option<TargetProfile> {
 /// pool), `measure` = re-measure and rewrite the cache, `d,l,f,b` = forced
 /// (`dispatch_ns,lanes,flops_per_ns,bytes_per_ns`; tests). The cache key is the
 /// CPU model, logical CPUs, pool lanes (`MAPAL_PAR`) and the compiler version.
+/// A miss measured while the machine is busy ([`host_dispatch::busy`]) or by
+/// an unoptimized build serves its process only and is not cached.
+///
+/// Only the `native` profile reads any of this: a named host or target
+/// (`generic`, `x86-64-v3`, a GPU part) carries its own `dispatch`, so a
+/// bundle cross-compiled here never inherits this machine's economics
+/// (`tests/named_host_dispatch.rs`).
 #[cfg(target_os = "linux")]
 pub(crate) mod host_dispatch {
     use super::DispatchCost;
@@ -4684,8 +4691,16 @@ pub(crate) mod host_dispatch {
         {
             return Some(hit);
         }
+        // Only a measurement that describes this machine is cached. One taken
+        // on a busy machine (another build, a test suite) times lanes queued
+        // behind someone else's threads; one taken by an unoptimized build
+        // (`cargo test`) times its own debug code — 10 flops and 1 byte a ns
+        // on the 9970X against 282 and 116 optimized. Either serves its
+        // process only, and a later quiet, optimized run measures again.
+        // `measure` is an explicit request and always writes.
+        let cache = env.is_some() || !(cfg!(debug_assertions) || machine_busy());
         let d = measure()?;
-        if let Some(p) = path {
+        if cache && let Some(p) = path {
             let old = std::fs::read_to_string(&p).unwrap_or_default();
             let mut text: String = old
                 .lines()
@@ -4728,6 +4743,27 @@ pub(crate) mod host_dispatch {
             .filter_map(|l| l.split_once('\t'))
             .find(|(k, _)| *k == key)
             .and_then(|(_, v)| parse(v))
+    }
+
+    /// `/proc/loadavg` against `online` CPUs: busy when the 1-minute load or
+    /// the tasks runnable right now (less the reader) exceed a quarter of
+    /// them. Unreadable is quiet: the cache behaves as it did before.
+    pub(crate) fn busy(loadavg: &str, online: u64) -> bool {
+        let mut f = loadavg.split_whitespace();
+        let load1 = f.next().and_then(|x| x.parse::<f64>().ok());
+        let running = f
+            .nth(2)
+            .and_then(|x| x.split_once('/'))
+            .and_then(|(r, _)| r.parse::<u64>().ok());
+        let quarter = online as f64 / 4.0;
+        load1.is_some_and(|l| l > quarter)
+            || running.is_some_and(|r| r.saturating_sub(1) as f64 > quarter)
+    }
+
+    fn machine_busy() -> bool {
+        let online = std::fs::read_to_string("/sys/devices/system/cpu/online")
+            .map_or(1, |s| super::cpu_list_len(&s));
+        std::fs::read_to_string("/proc/loadavg").is_ok_and(|t| busy(&t, online))
     }
 
     fn key() -> String {
@@ -4938,6 +4974,29 @@ mod dispatch_width_tests {
         for bad in ["", "1,2,3", "0,64,1,1", "1,64,0,1", "x,1,1,1", "1,2,3,4,5"] {
             assert_eq!(parse(bad), None, "{bad:?}");
         }
+    }
+
+    /// A measurement on a busy machine is not cached: the 1-minute load or the
+    /// tasks runnable now (less the reader) above a quarter of the online
+    /// CPUs. This box idle, under another project's test suite, and under a
+    /// burst the 1-minute average has not caught yet; unreadable is quiet.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_busy_machine_does_not_cache_its_wave() {
+        use super::cpu_list_len;
+        use super::host_dispatch::busy;
+        assert_eq!(cpu_list_len("0-63\n"), 64);
+        assert_eq!(cpu_list_len("0,4"), 2);
+        assert_eq!(cpu_list_len(""), 1);
+        assert!(!busy("3.41 10.50 77.43 2/1234 5678\n", 64));
+        assert!(busy("41.20 30.02 12.00 3/1234 5678\n", 64));
+        assert!(busy("2.00 1.00 1.00 40/1234 5678\n", 64));
+        assert!(
+            !busy("16.00 1.00 1.00 17/1234 5678\n", 64),
+            "a quarter is quiet"
+        );
+        assert!(!busy("", 64));
+        assert!(!busy("x y z", 64));
     }
 }
 
