@@ -547,6 +547,38 @@ INTENT = {
         ('one wave: the split grid is resident at ptxas registers + smem',
          'plan.gx * plan.gy * plan.S <= occ.blocks_per_sm * occ.sms'),
         ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')]),
+    # gemv-stream `vec-cells`: a streaming one-thread-per-cell kernel (`cells=` on its plan) whose layout proves the
+    # 16-byte load of `b` folds `cells` adjacent lanes a thread — one LDG.128 of `b` and one load of `a` a `k` step,
+    # `cells` FFMA each, the trip's loads issued before its FMAs. OFF (`.off-vec-cells`): one cell a thread, a
+    # 4- / 2-byte load of `b` and one of `a` per FFMA.
+    'vec-cells': dict(rule=True, applies_on="plan.kind == 'naive' and plan.get('cells', 1) > 1", on=[
+        ('b is read 16 bytes a load: LDG.128 in the hot loop, no more scalar loads (a) than vectors (b)',
+         'sass.hot.ldg128 > 0 and sass.hot.ldg - sass.hot.ldg128 <= sass.hot.ldg128'),
+        ('`cells` products per vector of b (FFMA, or FMUL + FADD on a separate-step face)',
+         'sass.hot.ffma + sass.hot.fmul >= plan.cells * sass.hot.ldg128'),
+        ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')],
+        applies_off="plan.kind == 'naive' and plan.get('cells', 0) == 1", off=[
+        ('one cell a thread: no 16-byte load of b', 'sass.hot.ldg128 == 0')]),
+    # gemv-stream `stream-fly`: a streaming one-thread-per-cell site's split grid puts a block on every SM and keeps
+    # the part's in-flight knee (`knee=`, calib.cu bw `fly`) in flight on each (`fly_sm=`: `NAIVE_UNROLL` loads of
+    # `cells · e_b` bytes a thread). OFF: the warp fill (`fill-wave`) alone.
+    'stream-fly': dict(rule=True, applies_on="plan.kind == 'naive' and 'knee' in plan and plan.combine in ('atomic', 'splitk')", on=[
+        ('a block on every SM', 'plan.gx * plan.gy * plan.S >= occ.sms'),
+        ('the knee in flight on every SM the grid uses (or the wave holds no more)',
+         'plan.fly_sm >= plan.knee or plan.gx * plan.gy * plan.S >= occ.blocks_per_sm * occ.sms'),
+        ('the trip`s loads in flight together: at least as many loads as k steps unrolled before the first FFMA',
+         'sass.hot.ldg >= 8 or plan.k // plan.S < 8')]),
+    # TMA `bulk-stage`: on a part with the bulk-copy engine (`Caps::bulk`), the warp TF32 mma tile's panels
+    # (`stage=bulk`) are copied by one warp's `cp.async.bulk` row copies (UBLKCP), each stage's bytes counted on a
+    # transaction barrier every thread waits on (SYNCS.ARRIVE.TRANS64 / SYNCS.PHASECHK.TRANS64). OFF
+    # (`.off-bulk-stage`): every thread's 16-byte cp.async (LDGSTS).
+    'bulk-stage': dict(rule=True, applies_on="plan.kind == 'mma' and plan.get('stage') == 'bulk'", on=[
+        ('the panels by the bulk-copy engine: UBLKCP and transaction barriers (SYNCS), no LDGSTS',
+         "sass.get('ublkcp', 0) > 0 and sass.get('syncs', 0) > 0 and sass.ldgsts == 0"),
+        ('mma.sync in the hot loop (HMMA)', 'sass.hot.hmma > 0'),
+        ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')],
+        applies_off="plan.kind == 'mma' and plan.get('set') == 'tf32|f32' and 'stage' not in plan", off=[
+        ('cp.async panels: LDGSTS, no UBLKCP', "sass.ldgsts > 0 and sass.get('ublkcp', 0) == 0")]),
     # site-geometry `row-split` (D1): a retained site's one-row pass takes the fold chooser — the row zeroed and one
     # launch whose partials add into it (a part without the atomic split: the workspace split and its reduce) —
     # instead of one block over the row (decode: grid 1x1x256 per trip).

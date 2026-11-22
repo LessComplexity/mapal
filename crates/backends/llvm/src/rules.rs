@@ -195,6 +195,13 @@ pub fn rungs(g: &Gpu, wps: u64, face: Face) -> GpuRungs {
         // exit trigger keeps the launch overlap (rtx-5080 decode 0.905 exit
         // vs 0.918 entry, the rest within 1 %).
         pdl_early: false,
+        // TMA `bulk-stage` (gemv-tma.md): the TF32 mma tile's panels by
+        // row bulk copies lost on the RTX 5080 (4.3–14.5×: one copy per
+        // 64–128-byte row, the engine's issue per copy against the 16-byte
+        // `cp.async` of every thread); no measured part found a gain, so off
+        // on every part (its ON arm measures it; open: one tensor box a
+        // panel, a host-encoded descriptor).
+        bulk_stage: false,
         pinned: cost.pageable_pm > 0 && cost.pageable_pm < PAGEABLE_PM,
         // stream-K: filled (its forgone filled cells won on the H100 and the
         // 3090); under-filled it lost on the 5080's skinny projections and
@@ -429,7 +436,7 @@ mod tests {
         }
         assert_eq!(open, OPEN.to_vec(), "measurements the rules do not pick");
         // The counts the evidence file reports.
-        assert_eq!((picked, null, mixed, open.len()), (105, 67, 9, 16));
+        assert_eq!((picked, null, mixed, open.len()), (108, 67, 9, 16));
     }
 
     /// No rule reads a name, an architecture string or a version: a part

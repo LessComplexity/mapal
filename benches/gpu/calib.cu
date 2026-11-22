@@ -112,6 +112,9 @@ static void bw_run() {
     CK(cudaMalloc(&d, maxb)); CK(cudaMemset(d, 1, maxb)); CK(cudaMalloc(&sink, 4));
     cudaEvent_t a, b; cudaEventCreate(&a); cudaEventCreate(&b);
     double one[2] = {0, 0}; // cross-arch rules: what one SM streams alone, best point, per level
+    // gemv-stream `stream-fly`: per level, the in-flight bytes a grid on every SM keeps per SM at each point, and
+    // its rate — the knee is the smallest point at or above 90 % of the level's best rate.
+    std::vector<std::pair<double, double>> all[2];
     for (int lvl = 0; lvl < 2; lvl++) {
         size_t bytes = lvl ? (8u << 20) : maxb; const char* nm = lvl ? "l2" : "dram"; int rounds = lvl ? 200 : 2;
         for (int s : {1, std::max(1, sms / 16), std::max(1, sms / 8), std::max(1, sms / 4), std::max(1, sms / 2), sms})
@@ -132,10 +135,21 @@ static void bw_run() {
                     bytes_read = (double)(n16 / per * per) * 16 * rounds;
                     printf("bw level=%s sms=%d wps=%d L=%d inflight_kb=%.1f gbs=%.1f\n", nm, s, wps, L, (double)s * wps * 32 * L * 16 / 1024, bytes_read / ms / 1e6);
                     if (s == 1) one[lvl] = std::max(one[lvl], bytes_read / ms / 1e6);
+                    if (s == sms) all[lvl].push_back({(double)wps * 32 * L * 16, bytes_read / ms / 1e6});
                 }
     }
     // `sm_bytes_per_ns` (the profile's): one SM streaming an L2-resident operand alone — a one-row pass's rate
     printf("bw one_sm dram_gbs=%.1f l2_gbs=%.1f sm_bytes_per_ns=%.0f\n", one[0], one[1], one[1]);
+    // `fly_bytes_per_sm` (the profile's, DRAM): the smallest in-flight bytes an SM at which a grid on every SM
+    // reads at 90 % of the best rate measured at that level.
+    double knee[2] = {0, 0};
+    for (int lvl = 0; lvl < 2; lvl++) {
+        double best = 0;
+        for (auto& p : all[lvl]) best = std::max(best, p.second);
+        for (auto& p : all[lvl])
+            if (p.second >= 0.9 * best && (knee[lvl] == 0 || p.first < knee[lvl])) knee[lvl] = p.first;
+    }
+    printf("bw fly dram_bytes_per_sm=%.0f l2_bytes_per_sm=%.0f fly_bytes_per_sm=%.0f\n", knee[0], knee[1], knee[0]);
 }
 
 // one chaser warp (block 0) with nstream streaming blocks; streamers run until the chaser raises the flag

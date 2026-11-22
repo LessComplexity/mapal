@@ -5399,3 +5399,114 @@ pub fn history_prog_src(p: &HistoryProg) -> String {
     s += "    0.0 -> zero: f32;\n    (zero, out) -> fold { acc, v -> acc + v } -> sum;\n    sum -> println;\n}\n";
     s
 }
+
+// --- gemv-stream: matrix-vector sites (`vec-cells`, `stream-fly`) ------------
+
+/// A streaming sum of products: `rows` (1–3) rows of an activation `a` against
+/// a weight `w` of `cols` lanes — stored `f32`, `bf16` or `f16` (`fmt` 0 / 1 /
+/// 2) — read `k × cols` (`layout` 0), `cols × k` (1: strided lanes), `k ×
+/// cols` from an offset `off` elements in (2: the 16-byte alignment the
+/// vector load needs holds or not), or one `k × cols` matrix per row (3: `w`
+/// moves with the row). `shared`: every row reads one `a` row (`a`'s row
+/// stride 0). `post`: an epilogue `u·0.5 + a[i·k]`. Operands non-negative
+/// (no cancellation: a reordered sum stays within a relative `k · 2⁻²³`).
+#[derive(Clone, Debug)]
+pub struct GemvProg {
+    pub rows: u64,
+    pub cols: u64,
+    pub k: u64,
+    pub fmt: u8,
+    pub layout: u8,
+    pub off: u64,
+    pub shared: bool,
+    pub post: bool,
+    pub mul: u64,
+}
+
+pub fn gemv_prog_strategy() -> impl Strategy<Value = GemvProg> {
+    (
+        prop::sample::select(vec![1u64, 1, 2, 3, 3]),
+        prop::sample::select(vec![64u64, 72, 96, 100, 128, 256]),
+        prop::sample::select(vec![8u64, 24, 64, 96, 128, 256, 512, 1024]),
+        prop::sample::select(vec![0u8, 0, 1, 2]),
+        prop::sample::select(vec![0u8, 0, 1, 2, 2, 3, 3]),
+        prop::sample::select(vec![2u64, 4, 8, 16]),
+        prop::bool::weighted(0.3),
+        any::<bool>(),
+        prop::sample::select(vec![3u64, 7, 11, 13]),
+    )
+        .prop_map(
+            |(rows, cols, k, fmt, layout, off, shared, post, mul)| GemvProg {
+                rows,
+                cols,
+                k,
+                fmt,
+                layout,
+                off,
+                shared,
+                post,
+                mul,
+            },
+        )
+}
+
+/// [`GemvProg`]'s source: the product as a map over `rows × cols` cells
+/// folding `k`, every cell's value printed in a fold-free order (first, last,
+/// a middle one, the second row's first), then the cells' sum.
+pub fn gemv_src(p: &GemvProg) -> String {
+    let (rows, cols, k) = (p.rows, p.cols, p.k);
+    let n = rows * cols;
+    let off = if p.layout == 2 { p.off } else { 0 };
+    let wn = match p.layout {
+        3 => rows * k * cols,
+        _ => k * cols + off,
+    };
+    let fmt = ["", "bf16", "f16"][usize::from(p.fmt)];
+    let wlaw = format!("(e * {} + 5) % 9 + 1 -> widen_f32 -> v; v / 8.0", p.mul);
+    let wmap = match p.fmt {
+        0 => wlaw,
+        _ => format!("{wlaw} -> to_{fmt}"),
+    };
+    let ar = if p.shared { k } else { rows * k };
+    let mut s = format!(
+        "fn main() {{\n    {n} -> iota -> t;\n    {k} -> iota -> kk;\n    {ar} -> iota -> ta;\n    \
+         {wn} -> iota -> tw;\n    \
+         ta -> map {{ e -> (e * 7 + 3) % 5 -> widen_f32 -> v; v / 4.0 }} -> a;\n    \
+         tw -> map {{ e -> {wmap} }} -> w;\n"
+    );
+    let wi = match p.layout {
+        1 => format!("w[j * {k} + q]"),
+        2 => format!("w[q * {cols} + j + {off}]"),
+        3 => format!("w[i * {kc} + q * {cols} + j]", kc = k * cols),
+        _ => format!("w[q * {cols} + j]"),
+    };
+    let wv = match p.fmt {
+        0 => wi,
+        _ => format!("{wi} -> widen_f32"),
+    };
+    let ai = if p.shared {
+        "a[q]".to_string()
+    } else {
+        format!("a[i * {k} + q]")
+    };
+    let tail = if p.post {
+        format!(
+            " -> u; u * 0.5 + a[{}]",
+            if p.shared {
+                "0".into()
+            } else {
+                format!("i * {k}")
+            }
+        )
+    } else {
+        String::new()
+    };
+    s += &format!(
+        "    t -> map {{ e -> e / {cols} -> i; e % {cols} -> j; (0.0, kk) -> fold {{ acc, q -> {wv} -> b; acc + {ai} * b }}{tail} }} -> y;\n"
+    );
+    for c in [0, n - 1, n / 2 + 1, cols.min(n - 1)] {
+        s += &format!("    y[{c}] -> println;\n");
+    }
+    s += "    0.0 -> zero: f32;\n    (zero, y) -> fold { acc, v -> acc + v } -> sum;\n    sum -> println;\n}\n";
+    s
+}

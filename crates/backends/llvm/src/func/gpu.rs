@@ -756,6 +756,10 @@ pub(crate) struct Launch {
     /// and combined. [`launch`] gives `None`; [`launch_in`] chooses under
     /// the emission's order.
     pub combine: Combine,
+    /// gemv-stream `vec-cells`: the adjacent cells (lanes of one row) a
+    /// thread of the one-thread-per-cell kernel folds, one 16-byte load of
+    /// `b` a `k` step ([`vec_cells`]); 1 everywhere else.
+    pub cells: u64,
 }
 
 /// The realization of a tile site's `k` fold (ADR-0040 D3/D4).
@@ -920,6 +924,7 @@ pub(crate) fn launch_split(
                 raster: raster(rungs, m.bm(), m.bn(), m.blocks_per_sm),
                 rungs,
                 combine: Combine::None,
+                cells: 1,
             };
         }
     }
@@ -948,6 +953,7 @@ pub(crate) fn launch_split(
                     raster: raster(rungs, w.bm(), w.bn(), w.blocks_per_sm),
                     rungs,
                     combine: Combine::None,
+                    cells: 1,
                 };
             }
             let mma = profile.gpu_mma_tile(grows, site.c, site.k, rungs.wide, rungs.fill);
@@ -960,10 +966,17 @@ pub(crate) fn launch_split(
                     gx: site.c / m.bn(),
                     gy: site.rows / m.bm(),
                     block: m.threads(gpu.warp),
-                    smem: m.smem_bytes(),
+                    // TMA `bulk-stage`: a transaction barrier a stage.
+                    smem: m.smem_bytes()
+                        + if bulk_stage(site, &m, gpu, &rungs) {
+                            BULK_BAR_BYTES * m.stages
+                        } else {
+                            0
+                        },
                     raster: raster(rungs, m.bm(), m.bn(), m.blocks_per_sm),
                     rungs,
                     combine: Combine::None,
+                    cells: 1,
                 };
             }
         }
@@ -1133,22 +1146,34 @@ pub(crate) fn launch_split(
             raster: raster(rungs, g.bm(), g.bn(), g.blocks_per_sm),
             rungs,
             combine: Combine::None,
+            cells: 1,
         },
-        None => Launch {
-            arithmetic,
-            tiled: None,
-            mma: None,
-            wgmma: None,
-            // One thread per cell: its own grid, not the fill key's (which
-            // keys a tile the launch may not take — a `--geom=` arm).
-            gx: (site.rows * site.c).div_ceil(NAIVE_THREADS),
-            gy: 1,
-            block: NAIVE_THREADS,
-            smem: 0,
-            raster: 1,
-            rungs,
-            combine: Combine::None,
-        },
+        None => {
+            // gemv-stream `vec-cells`: the ordered kernel takes the vector
+            // cells where their grid alone puts a block on every SM; a split
+            // kernel takes them where the split grid does ([`resized`]).
+            let v = vec_fit(site, gpu, &rungs);
+            let cells = match vec_takes(site, gpu, v, 1) {
+                true => v,
+                false => 1,
+            };
+            Launch {
+                arithmetic,
+                tiled: None,
+                mma: None,
+                wgmma: None,
+                // One thread per cell: its own grid, not the fill key's (which
+                // keys a tile the launch may not take — a `--geom=` arm).
+                gx: cell_blocks(site, cells),
+                gy: 1,
+                block: NAIVE_THREADS,
+                smem: 0,
+                raster: 1,
+                rungs,
+                combine: Combine::None,
+                cells,
+            }
+        }
     }
 }
 
@@ -1266,6 +1291,10 @@ fn plan_line(
                 f += " bt=1";
             }
         }
+        // TMA `bulk-stage` (intent.py): the panels the bulk-copy engine stages.
+        if bulk_stage(site, &m, gpu, &l.rungs) {
+            f += " stage=bulk";
+        }
     }
     if let Some(w) = l.wgmma {
         f += &format!(
@@ -1329,6 +1358,20 @@ fn plan_line(
     if l.rungs.fill_wave && s > 1 {
         f += &format!(" fill_warps={}", gpu.fill_warps());
     }
+    // gemv-stream (intent.py `vec-cells`, `stream-fly`): a streaming
+    // one-thread-per-cell kernel's cells a thread, the bytes of `b` its
+    // launched grid keeps in flight per SM it uses (`NAIVE_UNROLL` loads of
+    // `cells · e_b` a thread), and the part's knee.
+    if kind == "naive" && streaming(site, gpu) {
+        let grid = l.gx * l.gy * s;
+        let fly = grid * NAIVE_THREADS * NAIVE_UNROLL * l.cells * site.b.elem_bytes(&site.elem);
+        f += &format!(
+            " cells={} fly_sm={} knee={}",
+            l.cells,
+            fly / grid.min(gpu.sms).max(1),
+            gpu.stream_fly_per_sm()
+        );
+    }
     let on: Vec<&str> = KERNEL_RUNGS
         .iter()
         .copied()
@@ -1343,7 +1386,7 @@ fn plan_line(
 }
 
 /// The rungs a kernel's text reads ([`plan_line`]); the rest are host rungs.
-const KERNEL_RUNGS: [&str; 39] = [
+const KERNEL_RUNGS: [&str; 42] = [
     "arch-rungs",
     "interleave",
     "unroll",
@@ -1383,6 +1426,9 @@ const KERNEL_RUNGS: [&str; 39] = [
     "bank-plan",
     "streamk-fill",
     "k-fill",
+    "vec-cells",
+    "stream-fly",
+    "bulk-stage",
 ];
 
 /// [`launch`] with the fold's realization chosen under `order` (ADR-0040 D4).
@@ -1645,7 +1691,16 @@ pub(crate) fn plan_shape(site: &TileSite, l: &Launch, c: Combine, gpu: &Gpu) -> 
             g.stages.saturating_sub(1).max(1),
             lsu_per_panel(site, &g, &l.rungs, false),
         ),
-        None => (1, l.block, 1, l.wave(gpu) / gpu.sms, 1, NAIVE_UNROLL, 1, 0),
+        None => (
+            1,
+            l.block * l.cells,
+            l.cells,
+            l.wave(gpu) / gpu.sms,
+            1,
+            NAIVE_UNROLL,
+            1,
+            0,
+        ),
     };
     let tiles = l.gx * l.gy;
     let (blocks, kb, s, comb) = match c {
@@ -1814,7 +1869,7 @@ fn resized(
     // [`TargetProfile::site_ns`] says it is cheaper (never a smaller tile).
     let full = s > 1 && arms.free && l.rungs.full_tile && l.rungs.plan_cost && l.tiled.is_some();
     let Some(gpu) = profile.gpu().filter(|_| full) else {
-        return rule;
+        return split_cells(site, profile, rule, s);
     };
     let r = launch_split(site, profile, contract, arms, s, true);
     let acc = |x: &Launch| x.tiled.map_or(0, |g| g.tm * g.tn);
@@ -1828,6 +1883,26 @@ fn resized(
     match (ns(&r), ns(&rule)) {
         (Some(a), Some(b)) if whole(&r) && acc(&r) > acc(&rule) && (a < b || arms.full) => r,
         _ => rule,
+    }
+}
+
+/// gemv-stream `vec-cells`: a one-thread-per-cell kernel folding `s`
+/// partitions takes the vector cells ([`vec_fit`]) where its split grid
+/// puts a block on every SM (the ordered kernel's rule, [`launch_split`],
+/// at `s` times the blocks); every other launch is `l`.
+fn split_cells(site: &TileSite, profile: &TargetProfile, l: Launch, s: u64) -> Launch {
+    let naive = l.tiled.is_none() && l.mma.is_none() && l.wgmma.is_none();
+    let Some(gpu) = profile.gpu().filter(|_| naive && l.cells == 1 && s > 1) else {
+        return l;
+    };
+    let v = vec_fit(site, gpu, &l.rungs);
+    match vec_takes(site, gpu, v, s) {
+        true => Launch {
+            cells: v,
+            gx: cell_blocks(site, v),
+            ..l
+        },
+        false => l,
     }
 }
 
@@ -2083,6 +2158,17 @@ fn launch_key(l: &Launch) -> String {
         .replace(", half_fill: false", "")
         .replace(", narrow_radix: false", "")
         .replace(", fmt: Tf32, ea: 4, eb: 4, bt: false", "")
+        // gemv-stream: the rungs decide `cells` and the split (both keyed);
+        // a launch of one cell a thread keys as it did before them.
+        .replace(", vec_cells: true", "")
+        .replace(", vec_cells: false", "")
+        .replace(", stream_fly: true", "")
+        .replace(", stream_fly: false", "")
+        // TMA: `bulk-stage` keys the mma tile's kernel through `smem` (its
+        // stages' barriers); a launch it does not stage keys as before.
+        .replace(", bulk_stage: true", "")
+        .replace(", bulk_stage: false", "")
+        .replace(", cells: 1 }", " }")
 }
 
 /// A candidate's kernel ids `(main, reduce)`, `reduce` 0 without a
@@ -2282,6 +2368,7 @@ fn concat_kernel_text(
     k.out += &format!(" terms={terms}\n");
     match l.tiled {
         Some(g) => k.tiled(name, g),
+        None if l.cells > 1 => k.naive_cells(name, l.block, l.cells),
         None => k.naive(name, l.block),
     }
     k.out
@@ -2338,12 +2425,31 @@ fn combine(
     } else {
         gpu.geom.split
     };
+    // gemv-stream `stream-fly`: a streaming one-thread-per-cell site is cut
+    // until its grid — at the vector cells its split takes ([`vec_fit`]) —
+    // puts a block on every SM with the part's in-flight knee in flight on
+    // each ([`TargetProfile::split_stream`]): a thread keeps `NAIVE_UNROLL`
+    // loads of `cells · e_b` bytes of `b` in flight.
+    let naive = l.tiled.is_none();
+    let stream = naive && rungs.stream_fly && streaming(site, gpu);
     let count = |workspace| match forced {
         s if s > 0 && panels.is_multiple_of(s) => s,
-        _ if under => {
-            profile.split_fill(blocks, warps, cap, panels, site.rows * site.c, e, workspace)
+        _ => {
+            let rule = match under {
+                true => {
+                    profile.split_fill(blocks, warps, cap, panels, site.rows * site.c, e, workspace)
+                }
+                false => {
+                    profile.split_count(blocks, wave, panels, site.rows * site.c, e, workspace)
+                }
+            };
+            match stream {
+                true => rule.max(stream_split(
+                    site, profile, gpu, &rungs, wave, panels, e, workspace,
+                )),
+                false => rule,
+            }
         }
-        _ => profile.split_count(blocks, wave, panels, site.rows * site.c, e, workspace),
     };
     let s_ws = if rungs.splitk && l.raster == 1 {
         count(true)
@@ -2469,6 +2575,141 @@ fn vector_a(site: &TileSite) -> bool {
 /// `b`'s panel rows are contiguous along the lane and vector-aligned.
 fn vector_b(site: &TileSite) -> bool {
     site.b.clane == 1 && aligned(site, site.b.ck) && aligned(site, site.b.base)
+}
+
+/// gemv-stream: the site's flops per operand byte fall below the part's
+/// FFMA balance ([`Gpu::ffma_per_dram_byte_pm`]): its time is the bytes it
+/// streams, not its FMAs (a matrix-vector product: `2·c·k` flops over
+/// `c·k·e` bytes). Unknown balance: not streaming.
+fn streaming(site: &TileSite, gpu: &Gpu) -> bool {
+    let bytes = site.rows * site.k * site.a.elem_bytes(&site.elem)
+        + site.k * site.c * site.b.elem_bytes(&site.elem)
+        + site.rows * site.c * elem_bytes_of(&site.elem);
+    gpu.ffma_per_dram_byte_pm()
+        .is_some_and(|b| 2 * site.rows * site.c * site.k * 1000 < b * bytes)
+}
+
+/// **gemv-stream `vec-cells`: the adjacent cells one 16-byte load of `b`
+/// covers** — `16 / e_b` lanes of one row, where the layout facts prove the
+/// load: `b` unit-stride along the lane with its base, row and `k` strides
+/// whole 16-byte granules of its storage, the row's lanes a whole number of
+/// such vectors (so a thread's cells never cross a row and its output cells
+/// are one aligned vector too), `a` the same for every lane (one `a` load a
+/// `k` step serves every cell), plain affine reads, a streaming site. 1 (one
+/// cell a thread) otherwise or with the rung off.
+pub(crate) fn vec_fit(site: &TileSite, gpu: &Gpu, rungs: &crate::GpuRungs) -> u64 {
+    let eb = site.b.elem_bytes(&site.elem);
+    let v = GPU_VEC_BYTES / eb.max(1);
+    let whole = |x: u64| (x * eb).is_multiple_of(GPU_VEC_BYTES);
+    let fits = rungs.vec_cells
+        && v > 1
+        && site.radix.is_none()
+        && site.a.ksplit.is_none()
+        && site.b.ksplit.is_none()
+        && site.a.clane == 0
+        && site.b.clane == 1
+        && whole(site.b.base)
+        && whole(site.b.ci)
+        && whole(site.b.ck)
+        && site.c.is_multiple_of(v)
+        && streaming(site, gpu);
+    if fits { v } else { 1 }
+}
+
+/// Bytes of one `mbarrier` (a stage's transaction barrier).
+const BULK_BAR_BYTES: u64 = 8;
+
+/// **TMA `bulk-stage`: the staging rule** — the warp TF32 `mma` tile's
+/// panels are copied by the part's bulk-copy engine
+/// ([`crate::profile::Caps::bulk`]) where its geometry covers every panel
+/// row ([`crate::profile::BulkCopy::box_fits`]: an `a` row of
+/// `bk` elements, a `b` row of `bn`, each row's global address and its
+/// shared row (`lda`, `ldb` words apart) whole 16-byte granules), a stage's
+/// bytes fit one barrier phase, the tile streams (`stages ≥ 2`) and its
+/// barriers fit beside the stages. Plain affine reads only (a mixed-radix
+/// operand copies element by element).
+pub(crate) fn bulk_stage(
+    site: &TileSite,
+    g: &GpuMmaTile,
+    gpu: &Gpu,
+    rungs: &crate::GpuRungs,
+) -> bool {
+    let Some(bc) = gpu.caps.bulk.filter(|_| rungs.bulk_stage) else {
+        return false;
+    };
+    let e = 4;
+    let whole = |x: u64| (x * e).is_multiple_of(bc.granule);
+    g.fmt == MmaFmt::Tf32
+        && !g.bt
+        && g.stages >= 2
+        && site.radix.is_none()
+        && site.a.ck == 1
+        && site.b.clane == 1
+        && bc.box_fits(1, g.bk, site.a.ci, site.a.base, e, None)
+        && bc.box_fits(1, g.bn(), site.b.ck, site.b.base, e, None)
+        && whole(g.lda())
+        && whole(g.ldb())
+        && whole(g.stage_words())
+        && (g.bm() * g.bk + g.bk * g.bn()) * e <= bc.tx_bytes
+        && g.smem_bytes() + BULK_BAR_BYTES * g.stages <= gpu.smem_per_block
+}
+
+/// The one-thread-per-cell grid at `cells` cells a thread.
+fn cell_blocks(site: &TileSite, cells: u64) -> u64 {
+    (site.rows * site.c).div_ceil(NAIVE_THREADS * cells)
+}
+
+/// gemv-stream `vec-cells`: the trips of `NAIVE_UNROLL` loads a thread's
+/// partition must keep for the vector cells — between the RTX 5080's loser
+/// (1 × 1024 × 4096: the 128 partitions its one vector block needs leave 4
+/// trips, 0.87× the scalar cells at 32) and its winners (16–128 trips:
+/// 1.03–1.42×); at 8 trips null (1 × 4096 × 4096 bf16, 1.03×). A partition
+/// that short spends its time in its ramp and its adds, not its stream.
+pub(crate) const VEC_MIN_TRIPS: u64 = 8;
+
+/// Whether a one-thread-per-cell kernel folding `s` partitions takes `v`
+/// cells a thread: its vector grid puts a block on every SM at `s` and each
+/// partition keeps [`VEC_MIN_TRIPS`] trips.
+fn vec_takes(site: &TileSite, gpu: &Gpu, v: u64, s: u64) -> bool {
+    v > 1
+        && cell_blocks(site, v) * s >= gpu.sms
+        && site.k / s.max(1) >= VEC_MIN_TRIPS * NAIVE_UNROLL
+}
+
+/// gemv-stream `stream-fly`: the split of a streaming one-thread-per-cell
+/// site — [`TargetProfile::split_stream`] on the vector grid where its cells
+/// are taken at that split ([`vec_takes`]), else on one cell a thread (a
+/// thread keeps `NAIVE_UNROLL` loads of `cells · e_b` bytes of `b` in flight).
+#[allow(clippy::too_many_arguments)]
+fn stream_split(
+    site: &TileSite,
+    profile: &TargetProfile,
+    gpu: &Gpu,
+    rungs: &crate::GpuRungs,
+    wave: u64,
+    panels: u64,
+    e: u64,
+    workspace: bool,
+) -> u64 {
+    let eb = site.b.elem_bytes(&site.elem);
+    let at = |v: u64| {
+        let fly = NAIVE_THREADS * NAIVE_UNROLL * v * eb;
+        profile.split_stream(
+            cell_blocks(site, v),
+            fly,
+            wave,
+            panels,
+            site.rows * site.c,
+            e,
+            workspace,
+        )
+    };
+    let v = vec_fit(site, gpu, rungs);
+    match v > 1 {
+        true => Some(at(v)).filter(|&s| vec_takes(site, gpu, v, s)),
+        false => None,
+    }
+    .unwrap_or_else(|| at(1))
 }
 
 fn elem_bytes_of(elem: &Ty) -> u64 {
@@ -3873,6 +4114,7 @@ fn kernel_text(
         (None, Some(m), _) if m.fmt != MmaFmt::Tf32 => k.mma16(name, m),
         (None, Some(m), _) => k.mma(name, m),
         (None, None, Some(g)) => k.tiled(name, g),
+        (None, None, None) if l.cells > 1 => k.naive_cells(name, l.block, l.cells),
         (None, None, None) => k.naive(name, l.block),
     }
     k.out
@@ -4026,7 +4268,7 @@ fn max_index(site: &TileSite, l: &Launch, combine: Combine) -> u64 {
         Combine::StreamK { ctas, iters } => ctas * iters,
         _ => 0,
     };
-    let cells = (site.rows * site.c).max(l.gx * l.gy * l.block) * slabs;
+    let cells = (site.rows * site.c).max(l.gx * l.gy * l.block * l.cells) * slabs;
     last(&site.a)
         .max(last(&site.b))
         .max(cells)
@@ -5187,6 +5429,286 @@ impl Kernel<'_> {
         self.out.push_str("done:\n  ret void\n}\n");
     }
 
+    /// **gemv-stream `vec-cells`: `v` adjacent cells a thread** ([`vec_fit`])
+    /// — the one-thread-per-cell kernel with a thread's `v` lanes of one row:
+    /// each `k` step loads `a` once and `b`'s `v` lanes as one 16-byte vector
+    /// (`ld.global.nc.v4`), its `v` cells each folding in `k` order (the
+    /// oracle's chain per cell, unchanged). A trip issues the loads of `u`
+    /// steps before their FMAs (`u` = [`NAIVE_UNROLL`], halved until it
+    /// divides the partition): the bytes in flight the split was sized for
+    /// ([`TargetProfile::split_stream`]). Splits, terms, the workspace slab,
+    /// atomics, column-major stores and epilogues as [`Self::naive`].
+    fn naive_cells(&mut self, name: &str, threads: u64, v: u64) {
+        let s = self.site;
+        let t = self.t.clone();
+        let ix = self.idx;
+        let seed = const_literal(&s.seed);
+        let e = elem_bytes_of(&s.elem);
+        self.header(name, threads, e, 0);
+        let tid = self.sreg("tid.x");
+        let bx = self.sreg("ctaid.x");
+        if self.splitk > 1 {
+            let y = self.sreg("ctaid.y");
+            self.z = Some(match self.terms {
+                1 => y,
+                _ => self.op("urem", &y, self.splitk),
+            });
+        }
+        let th0 = self.op("mul", &bx, threads);
+        let th = self.op("add", &th0, &tid);
+        let cell = self.op("mul", &th, v);
+        let inside = self.tmp();
+        self.line(format!("{inside} = icmp ult {ix} {cell}, {}", s.rows * s.c));
+        self.line(format!("br i1 {inside}, label %body, label %done"));
+        self.out.push_str("body:\n");
+        let i = self.op("udiv", &cell, s.c);
+        let lane = self.op("urem", &cell, s.c);
+        let kc = s.k / self.splitk;
+        // `a` ignores the lane (`clane` 0); `b`'s lanes are unit-stride.
+        let ai = self.op("mul", &i, s.a.ci);
+        let abase = self.plus(ai, s.a.base);
+        let abase = self.at_z(abase, kc * s.a.ck);
+        let bi = self.op("mul", &i, s.b.ci);
+        let bl = self.op("add", &bi, &lane);
+        let bbase = self.plus(bl, s.b.base);
+        let bbase = self.at_z(bbase, kc * s.b.ck);
+        let seed = self.split_seed(&seed);
+        let mut u = NAIVE_UNROLL;
+        while u > 1 && !kc.is_multiple_of(u) {
+            u /= 2;
+        }
+        self.line("br label %kloop");
+        self.out.push_str("kloop:\n");
+        let (kv, kn) = (self.tmp(), self.tmp());
+        self.line(format!("{kv} = phi {ix} [0, %body], [{kn}, %kloop]"));
+        let accs: Vec<String> = (0..v).map(|_| self.tmp()).collect();
+        for (j, acc) in accs.iter().enumerate() {
+            self.line(format!(
+                "{acc} = phi {t} [{seed}, %body], [@ACC_NEXT_{j}@, %kloop]"
+            ));
+        }
+        // The trip's loads first: `u` of `a`, `u` vectors of `b`.
+        let mut steps = Vec::new();
+        for q in 0..u {
+            let kq = self.plus(kv.clone(), q);
+            let ao = self.op("mul", &kq, s.a.ck);
+            let aidx = self.op("add", &abase, &ao);
+            let av = match s.a.narrow {
+                Some(n) => {
+                    let nt = crate::narrow::llvm_ty(n);
+                    let p = self.gep_ty(1, nt, "%a", &aidx);
+                    let (w, x) = (self.tmp(), self.tmp());
+                    self.line(format!(
+                        "{w} = load {nt}, ptr addrspace(1) {p}, align {}",
+                        n.bytes()
+                    ));
+                    self.line(format!("{x} = fpext {nt} {w} to {t}"));
+                    x
+                }
+                None => {
+                    let p = self.gep(1, "%a", &aidx);
+                    let x = self.tmp();
+                    self.line(format!("{x} = load {t}, ptr addrspace(1) {p}, align {e}"));
+                    x
+                }
+            };
+            let bo = self.op("mul", &kq, s.b.ck);
+            let bidx = self.op("add", &bbase, &bo);
+            let vt = format!("<{v} x {t}>");
+            let bv = match s.b.narrow {
+                Some(n) => {
+                    let nt = crate::narrow::llvm_ty(n);
+                    let p = self.gep_ty(1, nt, "%b", &bidx);
+                    let (w, x) = (self.tmp(), self.tmp());
+                    self.line(format!(
+                        "{w} = load <{v} x {nt}>, ptr addrspace(1) {p}, align {GPU_VEC_BYTES}"
+                    ));
+                    self.line(format!("{x} = fpext <{v} x {nt}> {w} to {vt}"));
+                    x
+                }
+                None => {
+                    let p = self.gep(1, "%b", &bidx);
+                    let x = self.tmp();
+                    self.line(format!(
+                        "{x} = load {vt}, ptr addrspace(1) {p}, align {GPU_VEC_BYTES}"
+                    ));
+                    x
+                }
+            };
+            steps.push((av, bv));
+        }
+        // Then each step's FMAs, `k` in order for every cell.
+        let mut cur = accs.clone();
+        for (av, bv) in steps {
+            for (j, acc) in cur.iter_mut().enumerate() {
+                let bj = self.tmp();
+                self.line(format!("{bj} = extractelement <{v} x {t}> {bv}, i64 {j}"));
+                *acc = self.step(acc, &av, &bj);
+            }
+        }
+        for (j, next) in cur.iter().enumerate() {
+            self.out = self.out.replace(&format!("@ACC_NEXT_{j}@"), next);
+        }
+        self.line(format!("{kn} = add {ix} {kv}, {u}"));
+        let fin = self.tmp();
+        self.line(format!("{fin} = icmp eq {ix} {kn}, {kc}"));
+        self.line(format!("br i1 {fin}, label %store, label %kloop"));
+        self.out.push_str("store:\n");
+        if self.col {
+            // Column-major: each cell its own word (`o[j·rows + i]`).
+            for (j, acc) in cur.iter().enumerate() {
+                let lj = self.plus(lane.clone(), j as u64);
+                let jr = self.op("mul", &lj, s.rows);
+                let oc = self.op("add", &jr, &i);
+                let oc = self.slab(oc);
+                match self.epi.is_some() {
+                    true => self.store_cells(std::slice::from_ref(acc), &oc),
+                    false => self.store_o(std::slice::from_ref(acc), &oc),
+                }
+            }
+        } else {
+            // Whole 16-byte vectors of every stored output's type.
+            let widest = self.epi.map_or(e, |ep| {
+                ep.calls
+                    .iter()
+                    .filter(|c| c.store)
+                    .map(|c| if c.ret == "double" { 8 } else { 4 })
+                    .fold(e, u64::max)
+            });
+            let chunk = (GPU_VEC_BYTES / widest).clamp(1, v) as usize;
+            let oc = self.slab(cell);
+            for (n, part) in cur.chunks(chunk).enumerate() {
+                let at = self.plus(oc.clone(), (n * chunk) as u64);
+                match self.epi.is_some() {
+                    true => self.store_cells(part, &at),
+                    false => self.store_o(part, &at),
+                }
+            }
+        }
+        self.line("br label %done");
+        self.out.push_str("done:\n  ret void\n}\n");
+    }
+
+    /// The 32-bit shared address `off` bytes past the barriers at `bars` (a
+    /// shared pointer): each address its own cast of a pointer (the
+    /// emulator maps it back, as `ldmatrix`'s).
+    fn bar_at(&mut self, bars: &str, off: &str) -> String {
+        let p = self.tmp();
+        self.line(format!(
+            "{p} = getelementptr inbounds i8, ptr addrspace(3) {bars}, i64 {off}"
+        ));
+        let a = self.tmp();
+        self.line(format!("{a} = ptrtoint ptr addrspace(3) {p} to i32"));
+        a
+    }
+
+    /// An inline-asm statement with operands (`args`: typed values).
+    fn asm_args(&mut self, text: &str, cons: &str, args: &[String]) {
+        self.line(format!(
+            "call void asm sideeffect \"{text}\", \"{cons},~{{memory}}\"({})",
+            args.join(", ")
+        ));
+    }
+
+    /// **TMA `bulk-stage`: panel `tile` into stage `stage`** (i64 values) of
+    /// the TF32 `mma` tile by the bulk-copy engine — every row of the `a`
+    /// panel (`bk` elements) and the `b` panel (`bn`) one `cp.async.bulk`
+    /// into its shared row (`lda` / `ldb` words apart), warp 0's lane `l`
+    /// copying rows `l, l + 32, …` (`a`'s `bm` rows, then `b`'s `bk`); lane 0
+    /// first adds the stage's bytes to its barrier (`bars + 8·stage`,
+    /// `mbarrier.arrive.expect_tx`). The stage was last read before the
+    /// barrier every thread passed: `fence.proxy.async` orders those reads
+    /// before the engine's writes.
+    #[allow(clippy::too_many_arguments)]
+    fn issue_bulk(
+        &mut self,
+        g: &GpuMmaTile,
+        bars: &str,
+        tid: &str,
+        row0: &str,
+        col0: &str,
+        tile: &str,
+        stage: &str,
+    ) {
+        let s = self.site;
+        let (bm, bn, bk, lda, ldb) = (g.bm(), g.bn(), g.bk, g.lda(), g.ldb());
+        let k0 = self.op("mul", tile, bk);
+        let so = self.op("mul", stage, g.stage_words());
+        let boff = self.op("mul", stage, BULK_BAR_BYTES);
+        let bar = self.bar_at(bars, &boff);
+        let bytes = (bm * bk + bk * bn) * 4;
+        let t32 = self.tmp();
+        self.line(format!("{t32} = trunc i64 {tid} to i32"));
+        self.asm_args(
+            "{ .reg .pred p; setp.eq.u32 p, $2, 0; @p mbarrier.arrive.expect_tx.shared::cta.b64 _, [$0], $1; }",
+            "r,r,r",
+            &[format!("i32 {bar}"), format!("i32 {bytes}"), format!("i32 {t32}")],
+        );
+        self.asm("fence.proxy.async.shared::cta;");
+        let rows = bm + bk;
+        let warp = self.profile_gpu.warp;
+        for j in 0..rows.div_ceil(warp) {
+            let q = self.op("add", tid, j * warp);
+            // Warp 0's lanes, rows below `bm + bk`.
+            let (w0, inr) = (self.tmp(), self.tmp());
+            self.line(format!("{w0} = icmp ult i64 {tid}, {warp}"));
+            self.line(format!("{inr} = icmp ult i64 {q}, {rows}"));
+            let on = self.tmp();
+            self.line(format!("{on} = and i1 {w0}, {inr}"));
+            let pred = self.tmp();
+            self.line(format!("{pred} = zext i1 {on} to i32"));
+            // An idle lane names row 0: every address it forms is in bounds.
+            let q0 = self.tmp();
+            self.line(format!("{q0} = select i1 {on}, i64 {q}, i64 0"));
+            let q = q0;
+            let is_a = self.tmp();
+            self.line(format!("{is_a} = icmp ult i64 {q}, {bm}"));
+            // `a` row `q`: (row0 + q)·ci + k0 + base, shared `q·lda`.
+            let ar = self.op("add", row0, &q);
+            let ag = self.op("mul", &ar, s.a.ci);
+            let ag = self.op("add", &ag, &k0);
+            let ag = self.plus(ag, s.a.base);
+            let asw = self.op("mul", &q, lda);
+            // `b` row `q − bm` (wrapping where `q < bm`: unused).
+            let br = self.op("sub", &q, bm);
+            let bkr = self.op("add", &k0, &br);
+            let bg = self.op("mul", &bkr, s.b.ck);
+            let bg = self.op("add", &bg, col0);
+            let bg = self.plus(bg, s.b.base);
+            let bsw = self.op("mul", &br, ldb);
+            let bsw = self.plus(bsw, bm * lda);
+            let ap = self.gep(1, "%a", &ag);
+            let bp = self.gep(1, "%b", &bg);
+            let gp = self.tmp();
+            self.line(format!(
+                "{gp} = select i1 {is_a}, ptr addrspace(1) {ap}, ptr addrspace(1) {bp}"
+            ));
+            let sw = self.tmp();
+            self.line(format!("{sw} = select i1 {is_a}, i64 {asw}, i64 {bsw}"));
+            let si = self.op("add", &sw, &so);
+            let sp = self.gep(3, "@mapal_smem", &si);
+            let s32 = self.tmp();
+            self.line(format!("{s32} = ptrtoint ptr addrspace(3) {sp} to i32"));
+            let n = self.tmp();
+            self.line(format!(
+                "{n} = select i1 {is_a}, i32 {}, i32 {}",
+                bk * 4,
+                bn * 4
+            ));
+            self.asm_args(
+                "{ .reg .pred p; setp.ne.u32 p, $4, 0; @p cp.async.bulk.shared::cluster.global.mbarrier::complete_tx::bytes [$0], [$1], $2, [$3]; }",
+                "r,l,r,r,r",
+                &[
+                    format!("i32 {s32}"),
+                    format!("ptr addrspace(1) {gp}"),
+                    format!("i32 {n}"),
+                    format!("i32 {bar}"),
+                    format!("i32 {pred}"),
+                ],
+            );
+        }
+    }
+
     /// Issue panel `tile` (an i64 value) into stage `stage` (an i64 value):
     /// one 16-byte `cp.async` per `(is_a, global index at k0 = 0, shared
     /// word in stage 0)` copy.
@@ -5649,7 +6171,30 @@ impl Kernel<'_> {
             let sdst = self.op("add", &sn, bm * lda);
             copies.push((false, gsrc, sdst));
         }
+        // TMA `bulk-stage`: warp 0 copies each panel row with the bulk-copy
+        // engine, a stage's barrier counting the bytes ([`Self::issue_bulk`]).
+        let bulk = bulk_stage(s, &g, &self.profile_gpu, &self.rungs);
+        let bars = bulk.then(|| {
+            let b = self.gep(3, smem, &(g.stages * stage_words).to_string());
+            let t32 = self.tmp();
+            self.line(format!("{t32} = trunc i64 {tid} to i32"));
+            for st in 0..g.stages {
+                let a = self.bar_at(&b, &format!("{}", st * BULK_BAR_BYTES));
+                self.asm_args(
+                    "{ .reg .pred p; setp.eq.u32 p, $2, 0; @p mbarrier.init.shared::cta.b64 [$0], $1; }",
+                    "r,r,r",
+                    &[format!("i32 {a}"), "i32 1".into(), format!("i32 {t32}")],
+                );
+            }
+            self.asm("fence.mbarrier_init.release.cluster;");
+            self.line("call void @llvm.nvvm.barrier0()");
+            b
+        });
         let issue = |k: &mut Self, tile: &str, stage: &str| {
+            if let Some(b) = &bars {
+                k.issue_bulk(&g, b, &tid, &row0, &col0, tile, stage);
+                return;
+            }
             k.issue16(&copies, tile, stage, bk, stage_words);
             if radix.is_empty() {
                 return;
@@ -5671,10 +6216,14 @@ impl Kernel<'_> {
         };
         for st in 0..(g.stages - 1).min(nk) {
             issue(self, &st.to_string(), &st.to_string());
-            self.line("call void @llvm.nvvm.cp.async.commit.group()");
+            if !bulk {
+                self.line("call void @llvm.nvvm.cp.async.commit.group()");
+            }
         }
         for _ in nk..g.stages - 1 {
-            self.line("call void @llvm.nvvm.cp.async.commit.group()");
+            if !bulk {
+                self.line("call void @llvm.nvvm.cp.async.commit.group()");
+            }
         }
         // Per-thread fragment origins inside a stage.
         let a_r = self.op("mul", &wr, g.wm());
@@ -5691,10 +6240,32 @@ impl Kernel<'_> {
         self.out.push_str("kt:\n");
         let (it, itn) = (self.tmp(), self.tmp());
         self.line(format!("{it} = phi i64 [0, %entry], [{itn}, %issued]"));
-        self.line(format!(
-            "call void @llvm.nvvm.cp.async.wait.group(i32 {})",
-            g.stages - 2
-        ));
+        match &bars {
+            // Panel `it`'s stage: its barrier's phase `it / stages` (parity).
+            Some(b) => {
+                let st = self.op("urem", &it, g.stages);
+                let off = self.op("mul", &st, BULK_BAR_BYTES);
+                let bar = self.bar_at(b, &off);
+                let ph = self.op("udiv", &it, g.stages);
+                let ph1 = self.op("and", &ph, 1);
+                let par = self.tmp();
+                self.line(format!("{par} = trunc i64 {ph1} to i32"));
+                self.line("br label %mbw");
+                self.out.push_str("mbw:\n");
+                let ok = self.tmp();
+                self.line(format!(
+                    "{ok} = call i32 asm sideeffect \"{{ .reg .pred p; mbarrier.try_wait.parity.shared::cta.b64 p, [$1], $2; selp.u32 $0, 1, 0, p; }}\", \"=r,r,r,~{{memory}}\"(i32 {bar}, i32 {par})"
+                ));
+                let done = self.tmp();
+                self.line(format!("{done} = icmp ne i32 {ok}, 0"));
+                self.line(format!("br i1 {done}, label %mbd, label %mbw"));
+                self.out.push_str("mbd:\n");
+            }
+            None => self.line(format!(
+                "call void @llvm.nvvm.cp.async.wait.group(i32 {})",
+                g.stages - 2
+            )),
+        }
         self.line("call void @llvm.nvvm.barrier0()");
         let nxt = self.op("add", &it, g.stages - 1);
         let more = self.tmp();
@@ -5705,7 +6276,9 @@ impl Kernel<'_> {
         issue(self, &nxt, &nst);
         self.line("br label %issued");
         self.out.push_str("issued:\n");
-        self.line("call void @llvm.nvvm.cp.async.commit.group()");
+        if !bulk {
+            self.line("call void @llvm.nvvm.cp.async.commit.group()");
+        }
         let cst = self.op("urem", &it, g.stages);
         let cbase = self.op("mul", &cst, stage_words);
         let a_base = self.op("add", &cbase, &a_org);

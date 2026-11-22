@@ -84,6 +84,9 @@ pub fn host_device(dev: &str) -> String {
             || line.starts_with("@mapal_smem")
             || nvvm_decl
             || line.contains("asm sideeffect \"griddepcontrol")
+            // TMA `bulk-stage`: the proxy and barrier-init fences order
+            // nothing in the emulator's one memory.
+            || line.contains("asm sideeffect \"fence.")
         {
             continue;
         }
@@ -163,8 +166,20 @@ pub fn host_device(dev: &str) -> String {
             }
             l = text.trim_end().to_string();
         }
-        for (f, f16) in [("bf16", 0), ("f16", 1)] {
-            let asm = format!("asm \"mma.sync.aligned.m16n8k16.row.col.f32.{f}.{f}.f32 ");
+        // TMA `bulk-stage` tests: the TF32 tile's rounding and its
+        // `m16n8k8` as the same warp meet (`emu_mma16`'s format 2).
+        l = l
+            .replace(
+                "asm \"cvt.rna.tf32.f32 $0, $1;\", \"=r,r\"(",
+                "@emu_cvt_tf32(",
+            )
+            .replace(
+                "asm \"cvt.rna.tf32.f32 $0, $1;\", \"=r,f\"(",
+                "@emu_cvt_tf32f(",
+            );
+        for (f, f16) in [("bf16", 0), ("f16", 1), ("tf32", 2)] {
+            let shape = if f16 == 2 { "m16n8k8" } else { "m16n8k16" };
+            let asm = format!("asm \"mma.sync.aligned.{shape}.row.col.f32.{f}.{f}.f32 ");
             if let Some(i) = l.find(&asm)
                 && let Some((lhs, _)) = l.split_once(" = call ")
                 && let Some(j) = l[i..].find("\"(")
@@ -183,6 +198,33 @@ pub fn host_device(dev: &str) -> String {
                     prev = s;
                 }
                 l = text.trim_end().to_string();
+            }
+        }
+        // TMA `bulk-stage`: the transaction barriers and the bulk copies as
+        // the emulator's (`emu_mbar_*`, `emu_bulk`: a copy is applied when a
+        // thread waits on its barrier); a 32-bit shared address back to its
+        // pointer.
+        for (marker, func, ret) in [
+            ("mbarrier.init.shared", "emu_mbar_init", "void"),
+            ("mbarrier.arrive.expect_tx", "emu_mbar_expect", "void"),
+            ("cp.async.bulk.shared", "emu_bulk", "void"),
+            ("mbarrier.try_wait.parity", "emu_mbar_try", "i32"),
+        ] {
+            if l.contains(marker)
+                && let Some(i) = l.find("call ")
+                && let Some((_, args)) = l.rsplit_once("\"(")
+            {
+                let args: Vec<String> = args
+                    .trim_end_matches(')')
+                    .split(", ")
+                    .map(
+                        |a| match a.strip_prefix("i32 ").and_then(|v| shared32.get(v)) {
+                            Some(p) => format!("ptr {p}"),
+                            None => a.to_string(),
+                        },
+                    )
+                    .collect();
+                l = format!("{}call {ret} @{func}({})", &l[..i], args.join(", "));
             }
         }
         // ADR-0042: the hardware `exp` form's `ex2.approx` is the host's `exp2f`.
@@ -233,7 +275,10 @@ pub fn host_device(dev: &str) -> String {
            declare void @emu_cp_wait(i32)\ndeclare float @emu_ex2(float)\n\
            declare void @emu_ldsm(ptr, i32, i32)\ndeclare i32 @emu_frag(i32)\ndeclare float @emu_fragf(i32)\n\
            declare i32 @emu_cvt_bf16x2(float, float)\ndeclare i32 @emu_cvt_f16x2(float, float)\n\
-           declare void @emu_mma16(i32, i32, i32, i32, i32, i32, i32, float, float, float, float)\n"
+           declare void @emu_mma16(i32, i32, i32, i32, i32, i32, i32, float, float, float, float)\n\
+           declare i32 @emu_cvt_tf32(i32)\ndeclare i32 @emu_cvt_tf32f(float)\n\
+           declare void @emu_mbar_init(ptr, i32, i32)\ndeclare void @emu_mbar_expect(ptr, i32, i32)\n\
+           declare void @emu_bulk(ptr, ptr, i32, ptr, i32)\ndeclare i32 @emu_mbar_try(ptr, i32)\n"
 }
 
 /// Emulation runs every device thread on the host, so it gets 8x the native timeout.

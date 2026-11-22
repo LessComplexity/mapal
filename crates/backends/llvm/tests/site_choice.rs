@@ -462,7 +462,10 @@ fn candidate_zero_is_the_pre_sprint_emission() {
         // px_mlp2_64_f64), decode_1024_256's 5-unit chain forms (the code of
         // `--calls=force`), the others are refused by cost (the code of
         // `--gpu-off=calls`; rq_mlp2_512 on the 3090 formed on the
-        // boundaries alone).
+        // boundaries alone). gemv-stream's rungs (`vec-cells`,
+        // `stream-fly`, `bulk-stage`) change the one-row sites' and the TF32
+        // tile's kernels by design: with their OFF arms the emission is the
+        // one before them.
         for f in [
             target.as_str(),
             "--host=x86-64-v3",
@@ -473,6 +476,7 @@ fn candidate_zero_is_the_pre_sprint_emission() {
             "--gpu-off=zero-fold",
             "--gpu-off=horizontal",
             "--gpu-off=k-fill,streamk-fill",
+            "--gpu-off=vec-cells,stream-fly,bulk-stage",
         ]
         .iter()
         .chain(face_flags)

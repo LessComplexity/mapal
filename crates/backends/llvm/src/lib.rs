@@ -811,6 +811,32 @@ pub struct GpuRungs {
     /// (attention over a `bf16` KV cache). Off (`--gpu-off=narrow-radix`):
     /// such a map is a per-cell kernel.
     pub narrow_radix: bool,
+    /// gemv-stream `vec-cells`: the one-thread-per-cell kernel of a streaming
+    /// site (flops per operand byte below the part's FFMA balance) gives a
+    /// thread the adjacent cells one 16-byte load of `b` covers — `16 / e`
+    /// lanes, where the layout facts prove the load (`b` unit-stride along
+    /// the lane, its base and `k` stride whole 16-byte granules, the lanes a
+    /// whole number of vectors) and `a` is the same for every lane: one
+    /// `ld.global.nc.v4` and one `a` load per `16 / e` FMAs, the `k` steps'
+    /// loads of one trip issued before their FMAs. Off
+    /// (`--gpu-off=vec-cells`): one cell a thread, scalar loads.
+    pub vec_cells: bool,
+    /// gemv-stream `stream-fly`: a streaming one-thread-per-cell site's `k`
+    /// split is the fewest partitions whose grid puts a block on every SM
+    /// with the part's measured in-flight knee in flight on each
+    /// ([`profile::Gpu::stream_fly_per_sm`],
+    /// [`profile::TargetProfile::split_stream`]). Off
+    /// (`--gpu-off=stream-fly`): the warp fill (`fill-wave`) alone.
+    pub stream_fly: bool,
+    /// gemv-stream `bulk-stage` (TMA): the warp `mma` tile's panels are
+    /// staged by the part's bulk-copy engine ([`profile::Caps::bulk`]) where
+    /// its geometry covers every panel row ([`profile::BulkCopy::box_fits`]):
+    /// one warp issues a row copy each (`cp.async.bulk`), a stage's
+    /// transaction barrier (`mbarrier.expect_tx`) counts its bytes, and every
+    /// thread waits on it (`mbarrier.try_wait.parity`) instead of on its own
+    /// `cp.async` groups. Off (`--gpu-off=bulk-stage`): every thread's 16-byte
+    /// `cp.async` copies.
+    pub bulk_stage: bool,
 }
 
 impl GpuRungs {
@@ -927,11 +953,14 @@ impl GpuRungs {
         staged_regs: true,
         half_fill: true,
         narrow_radix: true,
+        vec_cells: true,
+        stream_fly: true,
+        bulk_stage: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 111] = [
+    pub const NAMES: [&'static str; 114] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1043,6 +1072,9 @@ impl GpuRungs {
         "staged-regs",
         "half-fill",
         "narrow-radix",
+        "vec-cells",
+        "stream-fly",
+        "bulk-stage",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -1159,6 +1191,9 @@ impl GpuRungs {
             "staged-regs" => &mut self.staged_regs,
             "half-fill" => &mut self.half_fill,
             "narrow-radix" => &mut self.narrow_radix,
+            "vec-cells" => &mut self.vec_cells,
+            "stream-fly" => &mut self.stream_fly,
+            "bulk-stage" => &mut self.bulk_stage,
             _ => return None,
         })
     }
@@ -2246,9 +2281,27 @@ mod place_tests {
             ..EmitOpts::exact()
         };
         let today = emit_module(&ir, &opts, &RTX_4090).expect("emits");
+        // gemv-stream: the 4090's measured in-flight knee (a cost row the
+        // synthetic part lacks) is printed on a streaming site's plan line;
+        // these sites' kernels and launches are the same without it.
+        let knee = |d: Option<String>| {
+            d.map(|d| {
+                d.lines()
+                    .map(|l| match l.find(" knee=") {
+                        Some(i) => {
+                            let rest = &l[i + 6..];
+                            let end = rest.find(' ').unwrap_or(rest.len());
+                            format!("{}{}", &l[..i], &rest[end..])
+                        }
+                        None => l.to_string(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+        };
         assert_eq!(
-            emit_on(&ir, false).device,
-            today.device,
+            knee(emit_on(&ir, false).device),
+            knee(today.device),
             "the device unit is S54's"
         );
     }

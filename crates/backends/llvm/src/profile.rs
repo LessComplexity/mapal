@@ -222,6 +222,80 @@ pub struct Caps {
     /// hardware `exp` form is taken where it meets the bound
     /// ([`mapal_ir::exp::ExpForm::hw_admits`]). `None`: no such instruction.
     pub ex2: Option<u32>,
+    /// **The bulk-copy engine (TMA)** — global→shared copies one thread
+    /// issues, completing on a transaction barrier (`mbarrier` with a byte
+    /// count), as the geometry it executes ([`BulkCopy`]); `None`: no such
+    /// engine (`cp.async` and register copies only).
+    pub bulk: Option<BulkCopy>,
+}
+
+/// **The bulk-copy engine's geometry** (TMA: `cp.async.bulk`,
+/// `cp.async.bulk.tensor`, `mbarrier.expect_tx`): what one copy may move and
+/// how its completion is counted. Read by the staging rule
+/// ([`BulkCopy::box_fits`]): a panel whose rows the geometry covers may be
+/// copied by one thread's box (or row) copies instead of every thread's
+/// 16-byte `cp.async`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BulkCopy {
+    /// Bytes a copy's size, its global and shared addresses, and a tensor
+    /// box's global strides are whole multiples of (16).
+    pub granule: u64,
+    /// Dimensions a tensor box spans (5) and elements along each (256).
+    pub box_dims: u64,
+    pub box_side: u64,
+    /// Shared-memory swizzle spans a box may be written in, bytes (32, 64,
+    /// 128: the XOR pattern of 16-byte chunks over 8 rows) — a swizzled box's
+    /// inner dimension is at most its span.
+    pub swizzles: &'static [u64],
+    /// Bytes one transaction barrier phase counts at most (`2²⁰ − 1`).
+    pub tx_bytes: u64,
+    /// Thread blocks a cluster holds (portable: 8), whose shared memory a
+    /// copy may also write (`multicast`: one copy lands in every block of
+    /// the cluster that asks for it).
+    pub cluster: u64,
+    pub multicast: bool,
+}
+
+/// The bulk-copy engine of compute capability 9.0 and up (H100 sm_90a,
+/// the consumer Blackwell sm_120 — probed on the RTX 5080: `UTMALDG.2D`,
+/// `SYNCS.ARRIVE.TRANS64`, clusters of 8, `local-rtx-5080/gemv-stream.md`).
+pub const BULK_SM90: BulkCopy = BulkCopy {
+    granule: 16,
+    box_dims: 5,
+    box_side: 256,
+    swizzles: &[32, 64, 128],
+    tx_bytes: (1 << 20) - 1,
+    cluster: 8,
+    multicast: true,
+};
+
+impl BulkCopy {
+    /// **The staging rule's geometry test: a `rows × row_elems` panel of
+    /// `elem`-byte elements, rows `stride` elements apart in global memory,
+    /// is one tensor box** — each dimension within the box side, the row
+    /// and the stride whole granules, the base aligned to one, the panel's
+    /// bytes within one barrier phase. `swizzle`: the box is written swizzled
+    /// at that span (its row at most the span).
+    pub fn box_fits(
+        &self,
+        rows: u64,
+        row_elems: u64,
+        stride: u64,
+        base: u64,
+        elem: u64,
+        swizzle: Option<u64>,
+    ) -> bool {
+        let g = self.granule;
+        let row = row_elems * elem;
+        rows > 0
+            && rows <= self.box_side
+            && row_elems <= self.box_side
+            && row.is_multiple_of(g)
+            && (stride * elem).is_multiple_of(g)
+            && (base * elem).is_multiple_of(g)
+            && rows * row <= self.tx_bytes
+            && swizzle.is_none_or(|w| self.swizzles.contains(&w) && row <= w)
+    }
 }
 
 /// One matrix instruction's geometry: `m × n × k` per issuing group of
@@ -461,6 +535,7 @@ pub const CAPS_WARP_MMA: Caps = Caps {
     griddepcontrol: false,
     red_f64: true,
     ex2: Some(EX2_UNITS),
+    bulk: None,
 };
 
 /// [`CAPS_WARP_MMA`] with the fp8 warp products: the RTX 4090 (8.9).
@@ -473,6 +548,7 @@ pub const CAPS_WARP_MMA_F8: Caps = Caps {
 /// RTX 5090 and 5080 profiles).
 pub const CAPS_WARP_MMA_PDL: Caps = Caps {
     griddepcontrol: true,
+    bulk: Some(BULK_SM90),
     ..CAPS_WARP_MMA_F8
 };
 
@@ -489,7 +565,8 @@ pub const CAPS_WARPGROUP_MMA: Caps = Caps {
 /// the native profile's builder. `cp.async`, `mma.sync` TF32 / bf16 / f16 and
 /// `ldmatrix` with it: sm_80; `mma.sync` e4m3 / e5m2: sm_89; `griddepcontrol`:
 /// sm_90; `wgmma`: `sm_90a` alone; `tcgen05`: `sm_100a`; `atom.add.f64`:
-/// sm_60.
+/// sm_60; the bulk-copy engine (TMA, `mbarrier` transaction counts, clusters):
+/// sm_90.
 pub const fn caps_of_cc(cc: u64, arch_specific: bool) -> Caps {
     let matrix: &'static [MatrixOp] = if cc < 80 {
         &[]
@@ -509,6 +586,7 @@ pub const fn caps_of_cc(cc: u64, arch_specific: bool) -> Caps {
         griddepcontrol: cc >= 90,
         red_f64: cc >= 60,
         ex2: Some(EX2_UNITS),
+        bulk: if cc >= 90 { Some(BULK_SM90) } else { None },
     }
 }
 
@@ -631,6 +709,15 @@ pub struct DeviceCost {
     /// on this part: derived — [`COOP_BODY_CYCLES_RTX_5080`] at this part's
     /// clock ([`Gpu::coop_body_ns`]); never unpriced.
     pub coop_body_cycles: u64,
+    /// stream-fly: the bytes a grid on every SM keeps in flight per SM when
+    /// its DRAM read first reaches 90 % of the part's measured peak —
+    /// `calib.cu bw`'s `fly` line, the smallest `sms = all` point at or above
+    /// 0.9 × the best DRAM rate (RTX 4090 4 KiB, RTX 3090 / 5080 / 5090
+    /// 8 KiB, A100 16 KiB, H100 SXM 32 KiB). Little's law at the loaded
+    /// latency (`lat_ns`) is its lower bound: a stream with fewer bytes in
+    /// flight waits on the latency, not the DRAM. 0 = not measured: derived
+    /// ([`Gpu::stream_fly_per_sm`]).
+    pub fly_bytes_per_sm: u64,
 }
 
 /// kernel-merging `calls`: the measured member-body change of a persistent
@@ -671,6 +758,7 @@ pub const NO_PLAN: DeviceCost = DeviceCost {
     coop_first_ns: 0,
     sm_bytes_per_ns: 0,
     coop_body_cycles: 0,
+    fly_bytes_per_sm: 0,
 };
 
 impl DeviceCost {
@@ -679,7 +767,7 @@ impl DeviceCost {
     /// overrides by name ([`Gpu::fp32_lanes`], [`Gpu::clock_khz`], and the
     /// hardware-properties the rung rules read: SMs, L2, shared memory,
     /// threads, registers and blocks per SM, the DRAM interface).
-    pub const NAMES: [&'static str; 36] = [
+    pub const NAMES: [&'static str; 37] = [
         "flops_per_ns",
         "bytes_per_ns",
         "launch_ns",
@@ -706,6 +794,7 @@ impl DeviceCost {
         "coop_first_ns",
         "sm_bytes_per_ns",
         "coop_body_cycles",
+        "fly_bytes_per_sm",
         "fp32_lanes",
         "clock_khz",
         "sms",
@@ -763,7 +852,7 @@ pub type CostOver = [Option<u64>; DeviceCost::NAMES.len()];
 impl Gpu {
     /// [`DeviceCost::NAMES`] that name a [`DeviceCost`] field (those before
     /// `fp32_lanes`).
-    const NAMES_COST: usize = 26;
+    const NAMES_COST: usize = 27;
 
     /// This part with the overrides in `over` applied (a part without a
     /// [`DeviceCost`] takes one from [`NO_PLAN`]).
@@ -798,6 +887,7 @@ impl Gpu {
                 "coop_first_ns" => &mut d.coop_first_ns,
                 "sm_bytes_per_ns" => &mut d.sm_bytes_per_ns,
                 "coop_body_cycles" => &mut d.coop_body_cycles,
+                "fly_bytes_per_sm" => &mut d.fly_bytes_per_sm,
                 "fp32_lanes" => &mut self.fp32_lanes,
                 "clock_khz" => &mut self.clock_khz,
                 "sms" => &mut self.sms,
@@ -847,6 +937,7 @@ impl Gpu {
             "coop_first_ns" => d.coop_first_ns,
             "sm_bytes_per_ns" => d.sm_bytes_per_ns,
             "coop_body_cycles" => d.coop_body_cycles,
+            "fly_bytes_per_sm" => d.fly_bytes_per_sm,
             "fp32_lanes" => self.fp32_lanes,
             "clock_khz" => self.clock_khz,
             "sms" => self.sms,
@@ -1094,6 +1185,19 @@ impl Gpu {
     /// the bus: `2 · mem_clock · bus_bits / 8`); 0 when not given.
     pub fn dram_peak_bytes_per_ns(&self) -> u64 {
         2 * self.mem_clock_khz * self.mem_bus_bits / 8 / 1_000_000
+    }
+
+    /// stream-fly: **the bytes a streaming grid keeps in flight per SM to
+    /// read DRAM at the part's rate** — [`DeviceCost::fly_bytes_per_sm`]
+    /// where measured, else Little's law at the measured loaded latency
+    /// (`lat_ns`) over the DRAM peak an SM shares (its lower bound); 0 when
+    /// neither is known (the rule then asks only that every SM streams).
+    pub fn stream_fly_per_sm(&self) -> u64 {
+        let d = self.cost.unwrap_or(NO_PLAN);
+        match d.fly_bytes_per_sm {
+            0 => self.dram_peak_bytes_per_ns() * d.lat_ns / self.sms.max(1),
+            f => f,
+        }
     }
 
     /// hardware-properties: **the machine balance** — FFMA flops the part
@@ -3515,6 +3619,37 @@ impl TargetProfile {
             .unwrap_or(most)
     }
 
+    /// **stream-fly: the fewest `k` partitions that keep a streaming site's
+    /// DRAM busy** — the smallest `S` dividing `panels` at which the split
+    /// grid (`blocks · S` blocks, each keeping `fly` bytes in flight) puts a
+    /// block on every SM and keeps at least [`Gpu::stream_fly_per_sm`] bytes
+    /// in flight on each, inside `cap` blocks (the wave the kernel holds),
+    /// and, for a workspace, inside the L2 ([`Self::split_count`]). A grid
+    /// that cannot reach it inside the wave takes the largest such `S`. Only
+    /// the part's SMs, its measured in-flight knee and the site's geometry
+    /// enter: a part whose DRAM needs more bytes in flight an SM (the H100
+    /// SXM's 32 KiB against the RTX 5080's 8) cuts the fold finer.
+    #[allow(clippy::too_many_arguments)]
+    pub fn split_stream(
+        &self,
+        blocks: u64,
+        fly: u64,
+        cap: u64,
+        panels: u64,
+        cells: u64,
+        elem: u64,
+        workspace: bool,
+    ) -> u64 {
+        let Some(g) = self.gpu() else {
+            return 1;
+        };
+        let most = self.split_count(blocks, cap, panels, cells, elem, workspace);
+        let need = g.stream_fly_per_sm() * g.sms;
+        (1..=most)
+            .find(|&d| panels.is_multiple_of(d) && blocks * d >= g.sms && blocks * d * fly >= need)
+            .unwrap_or(most)
+    }
+
     /// The streaming matrix unit's facts, when this part has one. Same seam
     /// discipline as [`TargetProfile::gpu`]: a profile without SME reaching an
     /// SME-only path is a `None`, never a wrong constant.
@@ -3993,6 +4128,9 @@ pub const RTX_4090: TargetProfile = TargetProfile {
             // kernel-merging `calls`: not measured here — derived, the
             // rtx-5080's 4390 cycles at 2.52 GHz = 1742 ns a chain.
             coop_body_cycles: 0,
+            // stream-fly: `calib.cu bw` on the cross-arch box (60f0f8ce): 90 % of
+            // its 958 GB/s DRAM peak first at 4 KiB in flight an SM.
+            fly_bytes_per_sm: 4096,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_89), 2.52 GHz under load. The
         // cross-arch box (power limit 250 W of the part's 450) sustained
@@ -4037,6 +4175,10 @@ pub const H100: TargetProfile = TargetProfile {
             pdl_launch_ns: 734,
             coop_launch_ns: 1839,
             sm_bytes_per_ns: 147,
+            // stream-fly: `calib.cu bw` (cross-arch 60f0f8ce): 90 % of the
+            // 3177 GB/s DRAM peak first at 32 KiB in flight an SM (16 KiB:
+            // 80 %); the loaded latency there 632 ns.
+            fly_bytes_per_sm: 32768,
             // kernel-merging `calls`: `coop_body_cycles` not measured here —
             // derived, the rtx-5080's 4390 cycles at 1.807 GHz = 2429 ns a
             // chain: smlp / firew_rowsum's chains (1.55 / 2.3x slower when
@@ -4157,6 +4299,9 @@ pub const RTX_5090: TargetProfile = TargetProfile {
             // rtx-5080's 4390 cycles at 2.41 GHz = 1822 ns a chain (no
             // barrier or launch measured: no chain is priced).
             coop_body_cycles: 0,
+            // stream-fly: `calib.cu bw` (plan-cost v2 `B-bw-rtx-5090.tsv`): 90 %
+            // of its 1701 GB/s DRAM peak first at 8 KiB in flight an SM.
+            fly_bytes_per_sm: 8192,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_120), 2.41 GHz under load.
         fp32_lanes: 128,
@@ -4273,6 +4418,10 @@ pub const RTX_5080: TargetProfile = TargetProfile {
             // rows level 5.0 us against 4.2 alone), causal / gen / prefill
             // -660..-810 ns (bodies faster).
             coop_body_cycles: COOP_BODY_CYCLES_RTX_5080,
+            // stream-fly: `calib.cu bw` (`calib/B-bw-rtx-5080.tsv`): 90 % of the
+            // 899 GB/s DRAM peak first at 8 KiB in flight an SM (84 SMs x 8
+            // warps x 2 loads of 16 B: 890 GB/s; 4 KiB: 594-606).
+            fly_bytes_per_sm: 8192,
         }),
         // 128 FP32 lanes per SM (sm_120); E1 peak FFMA median 52.7 Tflop/s
         // [50.3–57.6] / (84 SMs · 128 · 2) = 2.45 GHz under load.
@@ -4315,6 +4464,9 @@ pub const RTX_3090: TargetProfile = TargetProfile {
             dep_launch_ns: 1472,
             coop_launch_ns: 2866,
             sm_bytes_per_ns: 62,
+            // stream-fly: `calib.cu bw` (cross-arch 60f0f8ce): 90 % of the
+            // 892 GB/s DRAM peak first at 8 KiB in flight an SM.
+            fly_bytes_per_sm: 8192,
             // kernel-merging `calls`: `coop_body_cycles` not measured here —
             // derived, the rtx-5080's 4390 cycles at 1.561 GHz = 2812 ns.
             ..NO_PLAN
@@ -4360,6 +4512,9 @@ pub const A100: TargetProfile = TargetProfile {
             dep_launch_ns: 2050,
             coop_launch_ns: 4714,
             sm_bytes_per_ns: 81,
+            // stream-fly: `calib.cu bw` (cross-arch 60f0f8ce): 90 % of the
+            // 1483 GB/s DRAM peak first at 16 KiB in flight an SM.
+            fly_bytes_per_sm: 16384,
             // kernel-merging `calls`: `coop_body_cycles` not measured here —
             // derived, the rtx-5080's 4390 cycles at 1.41 GHz = 3113 ns.
             ..NO_PLAN
@@ -7066,6 +7221,50 @@ mod tests {
         assert_eq!(f(171), f(340));
         assert_eq!(f(256), f(340));
         assert!(f(171) > 1.5 * f(170));
+    }
+
+    /// stream-fly: the split puts a block on every SM and the part's
+    /// measured knee in flight on each — a part that needs more bytes in
+    /// flight an SM (the H100 SXM's 32 KiB against the RTX 5080's 8) cuts
+    /// finer; a knee nobody measured is Little's law at the loaded latency;
+    /// neither: every SM streams. The 1 × 4096 × 4096 GEMV's grids: 4
+    /// blocks of 16-byte loads (32 KiB a block in flight), 16 of 4-byte
+    /// loads (8 KiB).
+    #[test]
+    fn split_stream_reads_the_in_flight_knee() {
+        let panels = 4096;
+        let s = |p: &TargetProfile, blocks, fly| {
+            p.split_stream(blocks, fly, 1 << 20, panels, 4096, 4, false)
+        };
+        assert_eq!(RTX_5080.gpu().unwrap().stream_fly_per_sm(), 8192);
+        assert_eq!(H100.gpu().unwrap().stream_fly_per_sm(), 32768);
+        assert_eq!(s(&RTX_5080, 4, 32768), 32);
+        assert_eq!(s(&H100, 4, 32768), 64);
+        assert_eq!(s(&RTX_5080, 16, 8192), 8);
+        // 16 blocks of 8 KiB on the H100: every SM at 16 partitions, its
+        // knee at 32 (4 MiB) — the warp fill's 16 leaves half of it.
+        assert_eq!(s(&H100, 16, 8192), 64);
+        // Unmeasured knee: Little's law at `lat_ns` (the 5080's 573 ns over
+        // its 960 GB/s peak: 6.5 KiB an SM); neither: every SM streams.
+        let mut little = *RTX_5080.gpu().unwrap();
+        little.cost = little.cost.map(|d| DeviceCost {
+            fly_bytes_per_sm: 0,
+            ..d
+        });
+        assert_eq!(little.stream_fly_per_sm(), 960 * 573 / 84);
+        let mut none = little;
+        none.cost = None;
+        assert_eq!(none.stream_fly_per_sm(), 0);
+        let p = TargetProfile {
+            machine: Machine::Gpu(none),
+            ..RTX_5080
+        };
+        assert_eq!(s(&p, 4, 32768), 21_u64.next_power_of_two());
+        // A workspace keeps its partials in the L2; a wave caps the grid.
+        assert_eq!(
+            RTX_5080.split_stream(4, 32768, 64, panels, 4096, 4, false),
+            16
+        );
     }
 
     /// plan-cost-terms Little's law: the bytes a grid pulls per ns grow with

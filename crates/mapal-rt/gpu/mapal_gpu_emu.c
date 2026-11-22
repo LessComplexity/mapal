@@ -246,6 +246,96 @@ void emu_cp_wait(uint32_t n) {
   }
   aq_len = keep;
 }
+/* TMA `bulk-stage`: a transaction barrier in its 8 shared bytes — word 0 the
+ * phase (bit 31), the arrivals a phase expects (bits 16-30) and those still
+ * pending (bits 0-15); word 1 the signed transaction count — and the bulk
+ * copies as one deferred queue shared by the block's threads, applied when a
+ * thread waits on their barrier: a missing wait reads stale shared memory, a
+ * wait on a phase that never completes exits (108) instead of spinning. In a
+ * serialized block an unfinished wait yields the turn (the copies it waits
+ * for may be a later thread's to issue: a warp spinning while another warp
+ * issues). */
+#define EMU_BULK_MAX 8192
+struct emu_bulk_copy {
+  void *d;
+  const void *s;
+  uint32_t n;
+  uint32_t *bar;
+};
+static struct emu_bulk_copy bq[EMU_BULK_MAX];
+static uint32_t bq_len;
+static pthread_mutex_t bq_mu = PTHREAD_MUTEX_INITIALIZER;
+static void mbar_complete(uint32_t *b) {
+  if ((b[0] & 0xffffu) == 0 && (int32_t)b[1] == 0) {
+    uint32_t count = (b[0] >> 16) & 0x7fffu;
+    b[0] = ((b[0] & 0x80000000u) ^ 0x80000000u) | (count << 16) | count;
+  }
+}
+void emu_mbar_init(uint32_t *b, uint32_t count, uint32_t tid) {
+  if (tid)
+    return;
+  pthread_mutex_lock(&bq_mu);
+  b[0] = (count << 16) | count;
+  b[1] = 0;
+  pthread_mutex_unlock(&bq_mu);
+}
+void emu_mbar_expect(uint32_t *b, uint32_t bytes, uint32_t tid) {
+  if (tid)
+    return;
+  pthread_mutex_lock(&bq_mu);
+  if ((b[0] & 0xffffu) == 0) {
+    fprintf(stderr, "emu: mbarrier arrival on a complete phase\n");
+    exit(107);
+  }
+  b[1] = (uint32_t)((int32_t)b[1] + (int32_t)bytes);
+  b[0]--;
+  mbar_complete(b);
+  pthread_mutex_unlock(&bq_mu);
+}
+void emu_bulk(void *d, const void *s, uint32_t n, uint32_t *b, uint32_t on) {
+  if (!on)
+    return;
+  pthread_mutex_lock(&bq_mu);
+  if (bq_len == EMU_BULK_MAX) {
+    fprintf(stderr, "emu: bulk copy queue full\n");
+    exit(103);
+  }
+  bq[bq_len++] = (struct emu_bulk_copy){d, s, n, b};
+  pthread_mutex_unlock(&bq_mu);
+}
+static _Thread_local uint64_t mbar_spins;
+uint32_t emu_mbar_try(uint32_t *b, uint32_t parity) {
+  pthread_mutex_lock(&bq_mu);
+  uint32_t keep = 0;
+  for (uint32_t i = 0; i < bq_len; i++) {
+    if (bq[i].bar == b) {
+      memcpy(bq[i].d, bq[i].s, bq[i].n);
+      b[1] = (uint32_t)((int32_t)b[1] - (int32_t)bq[i].n);
+    } else {
+      bq[keep++] = bq[i];
+    }
+  }
+  bq_len = keep;
+  mbar_complete(b);
+  uint32_t done = (b[0] >> 31) != parity;
+  pthread_mutex_unlock(&bq_mu);
+  if (done) {
+    mbar_spins = 0;
+  } else if (serial()) {
+    /* A serialized block: the copies this thread waits for are another's
+     * to issue — hand the turn on (this thread stays runnable). */
+    pthread_mutex_lock(&b_mu);
+    s_pass(tid_x);
+    s_wait();
+    pthread_mutex_unlock(&b_mu);
+  }
+  if (!done && ++mbar_spins > (1u << 24)) {
+    fprintf(stderr, "emu: mbarrier phase %u never completes (state %08x tx %d, %u copies queued)\n", parity,
+            b[0], (int32_t)b[1], bq_len);
+    exit(108);
+  }
+  return done;
+}
 struct emu_thread {
   void (*k)(void *, void *, void *);
   void *a, *b, *o;
@@ -362,6 +452,18 @@ uint32_t emu_cvt_f16x2(float hi, float lo) { return to_b16(lo, 1) | to_b16(hi, 1
  * the warp's fragments. The products are exact; the sum is formed exactly
  * (double: 16 products of 8- or 11-bit significands and an f32) and truncated
  * toward zero to f32, as the measured part does (`mma_calib.cu`). */
+/* `cvt.rna.tf32.f32`: round to nearest, ties away from zero, to 10 explicit
+ * significand bits (the low 13 bits zero); a NaN or infinity unchanged. */
+uint32_t emu_cvt_tf32(uint32_t x) {
+  if ((x & 0x7f800000u) == 0x7f800000u)
+    return x;
+  return (x + 0x1000u) & 0xffffe000u;
+}
+uint32_t emu_cvt_tf32f(float f) {
+  uint32_t x;
+  memcpy(&x, &f, 4);
+  return emu_cvt_tf32(x);
+}
 void emu_mma16(int32_t f16, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t b0,
                uint32_t b1, float c0, float c1, float c2, float c3) {
   uint32_t *ab = w_ab[tid_x];
@@ -369,6 +471,28 @@ void emu_mma16(int32_t f16, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, 
   w_c[tid_x][0] = c0, w_c[tid_x][1] = c1, w_c[tid_x][2] = c2, w_c[tid_x][3] = c3;
   warp_meet(tid_x / 32);
   int lane = tid_x & 31, base = tid_x & ~31, g = lane / 4, t = lane % 4;
+  /* TMA `bulk-stage` tests: `f16 == 2` is `mma.sync.m16n8k8.tf32` — A (row,
+   * k) in lane 4(row%8) + k%4, register row/8 + 2(k/4); B (k, col) in lane
+   * 4 col + k%4, register 4 + k/4; the operands' 32 bits the TF32 values. */
+  if (f16 == 2) {
+    for (int r = 0; r < 4; r++) {
+      int row = g + 8 * (r >> 1), col = 2 * t + (r & 1);
+      double s = w_c[tid_x][r];
+      for (int k = 0; k < 8; k++) {
+        uint32_t ar = w_ab[base + 4 * (row % 8) + k % 4][(row / 8) + 2 * (k / 4)];
+        uint32_t br = w_ab[base + 4 * col + k % 4][4 + k / 4];
+        float a, b;
+        memcpy(&a, &ar, 4);
+        memcpy(&b, &br, 4);
+        s += (double)a * (double)b;
+      }
+      float d = (float)s;
+      if (isfinite(d) && fabs((double)d) > fabs(s)) d = nextafterf(d, 0.0f);
+      memcpy(&t_frag[r], &d, 4);
+    }
+    warp_meet(tid_x / 32);
+    return;
+  }
   for (int r = 0; r < 4; r++) {
     int row = g + 8 * (r >> 1), col = 2 * t + (r & 1);
     double s = w_c[tid_x][r];

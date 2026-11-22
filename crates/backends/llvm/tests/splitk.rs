@@ -77,8 +77,11 @@ fn emit_face(ir: &CategoryIr, base: EmitOpts, off: &[&str]) -> mapal_backend_llv
     // interpretable site stays on the device (its roofline says host).
     // site-geometry `fill-wave` / `fit-first` off: the S62 count and tile
     // (their arms: site_geometry.rs); `plan-cost` off: the rules' combine
-    // (the cost model's picks: plan_cost.rs).
+    // (the cost model's picks: plan_cost.rs); gemv-stream's `vec-cells` /
+    // `stream-fly` off: one cell a thread (their arms: gemv_stream.rs).
     for r in [
+        "vec-cells",
+        "stream-fly",
         "place",
         "plan-cost",
         "fill-wave",
