@@ -136,7 +136,8 @@ decode 0.981, short programs 0.989–0.990 (inside null), loopmm 1.003.
 **review-fixes** (`review-fixes.md`): the four findings of the independent review after f3a9e792 — the rescale law
 over wholly masked slices (NaN → the sequential fold's value; lsm_1_131072's sliced kernel 5.888 vs 5.888 us), a
 loop's next state made once (no device carry: the device printed the initial value), `calls`' missing body price
-(`coop_body_ns`, measured here at 2500 ns a chain: the rtx-4090 / 3090 / a100 form no untimed chain; this part
+(`coop_body_cycles`: `calib.cu body` measures it here, 4390 cycles = 1792 ns a chain; every other part derives it at its
+own clock — 4090 / 3090 form causal / gen / prefill, nothing re-forms the H100's smlp / firew losers; this part
 unchanged), and `intent.py` entries for `row-slices`, `exp-hw`, `exp-rescale` (44 checks ok).
 
 **half-precision** (`half-precision.md`): ADR-0043 — `bf16` / `f16` storage types (`to_bf16` / `to_f16` round an f32 once,

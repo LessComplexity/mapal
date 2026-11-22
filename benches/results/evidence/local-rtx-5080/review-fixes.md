@@ -74,6 +74,7 @@ a100 / h100 `refused=unpriced` — their emission is the OFF arm's (the candidat
 boundaries (unit test), decode's chain loses there (the boundaries' 656 / 522 ns saving is inside the 1970 ns decode
 residual) and causal's six-launch chain still pays — so measuring `coop_body_ns` on a part (its `--calls=force` suite
 chains against the shipped build) is what turns its chains on; the rented parts' next round carries that measurement.
+(Superseded by §5: the price is calibrated by a microbenchmark and derived on every part.)
 
 ## 4. Intents (`benches/gpu/intent.py`)
 
@@ -91,6 +92,118 @@ lsm_4_32768, softmax_rows_2048, decode_1024_256, attn_1024_64, causal_1024_256):
 mismatches are HEAD's (the emission is HEAD's but for lsm_1's slice select): `pdl:on` "griddepcontrol at kernel entry"
 against the exit trigger, `full-tile`, `face-registers`, `kmajor-a`, … — the untriaged set of `gpu/evidence-rtx-5080.tsv`.
 
+## 5. `calls`: the bodies' price calibrated and derived — every part priced
+
+Decision: calibrate + derive; no part refuses chains as `unpriced`. The property is `DeviceCost::coop_body_cycles`
+(SM cycles at the part's `clock_khz`); `Gpu::coop_body_ns` reads it in ns. A part without its own measurement derives it
+from the rtx-5080's measured cycles (`COOP_BODY_CYCLES_RTX_5080`) at its own clock. `chain_ns` adds it on every part.
+
+**Calibration** (`benches/gpu/calib.cu body`; builds on sm_80 / 86 / 120, nothing beyond cooperative launch and
+`%globaltimer`). The chain has two levels of members. Level 0 is two one-block row folds (decode's rows: 256 threads,
+k = 256, 8 loads in flight a thread). Each further level is one wide fold of `nb` blocks that reads the level before.
+The chain runs two ways: as separate launches (`__restrict__`: Mapal's launch kernels) and as one cooperative
+persistent kernel built as `persistent_kernel` builds it (bodies inlined, the first block straight-line, the rest in a
+grid-stride loop, a grid barrier per level, no `__restrict__`). Each arm runs 129 chains back to back, device-bound,
+with work and with the bodies skipped by a runtime flag (the same code). The four arms rotate ABBA over 15 reps.
+body = (pers − pers_empty) − (sep − sep_empty). The empty arms hold exactly the boundaries the rule prices (barriers
+against launches). The table uses each chain's span, from its first block's start to its last block's end. The span
+leaves out the chain's own launch. Back-to-back cooperative launches here start on a **2.048 µs grid**: every
+persistent start-to-start is a multiple of 2048 ns (empty 2048 / 4096, with work 8192–18432), and `%globaltimer` ticks
+every 32 ns. Six runs on the RTX 5080 (2026-11-22, load < 3, bench lock; raw in `coop-body/` of the raw directory); the table gives
+the median [range] of the six run medians:
+
+| chain | grid | sep span (us) | body, span (ns) | body, start to start (ns) |
+| --- | --- | ---: | ---: | ---: |
+| 2 levels, 1 round (126-block wide level) | 126 | 6.76 | 136 [60–179] | 405 [337–460] |
+| 3 levels, 1 round | 126 | 7.89 | 376 [292–420] | 232 [−758–317] |
+| 4 levels, 1 round | 126 | 9.02 | 638 [493–665] | 104 [−43–200] |
+| 3 levels, 2 rounds (840-block wide levels) | 420 | 10.80 | −64 [−1789–1544] | 701 [2–2796] |
+| **3 levels, 4 rounds (1680-block wide levels: the grid-stride form)** | 420 | 15.06 | **1792 [1083–2596]** | 2414 [972–3312] |
+
+The two forms' outputs match bit for bit in every shape.
+
+SASS and usage (`cuobjdump`, sm_120). Separate: `row_k` 25 registers and `wide_k` 36, with 16 `LDG.E.CONSTANT` a body
+trip. Persistent: `pers_k<3>` 48 registers with the same 16 loads a trip as `LDG.E` (no read-only path), 2
+`LDG.E.STRONG.GPU` (the barrier's poll) and no stack. So the persistent kernel holds 5 blocks a SM against the wide
+member's own 6, the 1536-thread limit. At one round that does not bind (126 blocks on 84 SMs): ~250 ns a wide level.
+At 4 rounds the 1680 blocks take 4 rounds of 420 against 3.33 waves of 504 alone. That is 5/6 of the loads in flight
+per SM in the grid-stride form: +1.8 us. The 2-round null (the separate arm is bimodal across runs, 11.5 / 15.2 us)
+is open. Clocks: 2.86–2.91 GHz during the chains (`run_khz`), 2.49–2.64 GHz sustained under FFMA, 2.45 GHz in the
+profile (E1). **`coop_body_cycles` = 1792 ns × 2.45 GHz = 4390.** The profile clock keeps the part's price at what it
+measured; at the runs' own sustained clocks it would be 2864–6672, median 4680. The property uses the 4-round chain:
+it is the grid-stride form, and the largest change among the shapes.
+
+**Against the suite's 2500 ns** (the largest forced-chain residual, §3), the calibration measures 0.72 of it. Its
+decode-like one-round chain measures 0.38 us against decode's 1.97 us residual. Two terms explain the difference:
+(1) Mapal's LLVM persistent kernels change the bodies more than nvcc's do here. rt_mlp2's GEMM pairs run at 127–128
+registers against 95–96 (+3.55 us of kernel time a chain), and decode's rows level takes 5.0 us against 4.2 alone
+(CUPTI). The synthetic bodies keep their loads (the same LDG count a trip). (2) The 2.048 us cooperative dispatch grid.
+The suite's residual is trip to trip, so it includes the trip's rounding up to that grid. `coop_launch_ns` (2044)
+prices one quantum, an empty kernel's (decode's x → persistent-kernel gap 1559 ns against 272, kernel-merging Calls).
+The span leaves it out; start to start keeps it (4-round: 2414 vs 1792). The suite's residuals also have mixed sign
+(the causal family −0.66..−0.81), so the per-chain property is a bound, as before.
+
+**Measured vs derived, per part** (`profile.rs`; native-gpu on the 5080 reads `coop_body_cycles=4390` from
+`calib/rtx-5080.calib`, the hand profile byte for byte):
+
+| part | clock (GHz) | source | ns a chain |
+| --- | ---: | --- | ---: |
+| rtx-5080 | 2.45 | measured (`calib.cu body`) | 1792 |
+| rtx-4090 | 2.52 | derived | 1742 |
+| rtx-5090 | 2.41 | derived (no barrier / launch measured: no chain priced) | 1822 |
+| h100 | 1.807 | derived | 2429 |
+| h100-pcie | 1.755 | derived (no barrier / launch measured) | 2501 |
+| rtx-3090 | 1.561 | derived | 2812 |
+| a100 | 1.41 | derived | 3113 |
+
+**Decisions per part**: all 260 `benches/algorithms` programs, default emission, `; mapal.calls.host`, no `unpriced`
+anywhere:
+
+| part | chains formed | refused by cost (selected) |
+| --- | --- | --- |
+| rtx-5080 | none (unchanged: its boundaries alone refuse every chain, 2044 ns cooperative against 486 / 650 launches) | decode, causal / gen / prefill, rt_mlp2, firew |
+| rtx-4090 | causal / gen / prefill (6 units, 5 barriers: 6912 vs 8640 ns); llm_blkdec_b1_l4096 (+ `_bf16w`, `_pv`; 8 units: 7916 vs 11520) | decode (656 saved < 1742), rt_mlp2, firew |
+| rtx-3090 | causal / gen / prefill (8248 vs 8832) | decode, rt_mlp2, firew |
+| a100 | none | causal (13392 vs 12300), decode, rt_mlp2, firew |
+| h100 | px_llm_pre_t12 (+ `_pv`; 7 units: 9728 vs 12054), px_llm_blkpre_t12 (+ `_pv`; 2 chains, 13 units: 18547 vs 22386), value programs only, untimed | **smlp, firew_rowsum** (2749 + 2429 = 5178 vs 3444), decode, causal, rt_mlp2 |
+
+Replay checks. The H100's smlp / firew_rowsum formed on the boundaries alone in cross-arch 7a2b67bf and ran 1.55 / 2.3x
+slower; they are refused now. The one-round synthetic value would have re-formed them: 0.38 us is 520 ns at 1.807 GHz,
+against 695 ns saved. That is why the property takes the grid-stride chain. The rtx-5080's forced chains (§3) stay
+refused. What separates those H100 losers from the chains that now form is phase length. The H100 chains' phases are
+long (70 + 55 us, 31 + 12 us) and the change inside one kernel grew with them (36–74 us). Against that, they save 695
+ns. The chains that now form have short phases (the causal family's launches ~2.5 us). A per-chain bound refuses the
+H100 rows only because their saving is small: the phase-time term stays open (cross-arch open item 2). The derivation
+follows the clock: the a100's causal chain forms at `--cost=clock_khz=2300000`, and the 3090's is refused at 1 GHz.
+
+The golden `c0-rules.tsv` (horizontal off) has 21 rtx-4090 / 3090 rows regolded, each equal to the build that forms
+exactly its chains:
+- decode_1024_256 contract / exact on both parts: its 5-unit chain forms (5406 vs 7200, 6706 vs 7360 ns). The code
+  less `; mapal.` lines equals `--calls=force`'s.
+- The other 17: every chain is refused by cost, and the code equals `--gpu-off=calls`'s. Fifteen of them equal their
+  pre-af0da8a5 hash, because the line reads `refused=cost` again. rq_mlp2_512 on the 3090 had formed on the
+  boundaries alone.
+
+Tests:
+- Unit: `the_rule_prices_barriers_against_launches` and `the_bodies_price_decides_where_the_boundaries_alone_did_not`
+  (derived = the 5080's cycles at the part's clock; the a100 flips at 2.3 GHz; the H100 replay).
+- Integration: `every_part_prices_chains` replaces `unmeasured_bodies_form_no_chain`. It checks every GPU profile's
+  source and ns, the five programs × five parts' decisions, no `unpriced`, and both clock flips through `--cost=`.
+- `calls_on_generated_programs` (the generated-program property test) and `decode_values_through_the_persistent_kernel`
+  pass unchanged.
+- native-gpu: `native_gpu_is_the_query_and_the_calibration` holds with the calibration line.
+- Workspace, release: 124 binaries, 1450 passed, 2 failed. The failures are `row_block`
+  `attention_pricing_is_one_rule_across_parts` and `row_block_ships_its_rule_and_refuses_unpriced`, both on
+  px_attn_64_16 with `calls` off. They fail identically at HEAD (stashed and rebuilt) and with a freshly measured
+  native-dispatch cache: this host's native placement, outside this step.
+
+Open:
+1. The phases' time under one kernel, the change that grew to 36–74 us on the H100. A per-chain bound does not model it.
+2. `calib.cu body` on the rented parts: `box_run.sh` runs it in all three calibration passes, and their lines then
+   carry measured cycles.
+3. The 2.048 us cooperative dispatch grid as a property: a trip's rounding is not priced.
+4. The 2-round null.
+
 ## Tests
 
 `exp.rs` 4, `long_rows.rs` 4, `onto_device.rs` 11, `calls.rs` 4 + 5 unit (`func::calls`). Each new test checked
@@ -106,4 +219,5 @@ rule ships it on repeating launches only) — pre-existing, outside this step.
 1. The bodies' change inside a persistent kernel (decode's rows level, rt_mlp2's GEMM pairs at 128 registers; the
    causal family faster): the mechanism. Until it is a fact, `coop_body_ns` is a measured bound per part.
 2. A state whose next value is made once could stay device-resident without a carry.
-3. `coop_body_ns` on the rtx-4090 / rtx-3090 / a100 / h100: their forced suite chains.
+3. `coop_body_ns` on the rtx-4090 / rtx-3090 / a100 / h100: their forced suite chains. (§5: calibrated by `calib.cu
+   body` and derived on every part; its own open items there.)
