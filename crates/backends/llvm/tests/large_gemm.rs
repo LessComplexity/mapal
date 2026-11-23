@@ -129,10 +129,18 @@ fn large_gemm_rules_on_generated_shapes() {
         if p.scale == 3 {
             odd_plans += on_p.len();
         }
-        for t in &on_p {
+        // sweep-gemm-2 `streamk-price` (its own test below): an under-filled
+        // site's priced walk over the launched grid — the stream-K kernels
+        // its OFF arm does not have.
+        let unpriced = tile_plans(&emission(&ir, &["streamk-price"]));
+        assert_eq!(unpriced.len(), on_p.len(), "{ctx} the same tile kernels");
+        for (t, u) in on_p.iter().zip(&unpriced) {
             if t.get("combine").map(String::as_str) == Some("streamk") {
                 let (wps, ctas, iters) = (num(t, "wps"), num(t, "ctas"), num(t, "iters"));
                 let slots = SMS * num(t, "blocks_per_sm");
+                if wps < 2 && u["combine"] != "streamk" {
+                    continue;
+                }
                 if wps < 2 {
                     kfill += 1;
                     assert!(num(t, "tm") * num(t, "tn") >= 64, "{ctx} {t:?}");
@@ -165,7 +173,8 @@ fn large_gemm_rules_on_generated_shapes() {
             .iter()
             .any(|t| t["combine"] == "streamk" && num(t, "wps") < 2);
         if had_kfill {
-            let off = tile_plans(&emission(&ir, &["k-fill"]));
+            // (`streamk-price` off too: its own under-filled walks.)
+            let off = tile_plans(&emission(&ir, &["k-fill", "streamk-price"]));
             for t in &off {
                 assert!(
                     !(t["combine"] == "streamk" && num(t, "wps") < 2),
@@ -306,4 +315,175 @@ fn large_gemm_values_through_the_emulator() {
         kfill >= 2 && fill_split >= 2,
         "both rules valued ({kfill}, {fill_split})"
     );
+}
+
+/// [`emission_at`] with plan rates overridden (`--cost=<rate>=<n>`), the
+/// sites placed by the rules (`place` on: a split's zeroed output is a
+/// resident launch's; `--gpu-off=place` launches every site unsplit).
+fn emission_cost(ir: &CategoryIr, off: &[&str], cost: &[&str]) -> Emission {
+    let mut gpu = GpuArms {
+        site_cands: 1,
+        ..GpuArms::default()
+    };
+    for r in ["pdl", "streams", "pinned", "horizontal", "calls"]
+        .iter()
+        .chain(off)
+    {
+        *gpu.off.rung(r).expect("rung") = true;
+    }
+    let mut opts = EmitOpts {
+        host: "generic",
+        target: "rtx-5080",
+        gpu,
+        ..EmitOpts::default()
+    };
+    for c in cost {
+        let f = format!("--cost={c}");
+        assert!(mapal_backend_llvm::flags::apply(&mut opts, &f).expect("a rate"));
+    }
+    emit_detailed(ir, &opts).expect("emits")
+}
+
+/// **sweep-gemm-2 `streamk-price` on generated shapes.** An under-filled
+/// site (`wps < 2`, its class ships `streamk` off) streams over its launched
+/// grid only where the part's rates price the walk (the pieces' partials and
+/// the zero pass) below the S63 count: plans on the generated GEMMs from
+/// decode GEMVs to model-scale projections — each such kernel is gone under
+/// `--gpu-off=streamk-price` (the panel-count rule of the classes that ship
+/// `streamk`), keeps the launched tile and grid (`gx·gy` tiles), walks every
+/// slot once (`ctas ≤ sms × blocks_per_sm`) and folds at least one panel a
+/// CTA; and on a part without the rates (`--cost=atomic_ops_per_ns=0`) no
+/// under-filled site streams by price. Values through the emulator at
+/// extents it runs (256–512 each side), the `red` rate raised and the zero
+/// pass zeroed (`--cost=`) so the walk pays where the grid quantizes badly:
+/// ON (free threads, serialized in thread order, reversed) against the
+/// interpreter and the OFF arm (integer operands: every cut of a fold
+/// prints the same bits) — `streamk-fill` off on both arms: at these extents
+/// no tile grid gives the part its fill warps, and the walk under test is
+/// the same kernel.
+#[test]
+fn streamk_price_on_generated_shapes() {
+    let mut runner = TestRunner::deterministic();
+    let strat = testgen::gemm_prog_strategy();
+    let progs: Vec<testgen::GemmProg> = (0..96)
+        .map(|_| strat.new_tree(&mut runner).unwrap().current())
+        .collect();
+    let counts = testgen::par_check(&progs, |z, p| {
+        // Every other program at drawn extents in the band where the rule
+        // acts — a tile grid that fills the part's warps (`streamk-fill`)
+        // yet holds fewer tiles than its slots (768–1536 a side on the
+        // 5080's 168 slots of `128 × 64` tiles), 32–256 panels: the
+        // generator's own extents (decode GEMVs to model-scale) reach it
+        // rarely.
+        let pick = |d: u8, v: &[u64]| v[usize::from(d) % v.len()];
+        let (src, (m, n, k)) = match z % 2 {
+            0 => testgen::gemm_src(p),
+            _ => {
+                let (m, n, k) = (
+                    pick(p.dims[0], &[768, 1024, 1536]),
+                    pick(p.dims[1], &[768, 1024, 1280]),
+                    pick(p.dims[2], &[512, 1024, 2048, 4096]),
+                );
+                (testgen::gemm_src_at(p, m, n, k), (m, n, k))
+            }
+        };
+        let ctx = format!("#{z} {m}x{n}x{k} bt={}", p.bt);
+        let ir = lower(&src);
+        let on = tile_plans(&emission_cost(&ir, &[], &[]));
+        let off = tile_plans(&emission_cost(&ir, &["streamk-price"], &[]));
+        let bare = tile_plans(&emission_cost(&ir, &[], &["atomic_ops_per_ns=0"]));
+        assert_eq!(on.len(), off.len(), "{ctx}");
+        let (mut priced, mut under) = (0, 0);
+        for ((t, o), b) in on.iter().zip(&off).zip(&bare) {
+            if num(t, "wps") >= 2 {
+                continue;
+            }
+            under += 1;
+            let (t_sk, o_sk) = (t["combine"] == "streamk", o["combine"] == "streamk");
+            assert!(
+                !(b["combine"] == "streamk" && !o_sk),
+                "{ctx} streams by price without the rates {b:?}"
+            );
+            if !t_sk || o_sk {
+                continue;
+            }
+            priced += 1;
+            let (ctas, iters) = (num(t, "ctas"), num(t, "iters"));
+            assert_eq!(
+                (num(t, "gx"), num(t, "gy"), num(t, "block")),
+                (num(o, "gx"), num(o, "gy"), num(o, "block")),
+                "{ctx} the launched tile and grid {t:?}"
+            );
+            let tiles = num(t, "gx") * num(t, "gy");
+            let panels = num(t, "k") / num(t, "bk");
+            assert!(iters >= 1 && iters < panels * tiles, "{ctx} {t:?}");
+            assert!(
+                ctas <= SMS * num(t, "blocks_per_sm"),
+                "{ctx} one wave {t:?}"
+            );
+            assert_eq!(ctas, (tiles * panels).div_ceil(iters), "{ctx} {t:?}");
+        }
+        [priced, under]
+    });
+    let sum = |i: usize| counts.iter().map(|c| c[i]).sum::<usize>();
+    let (priced, under) = (sum(0), sum(1));
+    eprintln!("streamk-price plans: {priced} priced walks of {under} under-filled tile kernels");
+    assert!(
+        priced >= 2,
+        "the generator reaches streamk-price ({priced})"
+    );
+
+    // Values.
+    let Some(cc) = emu::clang() else {
+        eprintln!("no clang: emulator runs skipped");
+        return;
+    };
+    let cheap = ["atomic_ops_per_ns=4000000", "zero_ns=1"];
+    let progs: Vec<testgen::GemmProg> = (0..10)
+        .map(|_| strat.new_tree(&mut runner).unwrap().current())
+        .collect();
+    let counts = testgen::par_check(&progs, |z, p| {
+        let pick = |d: u8, v: &[u64]| v[usize::from(d) % v.len()];
+        let (m, n, k) = (
+            pick(p.dims[0], &[256, 512]),
+            pick(p.dims[1], &[256, 512]),
+            pick(p.dims[2], &[256, 512]),
+        );
+        let src = testgen::gemm_src_at(p, m, n, k);
+        let ctx = format!("#{z} {m}x{n}x{k} bt={}", p.bt);
+        let ir = lower(&src);
+        let on = emission_cost(&ir, &["streamk-fill"], &cheap);
+        let off = emission_cost(&ir, &["streamk-fill", "streamk-price"], &cheap);
+        let walks = tile_plans(&on)
+            .iter()
+            .zip(&tile_plans(&off))
+            .filter(|(t, o)| {
+                t["combine"] == "streamk" && num(t, "wps") < 2 && o["combine"] != "streamk"
+            })
+            .count();
+        if walks == 0 {
+            return [0, 0];
+        }
+        let dev = |e: &Emission| e.device.clone().unwrap_or_default();
+        let want = interp(&ir);
+        assert_eq!(want.lines().count(), 5, "{ctx}\n{want}");
+        assert_eq!(
+            emu::run_emulated(&cc, &off.text, &dev(&off)),
+            want,
+            "{ctx} streamk-price off"
+        );
+        let built = emu::build_emulated(&cc, &on.text, &dev(&on));
+        let mut runs = 0;
+        for (env, (got, _)) in MODES.iter().zip(built.run_each(&MODES)) {
+            assert_eq!(got, want, "{ctx} streamk-price {env:?}\n{src}");
+            runs += 1;
+        }
+        [1, runs]
+    });
+    let (valued, runs) = (
+        counts.iter().map(|c| c[0]).sum::<usize>(),
+        counts.iter().map(|c| c[1]).sum::<usize>(),
+    );
+    eprintln!("streamk-price values: {valued} programs, {runs} emulated runs");
+    assert!(valued >= 2, "priced walks valued ({valued})");
 }

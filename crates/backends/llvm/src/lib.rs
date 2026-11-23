@@ -952,6 +952,15 @@ pub struct GpuRungs {
     /// that call against 2–4 µs after), which a one-call program otherwise
     /// pays inside its timed region. Off: the first zero pays it.
     pub warm_zero: bool,
+    /// sweep-gemm-2 `streamk-price`: on a part whose rates price a stream-K
+    /// fixup (`DeviceCost`: the FMA tile rate, the `red` rate, the zero
+    /// pass), a site's stream-K is weighed against the S63 count by those
+    /// prices ([`crate::func::gpu`] `streamk_priced`: the pieces' partials and
+    /// the zero pass against the panels the walk saves) — under-filled sites
+    /// too, whose class ships `streamk` off (site-level wave quantization).
+    /// Off (`--gpu-off=streamk-price`): the panel count (`iters + 1 < split`)
+    /// in the classes that ship `streamk`.
+    pub streamk_price: bool,
 }
 
 impl GpuRungs {
@@ -1088,11 +1097,12 @@ impl GpuRungs {
         mma_depth: true,
         round_store: true,
         warm_zero: true,
+        streamk_price: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 131] = [
+    pub const NAMES: [&'static str; 132] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1224,6 +1234,7 @@ impl GpuRungs {
         "unit-uniform",
         "round-store",
         "warm-zero",
+        "streamk-price",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -1360,6 +1371,7 @@ impl GpuRungs {
             "mma-depth" => &mut self.mma_depth,
             "round-store" => &mut self.round_store,
             "warm-zero" => &mut self.warm_zero,
+            "streamk-price" => &mut self.streamk_price,
             _ => return None,
         })
     }

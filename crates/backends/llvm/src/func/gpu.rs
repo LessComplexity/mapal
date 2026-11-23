@@ -1353,6 +1353,7 @@ fn plan_line(
     combine: Combine,
     col: bool,
     epi: bool,
+    walk: Option<&str>,
 ) -> String {
     let gpu = profile.gpu().expect("a GPU site has a GPU profile");
     let (blocks, threads) = fill_grid(site, profile);
@@ -1518,6 +1519,11 @@ fn plan_line(
         Combine::Atomic { s } => ("atomic", s, 0, 0),
         Combine::StreamK { ctas, iters } => ("streamk", 1, ctas, iters),
     };
+    // sweep-gemm-2: which rule walks a stream-K site (intent.py) — the class
+    // that ships `streamk`, `k-fill`'s full tile, or `streamk-price`.
+    if let Some(w) = walk {
+        f += &format!(" walk={w}");
+    }
     // site-geometry `fill-wave`: the target its split grid reaches (intent.py).
     if l.rungs.fill_wave && s > 1 {
         f += &format!(" fill_warps={}", gpu.fill_warps());
@@ -2561,7 +2567,7 @@ fn concat_kernel_text(
     let mut k = kernel(site, profile, contract, arms, false, None, c);
     k.terms = terms;
     let l = launch_for(site, profile, contract, arms, c);
-    k.out = plan_line(name, site, profile, &l, k.idx, c, false, false);
+    k.out = plan_line(name, site, profile, &l, k.idx, c, false, false, None);
     k.out.pop();
     k.out += &format!(" terms={terms}\n");
     match l.tiled {
@@ -2818,7 +2824,18 @@ fn combine(
     // (With `fill-wave` off there is no fill split to take: stream-K as before.)
     let filled_grid =
         !(rungs.streamk_fill && rungs.fill_wave) || blocks * warps >= gpu.fill_warps();
-    let streamk = rungs.streamk
+    // sweep-gemm-2 `streamk-price`: where the part prices a stream-K fixup
+    // ([`streamk_priced`]: its FMA tile rate, `red` rate and zero pass), an
+    // under-filled site (its class ships `streamk` off) streams too when the
+    // price says so.
+    // (An arm that turns `streamk` off — a group's order, a measurement —
+    // stays off.)
+    let priced = rungs.streamk_price
+        && !arms.off.get("streamk")
+        && l.tiled.is_some_and(|g| {
+            streamk_priced(profile, site, &g, wave, blocks, wave, 1, 1, 1).is_some()
+        });
+    let streamk = (rungs.streamk || priced)
         && filled_grid
         && atomic
         && l.tiled.is_some_and(|g| g.stages < 2)
@@ -2827,11 +2844,19 @@ fn combine(
     if streamk {
         let iters = (blocks * panels).div_ceil(wave);
         let split = (blocks * s_cmp).div_ceil(wave) * (panels / s_cmp);
-        if iters + 1 < split {
-            return Combine::StreamK {
-                ctas: (blocks * panels).div_ceil(iters),
-                iters,
-            };
+        let ctas = (blocks * panels).div_ceil(iters);
+        let g = l.tiled.expect("a streamed site is a tile");
+        // A class that ships `streamk` keeps its panel count (its measured
+        // wins, `rung_replay.tsv`); an under-filled site streams by its price.
+        let pays = match rungs.streamk {
+            true => iters + 1 < split,
+            false => {
+                streamk_priced(profile, site, &g, wave, blocks, ctas, iters, s_cmp, split)
+                    == Some(true)
+            }
+        };
+        if pays {
+            return Combine::StreamK { ctas, iters };
         }
     }
     if rungs.splitk_atomic && atomic && l.raster == 1 && s_at > 1 {
@@ -2841,6 +2866,60 @@ fn combine(
         1 => Combine::None,
         s => Combine::Workspace { s },
     }
+}
+
+/// **sweep-gemm-2 `streamk-price`: does stream-K beat the S63 count at this
+/// site, its fixed costs priced by the part's measured rates?** `None` where
+/// the part has none of them (`DeviceCost`: the FMA tile's `flops_per_ns`,
+/// `red.global.add.f32`'s `atomic_ops_per_ns`, the zero pass's `zero_ns`) or
+/// the element is not `f32` (the rates are f32's): the panel-count rule
+/// `iters + 1 < split` stands there.
+///
+/// One block's panel takes `t = 2·bm·bn·bk / (flops_per_ns / wave)` — the
+/// tile's FMAs at its share of the part's FMA tile rate. Stream-K walks
+/// `iters` panels a block, then every piece (`ctas + tiles` of them: a block's
+/// walk crosses a tile edge once per tile it touches) adds its `bm·bn`
+/// partials (`red`, at `atomic_ops_per_ns` over the device), after the
+/// output's zero pass (`zero_ns` + its bytes at the fill rate). The S63 count
+/// `s` runs `split` panels a block; when it cuts (`s > 1`) it pays `s·tiles`
+/// tiles of partials and the same zero pass. A count without those costs
+/// (`iters + 1 < split`, one panel of fixup) lost where pieces are many
+/// against panels (rtx-5080: the 2048 × 2048 × 128 scores, 8 panels a tile,
+/// 1.41×; the 512³ cells, 1.15–1.24×) and won where a tile holds 64 panels
+/// (loopmm's 1024³, 0.95×).
+#[allow(clippy::too_many_arguments)]
+fn streamk_priced(
+    profile: &TargetProfile,
+    site: &TileSite,
+    g: &GpuTile,
+    wave: u64,
+    tiles: u64,
+    ctas: u64,
+    iters: u64,
+    s: u64,
+    split: u64,
+) -> Option<bool> {
+    let d = profile.gpu()?.cost?;
+    let e = elem_bytes_of(&site.elem);
+    if e != 4 || d.flops_per_ns == 0 || d.atomic_ops_per_ns == 0 || d.zero_ns == 0 {
+        return None;
+    }
+    let fill = match (d.fill_bytes_per_ns, d.l2_bytes_per_ns) {
+        (0, 0) => return None,
+        (0, l2) => l2,
+        (f, _) => f,
+    };
+    let tile = (g.bm() * g.bn()) as f64;
+    let panel = 2.0 * tile * g.bk as f64 * wave as f64 / d.flops_per_ns as f64;
+    let partials = |pieces: u64| pieces as f64 * tile / d.atomic_ops_per_ns as f64;
+    let zero = d.zero_ns as f64 + (site.rows * site.c * e) as f64 / fill as f64;
+    let streamk = iters as f64 * panel + partials(ctas + tiles) + zero;
+    let cut = split as f64 * panel
+        + match s {
+            1 => 0.0,
+            s => partials(s * tiles) + zero,
+        };
+    Some(streamk < cut)
 }
 
 /// The prefetch rung holds the next panel in registers while the current one
@@ -4653,7 +4732,33 @@ fn kernel_text(
         "a column-major store this kernel has"
     );
     debug_assert!(combine == Combine::None || (!col && epi.is_none()));
-    k.out = plan_line(name, site, profile, &l, k.idx, combine, col, epi.is_some());
+    let walk = match combine {
+        Combine::StreamK { .. } if l.rungs.streamk => Some("class"),
+        Combine::StreamK { .. } => Some(
+            match k_fill(
+                &launch(site, profile, contract, arms),
+                site,
+                profile,
+                contract,
+                arms,
+            ) {
+                Some((c, _)) if c == combine => "fill",
+                _ => "price",
+            },
+        ),
+        _ => None,
+    };
+    k.out = plan_line(
+        name,
+        site,
+        profile,
+        &l,
+        k.idx,
+        combine,
+        col,
+        epi.is_some(),
+        walk,
+    );
     // plan-cost: the site's pick on every kernel's line (D3); its candidates
     // on every row-major one (the harness keys them by `site=`).
     let pick = plan_pick(site, profile, contract, arms, !col);
@@ -10377,6 +10482,43 @@ mod tests {
         }
     }
 
+    /// sweep-gemm-2 `streamk-price` on the rtx-5080's under-filled sites (the
+    /// gen_tiles layouts): loopmm's 1024³ (128 tiles of 64 panels on 168
+    /// slots) streams; 1024 × 1024 × 256 (16 panels a tile: the pieces'
+    /// partials and the zero pass outweigh the three panels the walk saves)
+    /// and the 512³ cells (32 panels of a 64 × 32 tile) do not; the OFF arm
+    /// and a part without the rates (`DeviceCost` zero) keep the classes'
+    /// rule (no under-filled stream-K).
+    #[test]
+    fn streamk_price_separates_the_measured_sites() {
+        use crate::profile::{A100, RTX_5080};
+        let free = |s: &TileSite, p: &TargetProfile, arms| {
+            launch_in(s, p, true, arms, None, Order::Free).combine
+        };
+        let arms = crate::GpuArms::default();
+        let mut unpriced = crate::GpuArms::default();
+        *unpriced.off.rung("streamk-price").expect("a rung") = true;
+        let sk = |c: Combine| matches!(c, Combine::StreamK { .. });
+        let loopmm = site(1024, 1024, 1024, true, true, Ty::f32());
+        assert!(sk(free(&loopmm, &RTX_5080, arms)), "loopmm streams");
+        assert!(
+            !sk(free(&loopmm, &RTX_5080, unpriced)),
+            "OFF: the class's rule"
+        );
+        for (m, n, k) in [(1024, 1024, 256), (512, 512, 512)] {
+            let s = site(m, n, k, true, true, Ty::f32());
+            assert!(!sk(free(&s, &RTX_5080, arms)), "{m}x{n}x{k}");
+        }
+        // A part without the rates: the classes' rule, priced or not.
+        let s = site(1024, 1024, 1024, true, true, Ty::f32());
+        assert_eq!(free(&s, &A100, arms), free(&s, &A100, unpriced));
+        assert!(
+            A100.gpu()
+                .and_then(|g| g.cost)
+                .is_none_or(|d| d.atomic_ops_per_ns == 0)
+        );
+    }
+
     /// sweep-gemm-2 `warm-zero`: the init flag is set exactly for a module
     /// whose launches zero an output — a direct zero call or a site table row
     /// with zero bytes — and the rung is on.
@@ -10877,8 +11019,8 @@ mod tests {
         // S63 the shipped default per part (`GPU_RUNGS_OFF`, measured,
         // `benches/results/gpu/s63/default-float/`): each is a session arm
         // (site-geometry `fill-wave` off: the S63 chooser; its own arm is
-        // `site_geometry.rs`'s).
-        let s63 = off(&["fill-wave", "k-fill", "streamk-fill"]);
+        // `site_geometry.rs`'s; sweep-gemm-2 `streamk-price` postdates it).
+        let s63 = off(&["fill-wave", "k-fill", "streamk-fill", "streamk-price"]);
         let shipped = |p, (m, n, k)| {
             let c = launch_in(
                 &site(m, n, k, true, true, Ty::f32()),

@@ -204,7 +204,8 @@ INTENT = {
     # tile (8 x 8 accumulators, 256 threads) and fills the part along k by stream-K over every slot the tile holds
     # at its own registers and threads (not grid-share's one block an SM), each CTA folding >= 32 panels.
     # `.off-k-fill`: the shrunk tile (`4 x 4` / `8 x 4`) and the fill-wave split or none.
-    'k-fill': dict(rule=True, applies_on="plan.kind == 'tile' and plan.combine == 'streamk' and plan.wps < 2", on=[
+    'k-fill': dict(rule=True, applies_on="plan.kind == 'tile' and plan.combine == 'streamk' and plan.wps < 2 "
+                                         "and plan.get('walk', 'fill') == 'fill'", on=[
         ('the full register tile: >= 64 accumulators, >= 256 threads', 'plan.tm * plan.tn >= 64 and plan.block >= 256'),
         ('stream-K CTAs fill the resident slots at ptxas registers + smem (one wave, >= 90 %)',
          'plan.ctas <= occ.blocks_per_sm * occ.sms and 10 * plan.ctas >= 9 * occ.blocks_per_sm * occ.sms'),
@@ -213,6 +214,18 @@ INTENT = {
         # At two 256-thread blocks an SM a thread has 128 registers; ptxas may spill a few words of the stream-K
         # piece setup (24 B on 128 x 4096 x 4096), never in the panel loop.
         ('no local-memory traffic in the hot loop', 'sass.hot.stl + sass.hot.ldl == 0')]),
+    # sweep-gemm-2 `streamk-price`: an under-filled site (`wps < 2`, its class ships `streamk` off) walks its
+    # launched tile grid by stream-K where the part's rates (FMA tile, `red`, zero pass) price the pieces'
+    # partials and the zero below the panels the walk saves (`plan.walk == 'price'`): one wave of CTAs over the
+    # launched tiles, the pieces added by `red`. OFF (`.off-streamk-price`): the class's rule, no walk.
+    'streamk-price': dict(rule=True, applies_on="plan.kind == 'tile' and plan.combine == 'streamk' "
+                                                "and plan.get('walk', '') == 'price'", on=[
+        ('stream-K CTAs at most the resident slots (one wave)', 'plan.ctas <= occ.blocks_per_sm * occ.sms'),
+        ('every unit of the launched tile grid walked once',
+         'plan.ctas * plan.iters >= plan.gx * plan.gy * (plan.k // plan.bk) '
+         'and (plan.ctas - 1) * plan.iters < plan.gx * plan.gy * (plan.k // plan.bk)'),
+        ('pieces combine by atomic add', 'ptx.atom_add + ptx.red_add > 0'),
+        ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')]),
     # ---- tensor-core kernels ---------------------------------------------------------------------------
     'mma': dict(applies="plan.kind == 'mma'", on=[
         ('mma.sync in PTX', 'ptx.mma > 0'), ('HMMA in SASS', 'sass.hmma > 0')]),

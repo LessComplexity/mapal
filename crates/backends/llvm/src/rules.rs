@@ -558,7 +558,7 @@ mod tests {
         }
         assert_eq!(open, OPEN.to_vec(), "measurements the rules do not pick");
         // The counts the evidence file reports.
-        assert_eq!((picked, null, mixed, open.len()), (128, 71, 10, 19));
+        assert_eq!((picked, null, mixed, open.len()), (130, 71, 10, 19));
     }
 
     /// No rule reads a name, an architecture string or a version: a part
