@@ -52,8 +52,11 @@ static void emu_block(uint32_t i, uint32_t gx, uint32_t n) {
   ctaid_x = (int32_t)(b % gx);
   ctaid_y = (int32_t)(b / gx);
 }
-/* One block's shared memory (blocks run one at a time). */
-unsigned char emu_smem[1 << 20];
+/* One block's shared memory (blocks run one at a time). Aligned to 256 KiB so
+ * an address's low 18 bits are its offset: a `wgmma` matrix descriptor's
+ * 14-bit start field (address >> 4) names the byte it would on the device,
+ * and a swizzle applies to the same address bits the hardware's does. */
+unsigned char emu_smem[1 << 20] __attribute__((aligned(1 << 18)));
 /* `barrier0` for the `b_n` threads of the running block (macOS has no
  * pthread_barrier_t). */
 static pthread_mutex_t b_mu = PTHREAD_MUTEX_INITIALIZER;
@@ -261,7 +264,53 @@ struct emu_bulk_copy {
   const void *s;
   uint32_t n;
   uint32_t *bar;
+  /* hopper-wgmma-tma: a tensor box (`s` its map, `c` its coordinates). */
+  int32_t c[5];
 };
+/* hopper-wgmma-tma: the emulator's tensor map, written into the 128 bytes a
+ * kernel takes by value (`emu_tmap_encode`) — the recipe's fields as the box
+ * copy reads them. */
+struct emu_tmap {
+  uint64_t base;
+  uint32_t elem, rank, swizzle, pad;
+  uint32_t dims[5], box[5];
+  uint64_t strides[5];
+};
+_Static_assert(sizeof(struct emu_tmap) <= 128, "a tensor map is 128 bytes");
+/* The `swizzle`-byte pattern of the address `o` (an offset into `emu_smem`):
+ * its 16-byte chunk bits [4, 4+b) XOR its bits [7, 7+b), b = log2(span/16). */
+static uint64_t emu_swz(uint64_t o, uint32_t swizzle) {
+  if (swizzle < 32) return o;
+  uint64_t mask = swizzle / 16 - 1;
+  return o ^ (((o >> 7) & mask) << 4);
+}
+/* A box of `t` landing at `d`: each element at its dense offset, the swizzle
+ * applied to its shared address; a coordinate outside the tensor reads 0. */
+static void emu_box(unsigned char *d, const struct emu_tmap *t, const int32_t *c) {
+  uint64_t o0 = (uint64_t)(d - emu_smem);
+  if (t->swizzle >= 32 && o0 % (8 * (uint64_t)t->swizzle)) {
+    fprintf(stderr, "emu: a %u-byte swizzled box at shared offset %llu (not a whole pattern)\n", t->swizzle,
+            (unsigned long long)o0);
+    exit(109);
+  }
+  uint64_t n = 1;
+  for (uint32_t i = 0; i < t->rank; i++) n *= t->box[i];
+  for (uint64_t e = 0; e < n; e++) {
+    uint64_t r = e, src = 0;
+    int in = 1;
+    for (uint32_t i = 0; i < t->rank; i++) {
+      int64_t x = (int64_t)c[i] + (int64_t)(r % t->box[i]);
+      r /= t->box[i];
+      if (x < 0 || x >= (int64_t)t->dims[i]) in = 0;
+      src += (uint64_t)x * t->strides[i];
+    }
+    unsigned char *q = emu_smem + emu_swz(o0 + e * t->elem, t->swizzle);
+    if (in)
+      memcpy(q, (const unsigned char *)t->base + src, t->elem);
+    else
+      memset(q, 0, t->elem);
+  }
+}
 static struct emu_bulk_copy bq[EMU_BULK_MAX];
 static uint32_t bq_len;
 static pthread_mutex_t bq_mu = PTHREAD_MUTEX_INITIALIZER;
@@ -300,7 +349,34 @@ void emu_bulk(void *d, const void *s, uint32_t n, uint32_t *b, uint32_t on) {
     fprintf(stderr, "emu: bulk copy queue full\n");
     exit(103);
   }
-  bq[bq_len++] = (struct emu_bulk_copy){d, s, n, b};
+  bq[bq_len++] = (struct emu_bulk_copy){d, s, n, b, {INT32_MIN}};
+  pthread_mutex_unlock(&bq_mu);
+}
+/* hopper-wgmma-tma: `cp.async.bulk.tensor.<rank>d ... [d], [map, {c…}], [b]`
+ * — queued like a row copy, its bytes the whole box (out-of-bounds elements
+ * included, as the engine counts them). */
+void emu_bulk_tensor(void *d, uint64_t map, int32_t c0, int32_t c1, int32_t c2, int32_t c3, int32_t c4,
+                     uint32_t *b) {
+  const struct emu_tmap *t = (const struct emu_tmap *)(uintptr_t)map;
+  uint32_t n = t->elem;
+  for (uint32_t i = 0; i < t->rank; i++) n *= t->box[i];
+  pthread_mutex_lock(&bq_mu);
+  if (bq_len == EMU_BULK_MAX) {
+    fprintf(stderr, "emu: bulk copy queue full\n");
+    exit(103);
+  }
+  bq[bq_len++] = (struct emu_bulk_copy){d, t, n, b, {c0, c1, c2, c3, c4}};
+  pthread_mutex_unlock(&bq_mu);
+}
+/* `mbarrier.arrive` (no transaction): one of the phase's arrivals. */
+void emu_mbar_arrive(uint32_t *b) {
+  pthread_mutex_lock(&bq_mu);
+  if ((b[0] & 0xffffu) == 0) {
+    fprintf(stderr, "emu: mbarrier arrival on a complete phase\n");
+    exit(107);
+  }
+  b[0]--;
+  mbar_complete(b);
   pthread_mutex_unlock(&bq_mu);
 }
 static _Thread_local uint64_t mbar_spins;
@@ -309,7 +385,10 @@ uint32_t emu_mbar_try(uint32_t *b, uint32_t parity) {
   uint32_t keep = 0;
   for (uint32_t i = 0; i < bq_len; i++) {
     if (bq[i].bar == b) {
-      memcpy(bq[i].d, bq[i].s, bq[i].n);
+      if (bq[i].c[0] != INT32_MIN)
+        emu_box(bq[i].d, bq[i].s, bq[i].c);
+      else
+        memcpy(bq[i].d, bq[i].s, bq[i].n);
       b[1] = (uint32_t)((int32_t)b[1] - (int32_t)bq[i].n);
     } else {
       bq[keep++] = bq[i];
@@ -391,7 +470,7 @@ float emu_shfl_bfly(float v, int32_t off) {
  * posts its operands, the warp meets, each lane computes its own fragment from
  * the posts, the warp meets again. Results are read back one register at a
  * time (`emu_frag`), so no struct crosses the C ABI. */
-static _Thread_local uint32_t t_frag[4];
+static _Thread_local uint32_t t_frag[128];
 static const uint8_t *w_addr[1024];
 static uint32_t w_ab[1024][6];
 static float w_c[1024][4];
@@ -463,6 +542,112 @@ uint32_t emu_cvt_tf32f(float f) {
   uint32_t x;
   memcpy(&x, &f, 4);
   return emu_cvt_tf32(x);
+}
+/* `cvt.rn.tf32.f32` (ADR-0039 `to_tf32`): to nearest, ties to even. */
+uint32_t emu_cvt_rn_tf32f(float f) {
+  uint32_t x;
+  memcpy(&x, &f, 4);
+  if ((x & 0x7f800000u) == 0x7f800000u)
+    return x;
+  return (x + 0xfffu + ((x >> 13) & 1u)) & 0xffffe000u;
+}
+/* hopper-wgmma-tma: `wgmma.mma_async.sync.aligned.m64nNk8.f32.tf32.tf32` with
+ * `a` from registers and `b` from a matrix descriptor, as a meet of the
+ * warpgroup's 128 threads (named barrier 12 + warpgroup). Each thread posts
+ * its `a` fragment (warp w's rows 16w.., the m16n8k8 layout) and its
+ * accumulators (`emu_acc_set`), then computes its own `d[4j + 2h + e]` =
+ * (row 16w + g + 8h, column 8j + 2t + e): the products exact, the sum exact
+ * and truncated toward zero to f32 (the `mma` model). Both operands are read
+ * as the instruction reads them — the low 13 bits dropped, so an operand not
+ * rounded before it is truncated — and `b`'s address comes from the
+ * descriptor (start, LBO, SBO, swizzle mode) through the swizzle the box
+ * writer applies, so a wrong descriptor is a wrong value.
+ *
+ * Asynchrony: the first thread of a warpgroup records every `b` element an
+ * instruction read and its value; `wgmma.wait_group n` checks that the ones
+ * of every group but the newest `n` still hold them (a stage released to the
+ * copy engine before the group reading it was waited for is a failure, 110). */
+static _Thread_local float t_acc[128];
+void emu_acc_set(int32_t i, float v) { t_acc[i] = v; }
+static uint32_t wg_a[1024][4];
+static float wg_c[1024][128];
+static uint64_t wg_d[1024];
+#define WG_REC_MAX (1 << 17)
+static struct { const uint32_t *p; uint32_t v, g; } wg_rec[4][WG_REC_MAX];
+static uint32_t wg_nrec[4], wg_group[4];
+static const uint32_t *wg_b_at(uint64_t desc, int col, int k) {
+  uint64_t start = (desc & 0x3fff) << 4, lbo = ((desc >> 16) & 0x3fff) << 4, sbo = ((desc >> 32) & 0x3fff) << 4;
+  uint32_t mode = (uint32_t)(desc >> 62) & 3;
+  uint32_t span = mode == 1 ? 128 : mode == 2 ? 64 : mode == 3 ? 32 : 0;
+  uint64_t kb = (uint64_t)k * 4, o;
+  if (span)
+    o = emu_swz(start + (uint64_t)(col / 8) * sbo + (uint64_t)(col % 8) * span + kb, span);
+  else
+    o = start + (uint64_t)(col / 8) * sbo + (uint64_t)(col % 8) * 16 + kb / 16 * lbo + kb % 16;
+  if (o + 4 > sizeof emu_smem) {
+    fprintf(stderr, "emu: wgmma descriptor reads past shared memory\n");
+    exit(110);
+  }
+  return (const uint32_t *)(emu_smem + o);
+}
+void emu_wgmma(int32_t n, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint64_t desc) {
+  int wgi = tid_x / 128, base = wgi * 128, me = tid_x - base;
+  wg_a[tid_x][0] = a0, wg_a[tid_x][1] = a1, wg_a[tid_x][2] = a2, wg_a[tid_x][3] = a3;
+  memcpy(wg_c[tid_x], t_acc, (size_t)(n / 2) * sizeof(float));
+  wg_d[tid_x] = desc;
+  emu_barrier_k(12 + wgi, 128);
+  int w = me / 32, lane = me % 32, g = lane / 4, t = lane % 4;
+  for (int j = 0; j < n / 8; j++)
+    for (int h = 0; h < 2; h++)
+      for (int e = 0; e < 2; e++) {
+        int q = 4 * j + 2 * h + e, row = 16 * w + g + 8 * h, col = 8 * j + 2 * t + e;
+        double s = wg_c[tid_x][q];
+        for (int k = 0; k < 8; k++) {
+          int src = base + 32 * (row / 16) + 4 * (row % 8) + k % 4;
+          uint32_t ar = wg_a[src][(row % 16) / 8 + 2 * (k / 4)] & 0xffffe000u;
+          uint32_t br = *wg_b_at(wg_d[base], col, k) & 0xffffe000u;
+          float a, b;
+          memcpy(&a, &ar, 4);
+          memcpy(&b, &br, 4);
+          s += (double)a * (double)b;
+        }
+        float d = (float)s;
+        if (isfinite(d) && fabs((double)d) > fabs(s)) d = nextafterf(d, 0.0f);
+        memcpy(&t_frag[q], &d, 4);
+      }
+  if (me == 0) {
+    for (int col = 0; col < n; col++)
+      for (int k = 0; k < 8; k++) {
+        if (wg_nrec[wgi] == WG_REC_MAX) {
+          fprintf(stderr, "emu: wgmma record full\n");
+          exit(110);
+        }
+        const uint32_t *p = wg_b_at(wg_d[base], col, k);
+        wg_rec[wgi][wg_nrec[wgi]].p = p;
+        wg_rec[wgi][wg_nrec[wgi]].v = *p;
+        wg_rec[wgi][wg_nrec[wgi]++].g = wg_group[wgi];
+      }
+  }
+  emu_barrier_k(12 + wgi, 128);
+}
+void emu_wg_commit(void) {
+  if (tid_x % 128 == 0) wg_group[tid_x / 128]++;
+}
+void emu_wg_wait(int32_t pending) {
+  int wgi = tid_x / 128;
+  if (tid_x % 128) return;
+  uint32_t keep = 0;
+  for (uint32_t i = 0; i < wg_nrec[wgi]; i++) {
+    if (wg_rec[wgi][i].g + (uint32_t)pending < wg_group[wgi]) {
+      if (*wg_rec[wgi][i].p != wg_rec[wgi][i].v) {
+        fprintf(stderr, "emu: a wgmma operand changed before its wait_group (group %u)\n", wg_rec[wgi][i].g);
+        exit(110);
+      }
+    } else {
+      wg_rec[wgi][keep++] = wg_rec[wgi][i];
+    }
+  }
+  wg_nrec[wgi] = keep;
 }
 void emu_mma16(int32_t f16, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t b0,
                uint32_t b1, float c0, float c1, float c2, float c3) {
@@ -601,6 +786,49 @@ static void *sym(const char *prefix, uint64_t id) {
   }
   return f;
 }
+void mapal_gpu_launchv(uint64_t id, uint32_t stream, uint32_t nptr, const uint64_t *ptrs, uint32_t gx, uint32_t gy,
+                       uint32_t block, uint32_t smem);
+/* hopper-wgmma-tma: the kernel's tensor-map recipe (`<kernel>_tmap`, see
+ * `mapal_gpu.c`), encoded into the emulator's own map per launch. */
+#define EMU_TMAP_MAX 4
+static uint32_t emu_tmaps(uint64_t id, const uint64_t *ptrs, uint32_t nptr, struct emu_tmap *out) {
+  char name[64];
+  snprintf(name, sizeof name, "mapal_tile_%016llx_tmap", (unsigned long long)id);
+  const uint64_t *r = dlsym(RTLD_DEFAULT, name);
+  if (!r) return 0;
+  uint32_t n = (uint32_t)r[0];
+  if (n > EMU_TMAP_MAX) exit(102);
+  for (uint32_t m = 0; m < n; m++) {
+    const uint64_t *q = r + 1 + 20 * m;
+    struct emu_tmap *t = &out[m];
+    memset(t, 0, sizeof *t);
+    if (q[0] >= nptr) {
+      fprintf(stderr, "emu: tensor map %u names argument %llu of %u\n", m, (unsigned long long)q[0], nptr);
+      exit(102);
+    }
+    t->base = ptrs[q[0]] + q[4];
+    t->elem = (uint32_t)q[1];
+    t->rank = (uint32_t)q[2];
+    t->swizzle = (uint32_t)q[3];
+    if (t->base % 16) {
+      fprintf(stderr, "emu: tensor map %u base not 16-byte aligned\n", m);
+      exit(102);
+    }
+    for (uint32_t i = 0; i < 5; i++) {
+      t->dims[i] = (uint32_t)q[5 + i];
+      t->box[i] = (uint32_t)q[14 + i];
+    }
+    t->strides[0] = t->elem;
+    for (uint32_t i = 1; i < 5; i++) {
+      t->strides[i] = q[9 + i];
+      if (i < t->rank && t->strides[i] % 16) {
+        fprintf(stderr, "emu: tensor map %u stride %u not 16-byte\n", m, i);
+        exit(102);
+      }
+    }
+  }
+  return n;
+}
 /* `MAPAL_GPU_TRACE=1`: one line per launch, `mapal_gpu.c`'s `op=launch` (the
  * kernel only: no clock here). */
 static void emu_trace_launch(uint64_t id) {
@@ -609,6 +837,14 @@ static void emu_trace_launch(uint64_t id) {
 }
 void mapal_gpu_launch(uint64_t id, uint64_t a, uint64_t b, uint64_t o, uint32_t gx, uint32_t gy, uint32_t block,
                       uint32_t smem) {
+  {
+    struct emu_tmap tm[EMU_TMAP_MAX];
+    uint64_t ptrs[3] = {a, b, o};
+    if (emu_tmaps(id, ptrs, 3, tm)) {
+      mapal_gpu_launchv(id, 0, 3, ptrs, gx, gy, block, smem);
+      return;
+    }
+  }
   emu_trace_launch(id);
   void (*k)(void *, void *, void *) = (void (*)(void *, void *, void *))sym("mapal_tile", id);
   /* A module with shuffles (`emu_threaded`: `fold-lanes`) runs threaded too. */
@@ -724,8 +960,13 @@ void mapal_gpu_launchv(uint64_t id, uint32_t stream, uint32_t nptr, const uint64
   (void)stream;
   emu_trace_launch(id);
   kv_t k = (kv_t)sym("mapal_tile", id);
-  void *p[16];
+  void *p[16 + EMU_TMAP_MAX];
   for (uint32_t i = 0; i < nptr && i < 16; i++) p[i] = (void *)ptrs[i];
+  /* hopper-wgmma-tma: the maps follow the pointers. */
+  struct emu_tmap tm[EMU_TMAP_MAX];
+  uint32_t nm = emu_tmaps(id, ptrs, nptr, tm);
+  for (uint32_t m = 0; m < nm; m++) p[nptr + m] = &tm[m];
+  nptr += nm;
   /* A module with shuffles (`emu_threaded`) runs its launches threaded. */
   if (smem || dlsym(RTLD_DEFAULT, "emu_threaded")) {
     pthread_t *th = malloc(block * sizeof *th);

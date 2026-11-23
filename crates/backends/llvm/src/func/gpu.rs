@@ -946,8 +946,19 @@ pub(crate) fn launch_split(
     {
         let rungs = site_rungs(profile, wps, Face::Tf32, arms, site);
         if rungs.mma && rungs.tf32_tile && radix_ok(rungs) {
+            // hopper-wgmma-tma R2: the warp-specialized kernel where both
+            // operands are tensor boxes of its panels, else the S53 kernel.
             let wgmma = (rungs.wgmma && rx.is_none())
-                .then(|| profile.gpu_wgmma_tile(site.rows, site.c, site.k))
+                .then(|| {
+                    rungs
+                        .wgmma_ws
+                        .then(|| {
+                            profile.gpu_wgmma_ws_tile(site.rows, site.c, site.k, rungs.ws_regs)
+                        })
+                        .flatten()
+                        .filter(|w| ws_tensors(site, w, gpu).is_some())
+                        .or_else(|| profile.gpu_wgmma_tile(site.rows, site.c, site.k))
+                })
                 .flatten();
             if let Some(w) = wgmma {
                 return Launch {
@@ -1328,6 +1339,14 @@ fn plan_line(
             " n={} groups={} bk={} stages={} blocks_per_sm={}",
             w.n, w.groups, w.bk, w.stages, w.blocks_per_sm
         );
+        // hopper-wgmma-tma (intent.py `wgmma-ws`): the producer warpgroup,
+        // the tensor boxes a stage, the registers each side keeps.
+        if w.ws {
+            f += &format!(" ws=1 stage=tma boxes={}", 1 + w.ws_b_boxes());
+            if let Some((p, c)) = w.realloc {
+                f += &format!(" regs={p}/{c}");
+            }
+        }
     }
     // generic-fusion `window`: a window site's tap grid, `(k÷div) × div`
     // (intent.py `window`); no other kernel's line changes.
@@ -1413,7 +1432,7 @@ fn plan_line(
 }
 
 /// The rungs a kernel's text reads ([`plan_line`]); the rest are host rungs.
-const KERNEL_RUNGS: [&str; 42] = [
+const KERNEL_RUNGS: [&str; 44] = [
     "arch-rungs",
     "interleave",
     "unroll",
@@ -1456,6 +1475,8 @@ const KERNEL_RUNGS: [&str; 42] = [
     "vec-cells",
     "stream-fly",
     "bulk-stage",
+    "wgmma-ws",
+    "ws-regs",
 ];
 
 /// [`launch`] with the fold's realization chosen under `order` (ADR-0040 D4).
@@ -2207,6 +2228,14 @@ fn launch_key(l: &Launch) -> String {
         // stages' barriers); a launch it does not stage keys as before.
         .replace(", bulk_stage: true", "")
         .replace(", bulk_stage: false", "")
+        // hopper-wgmma-tma: the warp-specialized kernel keys through its
+        // tile (`ws`, `realloc`); the S53 kernel and every other launch key
+        // as before.
+        .replace(", wgmma_ws: true", "")
+        .replace(", wgmma_ws: false", "")
+        .replace(", ws_regs: true", "")
+        .replace(", ws_regs: false", "")
+        .replace(", ws: false, realloc: None", "")
         .replace(", cells: 1 }", " }")
 }
 
@@ -2691,6 +2720,65 @@ pub(crate) fn bulk_stage(
         && whole(g.stage_words())
         && (g.bm() * g.bk + g.bk * g.bn()) * e <= bc.tx_bytes
         && g.smem_bytes() + BULK_BAR_BYTES * g.stages <= gpu.smem_per_block
+}
+
+/// hopper-wgmma-tma R1 for the warp-specialized `wgmma` kernel: **its two
+/// operands as tensor boxes** — `a` as the dense `k × rows` tensor its
+/// [`mapal_ir::TileRead::tensor_form`] proves (the `aᵀ` box: `bk` words of
+/// `n` rows, the 128-byte swizzle the descriptor reads), `b` as the dense
+/// `c × k` tensor (`bk` rows of one 32-word swizzle span, `bn / 32` boxes a
+/// stage) — every box within the engine's geometry
+/// ([`crate::profile::BulkCopy::tensor_box_fits`]). The recipe the runtime
+/// encodes each map from (`mapal_gpu.c` `tmap_args`): `[arg, elem bytes,
+/// rank, swizzle, base bytes, dims[5], byte strides[4], box[5], 0]` per map.
+/// `None`: plain f32 reads only (a narrow, strided-lane, digit or window
+/// operand keeps the S53 kernel).
+pub(crate) fn ws_tensors(site: &TileSite, w: &GpuWgmmaTile, gpu: &Gpu) -> Option<[[u64; 20]; 2]> {
+    use mapal_ir::TensorAxis as X;
+    let bc = gpu.caps.bulk?;
+    if site.radix.is_some() || site.a.narrow.is_some() || site.b.narrow.is_some() {
+        return None;
+    }
+    let e = 4u64;
+    let span = WGMMA_SWIZZLE_BYTES;
+    let a = site.a.tensor_form(site.rows, site.c, site.k)?;
+    let b = site.b.tensor_form(site.rows, site.c, site.k)?;
+    if a.axes() != [X::K, X::I] || b.axes() != [X::Lane, X::K] {
+        return None;
+    }
+    let (asides, aexact) = a.box_of(|x| if x == X::K { w.bk } else { w.n });
+    let (bsides, bexact) = b.box_of(|x| if x == X::Lane { span / e } else { w.bk });
+    let dims = |f: &mapal_ir::TensorForm| {
+        f.dims
+            .iter()
+            .map(|d| (d.extent, d.stride))
+            .collect::<Vec<_>>()
+    };
+    let ok = aexact
+        && bexact
+        && bc.tensor_box_fits(&dims(&a), &asides, a.base, e, Some(span))
+        && bc.tensor_box_fits(&dims(&b), &bsides, b.base, e, Some(span))
+        && w.bn().is_multiple_of(span / e);
+    if !ok {
+        return None;
+    }
+    let rec = |arg: u64, f: &mapal_ir::TensorForm, sides: &[u64]| {
+        let mut r = [0u64; 20];
+        r[0] = arg;
+        r[1] = e;
+        r[2] = f.dims.len() as u64;
+        r[3] = span;
+        r[4] = f.base * e;
+        for (i, d) in f.dims.iter().enumerate() {
+            r[5 + i] = d.extent;
+            if i > 0 {
+                r[9 + i] = d.stride * e;
+            }
+            r[14 + i] = sides[i];
+        }
+        r
+    };
+    Some([rec(0, &a, &asides), rec(1, &b, &bsides)])
 }
 
 /// The one-thread-per-cell grid at `cells` cells a thread.
@@ -4072,8 +4160,9 @@ pub(crate) fn device_module(
     } else if pdl_part(profile, contract, arms) {
         out = strip_pdl(&out);
     }
-    // A `wgmma` kernel's swizzle atoms start on 1024-byte boundaries.
-    if out.contains("wgmma.mma_async") {
+    // A `wgmma` kernel's swizzle atoms, and every swizzled tensor box,
+    // start on 1024-byte boundaries.
+    if out.contains("wgmma.mma_async") || out.contains("cp.async.bulk.tensor") {
         out = out.replacen("[0 x i8], align 16", "[0 x i8], align 1024", 1);
     }
     Some(out)
@@ -4149,6 +4238,7 @@ fn kernel_text(
         k.out.push('\n');
     }
     match (l.wgmma, l.mma, l.tiled) {
+        (Some(w), _, _) if w.ws => k.wgmma_ws(name, w),
         (Some(w), _, _) => k.wgmma(name, w),
         (None, Some(m), _) if m.fmt != MmaFmt::Tf32 => k.mma16(name, m),
         (None, Some(m), _) => k.mma(name, m),
@@ -4269,6 +4359,7 @@ fn kernel<'s>(
         },
         p0: None,
         head: "entry",
+        tmap: Vec::new(),
     }
 }
 
@@ -4782,6 +4873,10 @@ struct Kernel<'s> {
     /// The block the panel loop is entered from: `entry`, or `seg` in a
     /// stream-K kernel (one panel loop per piece).
     head: &'static str,
+    /// hopper-wgmma-tma: the tensor maps this kernel takes by value after
+    /// its pointers ([`ws_tensors`]'s recipes), carried to the runtime as
+    /// the global `<kernel>_tmap`.
+    tmap: Vec<[u64; 20]>,
 }
 
 impl Kernel<'_> {
@@ -5299,6 +5394,10 @@ impl Kernel<'_> {
         } else {
             "readonly"
         };
+        // hopper-wgmma-tma: each tensor map a 128-byte parameter by value.
+        for m in 0..self.tmap.len() {
+            more += &format!(", ptr byval([128 x i8]) align 64 \"nvvm.grid_constant\" %tm{m}");
+        }
         self.out.push_str(&format!(
             "define ptx_kernel void @{name}(\
              ptr addrspace(1) {ro} align {aa} {a0}, \
@@ -6079,6 +6178,462 @@ impl Kernel<'_> {
             }
         }
         self.out.push_str("  ret void\n}\n");
+    }
+
+    /// An `mbarrier.try_wait.parity` spin on the barrier at the 32-bit shared
+    /// address `bar` for the phase of parity `par` (an i64 value), in blocks
+    /// `{label}w` (the spin) and `{label}d` (past it).
+    fn mbar_wait(&mut self, bar: &str, par: &str, label: &str) {
+        let p32 = self.tmp();
+        self.line(format!("{p32} = trunc i64 {par} to i32"));
+        self.line(format!("br label %{label}w"));
+        self.out.push_str(&format!("{label}w:\n"));
+        let ok = self.tmp();
+        self.line(format!(
+            "{ok} = call i32 asm sideeffect \"{{ .reg .pred p; mbarrier.try_wait.parity.shared::cta.b64 p, [$1], $2; selp.u32 $0, 1, 0, p; }}\", \"=r,r,r,~{{memory}}\"(i32 {bar}, i32 {p32})"
+        ));
+        let done = self.tmp();
+        self.line(format!("{done} = icmp ne i32 {ok}, 0"));
+        self.line(format!("br i1 {done}, label %{label}d, label %{label}w"));
+        self.out.push_str(&format!("{label}d:\n"));
+    }
+
+    /// The 32-bit shared address `off` (an i64 value or literal) bytes into
+    /// the dynamic shared memory.
+    fn smem_at(&mut self, off: &str) -> String {
+        let p = self.tmp();
+        self.line(format!(
+            "{p} = getelementptr inbounds i8, ptr addrspace(3) @mapal_smem, i64 {off}"
+        ));
+        let a = self.tmp();
+        self.line(format!("{a} = ptrtoint ptr addrspace(3) {p} to i32"));
+        a
+    }
+
+    /// `v` (an i64 value) as an i32.
+    fn i32_of(&mut self, v: &str) -> String {
+        let t = self.tmp();
+        self.line(format!("{t} = trunc i64 {v} to i32"));
+        t
+    }
+
+    /// **hopper-wgmma-tma K2: the warp-specialized Hopper TF32 kernel**
+    /// ([`GpuWgmmaTile::ws`]) — S53's transposed product `cᵀ = bᵀ·aᵀ`
+    /// ([`Self::wgmma`]: consumer warpgroup `cw` owns `c` columns
+    /// `bx·bn + 64·cw ..+64` × rows `by·n ..+n`) fed by tensor boxes.
+    ///
+    /// - **Producer** (warpgroup 0, `setmaxnreg.dec` under `ws-regs`): step `j`
+    ///   first rounds tile `j − (stages − 1)` in place — every thread waits
+    ///   its stage's full barrier, rounds its 16-byte chunks of the `aᵀ` box
+    ///   (RNE, `cvt.rn.tf32`: `wgmma` truncates what it reads), fences them
+    ///   to the async proxy and arrives on the stage's ready barrier — then
+    ///   thread 0 waits tile `j`'s stage empty, counts its bytes
+    ///   (`expect_tx`) and issues one `aᵀ` box (`{bk, n}` at `(k0, row0)`) and
+    ///   `bn/32` `b` boxes (`{32, bk}` at `(col0 + 32q, k0)`), all 128-byte
+    ///   swizzled, onto its full barrier. `stages − 1` tiles are in flight
+    ///   while one is rounded.
+    /// - **Consumers** (`setmaxnreg.inc`): tile `i` waits its stage full (the
+    ///   `b` boxes the fragments load) and ready (the rounded `aᵀ`), loads the
+    ///   `bᵀ` fragments through the box swizzle (rounded in the load), issues
+    ///   `bk/8` `wgmma` on the stage's descriptor and commits. Before its
+    ///   fragment loads it waits for tile `i − 1`'s group (an `a` fragment
+    ///   register may not be rewritten before then — PTX ISA), whose stage
+    ///   each warp's lane 0 then releases (empty barrier): a stage is never
+    ///   released while a group may still read it; the group in flight
+    ///   computes through this tile's barrier waits, and the other consumer
+    ///   warpgroup's through its fragment loads.
+    /// - **Barriers** (after the stages): `full[s]` (one arrival + the bytes),
+    ///   `ready[s]` (the producer's 128 threads), `empty[s]` (the consumer
+    ///   warps); waits by phase parity.
+    fn wgmma_ws(&mut self, name: &str, g: GpuWgmmaTile) {
+        let s = self.site;
+        let seed = const_literal(&s.seed);
+        let warp = self.profile_gpu.warp;
+        let wgt = WARPGROUP_WARPS * warp;
+        let threads = g.threads(warp);
+        let (bm, bn, bk, n) = (g.bm(), g.bn(), g.bk, g.n);
+        let (st, sb, ab) = (g.stages, g.ws_stage_bytes(), g.ws_a_bytes());
+        let span = WGMMA_SWIZZLE_BYTES;
+        let box_b = span * bk;
+        let nk = s.k / bk;
+        let lead = st - 1;
+        let maps = ws_tensors(s, &g, &self.profile_gpu).expect("the derivation checked the boxes");
+        self.tmap = maps.to_vec();
+        self.header(name, threads, GPU_VEC_BYTES, 1);
+
+        let tid = self.sreg("tid.x");
+        let (bx, by) = self.block_ids();
+        let wg = self.op("udiv", &tid, wgt);
+        let row0 = self.op("mul", &by, bm);
+        let col0 = self.op("mul", &bx, bn);
+        let accs = (n / 2) as usize;
+        let acc = self.tmp();
+        self.line(format!("{acc} = alloca [{accs} x float], align 16"));
+        let acc_slot = |k: &mut Self, idx: usize| {
+            let p = k.tmp();
+            k.line(format!(
+                "{p} = getelementptr inbounds [{accs} x float], ptr {acc}, i64 0, i64 {idx}"
+            ));
+            p
+        };
+        for idx in 0..accs {
+            let p = acc_slot(self, idx);
+            self.line(format!("store float {seed}, ptr {p}, align 4"));
+        }
+        // Barriers: full (kind 0), ready (1), empty (2), `stages` each.
+        let bars = self.tmp();
+        self.line(format!(
+            "{bars} = getelementptr inbounds i8, ptr addrspace(3) @mapal_smem, i64 {}",
+            st * sb
+        ));
+        let t32 = self.i32_of(&tid);
+        for kind in 0..3u64 {
+            let count = [1, wgt, g.groups * WARPGROUP_WARPS][kind as usize];
+            for x in 0..st {
+                let a = self.bar_at(&bars, &((kind * st + x) * BULK_BAR_BYTES).to_string());
+                self.asm_args(
+                    "{ .reg .pred p; setp.eq.u32 p, $2, 0; @p mbarrier.init.shared::cta.b64 [$0], $1; }",
+                    "r,r,r",
+                    &[format!("i32 {a}"), format!("i32 {count}"), format!("i32 {t32}")],
+                );
+            }
+        }
+        self.asm("fence.mbarrier_init.release.cluster;");
+        self.line("call void @llvm.nvvm.barrier0()");
+        let bar = |k: &mut Self, kind: u64, stage: &str| {
+            let o = k.op("mul", stage, BULK_BAR_BYTES);
+            let o = k.op("add", &o, kind * st * BULK_BAR_BYTES);
+            k.bar_at(&bars, &o)
+        };
+        let prod = self.tmp();
+        self.line(format!("{prod} = icmp eq i64 {wg}, 0"));
+        self.line(format!("br i1 {prod}, label %prod, label %cons"));
+
+        // ---- producer warpgroup ----
+        self.out.push_str("prod:\n");
+        if let Some((p, _)) = g.realloc {
+            self.asm(&format!("setmaxnreg.dec.sync.aligned.u32 {p};"));
+        }
+        let tms: Vec<String> = (0..maps.len())
+            .map(|m| {
+                let t = self.tmp();
+                self.line(format!("{t} = ptrtoint ptr %tm{m} to i64"));
+                t
+            })
+            .collect();
+        let r32 = self.i32_of(&row0);
+        self.line("br label %pl");
+        self.out.push_str("pl:\n");
+        let (j, jn) = (self.tmp(), self.tmp());
+        self.line(format!("{j} = phi i64 [0, %prod], [{jn}, %pn]"));
+        let ge = self.tmp();
+        self.line(format!("{ge} = icmp uge i64 {j}, {lead}"));
+        self.line(format!("br i1 {ge}, label %pr, label %pi"));
+        // Round tile `j − lead`'s `aᵀ` box in place.
+        self.out.push_str("pr:\n");
+        let i = self.op("sub", &j, lead);
+        let x = self.op("urem", &i, st);
+        let ph = self.op("udiv", &i, st);
+        let ph = self.op("and", &ph, 1);
+        let fb = bar(self, 0, &x);
+        self.mbar_wait(&fb, &ph, "prf");
+        let base = self.op("mul", &x, sb);
+        let chunks = ab / GPU_VEC_BYTES;
+        for p in 0..chunks.div_ceil(wgt) {
+            let q = self.op("add", &tid, p * wgt);
+            let tail = (p + 1) * wgt > chunks;
+            if tail {
+                let inr = self.tmp();
+                self.line(format!("{inr} = icmp ult i64 {q}, {chunks}"));
+                self.line(format!("br i1 {inr}, label %prc{p}, label %prn{p}"));
+                self.out.push_str(&format!("prc{p}:\n"));
+            }
+            let o = self.op("mul", &q, GPU_VEC_BYTES);
+            let o = self.op("add", &base, &o);
+            let sp = self.tmp();
+            self.line(format!(
+                "{sp} = getelementptr inbounds i8, ptr addrspace(3) @mapal_smem, i64 {o}"
+            ));
+            let v = self.tmp();
+            self.line(format!(
+                "{v} = load <4 x float>, ptr addrspace(3) {sp}, align 16"
+            ));
+            let mut r = "poison".to_string();
+            for e in 0..4 {
+                let xv = self.tmp();
+                self.line(format!("{xv} = extractelement <4 x float> {v}, i64 {e}"));
+                let y = self.round_tf32(&xv, false);
+                let nr = self.tmp();
+                self.line(format!(
+                    "{nr} = insertelement <4 x i32> {r}, i32 {y}, i64 {e}"
+                ));
+                r = nr;
+            }
+            self.line(format!(
+                "store <4 x i32> {r}, ptr addrspace(3) {sp}, align 16"
+            ));
+            if tail {
+                self.line(format!("br label %prn{p}"));
+                self.out.push_str(&format!("prn{p}:\n"));
+            }
+        }
+        self.asm("fence.proxy.async.shared::cta;");
+        let rb = bar(self, 1, &x);
+        self.asm_args(
+            "mbarrier.arrive.shared::cta.b64 _, [$0];",
+            "r",
+            &[format!("i32 {rb}")],
+        );
+        self.line("br label %pi");
+        // Issue tile `j` (thread 0).
+        self.out.push_str("pi:\n");
+        let lt = self.tmp();
+        self.line(format!("{lt} = icmp ult i64 {j}, {nk}"));
+        let t0 = self.tmp();
+        self.line(format!("{t0} = icmp eq i64 {tid}, 0"));
+        let go = self.tmp();
+        self.line(format!("{go} = and i1 {lt}, {t0}"));
+        self.line(format!("br i1 {go}, label %pt, label %pn"));
+        self.out.push_str("pt:\n");
+        let x = self.op("urem", &j, st);
+        let ph = self.op("udiv", &j, st);
+        let ph = self.op("and", &ph, 1);
+        let ph = self.op("xor", &ph, 1);
+        let eb = bar(self, 2, &x);
+        self.mbar_wait(&eb, &ph, "pe");
+        let fb = bar(self, 0, &x);
+        let bytes = ab + bn * bk * 4;
+        self.asm_args(
+            "{ .reg .pred p; setp.eq.u32 p, $2, 0; @p mbarrier.arrive.expect_tx.shared::cta.b64 _, [$0], $1; }",
+            "r,r,r",
+            &[format!("i32 {fb}"), format!("i32 {bytes}"), "i32 0".into()],
+        );
+        let k0 = self.op("mul", &j, bk);
+        let k32 = self.i32_of(&k0);
+        let base = self.op("mul", &x, sb);
+        let ad = self.smem_at(&base);
+        let copy = "cp.async.bulk.tensor.2d.shared::cluster.global.tile.mbarrier::complete_tx::bytes [$0], [$1, {$2, $3}], [$4];";
+        self.asm_args(
+            copy,
+            "r,l,r,r,r",
+            &[
+                format!("i32 {ad}"),
+                format!("i64 {}", tms[0]),
+                format!("i32 {k32}"),
+                format!("i32 {r32}"),
+                format!("i32 {fb}"),
+            ],
+        );
+        for q in 0..g.ws_b_boxes() {
+            let o = self.op("add", &base, ab + q * box_b);
+            let bd = self.smem_at(&o);
+            let c = self.op("add", &col0, q * span / 4);
+            let c32 = self.i32_of(&c);
+            self.asm_args(
+                copy,
+                "r,l,r,r,r",
+                &[
+                    format!("i32 {bd}"),
+                    format!("i64 {}", tms[1]),
+                    format!("i32 {c32}"),
+                    format!("i32 {k32}"),
+                    format!("i32 {fb}"),
+                ],
+            );
+        }
+        self.line("br label %pn");
+        self.out.push_str("pn:\n");
+        self.line(format!("{jn} = add i64 {j}, 1"));
+        let fin = self.tmp();
+        self.line(format!("{fin} = icmp eq i64 {jn}, {}", nk + lead));
+        self.line(format!("br i1 {fin}, label %pend, label %pl"));
+        self.out.push_str("pend:\n  ret void\n");
+
+        // ---- consumer warpgroups ----
+        self.out.push_str("cons:\n");
+        if let Some((_, c)) = g.realloc {
+            self.asm(&format!("setmaxnreg.inc.sync.aligned.u32 {c};"));
+        }
+        let cw = self.op("sub", &wg, 1);
+        let ct = self.op("sub", &tid, wgt);
+        let warp_id = self.op("udiv", &ct, warp);
+        let w = self.op("urem", &warp_id, WARPGROUP_WARPS);
+        let lane = self.op("urem", &tid, warp);
+        let grp = self.op("udiv", &lane, 4);
+        let t4 = self.op("urem", &lane, 4);
+        // This thread's `bᵀ` fragment offsets in a stage at k-step 0: a_r =
+        // (column nl = 64·cw + 16·w + g + 8h, k = t + 4e) of `b`, in box nl/32
+        // at row k, byte 4·(nl % 32), 128-byte swizzled (the box's pattern;
+        // a k-step adds 8 whole rows, which the pattern repeats over).
+        let fc = self.op("mul", &cw, WGMMA_M);
+        let fw = self.op("mul", &w, WGMMA_M / WARPGROUP_WARPS);
+        let nl0 = self.op("add", &fc, &fw);
+        let nl0 = self.op("add", &nl0, &grp);
+        let mut offs = Vec::new();
+        for (h, e) in [(0u64, 0u64), (1, 0), (0, 1), (1, 1)] {
+            let nl = self.op("add", &nl0, 8 * h);
+            let qb = self.op("udiv", &nl, span / 4);
+            let qo = self.op("mul", &qb, box_b);
+            let nb = self.op("urem", &nl, span / 4);
+            let nb = self.op("mul", &nb, 4);
+            let kr = self.op("add", &t4, 4 * e);
+            let raw = self.op("mul", &kr, span);
+            let raw = self.op("add", &raw, &nb);
+            let sh = self.op("lshr", &raw, 7);
+            let sh = self.op("and", &sh, 7);
+            let sh = self.op("shl", &sh, 4);
+            let sw = self.op("xor", &raw, &sh);
+            let o = self.op("add", &qo, &sw);
+            offs.push(self.op("add", &o, ab));
+        }
+        self.line("br label %ct");
+        self.out.push_str("ct:\n");
+        let (it, itn) = (self.tmp(), self.tmp());
+        self.line(format!("{it} = phi i64 [0, %cons], [{itn}, %cgo]"));
+        let x = self.op("urem", &it, st);
+        let ph = self.op("udiv", &it, st);
+        let ph = self.op("and", &ph, 1);
+        let fb = bar(self, 0, &x);
+        self.mbar_wait(&fb, &ph, "cf");
+        let rb = bar(self, 1, &x);
+        self.mbar_wait(&rb, &ph, "cr");
+        // PTX ISA: an `a` fragment register may not be rewritten before the
+        // `wait_group` completing the `wgmma` that reads it — so tile `i − 1`'s
+        // group is waited for here, after this tile's barriers (it computes
+        // through them; the other consumer warpgroup's groups keep the
+        // tensor core busy through the fragment loads), and its stage is
+        // released at once: a stage is never released while a group reads it.
+        self.asm("wgmma.wait_group.sync.aligned 0;");
+        let rel = self.tmp();
+        self.line(format!("{rel} = icmp ugt i64 {it}, 0"));
+        let l0 = self.tmp();
+        self.line(format!("{l0} = icmp eq i64 {lane}, 0"));
+        let go = self.tmp();
+        self.line(format!("{go} = and i1 {rel}, {l0}"));
+        self.line(format!("br i1 {go}, label %crel, label %cgo"));
+        self.out.push_str("crel:\n");
+        let prev = self.op("sub", &it, 1);
+        let px = self.op("urem", &prev, st);
+        let eb = bar(self, 2, &px);
+        self.asm_args(
+            "mbarrier.arrive.shared::cta.b64 _, [$0];",
+            "r",
+            &[format!("i32 {eb}")],
+        );
+        self.line("br label %cgo");
+        self.out.push_str("cgo:\n");
+        let base = self.op("mul", &x, sb);
+        let mut frags = Vec::new();
+        for kk in 0..bk / WGMMA_K {
+            let mut f = Vec::new();
+            for o in &offs {
+                let i = self.op("add", &base, o);
+                let i = self.op("add", &i, kk * WGMMA_K * span);
+                let p = self.tmp();
+                self.line(format!(
+                    "{p} = getelementptr inbounds i8, ptr addrspace(3) @mapal_smem, i64 {i}"
+                ));
+                let v = self.tmp();
+                self.line(format!("{v} = load float, ptr addrspace(3) {p}, align 4"));
+                f.push(self.round_tf32(&v, true));
+            }
+            frags.push(f);
+        }
+        self.asm("wgmma.fence.sync.aligned;");
+        let a32 = self.smem_at(&base);
+        let a64 = self.tmp();
+        self.line(format!("{a64} = zext i32 {a32} to i64"));
+        let enc = self.op("lshr", &a64, 4);
+        let enc = self.op("and", &enc, 0x3fff);
+        let desc0 = self.op("or", &enc, g.desc_fields());
+        let sty = format!("{{ {} }}", vec!["float"; accs].join(", "));
+        let mut text = format!("wgmma.mma_async.sync.aligned.m64n{n}k8.f32.tf32.tf32 {{");
+        text.push_str(
+            &(0..accs)
+                .map(|i| format!("${i}"))
+                .collect::<Vec<_>>()
+                .join(","),
+        );
+        text.push_str(&format!(
+            "}}, {{${},${},${},${}}}, ${}, 1, 1, 1;",
+            accs,
+            accs + 1,
+            accs + 2,
+            accs + 3,
+            accs + 4
+        ));
+        let mut cons = vec!["=f".to_string(); accs];
+        cons.extend(["r", "r", "r", "r", "l"].map(String::from));
+        cons.extend((0..accs).map(|i| i.to_string()));
+        let cons = cons.join(",");
+        for (kk, f) in frags.iter().enumerate() {
+            // k-step `kk` starts `kk·32` bytes into the 128-byte rows.
+            let desc = self.op("add", &desc0, (kk as u64 * WGMMA_K * 4) >> 4);
+            let mut args = format!(
+                "i32 {}, i32 {}, i32 {}, i32 {}, i64 {desc}",
+                f[0], f[1], f[2], f[3]
+            );
+            let mut slots = Vec::new();
+            for q in 0..accs {
+                let p = acc_slot(self, q);
+                let v = self.tmp();
+                self.line(format!("{v} = load float, ptr {p}, align 4"));
+                args.push_str(&format!(", float {v}"));
+                slots.push(p);
+            }
+            let r = self.tmp();
+            self.line(format!(
+                "{r} = call {sty} asm sideeffect \"{text}\", \"{cons}\"({args})"
+            ));
+            for (q, p) in slots.iter().enumerate() {
+                let d = self.tmp();
+                self.line(format!("{d} = extractvalue {sty} {r}, {q}"));
+                self.line(format!("store float {d}, ptr {p}, align 4"));
+            }
+        }
+        self.asm("wgmma.commit_group.sync.aligned;");
+        self.line(format!("{itn} = add i64 {it}, 1"));
+        let fin = self.tmp();
+        self.line(format!("{fin} = icmp eq i64 {itn}, {nk}"));
+        self.line(format!("br i1 {fin}, label %cd, label %ct"));
+
+        self.out.push_str("cd:\n");
+        self.asm("wgmma.wait_group.sync.aligned 0;");
+        let er = self.op("mul", &t4, 2);
+        let er = self.op("add", &er, &row0);
+        let er = self.op("mul", &er, s.c);
+        let ec = self.op("add", &col0, &fc);
+        let ec = self.op("add", &ec, &fw);
+        let ec = self.op("add", &ec, &grp);
+        let ebase = self.op("add", &er, &ec);
+        for jj in 0..n / 8 {
+            for h in 0..2u64 {
+                for e in 0..2u64 {
+                    let q = (4 * jj + 2 * h + e) as usize;
+                    let p = acc_slot(self, q);
+                    let xv = self.tmp();
+                    self.line(format!("{xv} = load float, ptr {p}, align 4"));
+                    let oi = self.op("add", &ebase, (8 * jj + e) * s.c + 8 * h);
+                    if self.epi.is_some() {
+                        self.store_cells(&[xv], &oi);
+                        continue;
+                    }
+                    let op = self.gep(1, "%o", &oi);
+                    self.line(format!("store float {xv}, ptr addrspace(1) {op}, align 4"));
+                }
+            }
+        }
+        self.out.push_str("  ret void\n}\n");
+        // The tensor maps' recipe (`mapal_gpu.c` `tmap_of`).
+        let words: Vec<String> = std::iter::once(maps.len() as u64)
+            .chain(maps.iter().flatten().copied())
+            .map(|v| format!("i64 {v}"))
+            .collect();
+        self.out.push_str(&format!(
+            "@{name}_tmap = addrspace(1) constant [{} x i64] [{}], align 8\n",
+            words.len(),
+            words.join(", ")
+        ));
     }
 
     /// The tensor-core kernel (TF32 face): block `(bx, by)` owns a `bm × bn`
@@ -8727,6 +9282,7 @@ mod tests {
                             streamk: None,
                             p0: None,
                             head: "entry",
+                            tmap: Vec::new(),
                         };
                         let result = k.step("%acc", "%a", "%b");
                         let t = &k.t;

@@ -837,6 +837,20 @@ pub struct GpuRungs {
     /// `cp.async` groups. Off (`--gpu-off=bulk-stage`): every thread's 16-byte
     /// `cp.async` copies.
     pub bulk_stage: bool,
+    /// hopper-wgmma-tma R2 (`wgmma-ws`): the Hopper TF32 site as a
+    /// warp-specialized `wgmma` kernel — one producer warpgroup copying each
+    /// stage as whole tensor boxes (`cp.async.bulk.tensor`, a host-encoded
+    /// map per operand) onto a full barrier and rounding the `aᵀ` box once,
+    /// consumer warpgroups releasing each stage on an empty barrier once the
+    /// group reading it completed (`wgmma.wait_group`)
+    /// ([`profile::TargetProfile::gpu_wgmma_ws_tile`]). Off
+    /// (`--gpu-off=wgmma-ws`): the S53 kernel.
+    pub wgmma_ws: bool,
+    /// hopper-wgmma-tma R3 (`ws-regs`): the warp-specialized kernel moves
+    /// registers from its producer to its consumers (`setmaxnreg`) where the
+    /// part reallocates ([`profile::Caps::reg_realloc`]). Off: every thread
+    /// keeps the launch's even share (a smaller consumer tile).
+    pub ws_regs: bool,
     /// flash-attention `stream`: a row-block group `stream_plan` proves one
     /// pass over windows of its axis (attention's `q·Kᵀ → softmax → P·V`)
     /// runs as one kernel walking the axis window by window — each fold's
@@ -983,6 +997,8 @@ impl GpuRungs {
         vec_cells: true,
         stream_fly: true,
         bulk_stage: true,
+        wgmma_ws: true,
+        ws_regs: true,
         stream: true,
         stream_fact: true,
         split_kv: true,
@@ -992,7 +1008,7 @@ impl GpuRungs {
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 119] = [
+    pub const NAMES: [&'static str; 121] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1107,6 +1123,8 @@ impl GpuRungs {
         "vec-cells",
         "stream-fly",
         "bulk-stage",
+        "wgmma-ws",
+        "ws-regs",
         "stream",
         "stream-fact",
         "split-kv",
@@ -1231,6 +1249,8 @@ impl GpuRungs {
             "vec-cells" => &mut self.vec_cells,
             "stream-fly" => &mut self.stream_fly,
             "bulk-stage" => &mut self.bulk_stage,
+            "wgmma-ws" => &mut self.wgmma_ws,
+            "ws-regs" => &mut self.ws_regs,
             "stream" => &mut self.stream,
             "stream-fact" => &mut self.stream_fact,
             "split-kv" => &mut self.split_kv,

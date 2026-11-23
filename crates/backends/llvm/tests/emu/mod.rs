@@ -87,11 +87,18 @@ pub fn host_device(dev: &str) -> String {
             // TMA `bulk-stage`: the proxy and barrier-init fences order
             // nothing in the emulator's one memory.
             || line.contains("asm sideeffect \"fence.")
+            // hopper-wgmma-tma: register reallocation and the warpgroup's
+            // operand fence order nothing in the emulator.
+            || line.contains("asm sideeffect \"setmaxnreg.")
+            || line.contains("asm sideeffect \"wgmma.fence.")
         {
             continue;
         }
         let mut l = line
             .replace("ptx_kernel ", "")
+            // hopper-wgmma-tma: a tensor map by value is the emulator's map
+            // by pointer (`emu_tmaps`).
+            .replace(" byval([128 x i8]) align 64 \"nvvm.grid_constant\"", "")
             .replace("addrspace(1) ", "")
             .replace("addrspace(3) ", "")
             .replace("@mapal_smem", "@emu_smem")
@@ -200,6 +207,81 @@ pub fn host_device(dev: &str) -> String {
                 l = text.trim_end().to_string();
             }
         }
+        // hopper-wgmma-tma: RNE TF32 rounding; `wgmma` as the warpgroup's
+        // meet (`emu_wgmma`: accumulators in by `emu_acc_set`, out by
+        // `emu_fragf`); its groups (`emu_wg_commit`, `emu_wg_wait`).
+        for pre in ["asm sideeffect", "asm"] {
+            l = l.replace(
+                &format!("{pre} \"cvt.rn.tf32.f32 $0, $1;\", \"=r,f\"("),
+                "@emu_cvt_rn_tf32f(",
+            );
+        }
+        l = l.replace(
+            "call void asm sideeffect \"wgmma.commit_group.sync.aligned;\", \"~{memory}\"()",
+            "call void @emu_wg_commit()",
+        );
+        if let Some(i) = l.find("call void asm sideeffect \"wgmma.wait_group.sync.aligned ") {
+            let rest = &l[i + "call void asm sideeffect \"wgmma.wait_group.sync.aligned ".len()..];
+            let n: String = rest.chars().take_while(char::is_ascii_digit).collect();
+            l = format!("{}call void @emu_wg_wait(i32 {n})", &l[..i]);
+        }
+        if let Some(i) = l.find("asm sideeffect \"wgmma.mma_async.sync.aligned.m64n")
+            && let Some((lhs, _)) = l.split_once(" = call ")
+            && let Some((_, args)) = l.rsplit_once("\"(")
+        {
+            let n: usize = l[i + "asm sideeffect \"wgmma.mma_async.sync.aligned.m64n".len()..]
+                .split('k')
+                .next()
+                .and_then(|x| x.parse().ok())
+                .expect("m64nNk8");
+            let args: Vec<&str> = args.trim_end_matches(')').split(", ").collect();
+            let lhs = lhs.trim();
+            let ty = format!("{{ {} }}", vec!["float"; n / 2].join(", "));
+            let mut text = String::new();
+            for (q, v) in args[5..].iter().enumerate() {
+                text += &format!("  call void @emu_acc_set(i32 {q}, {v})\n");
+            }
+            text += &format!(
+                "  call void @emu_wgmma(i32 {n}, {})\n",
+                args[..5].join(", ")
+            );
+            let mut prev = "poison".to_string();
+            for q in 0..n / 2 {
+                let (x, s) = (format!("{lhs}_x{q}"), format!("{lhs}_s{q}"));
+                let s = if q + 1 == n / 2 { lhs.to_string() } else { s };
+                text += &format!(
+                    "  {x} = call float @emu_fragf(i32 {q})\n  {s} = insertvalue {ty} {prev}, float {x}, {q}\n"
+                );
+                prev = s;
+            }
+            l = text.trim_end().to_string();
+        }
+        // hopper-wgmma-tma: a tensor box (`emu_bulk_tensor`: its map, five
+        // coordinates, its barrier) and a counted arrival (`emu_mbar_arrive`).
+        if l.contains("asm sideeffect \"cp.async.bulk.tensor.")
+            && let Some(i) = l.find("call ")
+            && let Some((_, args)) = l.rsplit_once("\"(")
+        {
+            let args: Vec<String> = args
+                .trim_end_matches(')')
+                .split(", ")
+                .map(String::from)
+                .collect();
+            let ptr = |a: &str| {
+                let v = a.strip_prefix("i32 ").expect("a shared address");
+                format!("ptr {}", shared32.get(v).expect("its pointer"))
+            };
+            let mut c: Vec<String> = args[2..args.len() - 1].to_vec();
+            c.resize(5, "i32 0".into());
+            l = format!(
+                "{}call void @emu_bulk_tensor({}, {}, {}, {})",
+                &l[..i],
+                ptr(&args[0]),
+                args[1],
+                c.join(", "),
+                ptr(&args[args.len() - 1])
+            );
+        }
         // TMA `bulk-stage`: the transaction barriers and the bulk copies as
         // the emulator's (`emu_mbar_*`, `emu_bulk`: a copy is applied when a
         // thread waits on its barrier); a 32-bit shared address back to its
@@ -209,6 +291,11 @@ pub fn host_device(dev: &str) -> String {
             ("mbarrier.arrive.expect_tx", "emu_mbar_expect", "void"),
             ("cp.async.bulk.shared", "emu_bulk", "void"),
             ("mbarrier.try_wait.parity", "emu_mbar_try", "i32"),
+            (
+                "mbarrier.arrive.shared::cta.b64 _",
+                "emu_mbar_arrive",
+                "void",
+            ),
         ] {
             if l.contains(marker)
                 && let Some(i) = l.find("call ")
@@ -278,7 +365,11 @@ pub fn host_device(dev: &str) -> String {
            declare void @emu_mma16(i32, i32, i32, i32, i32, i32, i32, float, float, float, float)\n\
            declare i32 @emu_cvt_tf32(i32)\ndeclare i32 @emu_cvt_tf32f(float)\n\
            declare void @emu_mbar_init(ptr, i32, i32)\ndeclare void @emu_mbar_expect(ptr, i32, i32)\n\
-           declare void @emu_bulk(ptr, ptr, i32, ptr, i32)\ndeclare i32 @emu_mbar_try(ptr, i32)\n"
+           declare void @emu_bulk(ptr, ptr, i32, ptr, i32)\ndeclare i32 @emu_mbar_try(ptr, i32)\n\
+           declare i32 @emu_cvt_rn_tf32f(float)\ndeclare void @emu_acc_set(i32, float)\n\
+           declare void @emu_wgmma(i32, i32, i32, i32, i32, i64)\ndeclare void @emu_wg_commit()\n\
+           declare void @emu_wg_wait(i32)\ndeclare void @emu_mbar_arrive(ptr)\n\
+           declare void @emu_bulk_tensor(ptr, i64, i32, i32, i32, i32, i32, ptr)\n"
 }
 
 /// Emulation runs every device thread on the host, so it gets 8x the native timeout.

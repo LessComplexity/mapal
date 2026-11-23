@@ -55,9 +55,18 @@ fn device(target: &'static str, contract: bool, tf32: bool, gpu: GpuArms) -> Str
 
 const TF32: bool = true;
 
+/// The S53 kernel, now the OFF arm of hopper-wgmma-tma's warp-specialized
+/// one (`--gpu-off=wgmma-ws`; `tests/hopper_tma.rs` pins that kernel).
 #[test]
 fn wgmma_kernel_on_sm_90a_rounds_every_operand_to_nearest_even() {
-    let k = device("h100-pcie", true, TF32, GpuArms::default());
+    let s53 = GpuArms {
+        off: GpuRungs {
+            wgmma_ws: true,
+            ..GpuRungs::default()
+        },
+        ..GpuArms::default()
+    };
+    let k = device("h100-pcie", true, TF32, s53);
     assert!(k.contains("wgmma.mma_async.sync.aligned.m64n128k8.f32.tf32.tf32"));
     assert!(!k.contains("mma.sync"));
     // RNE, never `rna` (ties away) — and nothing reaches `wgmma` unrounded:

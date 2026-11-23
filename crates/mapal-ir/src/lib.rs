@@ -46,9 +46,9 @@ pub use algo::{
     LastUsePlan, LinearSite, LoopPlan, LoopScc, MovePlan, MoveSite, Outside, PathPlan,
     PrecisionPlan, RadixAddr, RadixForm, RadixTile, Reach, Regroup, RescaleArg, RowDep, RowFoldOp,
     RowFoldSite, StepAlgebra, StepFlags, StreamGroup, StreamGuard, StreamLaw, StreamPlan,
-    StreamRole, Tap, Task, TaskId, TaskKind, TileKSplit, TilePlan, TilePost, TileRead, TileSite,
-    TripPhase, TripSplit, UnchangedPlan, WaitEntry, bound_coef, bound_coef_unit, extreme_up, gamma,
-    uniform_at,
+    StreamRole, Tap, Task, TaskId, TaskKind, TensorAxis, TensorDim, TensorForm, TileKSplit,
+    TilePlan, TilePost, TileRead, TileSite, TripPhase, TripSplit, UnchangedPlan, WaitEntry,
+    bound_coef, bound_coef_unit, extreme_up, gamma, uniform_at,
 };
 pub use builder::{Dest, FnBuilder, IrBuilder, IrError, LoopHandle};
 pub use facts::FactArms;

@@ -49,7 +49,7 @@ PARTS = {
 KERNEL_RUNGS = ('arch-rungs interleave unroll min-blocks warp prefetch mma async wide ldmatrix warp-fill idx32 affine '
                 'pad wide-fma wgmma-hopper raster l2-gate pdl row-fit wave-gate grid-share panel-regs fill-rows '
                 'cell-fill asyncstage splitk splitk-atomic streamk row-split fill-wave fit-first tf32-radix kmajor-a full-tile '
-                'async-depth bank-plan streamk-fill k-fill vec-cells stream-fly bulk-stage').split()
+                'async-depth bank-plan streamk-fill k-fill vec-cells stream-fly bulk-stage wgmma-ws ws-regs').split()
 GPU_SYMS = ('alloc arena copy2d d2h_on d2h event free gen h2d h2d_async h2d_on init launch_l2 launchv launch launch_coop '
             'pin sync tile unpin zero').split()
 PROFILE_RS = os.path.join(HERE, '..', '..', 'crates', 'backends', 'llvm', 'src', 'profile.rs')

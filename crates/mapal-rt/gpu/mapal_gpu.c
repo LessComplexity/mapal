@@ -69,6 +69,7 @@ static struct {
   double pin;
   unsigned long long n_pin, n_event, n_pdl;
   unsigned long long n_preload, n_async, n_staged; /* cpu-gpu-boundary */
+  unsigned long long n_tmap; /* hopper-wgmma-tma: tensor maps encoded */
 } tot;
 static unsigned flags;
 static double now_ms(void) {
@@ -83,12 +84,12 @@ static void total_line(void) {
           "kernel_ms=%.3f gen_ms=%.3f d2h_ms=%.3f free_ms=%.3f bytes_in=%llu "
           "bytes_out=%llu h2d=%llu d2h=%llu launches=%llu gens=%llu allocs=%llu "
           "l2_windows=%llu l2_persist=%llu pin_ms=%.3f pins=%llu events=%llu pdl=%llu "
-          "preloaded=%llu h2d_async=%llu staged=%llu\n",
+          "preloaded=%llu h2d_async=%llu staged=%llu tmaps=%llu\n",
           flags, tot.load, tot.lead, tot.init, tot.ctx, tot.module, tot.alloc,
           tot.h2d, tot.kernel, tot.gen, tot.d2h, tot.free, tot.in, tot.out,
           tot.n_h2d, tot.n_d2h, tot.n_launch, tot.n_gen, tot.n_alloc, tot.n_l2,
           tot.l2_persist, tot.pin, tot.n_pin, tot.n_event, tot.n_pdl,
-          tot.n_preload, tot.n_async, tot.n_staged);
+          tot.n_preload, tot.n_async, tot.n_staged, tot.n_tmap);
 }
 
 #define CK(x)                                                                  \
@@ -496,16 +497,126 @@ void mapal_gpu_event(uint32_t record, uint32_t wait) {
   event(slot_of(record), slot_of(wait), 0);
 }
 
+/* hopper-wgmma-tma: the tensor maps a kernel's box copies read
+ * (`cp.async.bulk.tensor`). The device unit carries each such kernel's recipe
+ * as the global `<kernel>_tmap` — `[count, then TMAP_WORDS words a map: the
+ * pointer argument, element bytes, rank, swizzle bytes, base offset bytes,
+ * dims[5], byte strides of dims 1..4, box[5], 0]` — so the host ABI is
+ * unchanged: the launch encodes each map (`cuTensorMapEncodeTiled`) from the
+ * pointer it is handed and passes it by value after the pointers (a 128-byte
+ * `__grid_constant__` parameter). A map is re-encoded only when its pointer
+ * changes (`tmaps=` on the trace's total line: 0 per call in steady state). */
+#define TMAP_MAX 4
+#define TMAP_WORDS 20
+struct tmap_e {
+  CUfunction fn;
+  uint32_t n;
+  uint64_t rec[TMAP_MAX][TMAP_WORDS];
+  CUdeviceptr ptr[TMAP_MAX];
+  CUtensorMap map[TMAP_MAX];
+};
+static struct tmap_e tmaps[256];
+static size_t n_tmaps;
+static struct tmap_e *tmap_of(CUfunction fn, const char *name) {
+  for (size_t i = 0; i < n_tmaps; i++)
+    if (tmaps[i].fn == fn)
+      return &tmaps[i];
+  if (n_tmaps == sizeof tmaps / sizeof *tmaps) {
+    fprintf(stderr, "mapal_gpu: tensor-map table full\n");
+    exit(102);
+  }
+  struct tmap_e *e = &tmaps[n_tmaps++];
+  memset(e, 0, sizeof *e);
+  e->fn = fn;
+  char g[64];
+  snprintf(g, sizeof g, "%s_tmap", name);
+  CUdeviceptr d;
+  size_t bytes;
+  if (cuModuleGetGlobal(&d, &bytes, module, g) != CUDA_SUCCESS)
+    return e;
+  uint64_t buf[1 + TMAP_MAX * TMAP_WORDS] = {0};
+  if (bytes > sizeof buf || bytes < 8) {
+    fprintf(stderr, "mapal_gpu: %s: %zu bytes\n", g, bytes);
+    exit(102);
+  }
+  CK(cuMemcpyDtoH(buf, d, bytes));
+  e->n = (uint32_t)buf[0];
+  if (e->n > TMAP_MAX) {
+    fprintf(stderr, "mapal_gpu: %s: %u maps\n", g, e->n);
+    exit(102);
+  }
+  memcpy(e->rec, buf + 1, e->n * TMAP_WORDS * sizeof(uint64_t));
+  for (uint32_t m = 0; m < e->n; m++)
+    e->ptr[m] = ~(CUdeviceptr)0;
+  return e;
+}
+/* `args` (the `nptr` pointer arguments) followed by `e`'s maps, encoded for
+ * this launch's pointers, in `out`. */
+static void tmap_args(struct tmap_e *e, void **args, uint32_t nptr,
+                      void **out) {
+  for (uint32_t i = 0; i < nptr; i++)
+    out[i] = args[i];
+  for (uint32_t m = 0; m < e->n; m++) {
+    const uint64_t *r = e->rec[m];
+    if (r[0] >= nptr) {
+      fprintf(stderr, "mapal_gpu: tensor map %u names argument %llu of %u\n",
+              m, (unsigned long long)r[0], nptr);
+      exit(102);
+    }
+    CUdeviceptr p = *(CUdeviceptr *)args[r[0]] + r[4];
+    if (p != e->ptr[m]) {
+      cuuint64_t dims[5], strides[4];
+      cuuint32_t box[5], es[5];
+      uint32_t rank = (uint32_t)r[2];
+      for (uint32_t i = 0; i < 5; i++) {
+        dims[i] = r[5 + i];
+        box[i] = (cuuint32_t)r[14 + i];
+        es[i] = 1;
+      }
+      for (uint32_t i = 0; i < 4; i++)
+        strides[i] = r[10 + i];
+      CUtensorMapSwizzle sw = r[3] == 128 ? CU_TENSOR_MAP_SWIZZLE_128B
+                              : r[3] == 64 ? CU_TENSOR_MAP_SWIZZLE_64B
+                              : r[3] == 32 ? CU_TENSOR_MAP_SWIZZLE_32B
+                                           : CU_TENSOR_MAP_SWIZZLE_NONE;
+      CUtensorMapDataType ty = r[1] == 2 ? CU_TENSOR_MAP_DATA_TYPE_UINT16
+                                         : CU_TENSOR_MAP_DATA_TYPE_UINT32;
+      CUresult rc = cuTensorMapEncodeTiled(
+          &e->map[m], ty, rank, (void *)(uintptr_t)p, dims, strides, box, es,
+          CU_TENSOR_MAP_INTERLEAVE_NONE, sw, CU_TENSOR_MAP_L2_PROMOTION_L2_128B,
+          CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE);
+      if (rc != CUDA_SUCCESS) {
+        const char *s_ = 0;
+        cuGetErrorString(rc, &s_);
+        fprintf(stderr,
+                "mapal_gpu: cuTensorMapEncodeTiled (map %u, rank %u, ptr "
+                "%llx): %s\n",
+                m, rank, (unsigned long long)p, s_ ? s_ : "?");
+        exit(102);
+      }
+      e->ptr[m] = p;
+      tot.n_tmap++;
+    }
+    out[nptr + m] = &e->map[m];
+  }
+}
+
 /* One tile kernel on stream slot `k`. A chain stream first joins program
  * order (see the header). Under `PDL` (sm_90+; every tile kernel then opens
  * with `griddepcontrol.wait`), a kernel right behind another kernel on its
  * stream is a programmatic dependent launch: it may start while the first
  * drains, and waits for it at its entry. */
-static void launch_on(unsigned k, uint64_t id, void **args, uint32_t gx,
-                      uint32_t gy, uint32_t block, uint32_t smem) {
+static void launch_on(unsigned k, uint64_t id, void **args, uint32_t nptr,
+                      uint32_t gx, uint32_t gy, uint32_t block, uint32_t smem) {
   load_module();
   char name[40];
   CUfunction fn = kernel("mapal_tile", id, smem, name, sizeof name);
+  struct tmap_e *tm = tmap_of(fn, name);
+  void *targs[32 + TMAP_MAX];
+  if (tm->n) {
+    tmap_args(tm, args, nptr, targs);
+    args = targs;
+  }
   if (k && joined[k] != legacy_ops) {
     event(0, k, 1);
     joined[k] = legacy_ops;
@@ -631,7 +742,7 @@ void mapal_gpu_launch(uint64_t id, uint64_t a, uint64_t b, uint64_t out,
                       uint32_t gx, uint32_t gy, uint32_t block, uint32_t smem) {
   CUdeviceptr da = a, db = b, dout = out;
   void *args[] = {&da, &db, &dout};
-  launch_on(0, id, args, gx, gy, block, smem);
+  launch_on(0, id, args, 3, gx, gy, block, smem);
 }
 
 /* The S54 launch (plan-s54 §4): `nptr` device pointers, on chain `stream`. */
@@ -648,7 +759,7 @@ void mapal_gpu_launchv(uint64_t id, uint32_t stream, uint32_t nptr,
     d[i] = ptrs[i];
     args[i] = &d[i];
   }
-  launch_on(slot_of(stream), id, args, gx, gy, block, smem);
+  launch_on(slot_of(stream), id, args, nptr, gx, gy, block, smem);
 }
 
 /* `d2h` on chain `stream` (its producer's): queued behind that chain's
@@ -842,6 +953,11 @@ void mapal_gpu_launch_l2(uint64_t id, uint64_t a, uint64_t b, uint64_t out,
   }
   char name[40];
   CUfunction fn = kernel("mapal_tile", id, smem, name, sizeof name);
+  /* A kernel reading tensor maps launches plainly (its maps encoded there). */
+  if (tmap_of(fn, name)->n) {
+    mapal_gpu_launch(id, a, b, out, gx, gy, block, smem);
+    return;
+  }
   CUdeviceptr da = a, db = b, dout = out;
   void *args[] = {&da, &db, &dout};
   size_t bytes = win_bytes < window_max ? (size_t)win_bytes : window_max;
@@ -992,7 +1108,7 @@ static void site_run(void *e, uint32_t i) {
     launch_coop_on(k, c->id, args, c->gx, c->block, c->smem);
     return;
   }
-  launch_on(k, c->id, args, c->gx, c->gy, c->block, c->smem);
+  launch_on(k, c->id, args, x->nptr, c->gx, c->gy, c->block, c->smem);
   if (c->ws) {
     /* The reduce launch: `(ws, b, out, …)` — a group's reduce (`tile-post`)
      * evaluates its epilogue over the table's other pointers too. */
@@ -1006,7 +1122,7 @@ static void site_run(void *e, uint32_t i) {
     r[x->out] = x->ptrs[x->out];
     if (x->nptr == 3)
       r[1] = 0;
-    launch_on(k, c->rid, ra, c->rgx, 1, c->rblock, 0);
+    launch_on(k, c->rid, ra, x->nptr, c->rgx, 1, c->rblock, 0);
   }
 }
 

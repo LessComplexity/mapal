@@ -320,6 +320,97 @@ impl TileRead {
             None => elem.scalar_bytes().unwrap_or(4),
         }
     }
+
+    /// **hopper-wgmma-tma F1 (`tensor_form`): this operand as a dense tensor
+    /// over the site's axes** (`rows` along `I`, `lanes` along `Lane`, `k`
+    /// along `K`). For every point `(i, lane, k)` of the site's domain the
+    /// read's element is `base + Σ stride_d · coordinate_d`, its dimensions
+    /// ordered innermost first (ascending stride), each one's stride covering
+    /// the span of the one inside it — no two axes overlap, so the box at
+    /// coordinates `(c_d)` with sides `(s_d)` is exactly the panel of those
+    /// extents ([`TensorForm::box_of`]). An axis the read does not move along
+    /// (stride 0, or extent 1) is no dimension. `None`: an address through
+    /// derived `k` digits (`ksplit`: a window's `i + k`, the im2col class) or
+    /// two axes that overlap.
+    pub fn tensor_form(&self, rows: u64, lanes: u64, k: u64) -> Option<TensorForm> {
+        if self.ksplit.is_some() {
+            return None;
+        }
+        let mut dims: Vec<TensorDim> = [
+            (TensorAxis::I, rows, self.ci),
+            (TensorAxis::Lane, lanes, self.clane),
+            (TensorAxis::K, k, self.ck),
+        ]
+        .into_iter()
+        .filter(|&(_, extent, stride)| stride > 0 && extent > 1)
+        .map(|(axis, extent, stride)| TensorDim {
+            axis,
+            extent,
+            stride,
+        })
+        .collect();
+        dims.sort_by_key(|d| d.stride);
+        let dense = dims
+            .windows(2)
+            .all(|w| w[1].stride >= w[0].stride * w[0].extent);
+        dense.then_some(TensorForm {
+            base: self.base,
+            dims,
+        })
+    }
+}
+
+/// hopper-wgmma-tma F1: an axis of a tile site's iteration space.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TensorAxis {
+    /// The output row (`i`).
+    I,
+    /// The output column (`lane`).
+    Lane,
+    /// The fold axis (`k`).
+    K,
+}
+
+/// One dimension of a [`TensorForm`]: `extent` coordinates along `axis`,
+/// `stride` elements apart.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TensorDim {
+    pub axis: TensorAxis,
+    pub extent: u64,
+    pub stride: u64,
+}
+
+/// A tile operand as a dense tensor ([`TileRead::tensor_form`]): element
+/// `base + Σ stride_d · c_d`, dimensions innermost first.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TensorForm {
+    pub base: u64,
+    pub dims: Vec<TensorDim>,
+}
+
+impl TensorForm {
+    /// The axes of the dimensions, innermost first.
+    pub fn axes(&self) -> Vec<TensorAxis> {
+        self.dims.iter().map(|d| d.axis).collect()
+    }
+
+    /// **The box that is a panel**: its side along each dimension, `side` of
+    /// that dimension's axis (at most the extent), and whether every side
+    /// divides its extent — then the boxes at multiples of the sides tile the
+    /// tensor exactly, none reaching past it.
+    pub fn box_of(&self, side: impl Fn(TensorAxis) -> u64) -> (Vec<u64>, bool) {
+        let sides: Vec<u64> = self
+            .dims
+            .iter()
+            .map(|d| side(d.axis).min(d.extent))
+            .collect();
+        let exact = self
+            .dims
+            .iter()
+            .zip(&sides)
+            .all(|(d, s)| *s > 0 && d.extent.is_multiple_of(*s));
+        (sides, exact)
+    }
 }
 
 /// How [`CategoryIr::tile_site`] reads a fold: lanes at a stride other than
@@ -6742,5 +6833,58 @@ fn safe_integer_divisor(object: &crate::graph::Object) -> bool {
 fn increment(counts: &mut SecondaryMap<ObjectId, u32>, o: ObjectId) {
     if let Some(&n) = counts.get(o) {
         counts.insert(o, n + 1);
+    }
+}
+
+#[cfg(test)]
+mod tensor_form_tests {
+    use super::{TensorAxis, TileRead};
+
+    fn read(base: u64, ci: u64, ck: u64, clane: u64) -> TileRead {
+        TileRead {
+            slot: 0,
+            base,
+            ci,
+            ck,
+            clane,
+            ksplit: None,
+            narrow: None,
+        }
+    }
+
+    /// Row-major `a` (`a[i·k + k]`), `b` as `k × n` and as `n × k`, an offset
+    /// base: each a dense tensor whose box of the panel's sides is exact.
+    #[test]
+    fn plain_reads_are_dense_tensors() {
+        let a = read(0, 128, 1, 0).tensor_form(64, 32, 128).unwrap();
+        assert_eq!(a.axes(), vec![TensorAxis::K, TensorAxis::I]);
+        let (sides, exact) = a.box_of(|x| if x == TensorAxis::K { 32 } else { 16 });
+        assert_eq!((sides, exact), (vec![32, 16], true));
+        let b = read(64, 0, 256, 1).tensor_form(64, 256, 128).unwrap();
+        assert_eq!(b.axes(), vec![TensorAxis::Lane, TensorAxis::K]);
+        assert_eq!(b.base, 64);
+        let bt = read(0, 0, 1, 128).tensor_form(64, 256, 128).unwrap();
+        assert_eq!(bt.axes(), vec![TensorAxis::K, TensorAxis::Lane]);
+        // A side that does not divide its extent is no exact box.
+        assert!(!a.box_of(|_| 24).1);
+        // A padded row stride (ci > k) is still dense.
+        assert!(read(0, 136, 1, 0).tensor_form(64, 32, 128).is_some());
+    }
+
+    /// Overlapping axes (a window `a[i + k]`) and derived `k` digits are no
+    /// tensor; an axis of extent 1 or stride 0 is no dimension.
+    #[test]
+    fn overlapping_axes_are_refused() {
+        assert!(read(0, 1, 1, 0).tensor_form(64, 32, 128).is_none());
+        assert!(read(0, 64, 1, 0).tensor_form(64, 32, 128).is_none());
+        let one = read(0, 128, 1, 0).tensor_form(1, 32, 128).unwrap();
+        assert_eq!(one.axes(), vec![TensorAxis::K]);
+        let mut w = read(0, 128, 0, 0);
+        w.ksplit = Some(super::TileKSplit {
+            div: 3,
+            cq: 1,
+            cr: 1,
+        });
+        assert!(w.tensor_form(64, 32, 9).is_none());
     }
 }
