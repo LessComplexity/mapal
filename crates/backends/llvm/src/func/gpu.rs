@@ -76,16 +76,39 @@ pub(crate) const GPU_INIT_PDL: u32 = 4;
 pub(crate) const GPU_INIT_PRELOAD: u32 = 8;
 /// cpu-gpu-boundary `stage`: the page-locked staging ring for async uploads.
 pub(crate) const GPU_INIT_STAGE: u32 = 16;
+/// sweep-gemm-2 `warm-zero`: the module zeroes outputs; the init thread runs
+/// one zero first, so the driver's memset path is initialized before the clock.
+pub(crate) const GPU_INIT_WARM_ZERO: u32 = 32;
 
 /// `main`'s first call in a module with a GPU site: hands the runtime its host
 /// rungs. Off, the runtime does nothing until the first site, the S52 path.
-pub(crate) fn init_call(rungs: crate::GpuRungs, streams: bool, pdl: bool) -> String {
+/// `zeroes`: some launch of the module zeroes an output ([`module_zeroes`]).
+pub(crate) fn init_call(rungs: crate::GpuRungs, streams: bool, pdl: bool, zeroes: bool) -> String {
     let flags = u32::from(rungs.eager_init) * GPU_INIT_EAGER
         + u32::from(streams) * GPU_INIT_STREAMS
         + u32::from(pdl) * GPU_INIT_PDL
         + u32::from(rungs.preload) * GPU_INIT_PRELOAD
-        + u32::from(rungs.stage && rungs.async_h2d) * GPU_INIT_STAGE;
+        + u32::from(rungs.stage && rungs.async_h2d) * GPU_INIT_STAGE
+        + u32::from(rungs.warm_zero && zeroes) * GPU_INIT_WARM_ZERO;
     format!("  call void @mapal_gpu_init(i32 {flags})\n")
+}
+
+/// sweep-gemm-2 `warm-zero`: does a launch of this host text zero an output —
+/// a direct `mapal_gpu_zero` call, or a site table row (`%mapal_cand { i64
+/// id, i64 rid, i64 zero, … }`) whose zero bytes are not 0 (an atomic split
+/// or a stream-K candidate)?
+pub(crate) fn module_zeroes(host: &str) -> bool {
+    host.contains("call void @mapal_gpu_zero(")
+        || host
+            .lines()
+            .filter(|l| l.contains(" x %mapal_cand] ["))
+            .flat_map(|l| l.split("%mapal_cand { ").skip(1))
+            .any(|r| {
+                r.split(", ")
+                    .nth(2)
+                    .and_then(|z| z.strip_prefix("i64 "))
+                    .is_some_and(|z| z != "0")
+            })
 }
 
 /// S54 `pdl`: a programmatic dependent launch needs `griddepcontrol`
@@ -10327,7 +10350,7 @@ mod tests {
                 });
                 let wait = pdl_part(p, true, arms);
                 assert_eq!(wait, enabled && p.gpu().unwrap().has_griddepcontrol());
-                let host = init_call(host_rungs(p, true, arms), false, wait);
+                let host = init_call(host_rungs(p, true, arms), false, wait, false);
                 let flags: u32 = host
                     .split("i32 ")
                     .nth(1)
@@ -10352,6 +10375,55 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// sweep-gemm-2 `warm-zero`: the init flag is set exactly for a module
+    /// whose launches zero an output — a direct zero call or a site table row
+    /// with zero bytes — and the rung is on.
+    #[test]
+    fn warm_zero_flag_follows_the_modules_zeros() {
+        let row = |zero: u64| {
+            format!(
+                "%mapal_cand {{ i64 7, i64 0, i64 {zero}, i64 0, i32 4, i32 32, i32 256, i32 0, i32 0, i32 0 }}"
+            )
+        };
+        let table = |zeros: &[u64]| {
+            let rows: Vec<String> = zeros.iter().map(|&z| row(z)).collect();
+            format!(
+                "@f.cands1 = private unnamed_addr constant [{} x %mapal_cand] [{}]\n",
+                zeros.len(),
+                rows.join(", ")
+            )
+        };
+        assert!(module_zeroes(&table(&[16384, 0])));
+        assert!(module_zeroes(&table(&[0, 4096])));
+        assert!(!module_zeroes(&table(&[0, 0])));
+        assert!(module_zeroes(
+            "  call void @mapal_gpu_zero(i64 %d3, i64 65536)\n"
+        ));
+        assert!(!module_zeroes(
+            "  call void @mapal_gpu_launchv(i64 1, i32 0)\n"
+        ));
+        let flags = |rungs: GpuRungs, zeroes: bool| -> u32 {
+            init_call(rungs, false, false, zeroes)
+                .split("i32 ")
+                .nth(1)
+                .and_then(|s| s.split(')').next())
+                .and_then(|s| s.parse().ok())
+                .expect("a flag word")
+        };
+        assert_ne!(flags(GpuRungs::ALL, true) & GPU_INIT_WARM_ZERO, 0);
+        assert_eq!(flags(GpuRungs::ALL, false) & GPU_INIT_WARM_ZERO, 0);
+        let off = GpuRungs {
+            warm_zero: false,
+            ..GpuRungs::ALL
+        };
+        assert_eq!(flags(off, true) & GPU_INIT_WARM_ZERO, 0);
+        // Every other bit is the rung-off module's.
+        assert_eq!(
+            flags(GpuRungs::ALL, true) & !GPU_INIT_WARM_ZERO,
+            flags(off, true)
+        );
     }
 
     /// S62: the skinny M16 projections take the cooperative ordered tile on the
