@@ -291,6 +291,8 @@ fn resolve_tykind(
                 // ADR-0043: narrow float storage types.
                 "bf16" => Ty::bf16(),
                 "f16" => Ty::f16(),
+                "f8e4m3" => Ty::f8e4m3(),
+                "f8e5m2" => Ty::f8e5m2(),
                 "bool" => Ty::Bool,
                 _ => resolve_named(text, n.span, diags)?,
             }

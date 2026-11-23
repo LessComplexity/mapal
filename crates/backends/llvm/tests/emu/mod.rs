@@ -135,6 +135,11 @@ pub fn host_device(dev: &str) -> String {
         {
             shared32.insert(lhs.trim().to_string(), p.to_string());
         }
+        // ADR-0043 slice 3: the device's fp8 roundings (`crate::narrow`).
+        for f in ["e4m3", "e5m2"] {
+            let asm = format!("asm \"cvt.rn.satfinite.{f}x2.f32 $0, $1, $2;\", \"=h,f,f\"(");
+            l = l.replace(&asm, &format!("@emu_cvt_{f}x2("));
+        }
         for (f, e) in [("bf16", "bf16x2"), ("f16", "f16x2")] {
             let asm = format!("asm \"cvt.rn.{f}x2.f32 $0, $1, $2;\", \"=r,f,f\"(");
             l = l.replace(&asm, &format!("@emu_cvt_{e}("));
@@ -275,6 +280,7 @@ pub fn host_device(dev: &str) -> String {
            declare void @emu_cp_wait(i32)\ndeclare float @emu_ex2(float)\n\
            declare void @emu_ldsm(ptr, i32, i32)\ndeclare i32 @emu_frag(i32)\ndeclare float @emu_fragf(i32)\n\
            declare i32 @emu_cvt_bf16x2(float, float)\ndeclare i32 @emu_cvt_f16x2(float, float)\n\
+           declare i16 @emu_cvt_e4m3x2(float, float)\ndeclare i16 @emu_cvt_e5m2x2(float, float)\n\
            declare void @emu_mma16(i32, i32, i32, i32, i32, i32, i32, float, float, float, float)\n\
            declare i32 @emu_cvt_tf32(i32)\ndeclare i32 @emu_cvt_tf32f(float)\n\
            declare void @emu_mbar_init(ptr, i32, i32)\ndeclare void @emu_mbar_expect(ptr, i32, i32)\n\

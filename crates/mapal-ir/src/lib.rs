@@ -47,8 +47,8 @@ pub use algo::{
     PrecisionPlan, RadixAddr, RadixForm, RadixTile, Reach, Regroup, RescaleArg, RowDep, RowFoldOp,
     RowFoldSite, StepAlgebra, StepFlags, StreamGroup, StreamGuard, StreamLaw, StreamPlan,
     StreamRole, Tap, Task, TaskId, TaskKind, TileKSplit, TilePlan, TilePost, TileRead, TileSite,
-    TripPhase, TripSplit, UnchangedPlan, WaitEntry, bound_coef, bound_coef_unit, extreme_up, gamma,
-    uniform_at,
+    TripPhase, TripSplit, UnchangedPlan, WaitEntry, bound_coef, bound_coef_unit, bound_coef_units,
+    extreme_up, gamma, uniform_at,
 };
 pub use builder::{Dest, FnBuilder, IrBuilder, IrError, LoopHandle};
 pub use facts::FactArms;

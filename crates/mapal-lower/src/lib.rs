@@ -167,6 +167,8 @@ pub(crate) fn narrow_target(name: &str) -> Option<mapal_ir::NarrowFloat> {
     match name {
         "to_bf16" => Some(mapal_ir::NarrowFloat::Bf16),
         "to_f16" => Some(mapal_ir::NarrowFloat::F16),
+        "to_f8e4m3" => Some(mapal_ir::NarrowFloat::F8e4m3),
+        "to_f8e5m2" => Some(mapal_ir::NarrowFloat::F8e5m2),
         _ => None,
     }
 }
@@ -196,6 +198,6 @@ fn is_reserved(name: &str) -> bool {
         || is_time_builtin(name)
         || matches!(
             name,
-            "i32" | "i64" | "u8" | "f32" | "f64" | "bf16" | "f16" | "bool"
+            "i32" | "i64" | "u8" | "f32" | "f64" | "bf16" | "f16" | "f8e4m3" | "f8e5m2" | "bool"
         )
 }

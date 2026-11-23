@@ -448,6 +448,34 @@ static uint32_t to_b16(float x, int32_t f16) {
 }
 uint32_t emu_cvt_bf16x2(float hi, float lo) { return to_b16(lo, 0) | to_b16(hi, 0) << 16; }
 uint32_t emu_cvt_f16x2(float hi, float lo) { return to_b16(lo, 1) | to_b16(hi, 1) << 16; }
+/* ADR-0043 slice 3: `cvt.rn.satfinite.{e4m3,e5m2}x2.f32` (`hi` to the upper
+ * byte): round to nearest even, saturate to the largest finite, NaN to the
+ * format's NaN — `mapal_ir::narrow::f8_from_f32`'s integer sequence. */
+static uint32_t to_f8(float x, int32_t e5m2) {
+  uint32_t b, a, c, drop = e5m2 ? 21 : 20, sign, m;
+  uint32_t maxb = e5m2 ? 0x47600000u : 0x43e00000u, minn = e5m2 ? 0x38800000u : 0x3c800000u;
+  uint32_t rebias = e5m2 ? 448u : 960u;
+  float magic = e5m2 ? 128.0f : 16384.0f, y;
+  uint32_t mb;
+  memcpy(&b, &x, 4);
+  sign = (b >> 24) & 0x80u;
+  a = b & 0x7fffffffu;
+  if (a > 0x7f800000u)
+    return sign | 0x7fu;
+  c = a < maxb ? a : maxb;
+  if (c >= minn) {
+    m = ((c + ((1u << (drop - 1)) - 1) + ((c >> drop) & 1u)) >> drop) - rebias;
+  } else {
+    memcpy(&y, &c, 4);
+    y += magic;
+    memcpy(&mb, &y, 4);
+    memcpy(&m, &magic, 4);
+    m = mb - m;
+  }
+  return (m | sign) & 0xffu;
+}
+uint16_t emu_cvt_e4m3x2(float hi, float lo) { return (uint16_t)(to_f8(lo, 0) | to_f8(hi, 0) << 8); }
+uint16_t emu_cvt_e5m2x2(float hi, float lo) { return (uint16_t)(to_f8(lo, 1) | to_f8(hi, 1) << 8); }
 /* `mma.sync.aligned.m16n8k16.row.col.f32.{bf16,f16}`: d = c + sum_k a b over
  * the warp's fragments. The products are exact; the sum is formed exactly
  * (double: 16 products of 8- or 11-bit significands and an f32) and truncated

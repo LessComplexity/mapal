@@ -4062,7 +4062,8 @@ pub(crate) fn device_module(
     }
     // ADR-0043: the device's narrow roundings (`cvt.rn`).
     {
-        let defs = crate::narrow::defs(&out, true);
+        let cvt_f8 = profile.gpu().is_some_and(|g| g.caps.cvt_f8);
+        let defs = crate::narrow::defs(&out, true, cvt_f8);
         out.push_str(&defs);
     }
     // `pdl`: the runtime launches every kernel behind a kernel as a dependent
@@ -5431,7 +5432,14 @@ impl Kernel<'_> {
                     "{w} = load {nt}, ptr addrspace(1) {p}, align {}",
                     n.bytes()
                 ));
-                k.line(format!("{v} = fpext {nt} {w} to {t}"));
+                let tt = if n.bytes() == 1 {
+                    k.tmp()
+                } else {
+                    String::new()
+                };
+                for l in crate::narrow::widen_lines(n, nt, &w, &t, &v, &tt) {
+                    k.line(l);
+                }
                 return v;
             }
             let p = k.gep(1, arr, &idx);
@@ -5541,7 +5549,14 @@ impl Kernel<'_> {
                         "{w} = load {nt}, ptr addrspace(1) {p}, align {}",
                         n.bytes()
                     ));
-                    self.line(format!("{x} = fpext {nt} {w} to {t}"));
+                    let tt = if n.bytes() == 1 {
+                        self.tmp()
+                    } else {
+                        String::new()
+                    };
+                    for l in crate::narrow::widen_lines(n, nt, &w, &t, &x, &tt) {
+                        self.line(l);
+                    }
                     x
                 }
                 None => {
@@ -5562,7 +5577,15 @@ impl Kernel<'_> {
                     self.line(format!(
                         "{w} = load <{v} x {nt}>, ptr addrspace(1) {p}, align {GPU_VEC_BYTES}"
                     ));
-                    self.line(format!("{x} = fpext <{v} x {nt}> {w} to {vt}"));
+                    let nvt = format!("<{v} x {nt}>");
+                    let tt = if n.bytes() == 1 {
+                        self.tmp()
+                    } else {
+                        String::new()
+                    };
+                    for l in crate::narrow::widen_lines(n, &nvt, &w, &vt, &x, &tt) {
+                        self.line(l);
+                    }
                     x
                 }
                 None => {
@@ -7126,7 +7149,14 @@ impl Kernel<'_> {
             k.line(format!(
                 "{w} = load {nty}, ptr addrspace(1) {gp}, align {nal}"
             ));
-            k.line(format!("{v} = fpext {nty} {w} to {ty}"));
+            let tt = if n.bytes() == 1 {
+                k.tmp()
+            } else {
+                String::new()
+            };
+            for l in crate::narrow::widen_lines(n, &nty, &w, ty, &v, &tt) {
+                k.line(l);
+            }
             v
         };
         let load_panels = |k: &mut Self, k0: &str| -> Vec<String> {
@@ -7213,14 +7243,23 @@ impl Kernel<'_> {
                     let gi = gidx(k, rb, &b_kc, p, gsrc, *goff, &k0, &kb);
                     // `narrow-async`: the `b` region keeps its place in the
                     // stage, its elements narrow: element `si` of the f32
-                    // layout is narrow element `si + so + bs_off`.
+                    // layout is narrow element `si + (4 / e − 1)·(so + bs_off)`
+                    // (the region packed from its first byte; `e` 2 keeps the
+                    // 16-bit formats' text).
                     if let Some(n) = nb {
                         let nt = crate::narrow::llvm_ty(n);
                         let gp = k.gep_ty(1, nt, "%b", &gi);
                         let si = k.op("add", sdst, &so);
                         let si = k.plus(si, *soff);
-                        let ni = k.op("add", &si, &so);
-                        let ni = k.plus(ni, bs_off);
+                        let (ni, f) = match n.bytes() {
+                            2 => (k.op("add", &si, &so), 1),
+                            e => {
+                                let f = 4 / e - 1;
+                                let c = k.op("mul", &so, f);
+                                (k.op("add", &si, &c), f)
+                            }
+                        };
+                        let ni = k.plus(ni, f * bs_off);
                         let sp = k.gep_ty(3, nt, smem, &ni);
                         k.line(format!(
                             "call void @llvm.nvvm.cp.async.ca.shared.global.{}(ptr addrspace(3) {sp}, ptr addrspace(1) {gp})",
@@ -7367,10 +7406,19 @@ impl Kernel<'_> {
             let r = k.op("add", &r, off);
             let r = k.op("add", &r, &cbase);
             // `narrow-async`: the stage's narrow `b` region (see `issue`).
+            // The narrow region packs from the f32 region's first byte: f32
+            // element `r` is narrow element `r + (4 / e − 1)·(stage + bs_off)`
+            // (`e` 2: the 16-bit formats' text as it was; 1: fp8).
             let r = match narrow {
-                Some(_) => {
+                Some(n) if n.bytes() == 2 => {
                     let x = k.op("add", &r, &cbase);
                     k.plus(x, bs_off)
+                }
+                Some(n) => {
+                    let f = 4 / n.bytes() - 1;
+                    let c = k.op("mul", &cbase, f);
+                    let x = k.op("add", &r, &c);
+                    k.plus(x, f * bs_off)
                 }
                 None => r,
             };
@@ -7398,7 +7446,14 @@ impl Kernel<'_> {
                         "{y} = load {nwt}, ptr addrspace(3) {sp}, align {}",
                         w * nf.bytes()
                     ));
-                    k.line(format!("{x} = fpext {nwt} {y} to {wt}"));
+                    let tt = if nf.bytes() == 1 {
+                        k.tmp()
+                    } else {
+                        String::new()
+                    };
+                    for l in crate::narrow::widen_lines(nf, &nwt, &y, &wt, &x, &tt) {
+                        k.line(l);
+                    }
                     x
                 } else {
                     let sp = k.gep(3, smem, &si);

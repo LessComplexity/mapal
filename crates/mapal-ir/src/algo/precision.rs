@@ -57,9 +57,18 @@ pub fn bound_coef(k: u64, tf32: bool) -> f64 {
 /// f32 products): D2's `γ_{K+1}(2⁻²⁴)`.
 pub fn bound_coef_unit(k: u64, ut: Option<f64>) -> f64 {
     match ut {
-        Some(ut) => (1.0 + ut) * (1.0 + ut) * (1.0 + gamma(k + 1, 2f64.powi(-23))) - 1.0,
+        Some(ut) => bound_coef_units(k, ut, ut, 2f64.powi(-23)),
         None => gamma(k + 1, 2f64.powi(-24)),
     }
+}
+
+/// ADR-0043 slice 3 (F5): D3's coefficient with one unit roundoff per
+/// multiplicand — `(1 + u_a)·(1 + u_b)·(1 + γ_{K+1}(u_acc)) − 1`. An operand
+/// stored narrow in a format the member embeds exactly contributes `0`
+/// ([`crate::TileSite::units`]): two `f8e4m3` operands under `: bf16 | f32`
+/// get `γ_{K+1}(2⁻²³)`. Equal to [`bound_coef_unit`] at equal units.
+pub fn bound_coef_units(k: u64, ua: f64, ub: f64, uacc: f64) -> f64 {
+    (1.0 + ua) * (1.0 + ub) * (1.0 + gamma(k + 1, uacc)) - 1.0
 }
 
 impl CategoryIr {
@@ -130,8 +139,37 @@ impl CategoryIr {
             .chain(post.sites.iter())
             .chain(narrow.sites.iter())
         {
-            plan.bound.insert(m, bound_coef_unit(s.k, s.unit()));
+            let coef = match s.units() {
+                Some((ua, ub)) => bound_coef_units(s.k, ua, ub, 2f64.powi(-23)),
+                None => bound_coef_unit(s.k, None),
+            };
+            plan.bound.insert(m, coef);
         }
         plan
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// F5 reduces to the shared-unit form at equal units, and an exactly
+    /// embedded operand drops its factor.
+    #[test]
+    fn per_operand_units() {
+        for k in [1u64, 64, 4096] {
+            for u in [2f64.powi(-8), 2f64.powi(-11)] {
+                assert_eq!(
+                    bound_coef_units(k, u, u, 2f64.powi(-23)),
+                    bound_coef_unit(k, Some(u))
+                );
+                assert!(bound_coef_units(k, 0.0, u, 2f64.powi(-23)) < bound_coef_unit(k, Some(u)));
+            }
+            let (x, g) = (
+                bound_coef_units(k, 0.0, 0.0, 2f64.powi(-23)),
+                gamma(k + 1, 2f64.powi(-23)),
+            );
+            assert!((x - g).abs() <= 1e-9 * g, "{x} {g}");
+        }
     }
 }

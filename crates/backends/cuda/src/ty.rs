@@ -51,6 +51,9 @@ pub(crate) fn lower_ty(ty: &Ty) -> Option<String> {
         // ADR-0043: `cuda_bf16.h` / `cuda_fp16.h` (included where used).
         Ty::Narrow(mapal_ir::NarrowFloat::Bf16) => Some("__nv_bfloat16".into()),
         Ty::Narrow(mapal_ir::NarrowFloat::F16) => Some("__half".into()),
+        // ADR-0043 slice 3: `cuda_fp8.h` (saturating constructors from `float`).
+        Ty::Narrow(mapal_ir::NarrowFloat::F8e4m3) => Some("__nv_fp8_e4m3".into()),
+        Ty::Narrow(mapal_ir::NarrowFloat::F8e5m2) => Some("__nv_fp8_e5m2".into()),
         Ty::Bool => Some("bool".into()),
         Ty::Unit | Ty::Str | Ty::IoToken => None,
         Ty::Array { .. } => {

@@ -86,8 +86,10 @@ const GEMV: &str = "fn main() {
 
 /// D4 facts: `: bf16 | f32` is the product's set (`Precision::half`), its
 /// tile site carries the member, and `precision_plan.bound` is D3's with
-/// `u_t = 2⁻⁸`, `u_a = 2⁻²³`; the weakest member's interpreter rounds the f32
-/// operand (another value), the f32 side does not.
+/// per-operand units (ADR-0043 slice 3, F5): the f32 operand's `u_t = 2⁻⁸`,
+/// the `bf16`-stored weight's 0 (it embeds in the member), `u_a = 2⁻²³`; the
+/// weakest member's interpreter rounds the f32 operand (another value), the
+/// f32 side does not.
 #[test]
 fn member_facts_and_bound() {
     let ir = lower(GEMV);
@@ -96,11 +98,15 @@ fn member_facts_and_bound() {
     let (m, s) = sites.sites.iter().next().expect("a narrow site");
     assert_eq!(s.half, Some(NarrowFloat::Bf16));
     assert_eq!(s.unit(), Some(2f64.powi(-8)));
+    let u = 2f64.powi(-8);
+    let (ua, ub) = s.units().expect("a member");
+    assert!((ua, ub) == (u, 0.0) || (ua, ub) == (0.0, u), "{ua} {ub}");
     let pp = ir.precision_plan(f);
     assert_eq!(
         pp.bound.get(m).copied(),
-        Some(bound_coef_unit(64, Some(2f64.powi(-8))))
+        Some(mapal_ir::bound_coef_units(64, ua, ub, 2f64.powi(-23)))
     );
+    assert!(pp.bound.get(m).copied() < Some(bound_coef_unit(64, Some(u))));
     let sets: Vec<_> = ir
         .funcs()
         .flat_map(|(g, _)| ir.precision_plan(g).set.into_iter().map(|(_, p)| p))

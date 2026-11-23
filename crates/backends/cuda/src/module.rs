@@ -52,6 +52,9 @@ pub(crate) fn narrow_fn(ty: &mapal_ir::Ty) -> &'static str {
     match ty {
         mapal_ir::Ty::Narrow(mapal_ir::NarrowFloat::Bf16) => "__float2bfloat16_rn",
         mapal_ir::Ty::Narrow(mapal_ir::NarrowFloat::F16) => "__float2half_rn",
+        // ADR-0043 slice 3: the constructors round to nearest even and saturate.
+        mapal_ir::Ty::Narrow(mapal_ir::NarrowFloat::F8e4m3) => "__nv_fp8_e4m3",
+        mapal_ir::Ty::Narrow(mapal_ir::NarrowFloat::F8e5m2) => "__nv_fp8_e5m2",
         _ => unreachable!("Narrow into a non-narrow ty passed validation"),
     }
 }
