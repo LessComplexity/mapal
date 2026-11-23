@@ -49,7 +49,7 @@ PARTS = {
 KERNEL_RUNGS = ('arch-rungs interleave unroll min-blocks warp prefetch mma async wide ldmatrix warp-fill idx32 affine '
                 'pad wide-fma wgmma-hopper raster l2-gate pdl row-fit wave-gate grid-share panel-regs fill-rows '
                 'cell-fill asyncstage splitk splitk-atomic streamk row-split fill-wave fit-first tf32-radix kmajor-a full-tile '
-                'async-depth bank-plan streamk-fill k-fill').split()
+                'async-depth bank-plan streamk-fill k-fill vec-cells stream-fly bulk-stage').split()
 GPU_SYMS = ('alloc arena copy2d d2h_on d2h event free gen h2d h2d_async h2d_on init launch_l2 launchv launch launch_coop '
             'pin sync tile unpin zero').split()
 PROFILE_RS = os.path.join(HERE, '..', '..', 'crates', 'backends', 'llvm', 'src', 'profile.rs')
@@ -914,6 +914,9 @@ def facts(d, sm):
         flows = {f['kernel']: flow_facts(f, dev) for f in (kv(m) for m in re.findall(r'^; mapal\.flow (.*)$', dev, re.M))}
         exps = exp_calls(dev)
         hw_exp = int('@llvm.nvvm.ex2.approx.ftz.f(' in dev)
+        # kernel-merging `calls`: each persistent kernel's grid barriers as emitted (before opt / llc copy any).
+        gsyncs = {m.group(1): len(re.findall(r'call void @mapal_gsync\(', m.group(2)))
+                  for m in re.finditer(r'^define ptx_kernel void @([\w.$]+)\((.*?)^}', dev, re.M | re.S)}
         devm = re.search(r'^; mapal\.device (.*)$', dev, re.M)
         ptx = read(os.path.join(d, src + '.ptx'))
         pf = ptx_facts(ptx) if ptx else {}
@@ -958,7 +961,7 @@ def facts(d, sm):
             axes = [[sg, r, real(r)] for sg, r in flips.get(k, [])]
             kf = dict(plan=p, flow=flows.get(k, {}), ptx=pf.get(k, {}), ptxas=pa.get(k, {}),
                       mod=dict(launched=launched(k, hll), cand=int(k in cands), alt=int(bool(axes)), axes=axes,
-                               exp32=exps.get(k, 0), hw_exp=hw_exp),
+                               exp32=exps.get(k, 0), hw_exp=hw_exp, gsync=gsyncs.get(k, 0)),
                       launch=la,
                       sass=sass_facts(sf[k]) if k in sf else {},
                       remarks=dict(opt=remark_facts(rem_opt, k), llc=remark_facts(rem_llc, k)))
@@ -1057,6 +1060,15 @@ def run_intent(it, state, ns):
 KINDS = ('tile', 'naive', 'mma', 'wgmma', 'reduce', 'rowfold', 'gen', 'cell', 'flow', 'hz', 'calls')
 
 
+def build_face(host, stem):
+    """`contract` / `free` of a build: the emitter's host line (`fma=`, `order=`) where it has one, else the stem's
+    face suffix (`_x` / `_r` exact, `_c` / `_r` / `_rc` ordered)."""
+    base = stem.split('.')[0]
+    contract = host['fma'] == 1 if 'fma' in host else not re.search(r'_(x|r)$', base)
+    free = host['order'] == 'Free' if 'order' in host else not re.search(r'_(x|c|r|rc)$', base)
+    return dict(contract=contract, free=free)
+
+
 def check(d, results=None, out=sys.stdout):
     from intent import INTENT
     prof = os.path.basename(os.path.normpath(d))
@@ -1073,10 +1085,11 @@ def check(d, results=None, out=sys.stdout):
             ns.update(host=D(e['host']), device=D(e['device']), remarks=D(kf.get('remarks', {})),
                       launch=D(kf.get('launch') or (e['launch'] if e['launch'].get('kernel') == k else {})),
                       exec=D(ex.get((stem, k), {})), arch=prof, sm=e['sm'],
-                      # fold-algebra: the stem's face contracts (default, `_c`, `_rc`), not `_x` / `_r`.
-                      contract=not re.search(r'_(x|r)$', stem.split('.')[0]),
-                      # exp (ADR-0042): the order-free faces (default, `_tf`) — where `exp` may take the hardware form.
-                      free=not re.search(r'_(x|c|r|rc)$', stem.split('.')[0]))
+                      # fold-algebra: the build's face contracts (default, `_c`, `_rc`), not `_x` / `_r`;
+                      # exp (ADR-0042): its order is free (default, `_tf`) — where `exp` may take the hardware form.
+                      # Read from the host line (`; mapal.host fma= order=`): the `.xref` builds and the px
+                      # differentials are exact-face builds whatever their stem says.
+                      **build_face(e['host'], stem))
             kon = set(kf.get('plan', {}).get('rungs_on', [])) | on
             alt = kf.get('mod', {}).get('alt', 0)
             for rung, it in INTENT.items():

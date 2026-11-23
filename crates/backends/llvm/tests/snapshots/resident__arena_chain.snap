@@ -24,6 +24,7 @@ declare i64 @mapal_gpu_arena(ptr, i64)
 
 define internal void @mapal_main() {
 entry:
+  ; mapal.calls.host chains=1 formed=0 units=0 barriers=0 zeros=0 per_ns=0 sep_ns=0 refused=cost:1 rounds=1
   %darena = alloca i64
   store i64 0, ptr %darena
   %o7 = alloca { ptr, ptr, ptr, ptr }

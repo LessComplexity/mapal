@@ -35,6 +35,26 @@ use crate::profile::{Face, GPU_RESIDENT_BLOCKS, Gpu};
 /// the same per-SM FFMA rate on every part but the A100).
 pub const DRAM_PER_SM_LOW: u64 = 9_200;
 
+/// **open-rules `wide-fma`, priced at the site**: whether the whole-file
+/// `8 × 16` tile (128 accumulators a thread, half the warps of the `8 × 8`
+/// tile over the same `bm × bn` block) pays at a site whose wide grid is
+/// `blocks` blocks (its split partitions included) against `wave`, the
+/// blocks one wave of the wide tile holds (`sms ×` its blocks per SM). The
+/// part's side is [`rungs`] (128 FP32 lanes, and a scarce DRAM share or a
+/// contracting face). Where an SM's DRAM share is below [`DRAM_PER_SM`]
+/// (the RTX 3090 / 5080 11.4 KB/µs, the 5090 10.5, the 4090 7.9) the wide
+/// tile pays at any grid: cross-arch 7a2b67bf, 3090 12 W / 0 L (mlp_2048
+/// 0.934 at 1.56 waves, the stream-K projections 0.937–0.973), 4090 19 / 0.
+/// Above it (the H100 SXM 25.4) a grid of at most one wave runs each block's
+/// one tile with half the warps to keep the SM's DRAM share in flight:
+/// mlp_2048 / mlp2_2048 (256 blocks against 264) 1.037 / 1.052,
+/// pj_m128_n28672 (224) 1.167 lost; more blocks than a wave (the stream-K
+/// m2048 projections, 512–3 584 blocks: 0.934–0.964; 4096³ at 1 024:
+/// loop / epi 0.970 / 0.973) won.
+pub fn wide_fma_pays(g: &Gpu, blocks: u64, wave: u64) -> bool {
+    g.dram_bytes_per_us_per_sm() < DRAM_PER_SM || blocks > wave
+}
+
 /// FFMA flops per DRAM byte, per mille, at and above which `warp-fill`'s
 /// shrunk tile pays at one warp per scheduler on a contract face: the
 /// rtx-5080 (54.9) won it (loopmm_1024_8, smlp_4096_256_1024 1.15-1.24x the
@@ -148,14 +168,17 @@ pub fn rungs(g: &Gpu, wps: u64, face: Face) -> GpuRungs {
         // and loses on a register-staged copy (3090 / H100 / 5090, the
         // 4090 filled) — the panel the async rule picks.
         kmajor_a: cp_async,
-        // large-gemm: the whole-file `8 × 16` tile where each SM's DRAM share
-        // is scarce, or — on a contract face — where the part issues more
-        // FFMA per DRAM byte than [`FILL_BALANCE_PM`] (compute-rich: the
-        // 128-accumulator thread's lower shared-load issue per FFMA, 6
-        // `LDS.128` per 128 FFMA against 4 per 64, is what bounds the tile).
-        // The rtx-5080 (54.9) won it filled (mm_4096: 3.76 vs 4.10 ms); the
-        // 3090 (38.0, exact), H100 PCIe (25.1) and A100 (12.5) lost it.
-        wide_fma: scarce || (contract && fill_balance),
+        // large-gemm / open-rules: the whole-file `8 × 16` tile — the
+        // 128-accumulator thread's lower shared-load issue per FFMA (6
+        // `LDS.128` per 128 FFMA against 4 per 64) — on a part whose SM
+        // issues 128 FP32 lanes (the A100's 64-lane SM issues half the FFMA
+        // per shared load: the lower LDS issue buys nothing, 7a2b67bf 9 L /
+        // 2 W, one in an 18 % null), where each SM's DRAM share is scarce or
+        // on a contracting face; the site prices its grid
+        // ([`wide_fma_pays`]). FFMA per DRAM byte did not separate the
+        // parts: the 3090 (35.6) won it 12 / 0, the H100 (18.3) won and lost
+        // by grid. The 3090's exact face lost it.
+        wide_fma: g.fp32_lanes >= FULL_FP32_LANES && (scarce || contract),
         min_blocks: match (tf32, filled) {
             (true, false) => false,
             (_, true) => !regs_tight,
@@ -259,7 +282,7 @@ mod tests {
     /// `local-rtx-5080/hardware-properties.md`. The replay must find exactly
     /// these: a rule change that fixes one moves it out, one that breaks a
     /// measurement fails here.
-    const OPEN: [(&str, &str, &str, &str); 16] = [
+    const OPEN: [(&str, &str, &str, &str); 18] = [
         // The launch does not read whether its operands are in L2 (flushed
         // L2 wins, warm L2 and the composed MLP lose): `residence_plan`.
         ("asyncstage", "h100-pcie", "on", "l2-flushed"),
@@ -290,6 +313,12 @@ mod tests {
         // yields the 8-block grid to the cell tile, which the row-fit line
         // measured 4x faster: re-measure the gate against the cell tile.
         ("wave-gate", "h100-pcie", "off", "blocks=8"),
+        // open-rules: the S5x register-staged tile on the H100 PCIe lost
+        // the wide tile above one wave (2048^2, 4096^2); the SXM part's
+        // current tile won 4096^3 at 3.88 waves (7a2b67bf). Re-measure the
+        // PCIe part on the current tile.
+        ("wide-fma", "h100-pcie", "off", "blocks=256,wave=228"),
+        ("wide-fma", "h100-pcie", "off", "blocks=1024,wave=228"),
         // cross-arch: `min-blocks` won filled on the H100 SXM and the A100
         // (32 registers a resident thread, where the H100 PCIe's cap spilled
         // 8-16 B and lost) — the derived residency's register cap against
@@ -337,6 +366,8 @@ mod tests {
             // (`row_bytes=`, `repeats=`), comma-separated.
             let mut row_bytes = None;
             let mut repeats = None;
+            let mut blocks = None;
+            let mut wave = None;
             for kv in cond.split(',') {
                 let Some((k, v)) = kv.split_once('=') else {
                     continue;
@@ -344,7 +375,8 @@ mod tests {
                 match k {
                     "row_bytes" => row_bytes = Some(v.parse::<u64>().expect("row_bytes")),
                     "repeats" => repeats = Some(v == "1"),
-                    "blocks" => {}
+                    "blocks" => blocks = Some(v.parse::<u64>().expect("blocks")),
+                    "wave" => wave = Some(v.parse::<u64>().expect("wave")),
                     _ => {
                         let n: u64 = v.parse().expect(line);
                         let mut over = [None; DeviceCost::NAMES.len()];
@@ -406,11 +438,15 @@ mod tests {
                     if let (Some(rep), "pdl") = (repeats, e.rung) {
                         v = pdl_pays(&g, rep);
                     }
+                    // The wide tile's grid against its wave.
+                    if let (Some(b), Some(w), "wide-fma") = (blocks, wave, e.rung) {
+                        v = v && wide_fma_pays(&g, b, w);
+                    }
                     // A row-fitted grid's blocks: where `wave-gate` gates,
                     // its fact decides whether the fitted grid runs
                     // (`row-fit`) or yields (`wave-gate`).
-                    if let Some(b) = e.cond.strip_prefix("blocks=") {
-                        let full = wave_full(b.parse().expect("blocks"), g.sms);
+                    if let (Some(b), None) = (blocks, wave) {
+                        let full = wave_full(b, g.sms);
                         v = match e.rung {
                             "row-fit" => v && (!r.wave_gate || full),
                             "wave-gate" => v && !full,
@@ -436,7 +472,7 @@ mod tests {
         }
         assert_eq!(open, OPEN.to_vec(), "measurements the rules do not pick");
         // The counts the evidence file reports.
-        assert_eq!((picked, null, mixed, open.len()), (108, 67, 9, 16));
+        assert_eq!((picked, null, mixed, open.len()), (116, 68, 9, 18));
     }
 
     /// No rule reads a name, an architecture string or a version: a part

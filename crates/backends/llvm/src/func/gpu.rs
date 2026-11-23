@@ -983,6 +983,24 @@ pub(crate) fn launch_split(
     }
     let arithmetic = Arithmetic::scalar(site, contract, arms.free, arms.pairs);
     let rungs = site_rungs(profile, wps, arithmetic.face(), arms, site);
+    // open-rules `wide-fma`, the site's side ([`crate::rules::wide_fma_pays`]):
+    // the wide tile's own grid (its split partitions included) against the
+    // blocks one wave of it holds. The ON arm takes it anyway.
+    let rungs = match rungs.wide_fma && !arms.on.wide_fma && shaped {
+        true => {
+            let wide =
+                profile.gpu_tile_split(grows, site.c, site.k, &site.elem, true, rungs, split);
+            let pays = wide.is_none_or(|w| {
+                let blocks = (site.rows / w.bm()) * (site.c / w.bn()) * split;
+                crate::rules::wide_fma_pays(gpu, blocks, gpu.sms * w.blocks_per_sm.max(1))
+            });
+            crate::GpuRungs {
+                wide_fma: pays,
+                ..rungs
+            }
+        }
+        false => rungs,
+    };
     // tile-efficiency T2: `a`'s panel rows run along `k` (`vector_a`), so it
     // can stay untransposed — where one quarter-warp's fragment read is one
     // panel row (`tx` ≥ the lanes a wavefront serves, [`Kernel::tiled`]).
@@ -2105,8 +2123,20 @@ pub(crate) fn group_order(
     arms: crate::GpuArms,
     order: Order,
 ) -> (crate::GpuArms, Order) {
-    match epi {
-        Some(e) if e.post.is_some() => {
+    epi_order(epi.map(|e| e.post.is_some()), arms, order)
+}
+
+/// [`group_order`] by the group's shape alone: `post` — `None` without an
+/// epilogue group, else whether it carries a `tile-post` body. The planning
+/// passes (`horizontal`, `calls`) draw a site's candidates under this too,
+/// so the launch they price is the one the emission's table holds.
+pub(crate) fn epi_order(
+    post: Option<bool>,
+    arms: crate::GpuArms,
+    order: Order,
+) -> (crate::GpuArms, Order) {
+    match post {
+        Some(true) => {
             let mut a = arms;
             *a.off.rung("splitk-atomic").expect("a rung") = true;
             *a.off.rung("streamk").expect("a rung") = true;

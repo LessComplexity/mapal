@@ -117,6 +117,25 @@ pub(crate) fn persistent_fit(levels: &[Vec<Shape>], gpu: &Gpu) -> Result<u64, Re
 /// each, as the runtime issues them (`pdl`: programmatic dependent launches,
 /// where the part has them). `None` on a part without the measured barrier
 /// and launch costs.
+///
+/// open-rules: the bodies' change is a **per-round** fact. `rounds` is the
+/// chain's widest level in rounds of the persistent grid (`⌈blocks / grid⌉`
+/// of a level's members side by side). A chain every level of which fits
+/// one round runs each body over its own blocks, as its launch did: `calib.cu
+/// body`'s one-round chains measured −0.37 … +0.07 µs on the RTX 3090, A100,
+/// RTX 4090 and H100 (60f0f8ce) and +0.14 … +0.64 on the RTX 5080 — no
+/// term. The grid-stride form (more than one round: fewer blocks in flight
+/// than the members' own waves) pays [`Gpu::coop_body_ns`] (its 4-round
+/// measurement). The boundaries are the part's measured ones, else derived
+/// from its clock ([`Gpu::chain_cost`]): every part is priced.
+///
+/// open-rules: and **the phases' length** — `work_ns`, the members' work
+/// at the part's peaks (each member's flops over the FFMA rate or its bytes
+/// over the DRAM rate, whichever is longer: a lower bound of its phase).
+/// A member body inside the persistent kernel runs without its launch's
+/// read-only path and at the merged kernel's registers; that change grows
+/// with the phase, not with the boundaries: [`CALLS_PHASE_PM`] of it.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn chain_ns(
     units: &[u64],
     grid: u64,
@@ -124,18 +143,49 @@ pub(crate) fn chain_ns(
     gpu: &Gpu,
     pdl: bool,
     looped: bool,
+    rounds: u64,
+    work_ns: f64,
 ) -> Option<(f64, f64)> {
-    let d = gpu.cost.as_ref()?;
+    let (d, _) = gpu.chain_cost();
     let sep = units
         .iter()
         .map(|&b| d.launch_at(b, gpu.sms, pdl))
         .sum::<Option<f64>>()?;
     let first = if looped { 0 } else { d.coop_first_ns };
+    let body = if rounds > 1 { gpu.coop_body_ns() } else { 0.0 }
+        + work_ns * CALLS_PHASE_PM as f64 / 1000.0;
     let per = d.coop_launch_at(grid, gpu.sms)?
         + barriers as f64 * d.gsync_at(grid, gpu.sms)?
-        + gpu.coop_body_ns()
+        + body
         + first as f64;
     Some((per, sep))
+}
+
+/// open-rules `calls`: what a member's phase costs inside one persistent
+/// kernel beyond its own launch, per mille of the phase — the smallest
+/// proportional change a merged phase measured: the RTX 5080's rt_mlp2 GEMM
+/// pairs, 166.5 / 165.3 µs against 161.0 / 163.7 µs as four kernels (+2.2 %,
+/// 127–128 registers against 95–96; `review-fixes.md` §3). The others are
+/// larger: the H100's smlp / firew_rowsum phases +59 / +84 % (7a2b67bf), the
+/// A100's causal family +10 % (41.3 against 37.5 µs a trip), the 5080's
+/// decode rows +19 %. On long phases (the H100's GEMM pairs, the 4090's
+/// diamond) it outweighs the ~0.7 µs a boundary saves; on the causal and
+/// decode chains' short ones it does not.
+pub const CALLS_PHASE_PM: u64 = 22;
+
+/// The rounds of the persistent grid of `grid` blocks the widest level of
+/// `levels` takes (its members side by side).
+pub(crate) fn chain_rounds(levels: &[Vec<Shape>], grid: u64) -> u64 {
+    levels
+        .iter()
+        .map(|l| {
+            l.iter()
+                .map(|s| s.blocks)
+                .sum::<u64>()
+                .div_ceil(grid.max(1))
+        })
+        .max()
+        .unwrap_or(1)
 }
 
 /// The chains the rule considered in one function, for the intent line.
@@ -151,6 +201,9 @@ pub(super) struct CallsStats {
     /// `(persistent, separate)` ns of the formed chains, summed.
     pub per_ns: f64,
     pub sep_ns: f64,
+    /// The widest level of any priced chain, in rounds of its persistent
+    /// grid ([`chain_rounds`]).
+    pub rounds: u64,
 }
 
 /// A placed member: `(step, level, zero_ok, out)` — its step in the sequence,
@@ -257,10 +310,17 @@ impl FnEmit<'_> {
             let ms: Vec<MorphismId> = steps.iter().filter_map(|&i| op(i)).collect();
             // A launch whose output the host copies out (no `keep`) issues
             // that copy right after it: it ends a chain.
-            let copied = ms.iter().any(|&m| {
-                let o = self.ir.morphism(m).expect("m").target;
-                !plan.keep.contains_key(plan.alias(o))
-            });
+            let copied = ms.iter().any(|&m| self.hz_copied(plan, m));
+            // A merged unit whose member before its last copies out: the copy
+            // issues between the members, where no persistent launch stands
+            // (the group launches at its last member). It stays its own.
+            if ms[..ms.len() - 1].iter().any(|&m| self.hz_copied(plan, m)) {
+                if !chain.units.is_empty() {
+                    *stats.refused.entry("copied").or_default() += 1;
+                }
+                self.calls_close(plan, seq, acc, access, &shapes, &mut chain, dead, stats);
+                continue;
+            }
             match self.calls_place(plan, acc, access, &shapes, &chain, &steps, &ms, gpu) {
                 Ok(placed) => {
                     chain.units.push(steps);
@@ -329,17 +389,11 @@ impl FnEmit<'_> {
             .iter()
             .map(|&m| {
                 let site = self.tile_plan.as_ref()?.sites.get(m)?;
+                let (arms, order) = self.site_choice(m);
                 let any_atomic = self.hz_row(plan, m).is_none()
-                    && gpu::site_cands(
-                        site,
-                        self.profile,
-                        self.contract,
-                        self.gpu_arms,
-                        self.order,
-                        false,
-                    )
-                    .iter()
-                    .any(|c| matches!(c.launch.combine, gpu::Combine::Atomic { .. }));
+                    && gpu::site_cands(site, self.profile, self.contract, arms, order, false)
+                        .iter()
+                        .any(|c| matches!(c.launch.combine, gpu::Combine::Atomic { .. }));
                 any_atomic.then(|| self.ir.morphism(m).expect("m").target)
             })
             .collect();
@@ -386,23 +440,44 @@ impl FnEmit<'_> {
         Ok(placed)
     }
 
+    /// A member's phase at the part's peaks, in ns: its sum of products'
+    /// flops (a tile site: `2 · rows · c · k`) over the FFMA rate, or the
+    /// bytes it reads and writes over the DRAM rate, whichever is longer.
+    fn calls_work_ns(
+        &self,
+        access: &(Vec<ObjectId>, Vec<ObjectId>),
+        m: MorphismId,
+        gpu: &Gpu,
+    ) -> f64 {
+        let flops = self
+            .tile_plan
+            .as_ref()
+            .and_then(|t| t.sites.get(m))
+            .map_or(0, |s| 2 * s.rows * s.c * s.k);
+        let mut objs: Vec<ObjectId> = access.0.iter().chain(&access.1).copied().collect();
+        objs.sort();
+        objs.dedup();
+        let bytes: u64 = objs
+            .iter()
+            .map(|&o| self.array_bytes(&self.obj_ty(o)))
+            .sum();
+        let at = |n: u64, rate: u64| {
+            if rate == 0 {
+                0.0
+            } else {
+                n as f64 / rate as f64
+            }
+        };
+        at(flops, gpu.ffma_flops_per_ns()).max(at(bytes, gpu.dram_peak_bytes_per_ns()))
+    }
+
     /// Is `m`'s rule candidate (the one the plan's shape describes) atomic?
     fn calls_c0_atomic(&self, m: MorphismId) -> bool {
         let Some(site) = self.tile_plan.as_ref().and_then(|t| t.sites.get(m)) else {
             return false;
         };
-        let order = match self.groups.get(m) {
-            Some(_) => crate::Order::Sequential,
-            None => self.order,
-        };
-        let cands = gpu::site_cands(
-            site,
-            self.profile,
-            self.contract,
-            self.gpu_arms,
-            order,
-            false,
-        );
+        let (arms, order) = self.site_choice(m);
+        let cands = gpu::site_cands(site, self.profile, self.contract, arms, order, false);
         matches!(cands[0].launch.combine, gpu::Combine::Atomic { .. })
     }
 
@@ -454,7 +529,19 @@ impl FnEmit<'_> {
             Step::Op(m) => region.get(m).is_some_and(|r| r.0.is_some()),
             Step::Loop(_) => true,
         });
-        let Some((per, sep)) = chain_ns(&unit_blocks, grid, barriers, gpu, pdl, looped) else {
+        let rounds = chain_rounds(&lv, grid);
+        stats.rounds = stats.rounds.max(rounds);
+        let work: f64 = c
+            .members
+            .iter()
+            .map(|&(i, ..)| match seq[i] {
+                Step::Op(m) => self.calls_work_ns(&access[i], m, gpu),
+                Step::Loop(_) => 0.0,
+            })
+            .sum();
+        let Some((per, sep)) =
+            chain_ns(&unit_blocks, grid, barriers, gpu, pdl, looped, rounds, work)
+        else {
             return;
         };
         // `--calls=force` (measurement: the suite's forced chains against the
@@ -836,111 +923,130 @@ mod tests {
     fn the_rule_prices_barriers_against_launches() {
         let g = gpu();
         let d = g.cost.as_ref().expect("measured");
-        // Decode's chain in its loop: a cooperative launch (2044 ns), two
-        // barriers (553 + 44 · 1.89 ns at 128 blocks) and the bodies'
-        // measured change (`calib.cu body`: 4390 cycles at 2.45 GHz, 1792
-        // ns) against three plain dependent launches (650 ns): the
-        // persistent kernel costs more.
-        assert_eq!(g.coop_body_cycles(), (COOP_BODY_CYCLES_RTX_5080, true));
+        assert_eq!(g.chain_cost(), (*d, true), "the rtx-5080 measured them");
+        // Decode's chain in its loop, one round of its 128-block grid: a
+        // cooperative launch (2044 ns) and two barriers (553 + 44 · 1.89 ns
+        // at 128 blocks), no body term (one round) and its phases' 22 ‰,
+        // against three plain dependent launches (650 ns): the boundaries
+        // alone keep it separate here.
         let body = g.coop_body_ns();
         assert!((body - 4390.0 / 2.45).abs() < 0.5, "{body}");
-        let (per, sep) = chain_ns(&[3, 128, 128], 128, 2, g, false, true).expect("priced");
         let at128 = 553.0 + 44.0 * 1.89;
+        let (per, sep) = chain_ns(&[3, 128, 128], 128, 2, g, false, true, 1, 0.0).expect("priced");
         assert!(
-            (per - (2044.0 + 2.0 * at128 + body)).abs() < 0.5 && (sep - 1950.0).abs() < 0.5,
+            (per - (2044.0 + 2.0 * at128)).abs() < 0.5 && (sep - 1950.0).abs() < 0.5,
             "{per} {sep}"
         );
         assert!(per > sep);
+        // The phases: 22 ‰ of their work at the part's peaks.
+        let (long, _) =
+            chain_ns(&[3, 128, 128], 128, 2, g, false, true, 1, 100_000.0).expect("priced");
+        assert!((long - per - 2200.0).abs() < 0.5, "{long} {per}");
+        // The grid-stride form (more than one round) pays the bodies'
+        // measured change (`calib.cu body`, 4 rounds: 1792 ns).
+        let (strided, _) =
+            chain_ns(&[3, 512, 512], 128, 2, g, false, true, 4, 0.0).expect("priced");
+        assert!((strided - per - body).abs() < 0.5, "{strided} {per}");
         // Outside every loop it also pays the process's first cooperative
         // launch (38 us).
-        let (once, _) = chain_ns(&[3, 128, 128], 128, 2, g, false, false).expect("priced");
+        let (once, _) = chain_ns(&[3, 128, 128], 128, 2, g, false, false, 1, 0.0).expect("priced");
         assert!((once - per - 38_000.0).abs() < 0.5, "{once} {per}");
         // Programmatic dependent launches (486 ns each): further apart.
-        let (_, sep) = chain_ns(&[3, 128, 128], 128, 2, g, true, true).expect("priced");
+        let (_, sep) = chain_ns(&[3, 128, 128], 128, 2, g, true, true, 1, 0.0).expect("priced");
         assert!((sep - 1458.0).abs() < 0.5, "{sep}");
         // A long chain of one-block launches: twelve barriers of one block
         // (553 ns priced) against twelve more plain launches — still not
         // enough to pay the cooperative launch back here.
-        let (per, sep) = chain_ns(&[1; 13], 1, 12, g, false, true).expect("priced");
+        let (per, sep) = chain_ns(&[1; 13], 1, 12, g, false, true, 1, 0.0).expect("priced");
         assert!(per > sep, "{per} {sep}");
-        // Without the cooperative launch's price, the barriers alone win;
-        // the bodies' change is what keeps the chain separate.
+        // Without the cooperative launch's price, the barriers alone win a
+        // one-round chain; the grid-stride form's bodies keep it separate.
         let mut cheap = *d;
         cheap.coop_launch_ns = 0;
         let g2 = Gpu {
             cost: Some(cheap),
             ..*g
         };
-        let (per, sep) = chain_ns(&[3, 128, 128], 128, 2, &g2, false, true).expect("priced");
-        assert!(per - body <= sep && per > sep, "{per} {sep}");
+        let (per, sep) =
+            chain_ns(&[3, 128, 128], 128, 2, &g2, false, true, 1, 0.0).expect("priced");
+        assert!(per <= sep, "{per} {sep}");
+        let (per, sep) =
+            chain_ns(&[3, 512, 512], 128, 2, &g2, false, true, 4, 0.0).expect("priced");
+        assert!(per > sep, "{per} {sep}");
         assert!((d.gsync_at(504, g.sms).unwrap() - (553.0 + 420.0 * 1.89)).abs() < 0.5);
-        // A part without the measured barrier and launch costs prices no
-        // chain (the 5090) — its bodies' price is derived all the same.
+        // open-rules: a part without the measured barrier and launch costs
+        // (the 5090) prices chains on the rtx-5080's cycles at its own clock
+        // (2.41 GHz: 562 / 660 / 494 / 2078 ns) — derived, as its bodies'.
         let p5090 = crate::profile::TargetProfile::named("rtx-5090")
             .and_then(|p| p.gpu())
             .unwrap();
-        assert!(chain_ns(&[1, 1], 1, 1, p5090, true, true).is_none());
+        let (dv, measured) = p5090.chain_cost();
+        assert!(!measured);
+        assert_eq!(
+            (
+                dv.gsync_ns,
+                dv.dep_launch_ns,
+                dv.pdl_launch_ns,
+                dv.coop_launch_ns
+            ),
+            (562, 660, 494, 2078)
+        );
+        let (per, sep) = chain_ns(&[3, 128, 128], 128, 2, p5090, true, true, 1, 0.0).unwrap();
+        assert!(
+            per > sep,
+            "the 5090 prices decode as the 5080 does: {per} {sep}"
+        );
         assert_eq!(p5090.coop_body_cycles(), (COOP_BODY_CYCLES_RTX_5080, false));
     }
 
-    /// The parts whose barrier and launch costs `calib.cu` measured but whose
-    /// persistent bodies nobody timed (rtx-4090, rtx-3090, a100, h100) derive
-    /// the bodies' price from the rtx-5080's measured cycles at their own
-    /// clocks (1742 / 2812 / 3113 / 2429 ns): decode's chain, which the
-    /// boundaries alone priced 656 / 522 ns faster than its launches on the
-    /// 4090 / 3090, loses on both; causal's six-launch chain (5 barriers
-    /// against 6 launches of 1440 / 1472 ns) still pays there, and not on the
-    /// a100 (2021 ns saved against 3113) — until the a100 ran at 2.3 GHz: the
-    /// same cycles are less time on a faster clock.
+    /// **open-rules `calls`, replayed** (cross-arch 60f0f8ce and 7a2b67bf,
+    /// the RTX 5080): the bodies' change is a per-round fact and the
+    /// phases' length a fact of the chain. One-round chains (every level
+    /// within its persistent grid) price no body term: decode's chain forms
+    /// on the 4090 / 3090 (656 / 522 ns saved; it won 1.20 / 1.48 formed in
+    /// 7a2b67bf and lost refused in 60f0f8ce) as does causal's (won 1.16 /
+    /// 1.36). The grid-stride form pays the derived 4-round body: the a100's
+    /// causal chain at 4 rounds refuses (2021 ns saved against 3113). Long
+    /// phases pay their 22 ‰: the H100's smlp chain (two GEMM phases of at
+    /// least 70 us at its FFMA peak, 1.47x slower formed) refuses, 1540 ns
+    /// against 695 saved. Open: the a100's one-round causal family forms
+    /// (its forced chain measured 1.3-1.7 % slower: +10 % phases inside).
     #[test]
-    fn the_bodies_price_decides_where_the_boundaries_alone_did_not() {
+    fn the_rounds_and_phases_decide_where_the_boundaries_alone_did_not() {
         let part = |n: &str| {
             *crate::profile::TargetProfile::named(n)
                 .and_then(|p| p.gpu())
                 .unwrap()
         };
-        let boundaries = |g: &Gpu, u: &[u64], bars: u64| {
-            let (per, sep) = chain_ns(u, 128, bars, g, false, true).expect("priced");
-            (per - g.coop_body_ns(), sep)
-        };
-        for (n, dec_save, ns) in [("rtx-4090", 656.0, 1742.0), ("rtx-3090", 522.0, 2812.0)] {
+        for (n, dec_save) in [("rtx-4090", 656.0), ("rtx-3090", 522.0)] {
             let g = part(n);
-            assert_eq!(
-                g.coop_body_cycles(),
-                (COOP_BODY_CYCLES_RTX_5080, false),
-                "{n}"
-            );
+            let (per, sep) = chain_ns(&[3, 128, 128], 128, 2, &g, false, true, 1, 0.0).unwrap();
             assert!(
-                (g.coop_body_ns() - ns).abs() < 1.0,
-                "{n}: {}",
-                g.coop_body_ns()
+                (sep - per - dec_save).abs() < 1.0,
+                "{n} decode: {per} {sep}"
             );
-            let (b, sep) = boundaries(&g, &[3, 128, 128], 2);
-            assert!((sep - b - dec_save).abs() < 1.0, "{n}: {b} {sep}");
-            let (per, sep) = chain_ns(&[3, 128, 128], 128, 2, &g, false, true).unwrap();
-            assert!(per > sep, "{n} decode: {per} {sep}");
-            let (per, sep) = chain_ns(&[3, 128, 1, 4, 1, 32], 128, 5, &g, false, true).unwrap();
+            let (per, sep) =
+                chain_ns(&[3, 128, 1, 4, 1, 32], 128, 5, &g, false, true, 1, 0.0).unwrap();
             assert!(per < sep, "{n} causal: {per} {sep}");
         }
         let a100 = part("a100");
         let causal = [3, 128, 1, 4, 1, 32];
-        let (per, sep) = chain_ns(&causal, 128, 5, &a100, false, true).unwrap();
+        let (per, sep) = chain_ns(&causal, 128, 5, &a100, false, true, 1, 0.0).unwrap();
+        assert!((sep - per - 2021.0).abs() < 1.0, "{per} {sep}");
+        let (per, sep) = chain_ns(&causal, 128, 5, &a100, false, true, 4, 0.0).unwrap();
         assert!(
             per > sep && (a100.coop_body_ns() - 3113.0).abs() < 1.0,
             "{per} {sep}"
         );
-        let fast = Gpu {
-            clock_khz: 2_300_000,
-            ..a100
-        };
-        let (per, sep) = chain_ns(&causal, 128, 5, &fast, false, true).unwrap();
-        assert!(per < sep, "a100 at 2.3 GHz: {per} {sep}");
-        // The H100's smlp / firew_rowsum chains (cross-arch 7a2b67bf: 2749
-        // against 3444 ns on the boundaries, 1.55 / 2.3x slower formed): the
-        // derived 2429 ns refuses them.
         let h100 = part("h100");
-        assert!((h100.coop_body_ns() - 2429.0).abs() < 1.0);
-        assert!(2749.0 + h100.coop_body_ns() > 3444.0);
+        let flops = 2.0 * (4096.0 * 256.0 * 1024.0) * 2.0;
+        let work = flops / h100.ffma_flops_per_ns() as f64;
+        assert!(work > 70_000.0, "{work}");
+        let (per, sep) = chain_ns(&[256, 256], 256, 1, &h100, false, true, 1, work).unwrap();
+        assert!(
+            per > sep && sep - (per - work * 0.022) > 600.0,
+            "{per} {sep}"
+        );
     }
 
     #[test]

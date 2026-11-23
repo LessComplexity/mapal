@@ -102,6 +102,23 @@ fn launches(err: &str) -> u64 {
     field(l, "launches").parse().unwrap_or(0)
 }
 
+/// The host's cooperative launches: `launch_coop`, or a site table flagged
+/// `SITE_COOP` (bit 2).
+fn coop_launches(em: &Emission) -> usize {
+    em.text
+        .lines()
+        .map(str::trim)
+        .filter(|l| {
+            l.starts_with("call void @mapal_gpu_launch_coop(")
+                || l.strip_prefix("call void @mapal_gpu_site(i64 ")
+                    .and_then(|r| r.split(", ").nth(1))
+                    .and_then(|f| f.strip_prefix("i32 "))
+                    .and_then(|f| f.parse::<u32>().ok())
+                    .is_some_and(|f| f & 4 != 0)
+        })
+        .count()
+}
+
 /// The persistent kernels' spec lines (`; mapal.hz kernel=… grid=…`).
 fn specs(em: &Emission) -> Vec<String> {
     em.text
@@ -202,8 +219,9 @@ fn decode_runs_its_trip_as_one_persistent_kernel() {
     let off = emit(false, true, false);
     assert!(host_line(&off).is_empty() && specs(&off).is_empty());
     assert!(!off.device.as_deref().unwrap().contains("@mapal_gsync"));
-    // A part without the measured barrier and launch costs forms no chain
-    // (the 5090: the cross-arch parts carry theirs).
+    // open-rules: a part without the measured barrier and launch costs (the
+    // 5090) prices its chains on the rtx-5080's cycles at its own clock: the
+    // shipped decode chain refused as on the 5080, the forced one formed.
     let mut gpu = GpuArms::default();
     gpu.calls_force = true;
     let p5090 = emit_detailed(
@@ -216,21 +234,40 @@ fn decode_runs_its_trip_as_one_persistent_kernel() {
         },
     )
     .expect("emits");
-    assert!(host_line(&p5090).is_empty() && specs(&p5090).is_empty());
+    assert_eq!(field(&host_line(&p5090), "formed"), "1");
+    assert!(!specs(&p5090).is_empty());
+    let shipped = emit_detailed(
+        &ir,
+        &EmitOpts {
+            host: "generic",
+            target: "rtx-5090",
+            ..EmitOpts::default()
+        },
+    )
+    .expect("emits");
+    let h = host_line(&shipped);
+    assert_eq!(
+        (field(&h, "formed"), field(&h, "refused")),
+        ("0", "cost:1"),
+        "{h}"
+    );
 }
 
-/// **Every part prices a chain's bodies** (`calib.cu body`): the rtx-5080
-/// measured them (4390 cycles at its 2.45 GHz); every other GPU profile
-/// derives them from those cycles at its own clock — never `unpriced`. On the
+/// **Every part prices a chain** (`calib.cu body`, `gsync`): the rtx-5080
+/// measured its bodies (4390 cycles at its 2.45 GHz) and boundaries; every
+/// other GPU profile derives what it did not measure from those cycles at its
+/// own clock — never `unpriced`. open-rules, replayed against cross-arch
+/// 60f0f8ce / 7a2b67bf: the bodies' change is a per-round fact (none for a
+/// chain whose levels fit one round of its grid) and the phases' length a
+/// fact of the chain (22 ‰ of its members' work at the part's peaks). On the
 /// suite's chains: the rtx-5080 refuses every one by cost (a cooperative
-/// launch of 2044 ns against launches of 486 / 650); decode's chain is refused
-/// on every part (656 / 522 ns saved on the 4090 / 3090 against 1742 / 2812 of
-/// bodies); the H100's smlp / firew_rowsum chains — formed on the boundaries
-/// alone in the cross-arch 7a2b67bf round, 1.55 / 2.3x slower — are refused
-/// (695 ns saved against 2429); causal's six-launch chain forms on the 4090
-/// and the 3090, not on the a100 or the H100. The derivation follows the
-/// clock (`--cost=clock_khz=`): the a100 at 2.3 GHz forms causal's chain, the
-/// 3090 at 1.0 GHz refuses it.
+/// launch of 2044 ns against launches of 486 / 650); decode's one-round chain
+/// forms on the 4090 / 3090 (it won 1.20 / 1.48 formed in 7a2b67bf, lost
+/// refused in 60f0f8ce); causal's six-launch chain forms on the 4090, the 3090
+/// (won 1.16 / 1.36) and the a100 (open: its forced chain measured 1.3–1.7 %
+/// slower), not on the H100 (programmatic launches); the H100's smlp /
+/// firew_rowsum chains — 1.55 / 2.3x slower formed in 7a2b67bf — are refused
+/// by their phases (two GEMMs of ≥ 70 µs) and rounds (16).
 #[test]
 fn every_part_prices_chains() {
     use mapal_backend_llvm::TargetProfile;
@@ -272,8 +309,8 @@ fn every_part_prices_chains() {
     // measured barrier and launch costs.
     let parts = ["rtx-5080", "rtx-4090", "rtx-3090", "a100", "h100"];
     let want: [(&str, &[&str]); 5] = [
-        ("pt_decode_1024_256", &[]),
-        ("pt_causal_1024_256", &["rtx-4090", "rtx-3090"]),
+        ("pt_decode_1024_256", &["rtx-4090", "rtx-3090"]),
+        ("pt_causal_1024_256", &["rtx-4090", "rtx-3090", "a100"]),
         ("pt_smlp_4096_256_1024", &[]),
         ("pt_firew_rowsum_2048x2048_16", &[]),
         ("pt_rt_mlp2_1024", &[]),
@@ -290,11 +327,16 @@ fn every_part_prices_chains() {
             }
         }
         if p == "pt_causal_1024_256" {
-            assert_ne!(field(&emit(&ir, "a100", Some(2_300_000)), "formed"), "0");
-            assert_eq!(
+            // One round: no body term, so the clock does not move it.
+            assert_ne!(
                 field(&emit(&ir, "rtx-3090", Some(1_000_000)), "formed"),
                 "0"
             );
+        }
+        // The parts nobody calibrated price theirs (derived boundaries).
+        for part in ["rtx-5090", "h100-pcie"] {
+            let h = emit(&ir, part, None);
+            assert!(!h.is_empty() && !h.contains("unpriced"), "{part} {p}: {h}");
         }
     }
 }
@@ -418,6 +460,8 @@ struct Cover {
     straight: usize,
     fewer: usize,
     runs: usize,
+    /// open-rules: programs with a `tile-post` site among chains considered.
+    post: usize,
 }
 
 /// Over generated programs (`calls_prog_strategy`, in parallel): the OFF arm
@@ -473,7 +517,8 @@ fn calls_on_generated_programs() {
             && cv.padded > 0
             && cv.branchy > 0
             && cv.refused > 0
-            && cv.fewer > 0,
+            && cv.fewer > 0
+            && cv.post > 0,
         "{cv:?}"
     );
 }
@@ -496,6 +541,7 @@ impl Cover {
         self.straight += d.straight;
         self.fewer += d.fewer;
         self.runs += d.runs;
+        self.post += d.post;
     }
 }
 
@@ -516,6 +562,15 @@ fn one_program(clang: &str, z: usize, p: &testgen::HzProg) -> Cover {
     cv.refused += usize::from(!h.is_empty() && field(&h, "refused") != "0");
     cv.cost += usize::from(field(&h, "refused").contains("cost"));
     let formed = n("formed");
+    cv.post += usize::from(p.post && n("chains") > 0 && src.contains(" -> u; u * 0.5 + q"));
+    // open-rules: every chain the plan formed is one cooperative launch (the
+    // 4090's block decode formed one over `tile-post` sites whose tables held
+    // only workspace splits, and launched its members one by one).
+    assert_eq!(
+        coop_launches(&on),
+        formed,
+        "#{z}: formed {formed}\n{h}\n{src}"
+    );
     if formed == 0 {
         assert!(specs(&on).is_empty(), "#{z}");
         return cv;

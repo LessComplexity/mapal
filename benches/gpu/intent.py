@@ -75,8 +75,12 @@ INTENT = {
         ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')]),
     'module': dict(applies="plan.kind != 'gen'", on=[
         ('every kernel in the device module is launched by the host', 'mod.launched > 0')]),
+    # The site-priced rungs (`row-split`: `row_split_pays`; `wide-fma`: `wide_fma_pays`, open-rules) may be off at a
+    # site where the part's rung is on: the table holds the part's side, the plan line the site's.
     'arch-rungs': dict(rule=True, applies=ANY, on=[
-        ("the kernel's rungs are the rules' at its fill and face", 'set(plan.rungs_on) == set(table.rungs_on)')],
+        ("the kernel's rungs are the rules' at its fill and face (a site-priced rung at most off)",
+         "set(plan.rungs_on) - {'row-split', 'wide-fma'} == set(table.rungs_on) - {'row-split', 'wide-fma'}"
+         " and set(plan.rungs_on) & {'row-split', 'wide-fma'} <= set(table.rungs_on)")],
         off=[('every rung on', 'set(plan.rungs_on) == set(table.rungs_on)')]),
     # ---- FMA tile rungs ------------------------------------------------------------------------------
     'unroll': dict(applies=TILE + ' and plan.bk > 1', on=[
@@ -213,8 +217,13 @@ INTENT = {
         off=[('no ldmatrix / LDSM', 'ptx.ldmatrix == 0 and sass.ldsm == 0')]),
     'wgmma-hopper': dict(applies="plan.kind == 'wgmma'", on=[
         ('wgmma.mma_async in PTX', 'ptx.wgmma > 0'), ('HGMMA in SASS', 'sass.hgmma > 0')]),
+    # cross-arch `pdl`: the part's rule (`pdl_pays`) and the module's chain — its launches repeat (a device site in a
+    # canonical loop) — make a module programmatic: the runtime's `PDL` init flag (4), every kernel waiting on its
+    # producer (`griddepcontrol.wait`) and triggering its dependent at its exit (no `launch_dependents` but under
+    # `pdl-early`). A straight-line module launches plainly: no griddepcontrol, its PTX the OFF arm's.
     'pdl': dict(applies=ANY + " and sm in ('sm_90a', 'sm_120')", on=[
-        ('griddepcontrol at kernel entry', 'ptx.griddep > 0')],
+        ('a programmatic module (its launches repeat): griddepcontrol.wait; a plain one: none',
+         '(ptx.griddep > 0) == (host.init_flags % 8 >= 4)')],
         off=[('no griddepcontrol', 'ptx.griddep == 0')]),
     # ---- host rungs (per stem) ---------------------------------------------------------------------------
     'resident': dict(host=True, applies='host.device_sites > 0', on=[
@@ -361,8 +370,12 @@ INTENT = {
         ('a cooperative launch a chain (its COOP table or its one kernel)', 'host.chain.coop >= host.chain.formed'),
         ('every persistent kernel the host names is in the device module', 'dev.calls == host.chain.specs')],
         applies_off='host.calls.launchv > 0', off=[('no persistent kernel', 'dev.calls == 0')]),
+    # The barrier count is the emitted IR's (`mod.gsync`: `@mapal_gsync` calls in the kernel): opt may specialize an
+    # inlined arrival on a disjoint path (jump threading on block 0's select: the exact-face chains' 8th PTX
+    # arrival, `i32 1`), so the PTX holds every barrier, possibly one copy more, never fewer.
     'calls-kernel': dict(applies="plan.kind == 'calls'", on=[
-        ('one grid-barrier arrival per level boundary', 'ptx.gsync_arrive == plan.levels - 1'),
+        ('one grid barrier per level boundary (emitted IR)', 'mod.gsync == plan.levels - 1'),
+        ('every barrier arrives in PTX (a specialized copy on a disjoint path at most)', 'ptx.gsync_arrive >= plan.levels - 1'),
         ('no non-coherent load (ld.global.nc)', 'ptx.ld_nc == 0'),
         ('every body inlined: no call left in PTX', 'ptx.call == 0'),
         ('shared memory is the launch\'s (the largest member\'s), none static', 'ptxas.static_smem == 0')]),

@@ -3490,6 +3490,10 @@ pub struct HzProg {
     pub k: u64,
     pub kv: bool,
     pub steps: Vec<[u8; 3]>,
+    /// open-rules: sites whose map body goes on past the fold (`tile-post`:
+    /// `u · 0.5 + q[i · k]`) — an epilogue group's split takes a workspace
+    /// only, so its table holds no candidate a persistent kernel runs.
+    pub post: bool,
 }
 
 pub fn hz_prog_strategy() -> impl Strategy<Value = HzProg> {
@@ -3510,6 +3514,7 @@ pub fn hz_prog_strategy() -> impl Strategy<Value = HzProg> {
             k,
             kv: kv && looped,
             steps,
+            post: false,
         })
 }
 
@@ -3518,7 +3523,8 @@ pub fn hz_prog_strategy() -> impl Strategy<Value = HzProg> {
 /// chains of dependent launches (a cell reading a site, a site over that
 /// cell, a row sum over a site) hold both unsplit sites and sites whose rule
 /// candidate adds into a zeroed output (few cells, a long fold: split-K
-/// atomic), beside the retained pattern's row passes.
+/// atomic), beside the retained pattern's row passes. open-rules: and,
+/// under `post`, sites whose body goes on past the fold (`tile-post`).
 pub fn calls_prog_strategy() -> impl Strategy<Value = HzProg> {
     (
         any::<bool>(),
@@ -3528,8 +3534,9 @@ pub fn calls_prog_strategy() -> impl Strategy<Value = HzProg> {
         prop::sample::select(vec![32u64, 64, 256, 1024]),
         any::<bool>(),
         prop::collection::vec(prop::array::uniform3(any::<u8>()), 2..8),
+        any::<bool>(),
     )
-        .prop_map(|(looped, trips, rows, c, k, kv, steps)| HzProg {
+        .prop_map(|(looped, trips, rows, c, k, kv, steps, post)| HzProg {
             looped,
             trips,
             rows,
@@ -3537,6 +3544,7 @@ pub fn calls_prog_strategy() -> impl Strategy<Value = HzProg> {
             k,
             kv: kv && looped,
             steps,
+            post,
         })
 }
 
@@ -3576,8 +3584,13 @@ pub fn hz_src(p: &HzProg) -> String {
                 }
                 let q = step[1] as usize % cells;
                 let wt = if step[1] % 2 == 1 { "w2" } else { "w" };
+                // `tile-post`: the cell's body goes on past its fold.
+                let post = match p.post && step[2] % 2 == 1 {
+                    true => format!(" -> u; u * 0.5 + q{q}[i * {k}]"),
+                    false => String::new(),
+                };
                 body.push_str(&format!(
-                    "{ind}oc -> map {{ e -> e / {c} -> i; e % {c} -> j; (0.0, kr) -> fold {{ acc, kk -> acc + q{q}[i * {k} + kk] * {wt}[kk * {c} + j] }} }} -> y{sites};\n"
+                    "{ind}oc -> map {{ e -> e / {c} -> i; e % {c} -> j; (0.0, kr) -> fold {{ acc, kk -> acc + q{q}[i * {k} + kk] * {wt}[kk * {c} + j] }}{post} }} -> y{sites};\n"
                 ));
                 sites += 1;
             }

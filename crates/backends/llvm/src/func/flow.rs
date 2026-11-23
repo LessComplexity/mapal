@@ -1352,7 +1352,9 @@ impl<'a> FnEmit<'a> {
             let launches = self.gpu_arms.on.slice_launches && phases > 1;
             return fits(force).then(|| slices(force, (0, 0), launches));
         }
-        let d = gpu.cost?;
+        // open-rules: every part is priced — its measurements, else derived
+        // from its clock (`Gpu::slice_cost`).
+        let d = gpu.slice_cost();
         if d.row_iter_ns == 0 || d.gsync_ns == 0 || d.coop_launch_ns == 0 {
             return None;
         }

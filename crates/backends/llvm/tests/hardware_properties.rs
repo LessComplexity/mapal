@@ -77,8 +77,9 @@ impl Part {
         c
     }
 
-    /// The property sides the rules read, as `rules.rs` computes them.
-    fn sides(&self) -> [bool; 4] {
+    /// The property sides the rules read, as `rules.rs` computes them
+    /// (open-rules: FP32 lanes per SM below 128 too).
+    fn sides(&self) -> [bool; 5] {
         let g = *resolve_profile(self.base)
             .and_then(|p| p.gpu())
             .expect("gpu");
@@ -88,6 +89,7 @@ impl Part {
             g.regs_per_resident_thread() <= 32,
             g.l2_bytes_per_sm() < 128 * 1024,
             g.dram_bytes_per_us_per_sm() >= 14_600,
+            g.fp32_lanes < 128,
         ]
     }
 }
@@ -127,12 +129,13 @@ fn rung_rules_counted_and_valued_on_unseen_parts_and_programs() {
         .collect();
     // Per program: its parts' side of each property threshold, moved, valued, emulator runs.
     let per = testgen::par_check(&progs, |z, (p, pick)| {
-        let mut sides = [[0u32; 2]; 4];
+        let mut sides = [[0u32; 2]; 5];
         let (mut moved, mut valued, mut modes) = (0, 0, 0);
         let (src, _) = testgen::geom_src(p);
         let ir = lower(&src);
         let part = Part::draw(z, *pick);
-        for (i, s) in part.sides().into_iter().enumerate() {
+        let side = part.sides();
+        for (i, s) in side.into_iter().enumerate() {
             sides[i][usize::from(s)] += 1;
         }
         let (on, every) = (emission(&ir, &part, true), emission(&ir, &part, false));
@@ -140,8 +143,46 @@ fn rung_rules_counted_and_valued_on_unseen_parts_and_programs() {
         if dev(&on) != dev(&every) {
             moved += 1;
         }
+        // open-rules `wide-fma`: each contracting FMA tile site's wide tile
+        // — on, priced off by its grid (a 128-lane part with DRAM ≥ 14.6
+        // KB/µs a SM: the site's grid within one wave), or off by the part
+        // (64 lanes, asserted). Counted as (on, priced off).
+        let mut wide = [0u32; 2];
+        let d = dev(&on);
+        // A table's alternatives flip rungs against the rules' pick: only
+        // candidate 0 and untabled kernels are the rules' (`; mapal.site`).
+        let alts: Vec<String> = d
+            .lines()
+            .filter_map(|l| l.strip_prefix("; mapal.site "))
+            .filter_map(|l| l.split(" cands=").nth(1))
+            .flat_map(|c| {
+                c.split_whitespace()
+                    .next()
+                    .unwrap_or("")
+                    .split(',')
+                    .skip(1)
+                    .map(|k| format!("kernel=mapal_tile_{k} "))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        for l in d.lines().filter(|l| {
+            l.starts_with("; mapal.plan ")
+                && l.contains(" kind=tile ")
+                && l.contains("face=OrderedFma")
+                && !alts.iter().any(|a| l.contains(a.as_str()))
+        }) {
+            let rungs = l.split(" rungs_on=").nth(1).unwrap_or("");
+            let has = rungs.split(',').any(|r| r == "wide-fma");
+            if side[4] {
+                assert!(!has, "#{z}: a 64-lane part takes no wide tile\n{l}");
+            } else if has {
+                wide[0] += 1;
+            } else if side[3] && !side[0] {
+                wide[1] += 1;
+            }
+        }
         let Some(cc) = &clang else {
-            return (sides, moved, valued, modes);
+            return (sides, moved, valued, modes, wide);
         };
         let want = emu::run_emulated(cc, &every.text, &dev(&every));
         assert_eq!(
@@ -167,23 +208,30 @@ fn rung_rules_counted_and_valued_on_unseen_parts_and_programs() {
             modes += 1;
         }
         valued += 1;
-        (sides, moved, valued, modes)
+        (sides, moved, valued, modes, wide)
     });
     // Per property the rules read: programs on each side of its threshold.
-    let mut sides = [[0u32; 2]; 4];
+    let mut sides = [[0u32; 2]; 5];
     let (mut moved, mut valued, mut modes) = (0, 0, 0);
-    for (s, m, v, r) in per {
-        for i in 0..4 {
+    let mut wide = [0u32; 2];
+    for (s, m, v, r, w) in per {
+        for i in 0..5 {
             for j in 0..2 {
                 sides[i][j] += s[i][j];
             }
         }
         (moved, valued, modes) = (moved + m, valued + v, modes + r);
+        (wide[0], wide[1]) = (wide[0] + w[0], wide[1] + w[1]);
     }
     eprintln!(
-        "hardware-properties: sides (lo/hi) dram-scarce {:?} regs {:?} l2 {:?} dram {:?}; \
+        "hardware-properties: sides (lo/hi) dram-scarce {:?} regs {:?} l2 {:?} dram {:?} lanes<128 {:?}; \
+         wide-fma sites on {} / priced off by their grid {}; \
          {moved} emissions moved by the rules, {valued} valued ({modes} emulator runs)",
-        sides[0], sides[1], sides[2], sides[3]
+        sides[0], sides[1], sides[2], sides[3], sides[4], wide[0], wide[1]
+    );
+    assert!(
+        wide[0] > 0 && wide[1] > 0,
+        "wide-fma: on and priced off {wide:?}"
     );
     for (i, s) in sides.iter().enumerate() {
         assert!(

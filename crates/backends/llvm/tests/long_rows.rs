@@ -453,8 +453,10 @@ fn check_long_row(clang: &str, p: &testgen::LongRow) -> Vec<(&'static str, u64)>
 /// launch, 38 us, where the unit runs once); four rows of 32768 slice inside
 /// a loop (its trips share that first launch) and not outside one; four rows
 /// of 2048 and 32 of 8192 keep one block a row (the cooperative launch and
-/// barriers cost more than the walk saves); a part without `row_iter_ns`
-/// slices nothing; the OFF arm neither.
+/// barriers cost more than the walk saves); open-rules: a part without
+/// `row_iter_ns` derives it (and `lat_ns`, `coop_first_ns`) from the
+/// rtx-5080's cycles at its own clock (`Gpu::slice_cost`) — the rtx-4090's one
+/// row of 131072 slices as the 5080's does; the OFF arm slices nothing.
 #[test]
 fn rule_slices_long_rows_on_measured_properties() {
     let pick = |src: &str, target: &'static str, off: &[&str]| {
@@ -506,7 +508,8 @@ fn rule_slices_long_rows_on_measured_properties() {
     assert_eq!(pick(&looped(4, 32768), "rtx-5080", coop), Some(64));
     assert_eq!(pick(&softmax(4, 2048), "rtx-5080", coop), None);
     assert_eq!(pick(&softmax(32, 8192), "rtx-5080", coop), None);
-    assert_eq!(pick(&softmax(1, 131072), "rtx-4090", &[]), None);
+    assert_eq!(pick(&softmax(1, 131072), "rtx-4090", &[]), Some(64));
+    assert_eq!(pick(&softmax(1, 131072), "rtx-4090", &["row-slices"]), None);
     assert_eq!(pick(&softmax(1, 131072), "rtx-5080", &["row-slices"]), None);
     // long-prefill `slice-launches`: two phases as two launches (2 × 486 ns
     // programmatic) undercut the first cooperative launch (38 us) outside a

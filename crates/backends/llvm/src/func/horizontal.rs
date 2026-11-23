@@ -217,6 +217,14 @@ impl FnEmit<'_> {
                 ),
                 Step::Loop(_) => false,
             };
+            // A launch whose stored value the host copies out issues that
+            // copy right after it: it is the last member of its group (the
+            // merged launch stands at the last member).
+            let copied = |j: usize| match seq[j] {
+                Step::Op(m) => self.hz_copied(plan, m),
+                Step::Loop(_) => false,
+            };
+            let copies: Vec<bool> = (0..seq.len()).map(copied).collect();
             let mut open: Vec<usize> = Vec::new();
             for j in 0..seq.len() {
                 if !rungs.horizontal {
@@ -244,6 +252,9 @@ impl FnEmit<'_> {
                     match fit {
                         Ok(_) => {
                             open.push(j);
+                            if copies[j] {
+                                self.hz_close(plan, &seq, &acc, &access, &mut open);
+                            }
                             continue;
                         }
                         Err(r) => {
@@ -253,15 +264,16 @@ impl FnEmit<'_> {
                     }
                 }
                 open.push(j);
+                if copies[j] {
+                    self.hz_close(plan, &seq, &acc, &access, &mut open);
+                }
             }
             self.hz_close(plan, &seq, &acc, &access, &mut open);
             // kernel-merging `calls`: chains of the sequence's units, where the
             // part's barrier and dependent-launch costs were measured.
-            let priced = gpu
-                .cost
-                .as_ref()
-                .is_some_and(|d| d.gsync_ns > 0 && d.dep_launch_ns > 0);
-            if rungs.calls && priced {
+            // Every part is priced: its measured boundaries, else derived
+            // from its clock (`Gpu::chain_cost`).
+            if rungs.calls {
                 dead.resize(plan.hz.len(), false);
                 self.calls_walk(plan, &seq, &acc, &access, &gated, &mut dead, &mut calls);
             }
@@ -290,7 +302,7 @@ impl FnEmit<'_> {
                 .map(|(r, n)| format!("{r}:{n}"))
                 .collect();
             plan.calls_line = format!(
-                "; mapal.calls.host chains={} formed={} units={} barriers={} zeros={} per_ns={:.0} sep_ns={:.0} refused={}\n",
+                "; mapal.calls.host chains={} formed={} units={} barriers={} zeros={} per_ns={:.0} sep_ns={:.0} refused={} rounds={}\n",
                 calls.chains,
                 calls.formed,
                 calls.units,
@@ -302,7 +314,8 @@ impl FnEmit<'_> {
                     "0".to_string()
                 } else {
                     why.join(",")
-                }
+                },
+                calls.rounds
             );
         }
         let refusals: usize = refused.iter().sum();
@@ -431,6 +444,45 @@ impl FnEmit<'_> {
         (kept && self.on_device(target) && gpu::gpu_site(&r.row, self.profile, true))
             .then_some(&r.row)
     }
+    /// Does launch `m` copy a value out to the host right after it? Every
+    /// array it stores — its target, a flow unit's stored members, an
+    /// epilogue group's stored results — under the emission's own test (the
+    /// plan keeps it on the device, or it is a carry's next value), and the
+    /// residency alias it shares kept too. The copy is a runtime call after
+    /// the launch: nothing merges across it.
+    pub(super) fn hz_copied(&self, plan: &ResidentPlan, m: MorphismId) -> bool {
+        let target = self.ir.morphism(m).expect("m").target;
+        let unit = plan
+            .units
+            .get(m)
+            .into_iter()
+            .flat_map(|u| u.members.iter().filter(|mb| mb.store).map(|mb| mb.out));
+        let epi = self
+            .groups
+            .get(m)
+            .into_iter()
+            .flat_map(|g| g.chain.iter().filter(|mb| mb.store).map(|mb| mb.out));
+        let kept = |o: ObjectId| {
+            (plan.keep.contains_key(o) || plan.is_carry_next(o))
+                && plan.keep.contains_key(plan.alias(o))
+        };
+        std::iter::once(target)
+            .chain(unit)
+            .chain(epi)
+            .any(|o| !kept(o))
+    }
+
+    /// The arms and order site `m`'s candidates are drawn under where it
+    /// launches on its own or as a member: its epilogue group's
+    /// ([`gpu::epi_order`]: a `tile-post` group splits only into a
+    /// workspace; any other group is ordered), else the function's.
+    pub(super) fn site_choice(&self, m: MorphismId) -> (crate::GpuArms, crate::Order) {
+        gpu::epi_order(
+            self.groups.get(m).map(|g| g.post.is_some()),
+            self.gpu_arms,
+            self.order,
+        )
+    }
 
     /// The launch emitted at `m`, when the rule may merge it: its rules'
     /// geometry. Cells (not a range cell or a batched write), units, and
@@ -511,18 +563,14 @@ impl FnEmit<'_> {
         }
         let row = self.hz_row(plan, m);
         let one = row.unwrap_or(site);
-        let order = match epi {
-            Some(_) => crate::Order::Sequential,
-            None => self.order,
+        // The arms and order the emission draws this launch's table under
+        // (a retained row's: the function's; a site's: its epilogue
+        // group's, `gpu::epi_order`) — the launch priced is the one taken.
+        let (arms, order) = match row {
+            Some(_) => (self.gpu_arms, self.order),
+            None => self.site_choice(m),
         };
-        let cands = gpu::site_cands(
-            one,
-            self.profile,
-            self.contract,
-            self.gpu_arms,
-            order,
-            row.is_some(),
-        );
+        let cands = gpu::site_cands(one, self.profile, self.contract, arms, order, row.is_some());
         let c0 = cands[0].launch;
         // A one-candidate atomic site launches directly behind its own zero
         // op (no table to take): never a member.
@@ -535,7 +583,7 @@ impl FnEmit<'_> {
         }
         if row.is_none()
             && epi.is_none()
-            && gpu::host_rungs(self.profile, self.contract, self.gpu_arms).l2_window
+            && gpu::host_rungs(self.profile, self.contract, arms).l2_window
             && self.l2_window(m, site, &c0).is_some()
         {
             return None;

@@ -729,6 +729,22 @@ pub struct DeviceCost {
 /// ([`Gpu::coop_body_ns`]).
 pub const COOP_BODY_CYCLES_RTX_5080: u64 = 4390;
 
+/// open-rules `calls`: the rtx-5080's measured chain boundaries in cycles of
+/// its 2.45 GHz profile clock — grid barrier 553 ns, dependent launch 650,
+/// programmatic launch 486, cooperative launch 2044 (`calib.cu gsync`,
+/// `calib/rtx-5080.calib`) — the source a part without its own measurement
+/// derives its boundaries from ([`Gpu::chain_cost`]), as the bodies' price
+/// is derived ([`COOP_BODY_CYCLES_RTX_5080`]).
+pub const CHAIN_CYCLES_RTX_5080: [u64; 4] = [1355, 1593, 1191, 5008];
+
+/// open-rules `row-slices`: the rtx-5080's measured walk and latency in
+/// cycles of its 2.45 GHz profile clock — `row_iter_ns` 87 (a lane-iteration
+/// of a one-block-a-row walk, CUPTI, `long-rows.md`), `lat_ns` 573 (a panel
+/// load under load) — and its process's first cooperative launch,
+/// `coop_first_ns` 38 000 ns (host time, not scaled): what a part without
+/// its own measurement prices a row's slices on ([`Gpu::slice_cost`]).
+pub const SLICE_RTX_5080: [u64; 3] = [213, 1404, 38_000];
+
 /// A [`DeviceCost`] without the plan-cost rates: the parts that keep the
 /// rules' plans (D8). `..NO_PLAN` fills them.
 pub const NO_PLAN: DeviceCost = DeviceCost {
@@ -1166,6 +1182,65 @@ impl Gpu {
             0 => (COOP_BODY_CYCLES_RTX_5080, false),
             c => (c, true),
         }
+    }
+
+    /// open-rules `calls`: **the boundary costs a chain is priced on** — the
+    /// part's measured grid barrier, dependent, programmatic and cooperative
+    /// launches ([`DeviceCost::gsync_ns`], `dep_launch_ns`, `pdl_launch_ns`,
+    /// `coop_launch_ns`) where `calib.cu gsync` measured them, else derived
+    /// as the body's price is: the rtx-5080's measured cycles
+    /// ([`CHAIN_CYCLES_RTX_5080`]) at this part's clock, the programmatic
+    /// launch only where the part has `griddepcontrol`. A part nobody
+    /// calibrated (the rtx-5090, the h100-pcie) is priced, not left out; its
+    /// measurement replaces the derivation.
+    pub fn chain_cost(&self) -> (DeviceCost, bool) {
+        let d = self.cost.unwrap_or(NO_PLAN);
+        if d.gsync_ns > 0 && d.dep_launch_ns > 0 {
+            return (d, true);
+        }
+        let at = |c: u64| c * 1_000_000 / self.clock_khz.max(1);
+        let [g, dep, pdl, coop] = CHAIN_CYCLES_RTX_5080;
+        (
+            DeviceCost {
+                gsync_ns: at(g),
+                gsync_block_ps: 0,
+                dep_launch_ns: at(dep),
+                dep_launch_block_ps: 0,
+                pdl_launch_ns: if self.has_griddepcontrol() {
+                    at(pdl)
+                } else {
+                    0
+                },
+                coop_launch_ns: at(coop),
+                ..d
+            },
+            false,
+        )
+    }
+
+    /// open-rules `row-slices`: **the costs a row's slices are priced on** —
+    /// [`Self::chain_cost`]'s boundaries, and the walk's per-element cost
+    /// (`row_iter_ns`), a restored partial's load latency (`lat_ns`) and the
+    /// process's first cooperative launch (`coop_first_ns`) where measured,
+    /// else derived from the rtx-5080's ([`SLICE_RTX_5080`]): the walk and
+    /// the latency in its cycles at this part's clock, the first launch (the
+    /// driver's one-time setup on the host) as measured. Without them no
+    /// rented part sliced a row (cross-arch 60f0f8ce: lsm 1.7–11× the best
+    /// competitor, one block a row).
+    pub fn slice_cost(&self) -> DeviceCost {
+        let (mut d, _) = self.chain_cost();
+        let at = |c: u64| c * 1_000_000 / self.clock_khz.max(1);
+        let [walk, lat, first] = SLICE_RTX_5080;
+        if d.row_iter_ns == 0 {
+            d.row_iter_ns = at(walk);
+        }
+        if d.lat_ns == 0 {
+            d.lat_ns = at(lat);
+        }
+        if d.coop_first_ns == 0 {
+            d.coop_first_ns = first;
+        }
+        d
     }
 
     /// [`Self::coop_body_cycles`] in ns at this part's clock

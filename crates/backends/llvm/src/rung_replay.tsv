@@ -180,7 +180,10 @@ wide	rtx-3090	F	T	on	-	base-rtx-3090-verify with it off _tf 2048/4096 0.781/5.35
 wide	rtx-5090	F	T	null	-	base-rtx-5090 / -confirm _tf OFF/ON 0.981/0.993/1.006 vs 0.982/0.999/1.031
 wide	rtx-5090	n1024	T	off	-	integrated-rtx-5090 _tf 1024 on 0.0492 vs off 0.0389 ms, disjoint
 wide-fma	a100	F	EC	off	-	base-a100 / -confirm OFF faster both sessions; with idx32 on-fma-regs 8.195 / 7.942 vs idx32 alone 8.034 / 7.800 ms
-wide-fma	h100-pcie	A	EC	off	-	fma-regs-h100-pcie staging _c on 0.795/4.054/33.097 vs off 0.654/3.851/33.608, _exact on 1.491/7.223/57.044 vs off 1.118/6.480/55.381 ms
+wide-fma	h100-pcie	A	E	off	-	fma-regs-h100-pcie staging _exact on 1.491/7.223/57.044 vs off 1.118/6.480/55.381 ms
+wide-fma	h100-pcie	n2048	C	off	blocks=256,wave=228	fma-regs-h100-pcie staging _c 2048 on 0.795 vs off 0.654 ms (the S5x register-staged tile; open-rules: its grid is above one wave)
+wide-fma	h100-pcie	n4096	C	off	blocks=1024,wave=228	fma-regs-h100-pcie staging _c 4096 on 4.054 vs off 3.851 ms (the S5x tile; the SXM part's current tile won 4096^3 at 1024 blocks, 7a2b67bf)
+wide-fma	h100-pcie	n8192	C	null	blocks=4096,wave=228	fma-regs-h100-pcie staging _c 8192 on 33.097 vs off 33.608 ms (1.5 %, one session)
 wide-fma	rtx-3090	F	E	off	-	base-rtx-3090 / -confirm _exact OFF/ON 0.959/0.936/0.991 vs 0.956/0.904/0.961
 wide-fma	rtx-4090	F	C	on	-	fma-regs-effects rtx-4090 _c sync wide-fma 2048/4096/8192 ON 0.304/2.509/22.072 vs OFF 0.324/2.698/23.258 ms
 wide-fma	rtx-5090	F	C	mixed	-	fma-regs-rtx-5090 staging 2048/4096/8192 on 0.344/3.194/26.885 vs off 0.348/2.947/28.434 ms (4096 disjoint loss, 8192 gain)
@@ -211,3 +214,11 @@ streamk-fill	rtx-5080	F	C	on	-	large-gemm cells ON / OFF: 16x2048x7168 0.0881 / 
 vec-cells	rtx-5080	A	C	on	-	gemv-tma ON / OFF (iter ms, ABBA): pj_m1 bf16 n4096_k14336 0.1082 / 0.1541, n6144_k4096 0.0338 / 0.0446, n28672_k4096 0.260 / 0.298; f32 n6144_k4096 0.0867 / 0.1021, n28672_k4096 0.524 / 0.555; dec_b1_l2048(_bf16w) 1.03-1.05x; the 4-trip 1 x 1024 x 4096 loser is the VEC_MIN_TRIPS fact (benches/results/evidence/local-rtx-5080/gemv-tma.md)
 stream-fly	rtx-5080	A	C	on	-	gemv-tma: with vec-cells (the split their grid needs from the 8 KiB knee and the SMs); the same rows (benches/results/evidence/local-rtx-5080/gemv-tma.md)
 bulk-stage	rtx-5080	A	T	off	-	gemv-tma ON / OFF (iter ms): pj_m128_n4096_k4096_tf32 1.961 / 0.136 (kernel 1.961 / 0.135), pj_m2048_n4096_k4096_tf32 7.57 / 1.42, pj_m128_n28672_k4096_tf32 4.77 / 0.70, mlp_2048_tf32 3.61 / 0.83 (benches/results/evidence/local-rtx-5080/gemv-tma.md)
+wide-fma	rtx-3090	F	C	on	-	cross-arch 7a2b67bf on-wide-fma (the 200 W box, both arms): 12 W / 13 null / 0 L of 25 — mlp_2048 0.934 (1.56 waves), pj_m128_n28672 0.937, pj_m2048_n4096 0.939, pre T2048 0.947, indep / fanout / diamond / mlp2 0.950-0.955 (stream-K grids of one wave and 1.56-wave grids)
+wide-fma	a100	F	C	off	-	cross-arch 7a2b67bf on-wide-fma: 9 L (pre T8192 1.306, pj_m2048_n4096_k14336 1.101, rowsum / softmax 4096 1.05, the m2048 projections 1.038-1.045 ...) / 2 W (pj_m2048_n28672 0.752 in an 18 % null, pre T2048 0.958): the 64-lane SM
+wide-fma	rtx-4090	F	C	on	-	cross-arch 7a2b67bf off-wide-fma (350 W, 2.22 GHz): OFF loses 19 / 27, 0 W (pre T2048 0.845 ON/OFF, blkpre 0.896, pj_m128_n28672 0.944 at 224 blocks of a 256-block wave)
+wide-fma	h100	F	C	off	blocks=256,wave=264	cross-arch 7a2b67bf on-wide-fma: mlp_2048 1.037, mlp2_2048 1.052 (2048^3 sites, 256 blocks, one tile a block)
+wide-fma	h100	F	C	off	blocks=224,wave=264	cross-arch 7a2b67bf on-wide-fma: pj_m128_n28672_k4096 1.167 (OFF a stream-K grid of 264)
+wide-fma	h100	F	C	on	blocks=512,wave=264	cross-arch 7a2b67bf on-wide-fma: pj_m2048_n4096_k4096 0.941, pj_m2048_n4096_k14336 0.964 (stream-K over 512 tiles)
+wide-fma	h100	F	C	on	blocks=768,wave=264	cross-arch 7a2b67bf on-wide-fma: pj_m2048_n6144_k4096 0.940 (pj_m2048_n28672 at 3 584 blocks 0.934)
+wide-fma	h100	F	C	on	blocks=1024,wave=264	cross-arch 7a2b67bf on-wide-fma: loop_4096 0.970, epi_4096 0.973 (4096^3, 3.88 waves)
