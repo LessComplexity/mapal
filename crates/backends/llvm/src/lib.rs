@@ -936,6 +936,14 @@ pub struct GpuRungs {
     /// ship it off on every part (it lost every measured site); `--gpu-on=
     /// mma-depth` measures it.
     pub mma_depth: bool,
+    /// sweep-gemm `round-store` (ADR-0041 D5 `round_at` over arrays): an f32
+    /// array a map produces whose every element read is a multiplicand of a
+    /// product admitting `bf16` ([`mapal_ir::PrecisionPlan::store`]) is
+    /// stored rounded once by its producer ([`CategoryIr::narrow_stored`]):
+    /// its tile panels copy 2-byte elements (`ldmatrix`, no conversion per
+    /// fragment, half the shared memory). Default (order-free) face only.
+    /// Off (`--gpu-off=round-store`): each reader rounds its copy.
+    pub round_store: bool,
 }
 
 impl GpuRungs {
@@ -1070,11 +1078,12 @@ impl GpuRungs {
         mma_combine: true,
         split_tile: true,
         mma_depth: true,
+        round_store: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 129] = [
+    pub const NAMES: [&'static str; 130] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1204,6 +1213,7 @@ impl GpuRungs {
         "split-tile",
         "mma-depth",
         "unit-uniform",
+        "round-store",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -1338,6 +1348,7 @@ impl GpuRungs {
             "mma-combine" => &mut self.mma_combine,
             "split-tile" => &mut self.split_tile,
             "mma-depth" => &mut self.mma_depth,
+            "round-store" => &mut self.round_store,
             _ => return None,
         })
     }
@@ -1748,6 +1759,17 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
         face.gpu.off.split_tile = true;
     }
     let opts = &face;
+    // sweep-gemm `round-store`: on the face that realizes a product's member
+    // (order free), an array whose every element read rounds to `bf16` is
+    // stored rounded by its producer — the same values each reader's
+    // rounding gives, computed once. The rewritten graph has no such array
+    // left (its elements are narrow), so the second pass emits.
+    if opts.gpu.free
+        && !opts.gpu.off.round_store
+        && let Some(stored) = ir.narrow_stored()
+    {
+        return emit_detailed(&stored, opts);
+    }
     // S62 `hostopt`: everything outside a device site is emitted against the
     // host's CPU facts; off, against `generic`'s — the S52–S54 GPU build.
     let rungs = crate::func::gpu::host_rungs(profile, opts.contract, opts.gpu);

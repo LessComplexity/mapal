@@ -5097,6 +5097,14 @@ pub fn half_fmt(f: u8) -> Option<&'static str> {
 /// passes through `exp` and the member's rounding: the test composes
 /// ADR-0043 D3).
 pub fn half_src(p: &HalfProg) -> (String, (usize, u64, u64)) {
+    half_src_with(p, false)
+}
+
+/// [`half_src`]; `once` (sweep-gemm `round-store`): a GEMM's magnitudes read
+/// their own copies of the operands (`am`, `bm`: the same laws), so the
+/// product's operands have no f32 reader — every element read of an f32
+/// operand rounds to the set's member (`PrecisionPlan::store`).
+pub fn half_src_with(p: &HalfProg, once: bool) -> (String, (usize, u64, u64)) {
     let pick = |d: u8, v: &[u64]| v[usize::from(d) % v.len()];
     let set = match p.set {
         1 => ": bf16 | f32",
@@ -5145,13 +5153,31 @@ pub fn half_src(p: &HalfProg) -> (String, (usize, u64, u64)) {
     {mn} -> iota -> ic;
     {k} -> iota -> kr;
     ic -> map {{ t -> t / {n} -> i; t % {n} -> j; (0.0, kr) -> fold{set} {{ acc, q -> {ar} -> x; {br} -> y; acc + x * y }}{post} }} -> y;
-    ic -> map: f32 {{ t -> t / {n} -> i; t % {n} -> j; (0.0, kr) -> fold {{ acc, q -> {ar} -> x; {br} -> y; x * y -> pv; {abs} }} }} -> mag;
 ",
             mk = m * k,
             kn = k * n,
             mn = m * n,
             sa = store(p.fa),
             sb = store(p.fb),
+        );
+        let (am, bm) = if once {
+            src += &format!(
+                "    ia -> map {{ t -> (t * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0{sa} }} -> am;
+    ib -> map {{ t -> (t * {a2} + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0{sb} }} -> bm;
+",
+                sa = store(p.fa),
+                sb = store(p.fb),
+            );
+            (
+                read(p.fa, &format!("am[i * {k} + q]")),
+                read(p.fb, &bi.replacen("b[", "bm[", 1)),
+            )
+        } else {
+            (ar, br)
+        };
+        src += &format!(
+            "    ic -> map: f32 {{ t -> t / {n} -> i; t % {n} -> j; (0.0, kr) -> fold {{ acc, q -> {am} -> x; {bm} -> y; x * y -> pv; {abs} }} }} -> mag;
+"
         );
         // An epilogue's `0.5·u + r`: M scales by one half, `r` exact.
         for c in cells {

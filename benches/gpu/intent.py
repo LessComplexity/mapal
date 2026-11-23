@@ -471,6 +471,17 @@ INTENT = {
     # f32-tensor-cores `mma-depth` (R-T2): the tensor tile's panel depth keeping the most bytes in flight at its
     # residency (bk 16 x 5 stages against bk 32 x 2): off on every part (measured losing); ON arm measures it.
     'mma-depth': dict(applies="plan.kind == 'mma'", note='panel depth and stages: diff the `.on-mma-depth` arm'),
+    # sweep-gemm `round-store`: an f32 array read only by `bf16`-admitting products is stored rounded once by its
+    # producer, so a 16-bit tile over it copies two 2-byte panels (`ea` 2, `eb` 2): 16-byte LDGSTS of the stored
+    # format, LDSM fragments, no conversion a fragment. The plan line cannot tell a stored operand from one the
+    # program declares narrow: the check reads every 16-bit tile over two narrow operands. OFF
+    # (`.off-round-store`): each reader rounds its f32 copy (`ea` 4: LDS + F2FP a fragment pair).
+    'round-store': dict(
+        applies_on="plan.kind == 'mma' and plan.get('set', '') == 'bf16|f32' and plan.ea == 2 and plan.eb == 2",
+        on=[
+            ('fragments of both panels by ldmatrix: LDSM in the hot loop', 'sass.hot.ldsm > 0'),
+            ('16-byte cp.async panels: LDGSTS in the hot loop, no LDG', 'sass.hot.ldgsts > 0 and sass.hot.ldg == 0'),
+            ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')]),
     # tensor-cores `narrow-async`: a streamed (`stages` >= 2) FMA tile over a narrow `b` copies its panel in the
     # format (8-byte LDGSTS, 4 elements) and widens each fragment as read. OFF: the register-staged tile.
     'narrow-async': dict(applies_on="plan.kind == 'tile' and 'narrow' in plan and plan.stages >= 2", on=[
