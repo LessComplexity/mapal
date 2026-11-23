@@ -944,6 +944,14 @@ pub struct GpuRungs {
     /// fragment, half the shared memory). Default (order-free) face only.
     /// Off (`--gpu-off=round-store`): each reader rounds its copy.
     pub round_store: bool,
+    /// sweep-runtime-2 `streamk-epi`: an epilogue group (S54, no `tile-post`
+    /// body) whose site the rules walk by stream-K keeps it — every piece
+    /// adds its partials into a zeroed workspace and the CTA that completes a
+    /// tile (a per-tile ticket: the stream-K walk names how many CTAs share
+    /// it) evaluates the group's members on the whole sums. Off
+    /// (`--gpu-off=streamk-epi`): the group's ordered kernel, as before (a
+    /// measurement flag; the stream-K rule decides where it applies).
+    pub streamk_epi: bool,
 }
 
 impl GpuRungs {
@@ -1079,11 +1087,12 @@ impl GpuRungs {
         split_tile: true,
         mma_depth: true,
         round_store: true,
+        streamk_epi: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 130] = [
+    pub const NAMES: [&'static str; 131] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1214,6 +1223,7 @@ impl GpuRungs {
         "mma-depth",
         "unit-uniform",
         "round-store",
+        "streamk-epi",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -1349,6 +1359,7 @@ impl GpuRungs {
             "split-tile" => &mut self.split_tile,
             "mma-depth" => &mut self.mma_depth,
             "round-store" => &mut self.round_store,
+            "streamk-epi" => &mut self.streamk_epi,
             _ => return None,
         })
     }

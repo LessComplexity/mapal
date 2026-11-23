@@ -2241,9 +2241,13 @@ pub(crate) fn site_cands(
 
 /// The arms and order an epilogue group's candidates are realized under. A
 /// `tile-post` group's fold may split into a workspace, whose reduce launch
-/// evaluates the epilogue once every cell's sum is whole (the one combine
-/// whose last pass sees whole sums: the atomic and stream-K splits are off);
-/// any other group keeps the ordered kernel it measured with (S54).
+/// evaluates the epilogue once every cell's sum is whole (the atomic and
+/// stream-K splits are off). Any other group (sweep-runtime-2
+/// `streamk-epi`) may take the stream-K walk the rules give its site, whose
+/// tile-completing CTA evaluates the members on the whole sums
+/// ([`Kernel::ticket`]); its atomic and workspace splits stay off — one
+/// launch either way. `--gpu-off=streamk-epi`: the ordered kernel it
+/// measured with (S54).
 pub(crate) fn group_order(
     epi: Option<&EpiKernel>,
     arms: crate::GpuArms,
@@ -2266,6 +2270,12 @@ pub(crate) fn epi_order(
             let mut a = arms;
             *a.off.rung("splitk-atomic").expect("a rung") = true;
             *a.off.rung("streamk").expect("a rung") = true;
+            (a, order)
+        }
+        Some(_) if !arms.off.get("streamk-epi") => {
+            let mut a = arms;
+            *a.off.rung("splitk-atomic").expect("a rung") = true;
+            *a.off.rung("splitk").expect("a rung") = true;
             (a, order)
         }
         Some(_) => (arms, Order::Sequential),
@@ -2343,6 +2353,9 @@ fn launch_key(l: &Launch) -> String {
         // sweep-attention: `unit-uniform` decides which units exist (no
         // kernel text of a tile site's).
         .replace(", unit_uniform: false", "")
+        // sweep-runtime-2: `streamk-epi` decides an epilogue group's
+        // combine (keyed through its ticket kernel's id).
+        .replace(", streamk_epi: false", "")
         .replace(", cells: 1 }", " }")
 }
 
@@ -2361,7 +2374,12 @@ fn cand_ids(
     let (main, rid) = match l.combine {
         Combine::None => (kernel_id_with(site, profile, contract, epi), 0),
         Combine::Atomic { .. } => (split("atomic"), 0),
-        Combine::StreamK { .. } => (split("streamk"), 0),
+        // sweep-runtime-2 `streamk-epi`: a group's stream-K kernel evaluates
+        // its members at each tile's ticket (its id names the group).
+        Combine::StreamK { .. } => match epi {
+            Some(e) => (fnv(&format!("{:016x}|ticket|{e:?}", split("streamk"))), 0),
+            None => (split("streamk"), 0),
+        },
         // `tile-post`: the reduce launch evaluates the epilogue (its id
         // names the group, as an ordered group kernel's does).
         Combine::Workspace { .. } => match epi {
@@ -2382,13 +2400,16 @@ fn cand_ids(
 
 /// A candidate's launch recipe (B2) as the host's `%mapal_cand` constant,
 /// and its workspace bytes.
-fn recipe(site: &TileSite, l: &Launch, (id, rid): (u64, u64)) -> (String, u64) {
+fn recipe(site: &TileSite, l: &Launch, (id, rid): (u64, u64), epi: bool) -> (String, u64) {
     let cells = site.rows * site.c;
     let bytes_o = cells * elem_bytes_of(&site.elem);
     let (cgx, cblock) = cell_grid(cells);
     let (zero, ws, gx, gy, rgx, rblock) = match l.combine {
         Combine::None => (0, 0, l.gx, l.gy, 0, 0),
         Combine::Atomic { s } => (bytes_o, 0, l.gx, l.gy * s, 0, 0),
+        // sweep-runtime-2 `streamk-epi`: the sums and the tiles' tickets in
+        // a workspace the runtime zeroes (`ws` without a reduce kernel).
+        Combine::StreamK { ctas, .. } if epi => (0, ticket_bytes(site, l), ctas, 1, 0, 0),
         Combine::StreamK { ctas, .. } => (bytes_o, 0, ctas, 1, 0, 0),
         Combine::Workspace { s } => (0, s * bytes_o, l.gx, l.gy * s, cgx, cblock),
     };
@@ -2398,6 +2419,18 @@ fn recipe(site: &TileSite, l: &Launch, (id, rid): (u64, u64)) -> (String, u64) {
         id as i64, rid as i64, l.block, l.smem
     );
     (text, ws)
+}
+
+/// sweep-runtime-2 `streamk-epi`: a group's stream-K workspace — one tile
+/// of sums a block (a shared tile's slot is its first block,
+/// [`Kernel::ticket_split`]; 16-byte aligned), then one `i32` ticket a slot.
+pub(crate) fn ticket_bytes(site: &TileSite, l: &Launch) -> u64 {
+    let Combine::StreamK { ctas, .. } = l.combine else {
+        unreachable!("a stream-K launch")
+    };
+    let g = l.tiled.expect("stream-K walks the FMA tile");
+    let sums = ctas * g.bm() * g.bn() * elem_bytes_of(&site.elem);
+    sums.div_ceil(GPU_VEC_BYTES) * GPU_VEC_BYTES + 4 * ctas
 }
 
 /// A table's evidence line (B1): candidate 0's id, the count, every
@@ -2437,8 +2470,11 @@ fn cand_kernels(
         .map(|(i, c)| cand_ids(site, profile, contract, epi, &c.launch, i == 0))
         .collect();
     // `tile-post`: candidate 0 of a post group may be a split, whose kernels
-    // the plain group emission does not make: every candidate here.
-    let first = usize::from(!epi.is_some_and(|e| e.post.is_some()));
+    // the plain group emission does not make: every candidate here — and
+    // (`streamk-epi`) any group's stream-K candidate 0.
+    let first = usize::from(
+        !epi.is_some_and(|e| e.post.is_some() || cands[0].launch.combine != Combine::None),
+    );
     if !ids[first..]
         .iter()
         .any(|(i, _)| live.contains(&kernel_name(*i)))
@@ -4629,7 +4665,10 @@ fn kernel_text(
         !col || col_store(&l, site),
         "a column-major store this kernel has"
     );
-    debug_assert!(combine == Combine::None || (!col && epi.is_none()));
+    debug_assert!(
+        combine == Combine::None
+            || (!col && (epi.is_none() || matches!(combine, Combine::StreamK { .. })))
+    );
     k.out = plan_line(name, site, profile, &l, k.idx, combine, col, epi.is_some());
     // plan-cost: the site's pick on every kernel's line (D3); its candidates
     // on every row-major one (the harness keys them by `site=`).
@@ -4759,6 +4798,8 @@ fn kernel<'s>(
             Combine::StreamK { iters, .. } => Some(iters),
             _ => None,
         },
+        ticket: epi.is_some() && matches!(combine, Combine::StreamK { .. }),
+        part: false,
         p0: None,
         head: "entry",
         tmap: Vec::new(),
@@ -5269,6 +5310,14 @@ struct Kernel<'s> {
     terms: u64,
     /// S63 `streamk`: the units of the `tiles × panels` space one block walks.
     streamk: Option<u64>,
+    /// sweep-runtime-2 `streamk-epi`: a stream-K kernel of an epilogue group
+    /// — its partials add into the workspace `%w` (the sums, then one `i32`
+    /// ticket a tile), and the CTA that completes a tile evaluates the
+    /// group's members on its whole sums ([`Kernel::ticket`]).
+    ticket: bool,
+    /// sweep-runtime-2 `streamk-epi`: the store pass of a shared tile's piece
+    /// (its partials into the workspace slot), not a whole tile's.
+    part: bool,
     /// S63 `streamk`: the current piece's first panel (the seed rides the
     /// piece that starts its tile, [`Kernel::split_seed`]).
     p0: Option<String>,
@@ -5420,6 +5469,13 @@ impl Kernel<'_> {
         }
         for j in 0..epi.uniforms.len() {
             s.push_str(&format!(", i64 %u{j}"));
+        }
+        // sweep-runtime-2 `streamk-epi`: the workspace the runtime appends
+        // after the table's pointers (the sums, then the tiles' tickets).
+        if self.ticket {
+            s.push_str(&format!(
+                ", ptr addrspace(1) noalias align {GPU_VEC_BYTES} %w"
+            ));
         }
         s
     }
@@ -5668,9 +5724,10 @@ impl Kernel<'_> {
             ));
             return;
         }
+        let sums = if self.ticket { "%w" } else { "%o" };
         for (j, x) in v.iter().enumerate() {
             let i = self.plus(oi.to_string(), j as u64);
-            let p = self.gep(1, "%o", &i);
+            let p = self.gep(1, sums, &i);
             let r = self.tmp();
             self.line(format!(
                 "{r} = atomicrmw fadd ptr addrspace(1) {p}, {t} {x} syncscope(\"device\") monotonic, align {e}"
@@ -8904,42 +8961,7 @@ impl Kernel<'_> {
 
         // --- one vector store per `lanes` columns of each owned row
         self.out.push_str("done:\n");
-        if narrow {
-            // One scalar store per owned cell (`cell-fill`), row- or
-            // column-major; the epilogue's store takes one cell at a time.
-            for i in 0..tm {
-                for j in 0..tn {
-                    let p = acc_slot(self, (i * tn + j) as usize);
-                    let x = self.tmp();
-                    self.line(format!("{x} = load {t}, ptr {p}, align {e}"));
-                    let r = self.op("add", &row0, &a_frag0);
-                    let r = self.plus(r, (i / aw) * a_chunk + i % aw);
-                    let cc = self.op("add", &col0, &b_frag0);
-                    let cc = self.plus(cc, j);
-                    let oi = if let Some(o) = ro {
-                        self.radix_at(o, &r, &cc)
-                    } else if self.col {
-                        let cr = self.op("mul", &cc, s.rows);
-                        self.op("add", &cr, &r)
-                    } else {
-                        let rr = self.op("mul", &r, s.c);
-                        self.op("add", &rr, &cc)
-                    };
-                    // A split kernel stores its partials into workspace slab
-                    // `z` (S62 integration: `cell-fill` × `splitk`), or adds
-                    // them into the output (S63).
-                    let oi = self.slab(oi);
-                    if self.epi.is_some() {
-                        self.store_cells(&[x], &oi);
-                        continue;
-                    }
-                    self.store_o(&[x], &oi);
-                }
-            }
-            self.finish(seg.as_ref());
-            return;
-        }
-        if self.col {
+        if self.col && !narrow {
             // Column-major (`rowfold-layout`): one vector store per `lanes`
             // rows of each owned column — a thread's rows come in runs of
             // `lanes` consecutive ones (`col_store`).
@@ -8974,60 +8996,127 @@ impl Kernel<'_> {
             self.out.push_str("  ret void\n}\n");
             return;
         }
-        for i in 0..tm {
-            let r = self.op("add", &row0, &a_frag0);
-            let r = self.op("add", &r, (i / aw) * a_chunk + i % aw);
-            let rr = self.op("mul", &r, s.c);
-            let c0 = self.op("add", &rr, &col0);
-            let c0 = self.op("add", &c0, &b_frag0);
-            let rrow = ro.map(|_| r.clone());
-            // A split kernel stores its partials into workspace slab `z`,
-            // or adds them into the output (S63).
-            let c0 = self.slab(c0);
-            for v in 0..tn / lanes {
-                if self.epi.is_some() {
-                    let mut xs = Vec::new();
-                    for j in 0..lanes {
-                        let p = acc_slot(self, (i * tn + v * lanes + j) as usize);
+        // sweep-runtime-2 `streamk-epi`: a piece that is its tile's whole
+        // fold stores through the group's members as the ordered kernel does
+        // (`st_whole`); a piece of a shared tile adds its partials into the
+        // tile's workspace slot and takes the tile's ticket (`st_part`).
+        let split = match (&seg, self.ticket) {
+            (Some(sg), true) => Some(self.ticket_split(sg, kext / bk, (bm, bn))),
+            _ => None,
+        };
+        let passes: &[bool] = if split.is_some() {
+            &[false, true]
+        } else {
+            &[false]
+        };
+        for &part in passes {
+            if split.is_some() {
+                self.out
+                    .push_str(if part { "st_part:\n" } else { "st_whole:\n" });
+            }
+            self.part = part;
+            // The workspace cell of tile-local `(lr, lc)` in the piece's slot.
+            let ws_at = |k: &mut Self, r: &str, lc: &str| -> String {
+                let sp = split.as_ref().expect("a shared tile's slot");
+                let lr = k.tmp();
+                k.line(format!("{lr} = sub {} {r}, {row0}", k.idx));
+                let lrb = k.op("mul", &lr, bn);
+                let l = k.op("add", &lrb, lc);
+                k.op("add", &sp.base, &l)
+            };
+            if narrow {
+                // One scalar store per owned cell (`cell-fill`), row- or
+                // column-major; the epilogue's store takes one cell at a time.
+                for i in 0..tm {
+                    for j in 0..tn {
+                        let p = acc_slot(self, (i * tn + j) as usize);
                         let x = self.tmp();
                         self.line(format!("{x} = load {t}, ptr {p}, align {e}"));
-                        xs.push(x);
-                    }
-                    // A digit-affine output (`tile-post` on a radix site): its
-                    // cell index is its address, `lanes` consecutive cells
-                    // (in slab `z` of a split's workspace, as `c0`).
-                    let oi = match (ro, &rrow) {
-                        (Some(o), Some(r)) => {
-                            let cc = self.op("add", &col0, &b_frag0);
-                            let cc = self.op("add", &cc, v * b_chunk);
-                            let a = self.radix_at(o, r, &cc);
-                            self.slab(a)
+                        let r = self.op("add", &row0, &a_frag0);
+                        let r = self.plus(r, (i / aw) * a_chunk + i % aw);
+                        if part {
+                            let lc = self.plus(b_frag0.clone(), j);
+                            let wi = ws_at(self, &r, &lc);
+                            self.store_o(&[x], &wi);
+                            continue;
                         }
-                        _ => self.op("add", &c0, v * b_chunk),
-                    };
-                    self.store_cells(&xs, &oi);
-                    continue;
-                }
-                let mut xs = Vec::new();
-                for j in 0..lanes {
-                    let p = acc_slot(self, (i * tn + v * lanes + j) as usize);
-                    let x = self.tmp();
-                    self.line(format!("{x} = load {t}, ptr {p}, align {e}"));
-                    xs.push(x);
-                }
-                // A split partition's partials go to its workspace slab `z`
-                // at the digit-affine address too (`c0` is slabbed above).
-                let oi = match (ro, &rrow) {
-                    (Some(o), Some(r)) => {
                         let cc = self.op("add", &col0, &b_frag0);
-                        let cc = self.op("add", &cc, v * b_chunk);
-                        let a = self.radix_at(o, r, &cc);
-                        self.slab(a)
+                        let cc = self.plus(cc, j);
+                        let oi = if let Some(o) = ro {
+                            self.radix_at(o, &r, &cc)
+                        } else if self.col {
+                            let cr = self.op("mul", &cc, s.rows);
+                            self.op("add", &cr, &r)
+                        } else {
+                            let rr = self.op("mul", &r, s.c);
+                            self.op("add", &rr, &cc)
+                        };
+                        // A split kernel stores its partials into workspace slab
+                        // `z` (S62 integration: `cell-fill` × `splitk`), or adds
+                        // them into the output (S63).
+                        let oi = self.slab(oi);
+                        if self.epi.is_some() && !self.part {
+                            self.store_cells(&[x], &oi);
+                            continue;
+                        }
+                        self.store_o(&[x], &oi);
                     }
-                    _ => self.op("add", &c0, v * b_chunk),
-                };
-                self.store_o(&xs, &oi);
+                }
+            } else {
+                for i in 0..tm {
+                    let r = self.op("add", &row0, &a_frag0);
+                    let r = self.op("add", &r, (i / aw) * a_chunk + i % aw);
+                    let rr = self.op("mul", &r, s.c);
+                    let c0 = self.op("add", &rr, &col0);
+                    let c0 = self.op("add", &c0, &b_frag0);
+                    let rrow = ro.map(|_| r.clone());
+                    // A split kernel stores its partials into workspace slab `z`,
+                    // or adds them into the output (S63).
+                    let c0 = self.slab(c0);
+                    for v in 0..tn / lanes {
+                        let mut xs = Vec::new();
+                        for j in 0..lanes {
+                            let p = acc_slot(self, (i * tn + v * lanes + j) as usize);
+                            let x = self.tmp();
+                            self.line(format!("{x} = load {t}, ptr {p}, align {e}"));
+                            xs.push(x);
+                        }
+                        if part {
+                            let lc = self.plus(b_frag0.clone(), v * b_chunk);
+                            let wi = ws_at(self, &r, &lc);
+                            self.store_o(&xs, &wi);
+                            continue;
+                        }
+                        // A digit-affine output (`tile-post` on a radix site): its
+                        // cell index is its address, `lanes` consecutive cells
+                        // (in slab `z` of a split's workspace, as `c0`).
+                        let oi = match (ro, &rrow) {
+                            (Some(o), Some(r)) => {
+                                let cc = self.op("add", &col0, &b_frag0);
+                                let cc = self.op("add", &cc, v * b_chunk);
+                                let a = self.radix_at(o, r, &cc);
+                                self.slab(a)
+                            }
+                            _ => self.op("add", &c0, v * b_chunk),
+                        };
+                        if self.epi.is_some() && !self.part {
+                            self.store_cells(&xs, &oi);
+                            continue;
+                        }
+                        self.store_o(&xs, &oi);
+                    }
+                }
             }
+            if let Some(sp) = split.as_ref() {
+                if part {
+                    self.ticket(sp, (bm, bn, threads), (&row0, &col0, &tid));
+                }
+                self.line("br label %st_join");
+            }
+        }
+        self.part = false;
+        if split.is_some() {
+            self.out.push_str("st_join:\n");
         }
         self.finish(seg.as_ref());
     }
@@ -9087,6 +9176,7 @@ impl Kernel<'_> {
         self.p0 = Some(p0);
         self.head = "seg";
         Segment {
+            tile,
             bx,
             by,
             kbeg,
@@ -9094,6 +9184,164 @@ impl Kernel<'_> {
             next,
             end,
         }
+    }
+
+    /// **sweep-runtime-2 `streamk-epi`: is the piece its tile's whole
+    /// fold?** The walk names the blocks that share tile `t`: `c₀ = ⌊t·P /
+    /// iters⌋ … c₁ = ⌊((t+1)·P − 1) / iters⌋`. One block (`c₀ = c₁`): the
+    /// piece is the tile, and its sums are whole in registers. Shared: the
+    /// tile's workspace slot is `c₀` — a block starts at most one tile it
+    /// does not finish, so the slots of shared tiles are distinct and the
+    /// workspace is `ctas` tiles, not the output. Branches to `st_whole` /
+    /// `st_part`.
+    fn ticket_split(&mut self, sg: &Segment, panels: u64, (bm, bn): (u64, u64)) -> TicketSplit {
+        let ix = self.idx;
+        let iters = self.streamk.expect("a stream-K kernel");
+        let first = self.op("mul", &sg.tile, panels);
+        let c0 = self.op("udiv", &first, iters);
+        let lastu = self.plus(first, panels - 1);
+        let c1 = self.op("udiv", &lastu, iters);
+        let shared = self.tmp();
+        self.line(format!("{shared} = sub {ix} {c1}, {c0}"));
+        let whole = self.tmp();
+        self.line(format!("{whole} = icmp eq {ix} {c1}, {c0}"));
+        let base = self.op("mul", &c0, bm * bn);
+        self.line(format!("br i1 {whole}, label %st_whole, label %st_part"));
+        let ctas = (self.raster.0 * self.gy_out * panels).div_ceil(iters);
+        TicketSplit {
+            base,
+            slot: c0,
+            shared,
+            ctas,
+        }
+    }
+
+    /// **sweep-runtime-2 `streamk-epi`: the shared tile's ticket.** After a
+    /// piece of a shared tile has added its partials into the tile's
+    /// workspace slot (`%w`, zeroed by the runtime), its block takes one
+    /// ticket: release fence, barrier, thread 0's `atomicrmw add` (device
+    /// scope, acq_rel) on the slot's `i32` past the slots, the old count
+    /// broadcast through shared memory. The block that draws the last ticket
+    /// (`c₁ − c₀`, [`Kernel::ticket_split`]) holds the whole sums: after an
+    /// acquire fence it reads the slot's `bm × bn` cells (volatile: from L2,
+    /// not a stale L1 line), `lanes` consecutive cells a thread a step, and
+    /// evaluates the group's members on them ([`Kernel::store_cells`], the
+    /// ordered kernel's store). Every other block goes on to its next piece.
+    /// The tiled kernel's tiles divide the site, so no cell is guarded.
+    fn ticket(
+        &mut self,
+        sp: &TicketSplit,
+        (bm, bn, threads): (u64, u64, u64),
+        (row0, col0, tid): (&str, &str, &str),
+    ) {
+        let ix = self.idx;
+        let s = self.site;
+        let (t, e) = (self.t.clone(), elem_bytes_of(&s.elem));
+        let base = (sp.ctas * bm * bn * e).div_ceil(GPU_VEC_BYTES) * GPU_VEC_BYTES / 4;
+        self.line("; streamk-epi: the tile's ticket");
+        self.line("fence syncscope(\"device\") release");
+        self.line("call void @llvm.nvvm.barrier0()");
+        let lead = self.tmp();
+        self.line(format!("{lead} = icmp eq {ix} {tid}, 0"));
+        self.line(format!("br i1 {lead}, label %tk_draw, label %tk_join"));
+        self.out.push_str("tk_draw:\n");
+        let slot64 = if ix == "i32" {
+            let z = self.tmp();
+            self.line(format!("{z} = zext nneg i32 {} to i64", sp.slot));
+            z
+        } else {
+            sp.slot.clone()
+        };
+        let ti = self.tmp();
+        self.line(format!("{ti} = add nuw nsw i64 {slot64}, {base}"));
+        let tp = self.tmp();
+        self.line(format!(
+            "{tp} = getelementptr inbounds i32, ptr addrspace(1) %w, i64 {ti}"
+        ));
+        let old = self.tmp();
+        self.line(format!(
+            "{old} = atomicrmw add ptr addrspace(1) {tp}, i32 1 syncscope(\"device\") acq_rel, align 4"
+        ));
+        self.line(format!(
+            "store i32 {old}, ptr addrspace(3) @mapal_smem, align 4"
+        ));
+        self.line("br label %tk_join");
+        self.out.push_str("tk_join:\n");
+        self.line("call void @llvm.nvvm.barrier0()");
+        let drawn = self.tmp();
+        self.line(format!(
+            "{drawn} = load i32, ptr addrspace(3) @mapal_smem, align 4"
+        ));
+        // The next piece's panels overwrite the slot only after every
+        // thread has read it.
+        self.line("call void @llvm.nvvm.barrier0()");
+        let shared32 = if ix == "i32" {
+            sp.shared.clone()
+        } else {
+            let z = self.tmp();
+            self.line(format!("{z} = trunc i64 {} to i32", sp.shared));
+            z
+        };
+        let last = self.tmp();
+        self.line(format!("{last} = icmp eq i32 {drawn}, {shared32}"));
+        self.line(format!("br i1 {last}, label %tk_epi, label %tk_end"));
+        self.out.push_str("tk_epi:\n");
+        self.line("fence syncscope(\"device\") acquire");
+        self.line("br label %tk_cell");
+        let lanes = GPU_VEC_BYTES / e;
+        let lanes = match bn % lanes == 0 && (bm * bn) % (threads * lanes) == 0 {
+            true => lanes,
+            false => 1,
+        };
+        let steps = bm * bn / (threads * lanes);
+        self.out.push_str("tk_cell:\n");
+        let (j, jn) = (self.tmp(), self.tmp());
+        self.line(format!("{j} = phi {ix} [0, %tk_epi], [{jn}, %tk_next]"));
+        let q0 = self.op("mul", &j, threads);
+        let q1 = self.op("add", &q0, tid);
+        let q = self.op("mul", &q1, lanes);
+        let r = self.op("udiv", &q, bn);
+        let cc = self.op("urem", &q, bn);
+        let gr = self.op("add", row0, &r);
+        let gc = self.op("add", col0, &cc);
+        let oi = match s.radix.as_deref().and_then(|x| x.out.as_ref()) {
+            Some(o) => self.radix_at(o, &gr, &gc),
+            None => {
+                let rr = self.op("mul", &gr, s.c);
+                self.op("add", &rr, &gc)
+            }
+        };
+        let wi = self.op("add", &sp.base, &q);
+        let p = self.gep(1, "%w", &wi);
+        let xs: Vec<String> = if lanes == 1 {
+            let x = self.tmp();
+            self.line(format!(
+                "{x} = load volatile {t}, ptr addrspace(1) {p}, align {e}"
+            ));
+            vec![x]
+        } else {
+            let vt = format!("<{lanes} x {t}>");
+            let v = self.tmp();
+            self.line(format!(
+                "{v} = load volatile {vt}, ptr addrspace(1) {p}, align {}",
+                lanes * e
+            ));
+            (0..lanes)
+                .map(|l| {
+                    let x = self.tmp();
+                    self.line(format!("{x} = extractelement {vt} {v}, i64 {l}"));
+                    x
+                })
+                .collect()
+        };
+        self.store_cells(&xs, &oi);
+        self.line("br label %tk_next");
+        self.out.push_str("tk_next:\n");
+        self.line(format!("{jn} = add {ix} {j}, 1"));
+        let more = self.tmp();
+        self.line(format!("{more} = icmp ult {ix} {jn}, {steps}"));
+        self.line(format!("br i1 {more}, label %tk_cell, label %tk_end"));
+        self.out.push_str("tk_end:\n");
     }
 
     /// The kernel's end: `ret`, or in a stream-K kernel the piece loop's
@@ -9114,8 +9362,23 @@ impl Kernel<'_> {
     }
 }
 
+/// sweep-runtime-2 `streamk-epi`: a shared tile's workspace slot
+/// ([`Kernel::ticket_split`]).
+struct TicketSplit {
+    /// The slot's first workspace cell (`c₀ · bm · bn`).
+    base: String,
+    /// The slot (`c₀`, the tile's first block): its ticket's index.
+    slot: String,
+    /// The tile's blocks less one: the last ticket's number.
+    shared: String,
+    /// The walk's blocks: the workspace's slots.
+    ctas: u64,
+}
+
 /// One stream-K piece's values ([`Kernel::segment`]).
 struct Segment {
+    /// The piece's tile, in the walk's linear order (before `raster`).
+    tile: String,
     bx: String,
     by: String,
     kbeg: String,
@@ -9236,7 +9499,7 @@ impl<'a> FnEmit<'a> {
         let (rows, ws): (Vec<String>, Vec<u64>) = cands
             .iter()
             .zip(&ids)
-            .map(|(c, &id)| recipe(one, &c.launch, id))
+            .map(|(c, &id)| recipe(one, &c.launch, id, epi.is_some()))
             .unzip();
         Some(SiteTable {
             site: ids[0].0,
@@ -10154,6 +10417,8 @@ mod tests {
                             atomic: false,
                             terms: 1,
                             streamk: None,
+                            ticket: false,
+                            part: false,
                             p0: None,
                             head: "entry",
                             tmap: Vec::new(),

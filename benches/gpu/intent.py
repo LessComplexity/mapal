@@ -194,6 +194,14 @@ INTENT = {
         ('one wave of blocks', 'plan.ctas <= occ.blocks_per_sm * occ.sms'),
         ('pieces combine by atomic add', 'ptx.atom_add + ptx.red_add > 0'),
         ('the launch is stream-K', "launch.combine == 'streamk'")]),
+    # sweep-runtime-2 `streamk-epi`: an epilogue group keeps its site's stream-K walk — the pieces add into a zeroed
+    # workspace (`ws` without a reduce kernel), the CTA drawing a tile's last ticket evaluates the members on the whole
+    # sums. `.off-streamk-epi`: the group's ordered kernel (`combine=none epi=1`), no ticket.
+    'streamk-epi': dict(applies_on="plan.kind == 'tile' and plan.combine == 'streamk' and plan.epi == 1", on=[
+        ('pieces add into the workspace sums', 'ptx.atom_add + ptx.red_add > 0'),
+        ('one ticket a piece: an acq_rel atom.add.u32', 'ptx.ticket > 0'),
+        ('one wave of blocks', 'plan.ctas <= occ.blocks_per_sm * occ.sms'),
+        ('no local-memory traffic in the hot loop', 'sass.hot.stl + sass.hot.ldl == 0')]),
     # large-gemm `streamk-fill`: stream-K walks a launched tile grid that gives the part its fill target at its own
     # geometry (`resident` warps a scheduler: 8 an SM); a grid short of it takes the `fill-wave` split (16 x 2048 x
     # 7168: 16 one-warp tiles). The stream-K of `k-fill` (an under-filled site's full tile, `wps < 2`) is its own.

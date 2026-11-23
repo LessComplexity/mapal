@@ -106,7 +106,9 @@ EXTRA = [('atom_add', r'^atom\.(?:\w+\.)*?add\.f'), ('red_add', r'^red\.(?:\w+\.
          # kernel-merging `calls`: a grid barrier's release arrival; a non-coherent (read-only path) load.
          ('gsync_arrive', r'^atom\.add\.release\.gpu'), ('ld_nc', r'^ld\.global\.nc'),
          # exp (ADR-0042) `exp-hw`: the hardware form's `ex2.approx.ftz.f32`.
-         ('ex2', r'^ex2\.approx')]
+         ('ex2', r'^ex2\.approx'),
+         # sweep-runtime-2 `streamk-epi`: a tile's ticket (an acq_rel integer add on the tile's counter).
+         ('ticket', r'^atom\.acq_rel\.(?:\w+\.)*?add\.u32')]
 
 
 PTX_KEYS = [k.replace('.', '_') for k, _ in CLS] + [k for k, _ in EXTRA] + ['i64_arith']
@@ -1125,7 +1127,7 @@ def check(d, results=None, out=sys.stdout):
                     continue
                 # exp-hw: a face whose order is not free takes the oracle's steps (its OFF realization).
                 state = 'off' if rung in off or (rung == 'exp-hw' and not ns['free']) else 'on' if rung in kon or rung in (
-                    'row-slices', 'exp-hw', 'exp-rescale', 'slice-launches') or rung.startswith(('face', 'exec', 'module', 'window', 'radix-tile', 'tf32-tile', 'plan-cost', 'linear', 'choice', 'fma-pairs', 'horizontal-', 'calls-', 'narrow-tile', 'half-tile', 'narrow-async', 'staged-regs', 'split-tile', 'mma-combine', 'round-store')) else 'off'  # plan-cost / linear / the site-priced split-tile, mma-combine, the module's round-store: gated by the plan line itself (`applies`), not rungs_on
+                    'row-slices', 'exp-hw', 'exp-rescale', 'slice-launches') or rung.startswith(('face', 'exec', 'module', 'window', 'radix-tile', 'tf32-tile', 'plan-cost', 'linear', 'choice', 'fma-pairs', 'horizontal-', 'calls-', 'narrow-tile', 'half-tile', 'narrow-async', 'staged-regs', 'split-tile', 'mma-combine', 'round-store', 'streamk-epi')) else 'off'  # plan-cost / linear / the site-priced split-tile, mma-combine, the module's round-store, the group's streamk-epi ticket: gated by the plan line itself (`applies`), not rungs_on
                 rows += [(prof, stem, k, f'{rung}:{state}', *r) for r in run_intent(it, state, ns)]
         # host rungs: one row per stem (kernel `-`)
         if not e['host'].get('calls'):
