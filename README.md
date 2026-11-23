@@ -175,15 +175,20 @@ Current: the cross-part matrix against every competitor leg ([matrix](benches/re
 2026-11-23 the best competitor is the fastest real-world implementation — torch.compile with CUDA graphs, SDPA
 (efficient / cuDNN), hand-written Triton, Liger, FlashAttention-2/3, FlashInfer
 ([competitors](benches/results/evidence/local-rtx-5080/competitors.md); TensorRT-LLM does not install on torch 2.11;
-the rented parts: [cross-arch 19a8a44e](benches/results/evidence/cross-arch/README.md#19a8a44e-all-competitors)).
+the rented parts on the final code: [cross-arch 3a8e654f](benches/results/evidence/cross-arch/README.md#3a8e654f-final-code-all-competitors)).
 
-| 86 rows, geomean Mapal / best (win / even / loss) | the legs before (torch eager / compile / SDPA / bf16, cuBLAS, cuBLASLt, CUTLASS, hand CUDA) | every leg |
-| --- | ---: | ---: |
-| RTX 5080 (local) | 0.980 (18 / 24 / 44) | 1.001 (18 / 22 / 46) |
-| RTX 3090 (260 W box) | 1.008 (36 / 9 / 41) | 1.054 (32 / 9 / 45) |
-| A100 SXM4 40 GB | 1.157 (16 / 15 / 55) | 1.199 (16 / 13 / 57) |
-| RTX 4090 (330 W box) | 1.031 (30 / 12 / 44) | 1.081 (24 / 13 / 49) |
-| H100 SXM | 1.154 (17 / 1 / 68) | 1.203 (16 / 1 / 69) |
+| geomean Mapal / best, every leg (win / even / loss) | 86 rows, 19a8a44e | 86 rows, 3a8e654f (final code) | + 34 bf16-storage rows (tensor cores, bf16 KV cache) | all 120 rows |
+| --- | ---: | ---: | ---: | ---: |
+| RTX 5080 (local) | 1.001 (18 / 22 / 46) | 0.993 (19 / 19 / 48) | 1.318 (6 / 2 / 26) | 1.076 (25 / 21 / 74) |
+| RTX 3090 (350 W box) | 1.054 (32 / 9 / 45) | 1.008 (16 / 19 / 51) | 1.495 (0 / 2 / 32) | 1.127 (16 / 21 / 83) |
+| A100 SXM4 40 GB | 1.199 (16 / 13 / 57) | 1.200 (13 / 14 / 59) | 2.613 (0 / 0 / 34) | 1.496 (13 / 14 / 93) |
+| RTX 4090 (450 W box) | 1.081 (24 / 13 / 49) | 1.061 (17 / 21 / 48) | 1.228 (8 / 3 / 23) | 1.106 (25 / 24 / 71) |
+| H100 SXM (500 W box) | 1.203 (16 / 1 / 69) | 1.223 (14 / 4 / 68) | 2.923 (0 / 0 / 34) | 1.566 (14 / 4 / 102) |
+
+On the final code the lsm rows split on every rented part (9.9–13.8× → 0.96–1.69× torch-compile-cg) and the 4090 /
+3090 decode chains form (0.41 / 0.75× the hand-written KV-cache decode); a GEMV epilogue site left unsplit makes B1
+decode 1.2–4.3× slower on the 3090 / A100 / H100 (open; without those six rows the 86-row geomeans are 0.996 / 1.145 /
+1.074 / 1.179). The bf16 rows trail torch bf16 most on the A100 / H100 (`mma.sync` tiles, no `wgmma`).
 
 Mapal time / the best of cuBLAS, cuBLASLt, CUTLASS, PyTorch eager and `torch.compile` (`_tf32` rows: torch with TF32 on);
 below 1 = Mapal faster. Values pass on every program and arch. 61 of 132 cells at or below 1.0. † = carried from an

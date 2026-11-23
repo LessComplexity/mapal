@@ -4,8 +4,9 @@ Branch `local-rtx-5080` @ `8bba2a50` (kernel merging, hardware properties, model
 this round's tooling (`f4e6e270` vast wrappers, `3968f59c` / `bd9ae103` / `73360fbc` calibration on the box,
 `72ee9297` per-instance ssh key). Four vast.ai boxes in parallel, CUDA 13.0.2 devel image, torch 2.11.0+cu130.
 
-Cross-part matrix (the 19a8a44e round's rows, every competitor leg, + the RTX 5080), Mapal vs the fastest same-precision
-competitor: [matrix.md](../matrix.md); the latest round: [19a8a44e (all competitors)](#19a8a44e-all-competitors).
+Cross-part matrix (the 3a8e654f round's 120 rows, every competitor leg, five parts with the RTX 5080), Mapal vs the
+fastest same-precision competitor: [matrix.md](../matrix.md); the latest round:
+[3a8e654f (final code, all competitors)](#3a8e654f-final-code-all-competitors).
 
 **Bundle, one per part** (`integrated_bundle.sh`, built locally, `LADDER=1`): the README GPU suite (35 programs and
 the two GEMM cells of `benches/local/gpu_bundle.sh`); the model-scale suite — the 12 natural Llama-layer programs
@@ -999,3 +1000,267 @@ Raw (local, not in git): `.claude/raw-evidence/cross-arch/19a8a44e/<part>/` (res
 logs, wisdom, tune), `a100-box1/` (the lost box's streamed output), `analysis/` (gates, props, gap, ms, cm, cmtab, peaks,
 compcmp, evidence-sum, rowiter per part), `scripts/` (stems, build, launch, watchdog, ops_nsys, leads, h100-patch/ the
 FA3 rebuild, analyze, cost, compcmp, peaks, cmtab, evsum, legcount, ktop, keyrows, rowiter).
+
+## 3a8e654f (final code, all competitors)
+
+Branch `local-rtx-5080` @ `3a8e654f`, the final code: tensor cores (`fedc07ca`: 16-bit `mma.sync` tiles, the bf16 KV
+cache as narrow radix sites, `narrow-async`, `staged-regs`), GEMV from the in-flight knee (`27258765`: `stream-fly`,
+`vec-cells`, the bulk-copy engine as geometry), the open rules (`8aee53e7`: `calls` by rounds and phases on every part,
+`wide-fma` by FP32 lanes and the wide grid, derived `row-slices` costs) and the review fixes (`3a8e654f`). The
+19a8a44e round repeated on the same tooling (`60bc9bc7`) + this round's (`b7679aff`: the matrix's bf16-storage classes,
+`TORCH_SKIP`, the FA3 build as rebuilt by hand). Four vast.ai boxes in parallel, CUDA 13.0.2 devel image, torch
+2.11.0+cu130 (Triton 3.6.0), Liger 0.8.5, FlashInfer 0.7.5.post1, flash-attn v2.8.3.post2 built on every box, FA3 on
+the H100 — **scripted this time** (`comp_build.sh`: the image's nvcc 13, 89 s); TensorRT-LLM not installable on torch
+2.11 (competitors.md), skipped. The RTX 5080 on the same code with every leg, locally. Matrix over all five parts,
+every leg by family, same-precision rule, the KV twins skipped (`--skip 'llm_kv[xn]_'`): [matrix.md](../matrix.md).
+
+**Bundle, one per part** (130 timed programs + the two GEMM cells, `LADDER=1`): the 19a8a44e set (96: README suite +
+long rows, f32 / TF32 / bf16-weight layers, 24 projections, lsm, the 12 KV-cache twins) + the **34 tensor-cores rows**
+(`_bf16kv` × 7: weights and KV cache bf16, f32 compute; `_bf16` × 7: the same storage, `: bf16 | f32` products; prefill /
+block prefill `_bf16w` / `_bf16`; 16 `pt_pj_*_bf16`), all against their exact face built for the device (`XREF`), and 16
+px differentials (5 new). Their torch / comp legs are their twins' (`TORCH_SKIP`, matrix `legs_from`: a bf16 leg rounds
+weights, cache and activations to bfloat16, so `_bf16kv`, `_bf16`, `_bf16w` and the f32 program run one bf16
+computation). **Arms** — this round's rules, OFF, dropped where equal to the shipped emission (built 44 / 22 / 46 / 30
+per part): `row-slices` (lsm ×3), `half-tile` (pj m128 / m2048 × 6144 × 4096 bf16), `narrow-radix` (decode B8 L2048
+bf16kv), `stream-fly` and `vec-cells` (the six m = 1 projections), `wide-fma` (README suite + f32 projections), `calls`
+(decode, causal, gen, rt_mlp2, block decode); the caching arms of 19a8a44e were not repeated. **On each box**: as
+19a8a44e (`box_run.sh` REPS=30, probes ABBA × 5 with a traced process, `TORCH_MIN=100` — 96 / 96 programs on every
+part —, the FA builds alone on the GPU, `comp_bench.py` `COMP_MIN` 30–35 — 64 / 64 —, `box_profile.sh` + `ops_nsys.sh`:
+torch peaks one process per (program, leg), nsys of the rows a new leg leads) + a follow-up pushed to the running
+3090 / 4090 / H100 (`decarms.sh`, finding 1).
+
+**Run notes.** (1) **3090, first box** (EPYC 7742, 260 W, 19a8a44e's host): the host closed the ssh connection 20 min in
+(probes, `pt_llm_dec_b32_l8192`), no results fetched — its streamed output (`rtx-3090-box1/`, 39 programs) is in no
+table; replaced by an i9-9900 box (350 W). The A100 ran on 19a8a44e's replacement host (Ryzen 7 7700, 300 W); the 4090
+on an EPYC 7702P at 450 W (19a8a44e: 330 W); the H100 on an EPYC 9454 at **500 W** (19a8a44e: 700 W; every H100 leg
+moved: geomean best ms ×1.19, Mapal ×1.21 — like-for-like within the part, not across rounds). (2) **RTX 5080**: two
+local bundles (bS: suite + long rows + lsm, 41; bM: model scale + tensor-cores rows + KV twins, 89) under the bench
+protocol; both runs' torch sections met interference episodes (resS: 9 programs with legs at max > 2 × med, prefill
+compile-cg 177 vs 19 ms; resM: decode legs 1.18–1.25× the competitors step's): every leg re-timed (`resS2` / `resM2`,
+comp_run.sh at load < 3) — the re-timed legs equal the competitors step's (geomean 1.018 / 1.010); the matrix takes the
+newest. (3) The in-flight knee measured on each box (`calib.cu bw fly`) equals the profile's: 3090 8 KiB, A100 16, 4090
+4, H100 32.
+
+### Boxes and cost
+
+| part | GPU (driver, power limit) | host CPU | offer | $/h | hours | cost | status |
+|---|---|---|---|---:|---:|---:|---|
+| (3090 box 1) | RTX 3090 24 GB (615.71.09, 260 W) | EPYC 7742 | 61732988 | 0.270 | 0.38 | $0.10 | ssh closed by the host at 20 min — not used |
+| rtx-3090 | RTX 3090 24 GB (610.57.04, 350 W) | i9-9900 | 62074391 | 0.250 | 2.68 | $0.67 | done |
+| a100 | A100-SXM4-40GB (595.91.07, 300 W) | Ryzen 7 7700 | 56853932 | 0.591 | 2.11 | $1.25 | done |
+| rtx-4090 | RTX 4090 24 GB (615.71.09, 450 W) | EPYC 7702P | 61950717 | 0.436 | 3.16 | $1.38 | done |
+| h100 | H100 80GB HBM3 SXM (595.91.07, 500 W) | EPYC 9454 | 61868876 | 2.289 | 2.53 | $5.79 | done (FA3 by the script) |
+| **total** | | | | | | **$9.19** | every `mapal-xarch-*` instance destroyed (checked by label) |
+
+Budget $15 (watchdog at $14.5). The H100 skipped the noisy 8480+ host (743471), the A100 19a8a44e's slow-Mapal EPYC
+7K62 host (410852). The account's credit fell $66.2 over the window (446.10 → 379.87): other projects' instances bill
+through it.
+
+### Value gates — all pass
+
+| part | differential | probe gates (programs) | arms · candidates within D2/D3 | device-exact oracles | split programs | gemm_lib legs within | torch legs within | competitor legs within | B1 decode arms |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| rtx-5080 | 114 / 114 | 130 / 130 | 1140 / 1140 | 129 / 129 | 8 / 8 | 112 / 112 | 618 / 650 | 132 / 136 | — |
+| rtx-3090 | 74 / 74 | 130 / 130 | 1118 / 1118 | 129 / 129 | 8 / 8 | 112 / 112 | 622 / 650 | 132 / 136 | 40 / 40 |
+| a100 | 96 / 96 | 130 / 130 | 1098 / 1098 | 129 / 129 | 8 / 8 | 112 / 112 | 626 / 650 | 133 / 136 | — |
+| rtx-4090 | 101 / 101 | 130 / 130 | 1179 / 1179 | 129 / 129 | 8 / 8 | 112 / 112 | 628 / 650 | 132 / 136 | 50 / 50 |
+| h100 | 104 / 104 | 130 / 130 | 1129 / 1129 | 129 / 129 | 8 / 8 | 112 / 112 | 626 / 650 | 149 / 153 | 50 / 50 |
+
+No Mapal value failed on any part, face, arm, site candidate or follow-up arm: the 34 tensor-cores rows within D3 at
+`u_t = 2⁻⁸` (`_bf16`) / D2 (`_bf16kv`), the 16 px differentials (the five bf16 twins included). **Competitor legs
+outside**, as every round: torch's TF32 legs at the 1e-3 gate (the f32 `mlp*_2048` / `rt_mlp2_*` rows' TF32 modes and
+the `_tf32` twins' f32 modes); comp `triton` on `lsm_1_131072` (all parts) and `lsm_4_32768` (not the A100: 164 KiB of
+shared memory) — OutOfResources —, `triton-tf32` on the two TF32 MLPs (3.7 / 4.7·10⁻³); the 5080 (16 GB) adds four
+SDPA-math legs out of memory (decode B32 L8192, prefill T8192). Every CUDA-graph leg ran its graph (0 `cg=skipped`).
+Legs per rented part (within / timed): torch 282–285 / 296, graphs 252–255 / 266, SDPA 88 / 88, Liger 29 / 29, FA2 17 /
+17, FlashInfer 17 / 17, Triton 69–70 / 73, FA3 17 / 17 (H100).
+
+### Performance — 19a8a44e → 3a8e654f, the 86 rows both rounds hold
+
+Geomean Mapal / best competitor at the same precision (every leg), per class and family; win / even / loss (even =
+|ratio − 1| ≤ max(null, 5 %)). The 5080's previous column is the competitors step's (f7a74cdb, the same Mapal bytes on
+its 86 rows: Mapal ms geomean 1.000).
+
+| part | all | f32 | tf32 | bf16w | GEMM | MLP | attention | LLM | conv | fan / loops | W / E / L |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| rtx-5080 | 1.001 → **0.993** | 0.905 → **0.898** | 1.303 → **1.287** | 1.582 → **1.591** | 1.156 → **1.146** | 1.097 → **1.090** | 0.841 → **0.838** | 1.077 → **1.067** | 0.525 → **0.508** | 1.061 → **1.075** | 18/22/46 → 19/19/48 |
+| rtx-3090 | 1.054 → **1.008** | 0.995 → **0.924** | 1.212 → **1.172** | 1.408 → **1.740** | 1.113 → **1.077** | 1.142 → **1.133** | 1.051 → **0.764** | 1.041 → **1.172** | 0.868 → **0.741** | 0.995 → **1.057** | 32/9/45 → 16/19/51 |
+| a100 | 1.199 → **1.200** | 1.080 → **1.040** | 1.721 → **1.702** | 1.633 → **2.432** | 1.229 → **1.215** | 1.249 → **1.248** | 1.318 → **0.992** | 1.149 → **1.454** | 0.953 → **0.950** | 1.206 → **1.205** | 16/13/57 → 13/14/59 |
+| rtx-4090 | 1.081 → **1.061** | 1.010 → **0.978** | 1.359 → **1.356** | 1.337 → **1.443** | 1.230 → **1.280** | 1.236 → **1.205** | 0.969 → **0.742** | 1.011 → **1.054** | 0.838 → **0.815** | 1.052 → **1.105** | 24/13/49 → 17/21/48 |
+| h100 | 1.203 → **1.223** | 1.073 → **1.051** | 2.051 → **1.918** | 1.318 → **2.216** | 1.430 → **1.378** | 1.594 → **1.545** | 1.096 → **0.986** | 0.991 → **1.268** | 0.894 → **0.876** | 1.207 → **1.165** | 16/1/69 → 14/4/68 |
+
+Without the six B1 decode rows (finding 1): 3090 1.072 → **0.996**, A100 1.209 → **1.145**, 4090 1.096 → **1.074**,
+H100 1.242 → **1.179**, 5080 0.997 → 0.990 — the final code gains 2–7 % on the 80 other rows of every rented part; the
+B1 decode regression takes it back on the 3090 / A100 / H100. The 3090's win → even shift is its box: the i9-9900 host
+runs torch's host-bound legs faster (EPYC 7742 before), e.g. `indep_2048` compile-ro 1.85 → compile 1.49 ms.
+
+**This round's new rows** (34, bf16 storage; geomean Mapal / best bf16 leg, W/E/L): 5080 **1.318** (6/2/26), 3090
+1.495 (0/2/32), A100 2.613 (0/0/34), 4090 **1.228** (8/3/23), H100 2.923 (0/0/34). All 120 rows: 1.076 / 1.127 /
+1.496 / 1.106 / 1.566 (W/E/L 25/21/74, 16/21/83, 13/14/93, 25/24/71, 14/4/102).
+
+| tensor-cores rows (geomean) | rtx-5080 | rtx-3090 | a100 | rtx-4090 | h100 |
+|---|---:|---:|---:|---:|---:|
+| pj m1 `_bf16` / best bf16 leg (the f32 row / best f32) | **0.72** (1.34) | 1.08 (1.04) | 1.25 (1.31) | **0.78** (1.63) | 1.50 (1.62) |
+| pj m16 `_bf16` | 0.97 (1.00) | 1.29 (1.14) | 1.97 (1.03) | 1.00 (1.36) | 2.30 (1.16) |
+| pj m128 `_bf16` | 1.36 (1.11) | 1.29 (1.04) | 2.06 (1.10) | 1.15 (1.18) | 2.98 (1.25) |
+| pj m2048 `_bf16` | 1.22 (1.01) | 1.10 (1.06) | 1.97 (1.03) | 1.32 (1.03) | 2.85 (1.12) |
+| decode `_bf16kv` / its `_bf16w` twin, Mapal ms (the bf16 KV cache) | **0.86** | **0.93** | 1.23 | **0.78** | 1.31 |
+| decode `_bf16` / `_bf16kv`, Mapal ms (the bf16 face) | 1.00 | 1.00 | 1.00 | 1.00 | 1.01 |
+| decode `_bf16kv` / best bf16 leg | 1.37 | 1.62 | 2.99 | 1.12 | 2.90 |
+| prefill T2048 `_bf16` / best bf16 leg | 3.05 | 2.91 | 6.54 | 3.55 | 6.79 |
+| block prefill T2048 `_bf16` / best bf16 leg | 1.68 | 1.55 | 2.87 | 1.83 | 3.61 |
+
+### This round's rules on the hardware (same-box arms, OFF / ON; ON win where > 1 + max(null, 3 %))
+
+| rule (OFF arm) | rtx-3090 | a100 | rtx-4090 | h100 | the replay / step predicted |
+|---|---|---|---|---|---|
+| `row-slices` (lsm 1×131072 / 4×32768 / 32×8192) | **11.0 / 3.56 / 1.41** | **14.3 / 3.36 / 1.10** | **8.14 / 2.43** / 0.97 null | **9.94 / 2.17 / 3.56** | open-rules (d): rented parts 1 block a row → 64 / 64 / 8–32 slices — **confirmed** |
+| `calls` (decode / causal / gen; rt_mlp2, block decode) | **1.17 / 1.12 / 1.13**; null | null (formed) | **2.32 / 2.15 / 2.15**; null | decode refused (PDL); null | open-rules (a): decode formed on the 3090 / 4090 (W), the A100's causal chain (✗ open: now null), H100 refused — **confirmed** |
+| `wide-fma` (suite + f32 projections) | 12 win / 8 null / 1 loss | not built (64 FP32 lanes) | 18 / 4 / 0 | 4 / 4 / 0 (the wide grid) | open-rules (1): by FP32 lanes and the H100's wave — **confirmed** |
+| `half-tile` (pj m128 / m2048 × 6144 bf16) | **1.82 / 2.74** | **3.75 / 7.09** | **2.44 / 2.38** | **2.08 / 4.02** | tensor-cores: the 16-bit tile over the FMA tile on every part |
+| `narrow-radix` (decode B8 L2048 bf16kv) | **1.52** | **1.80** | **1.32** | **2.36** | the bf16 cache as radix sites over per-cell kernels |
+| `stream-fly` (six m = 1 projections) | 0 / 5 null / 0 | **5 / 0 / 0** (1.08–1.15) | 1 / 3 / **2 loss** (0.81, 0.92) | **6 / 0 / 0** (1.05–1.44) | gemv-tma: the knee in flight; 3090 knee = the warp fill (8 KiB): null as predicted; 4090 knee 4 KiB: mixed |
+| `vec-cells` (the same six) | 0 / 6 null / 0 | 1 / 1 / **4 loss** (0.93–0.97) | 0 / 3 / **3 loss** (0.80–0.97) | 1 / 2 / **3 loss** (0.83–0.96) | gemv-tma (5080: LDG.128 wins) — **a mixed result** |
+
+Per row and part: `analysis/arms.md`. The calls wins are the 4090's largest single moves: `decode_1024_256` 25.8 →
+12.5 ms (0.82 → **0.41** chain-cache), `causal_1024_256` 0.10 compile-cg.
+
+### New losers and what they point at
+
+1. **B1 decode, 1.2–4.3× its 19a8a44e time on the 3090 / A100 / H100** (`dec_b1_l2048` H100 0.115 → 0.326 ms a step,
+   0.57 → 1.57 torch-compile-cg; A100 0.86 → 1.88; 3090 0.76 → 0.94; the `_bf16w` and block-decode twins and the B1 KV
+   twins alike; 4090 / 5080 unchanged). Measured on the boxes (`decarms.sh`: the B1 programs' OFF arms built after the
+   bundle and run after `box_run`, ABBA × 5, every run within its bound; nsys kernel sums):
+
+   | part | program | 19a8a44e | shipped (AUTO / rules) | `stream-fly` OFF | `staged-regs` OFF | `vec-cells` OFF |
+   |---|---|---:|---:|---:|---:|---:|
+   | h100 | dec_b1_l2048 | 1.841 | 5.208 / 5.208 | **2.025** (0.39) | **1.908** (0.37) | 5.143 (0.99) |
+   | h100 | dec_b1_l2048_bf16w | 1.512 | 5.205 / 5.214 | **1.897** (0.36) | **1.546** (0.30) | 5.150 (0.99) |
+   | rtx-3090 | dec_b1_l2048 | 4.416 | 5.195 / 5.196 | **4.287** (0.83) | = shipped | **4.317** (0.83) |
+   | rtx-3090 | dec_b1_l2048_bf16w | 2.954 | 4.574 / 4.565 | **3.022** (0.66) | = shipped | 4.567 (1.00) |
+   | rtx-4090 | dec_b1_l2048 | 3.798 | 3.887 / 3.955 | 3.934 (1.01) | 3.951 (1.02) | 3.940 (1.01) |
+
+   (ms per 16-step run.) The time is one kernel: the O projection with its residual epilogue (`h1 = x + o·wo`, a
+   `tile-post` site), H100 235 µs a call shipped against 25–29 µs in either OFF arm (3090 137 vs 79 µs). Its plan
+   (`facts.json`): `kind naive, post 1, combine none, S 1, gx 16, fly_sm 8192, knee 32768` — **no k split: 16 blocks on
+   132 SMs** (82 on the 3090), a quarter of the knee in flight on the 16 it reaches; OFF, the same site runs
+   `combine splitk, S 16` (256 blocks). `stream-fly` cuts a streaming site into k partitions for the knee, but a post
+   site's partitions must combine in a workspace before the epilogue (`epi_order`, open-rules (b)) and the rule leaves
+   it unsplit. On the H100 / A100 `staged-regs` (the panel-alone budget) is what makes it a one-thread-per-cell site:
+   it refuses the site's register-staged tile candidates, which ptxas fits in 62–70 registers without a spill; OFF
+   either rule, the site keeps the warp-fill split (S 16). **Points at**: the post site's
+   combine in `stream-fly`'s partition rule (a workspace split, or the warp-fill split it replaced, where atomics are
+   not admissible) and the fill its intent names — "a block on every SM" — which `intent.py` checks only on non-post
+   sites (the shipped kernel passes every intent; H100 `stream-fly` 441 / 441). The 4090 (knee 4 KiB) and the 5080 keep
+   a split there. The H100's `decode_1024_256` (18.6 → 28.4 ms, kernel time 38.9 → 47.6 ms) lost its register-staged
+   candidates the same way (`staged-regs`; no arm: open).
+2. **The bf16 KV cache on the HBM parts**: `_bf16kv` takes 1.33–1.75× its f32-cache twin's time at B ≥ 8 on the A100 /
+   H100 (dec B8 L8192 H100 0.838 vs 0.480 ms a step), 0.60–0.88× on the 3090 / 4090 / 5080; `narrow-radix` itself wins
+   against per-cell kernels everywhere (1.3–2.4×). The halved cache bytes pay where the attention is DRAM-bound
+   (GDDR, ~1 TB/s) and not where HBM feeds it (1.5–3.3 TB/s): the narrow path's widening (8-byte `cp.async`, PRMT per
+   pair) and smaller panels cost more than the bytes save. **Points at**: the site's bytes against the part's FFMA
+   balance (`ffma_per_dram_byte_pm`) deciding the narrow radix read — open (no SASS diff measured on the HBM parts).
+3. **16-bit tiles on the A100 / H100**: pj `_bf16` m ≥ 16 1.97–2.98× torch bf16 (A100 / H100) against 0.97–1.36× on the
+   GeForce parts. The H100 runs `mma.sync.m16n8k16` (128 a kernel, `cvt.rn.bf16x2` of the f32 `a` fragments) — no
+   `wgmma` / TMA for 16-bit tiles, `bk` 16 from the f32 `a` panel (tensor-cores open); the A100's tensor rate is where
+   the gap is widest. **Points at**: the matrix-op geometry with shared-memory descriptor operands (`Home::Smem`, the
+   H100's `wgmma` in `Caps::matrix`) not mapped for half tiles, and the `a` operand's 4 bytes.
+4. **`vec-cells`**: mixed on three parts (ON loses 3–20 % on 3–4 of six GEMVs on the A100 / 4090 / H100, null on the
+   3090, wins on the 5080): the condition lumps cases a part property separates — candidates are the knee against the
+   vector grid's warps in flight (A100 16 KiB, H100 32 KiB) and the 4090's 4 KiB knee; open.
+
+### Gains that hold (cause on the hardware)
+
+- **lsm rows** (`row-slices`, derived costs): `lsm_1_131072` 0.24–0.35 → 0.025–0.032 ms (9.9–13.8 → **0.96–1.69**×
+  compile-cg), `lsm_4_32768` 2.8–5.0 → 1.1–2.0; the 5080 0.64 / 1.16 unchanged.
+- **4090 / 3090 formed chains** (`calls` rounds): decode 0.41 / 0.75 chain-cache, causal 0.10 / 0.14 compile-cg.
+- **Projections m = 1 on the A100 / H100** (`stream-fly`, standalone): A100 0.88–0.91× its 19a8a44e time on four of six,
+  H100 OFF / ON 1.05–1.44× — still 1.5–2.2× cuBLAS / cuBLASLt at m = 1.
+- **Attention family** (lsm + the long rows): 3090 1.051 → 0.764, A100 1.318 → 0.992, 4090 0.969 → 0.742, H100 1.096 →
+  0.986.
+
+Key rows (Mapal / best, leg; `analysis/keyrows.md`; every row, leg and family per part: matrix.md):
+
+| row | rtx-5080 | rtx-3090 | a100 | rtx-4090 | h100 |
+|---|---|---|---|---|---|
+| lsm_1_131072 | 0.64 compile-ro | 0.96 compile-cg | 0.97 compile-cg | 1.18 compile-cg | 1.69 compile-cg |
+| decode_1024_256 | 0.50 chain-cache | 0.75 chain-cache | 0.96 chain-cache | 0.41 chain-cache | 1.45 chain-cache |
+| llm_dec_b1_l2048 | 0.88 compile-ro | 0.94 compile | 1.88 compile | 0.77 compile | 1.57 compile-cg |
+| llm_blkdec_b1_l4096_bf16w | 1.16 bf16-compile | 1.68 bf16-compile | 4.57 bf16-compile-cg | 1.03 bf16-compile-cg | 5.05 bf16-compile-ro |
+| llm_dec_b32_l8192 (f32) | 0.37 compile-cg | 0.39 compile | 0.39 compile-cg | 0.40 compile | 0.27 compile-cg |
+| llm_dec_b32_l8192_bf16kv | 1.78 bf16-cudnn | 2.03 bf16-cudnn | 3.69 bf16-cudnn | 1.57 bf16-compile | 3.44 bf16-compile-cg |
+| pj_m2048_n6144_k4096_bf16 | 1.23 bf16-compile-cg | 1.12 bf16-compile-ro | 1.99 bf16-compile-cg | 1.25 bf16-compile | 2.77 bf16 |
+| llm_pre_t8192 | 1.49 sdpa-efficient | 1.51 liger | 2.17 liger | 1.84 liger | 1.81 liger |
+| llm_pre_t2048_bf16 | 3.05 bf16-compile-cg | 2.91 bf16-compile | 6.54 bf16-compile-cg | 3.55 bf16-compile-cg | 6.79 bf16-compile-cg |
+
+**Worst rows per part** (all 120): every part's top three are the bf16 prefills (`pre_t2048_bf16w` 4.3–14.5×,
+`blkpre_t2048_bf16w` 3.3–12.5×, `pre_t2048_bf16` 2.9–6.8× torch bf16: attention over radix FMA tiles, flash-style
+streaming open; the `_bf16w` rows compute f32); then A100 / H100 the B1 block decode (4.6 / 5.1×, finding 1) and the
+bf16 decode at B32 (3.4–3.7×); 3090 lsm_32_8192 2.56 and the bf16 decode at B ≥ 8 (2.0–2.5×); 4090 lsm_32_8192 5.09
+(`row-slices` null there), `convmc_tf32` 2.31, the GEMVs m ≤ 16 2.1–2.2× cuBLASLt; 5080 the bf16w decode at B ≥ 8
+(2.1–2.5×), `pj_m128_n6144_tf32` 1.88.
+
+### Peak device memory and the automatic KV cache
+
+Peak: Mapal's `mapal_gpu_peak` (traced processes) against torch one process per (program, leg), the fastest f32 leg
+measured (`torch_peak_proc.sh`'s legs; the 5080 locally), the 22 KV-twin and f32 layer rows:
+
+| part | geomean Mapal / torch | Mapal lower | Mapal higher |
+|---|---:|---:|---|
+| rtx-5080 | 0.88 | 19 | block prefill 1.37, prefill T2048 1.60, T8192 1.60 |
+| rtx-3090 | 0.89 | 19 | 1.24, 1.44, 1.56 |
+| a100 | 0.87 | 19 | 1.24, 1.44, 1.56 |
+| rtx-4090 | 0.84 | 19 | 1.24, 1.43, 1.56 |
+| h100 | 0.85 | 19 | 1.22, 1.40, 1.54 |
+
+Unchanged from 19a8a44e (the arena's bytes are part-independent; the prefills hold the materialized scores).
+
+Naive twins (no cache in the program; Mapal's derived cache): Mapal naive ms (/ torch naive, / torch HF-cache f32);
+explicit / HF-cache; peak MB naive / torch naive:
+
+| shape | rtx-5080 | rtx-3090 | a100 | rtx-4090 | h100 |
+|---|---|---|---|---|---|
+| B1 L2048 | 6.4 (0.14, 1.24); 0.93; 286 / 313 | 9.8 (0.13, 1.31); 0.94; 286 / 313 | 13.3 (0.14, 2.14); 1.54; 286 / 322 | 5.6 (0.17, 0.96); 0.77; 285 / 353 | 8.7 (0.17, 1.89); 1.35; 290 / 356 |
+| B1 L8192 | 16.2 (0.09, 1.55); 0.94; 651 / 748 | 27.9 (0.10, 1.97); 0.93; 650 / 748 | 32.5 (0.09, 2.22); 1.18; 650 / 748 | 13.3 (0.10, 1.39); 0.89; 651 / 748 | 19.6 (0.09, 1.95); 1.05; 654 / 772 |
+| B8 L2048 | 28.7 (0.08, 1.39); 0.75; 1140 / 1321 | 59.2 (0.11, 2.07); 0.94; 1128 / 1321 | 53.7 (0.07, 1.99); 0.86; 1136 / 1313 | 23.7 (0.09, 1.23); 0.73; 1136 / 1321 | 32.7 (0.07, 1.82); 0.72; 1150 / 1345 |
+| B8 L8192 | 110 (0.08, 1.39); 0.65; 4031 / 4780 | 186 (0.08, 1.83); 0.84; 4023 / 4780 | 202 (0.07, 2.13); 0.84; 4031 / 4772 | 94.4 (0.09, 1.34); 0.62; 4031 / 4780 | 112 (0.06, 1.68); 0.75; 4041 / 4804 |
+| B32 L2048 | 110 (0.07, 1.43); 0.66; 4030 / 4778 | 177 (0.08, 1.77); 0.75; 4026 / 4778 | 203 (0.07, 2.13); 0.84; 4030 / 4778 | 91.6 (0.09, 1.36); 0.73; 4030 / 4778 | 114 (0.06, 1.71); 0.75; 4040 / 4802 |
+| block B1 L4096 | 23.0 (0.20, 1.10); 0.93; 1080 / 1130 | 32.8 (0.21, 1.43); 1.17; 1079 / 1130 | 31.7 (0.16, 1.81); 1.37; 1080 / 1130 | 20.3 (0.27, 1.06); 0.94; 1080 / 1154 | 20.1 (0.18, 1.72); 1.30; 1084 / 1154 |
+
+The naive program is **0.06–0.27× torch running it** at 0.78–0.98× its peak on every part, and 0.96–2.22× torch's
+HF-cache program; the explicit twin 0.62–0.94× HF-cache at B ≥ 8. The B1 cells moved with finding 1 (A100 B1 L2048
+naive 9.2 → 13.3 ms, explicit / HF 0.89 → 1.54; H100 4.0 → 8.7, 0.65 → 1.35); B ≥ 8 as in 19a8a44e (the H100 box's
+500 W aside: 78.5 → 112 ms at B8 L8192).
+
+### Evidence (intent check, `evidence-<part>.tsv`)
+
+3090 101 276 checks / 3 643 mismatches, A100 108 911 / 8 837, 4090 115 602 / 4 479, H100 112 743 / 8 732, 5080 (bM)
+106 226 / 4 670. This code's intents: `half-tile` 0 mismatches on every part (75–146 kernels), `vec-cells` 0,
+`row-slices` 0 (38–143), `slice-launches` 0, `calls` / `calls-kernel` 0 (formed = cooperative launches), `pdl` 0 (H100
+4 185), `bulk-stage` 0 (shipped off); `stream-fly` 16 / 18 / 49 misses on the 3090 / 4090 / 5080, none on the A100 /
+H100 — and none on the post site of finding 1 (not checked there); `staged-regs` 150–291 misses a part (an 8 × 8
+register-staged table candidate spilling 4–36 B, the step's standing item); `narrow-async` 0–42. The largest groups as
+in 19a8a44e (A100 / H100 `face-registers` residency 2 151 / 2 275, `kmajor-a` 128-bit STS, `prefetch` cover).
+
+### Open items (missing facts)
+
+1. **`stream-fly` on `tile-post` sites** (finding 1): the partition rule must take the post site's workspace combine
+   (or keep the warp-fill split) and fill the SMs; `intent.py`'s `stream-fly` check extended to post sites. Replay: the
+   `decarm prog=` lines in `results-<part>.txt` and `<part>/decarms/`.
+2. **`staged-regs`' panel-alone budget** refuses register-staged tile candidates ptxas fits without a spill (62–70
+   registers: the H100 B1 decode's O projection; the H100 decode_1024_256's candidates): the budget lumps them with the
+   spilling 8 × 8 panels.
+3. **The narrow radix read against the part's balance** (finding 2) and **`vec-cells`' separating property**
+   (finding 4).
+4. **16-bit tiles on Hopper** (`wgmma`, TMA) and the f32 `a` panel (finding 3); the bf16 prefills' attention as flash-
+   style streamed tiles (long-prefill open 1 / 2; T8192 1.49–2.17× Liger / SDPA-efficient, unchanged).
+5. Unchanged: lsm_32_8192 on the 4090 (5.09×; `row-slices` null there), m ≤ 16 GEMVs 1.5–2.2× cuBLASLt, Hopper TF32
+   (1.92), the graph-captured cuBLAS algorithm (19a8a44e open 3).
+
+Raw (local, not in git): `.claude/raw-evidence/cross-arch/3a8e654f/<part>/` (results, run output, `calib-<part>.txt`,
+`evidence-<part>.tsv`, `prof-<part>.tgz` with `prof/leads`, `prof/decarms` and `prof/torch-peak-proc.txt`, torch / FA
+build logs, wisdom, tune), `<part>/decarms/` (the follow-up's kernel sums), `rtx-3090-box1/` (the lost box's streamed
+output), `rtx-5080/` (resS / resM, the re-timed resS2 / resM2, torch-peak-proc.txt), `analysis/` (gates, props, gap,
+ms, cm, cmtab, peaks, xcmp, arms, bf16tab, keyrows, evidence-sum), `scripts/` (stems, build, build_all, launch,
+watchdog, ops_nsys, leads, local_bundle, local_run, local_rerun(M), arms_bundle, decarms, push_decarms, analyze, xcmp,
+armtab, decsum, kfacts, bf16tab, keyrows, cost, peaks, cmtab, evsum, legcount).
