@@ -118,9 +118,14 @@ Measured but not shipped (the replay's loser lines): `mma-depth` (`bk` 16 × 5 s
   TF32-exact, 4 cancelling.
 - `func::gpu` `mma_pieces_on_the_measured_cells` (the measured picks and refusals), `rules.rs` `rung_rules_replay`
   (six new lines: **122 picked / 68 null / 9 mixed / 18 open**), `half_tile.rs` (`{f32}` two-narrow now narrow1).
-- Workspace subset run (`cargo test --release -p mapal-backend-llvm -p mapal-ir`): **696 passed, 0 failed** (54 targets; `streams.rs`' pre-existing
-  `pdl_is_hopper_and_later_only` passed too). `c0-rules.tsv` stays: its pinned flags gain the two new OFF arms (the
-  only moved row, the rtx-3090's mlp_2048_tf32, is `mma-combine`'s cut).
+- **Real device**: the same 64 generated programs (`MAPAL_SPLIT_DUMP`) built for the 5080 under
+  `--gpu-on=split-tile` and run on it: every program with a split kernel (32: 26 narrow1, 6 tf32x3 — the rest place
+  their small sites on the host) printed the interpreter's values within `2γ_{K+1}(u)·M` (worst 0.011 of the
+  tolerance), **32 / 32 PASS** (`device_check.sh`, raw `device_check*.txt`). (`mapal test --weakest` fixes the order,
+  which turns the split off: not usable for this check.)
+- Workspace subset run (`cargo test --release -p mapal-backend-llvm -p mapal-ir`): **696 passed, 0 failed** (54
+  targets; `streams.rs`' pre-existing `pdl_is_hopper_and_later_only` passed too). `c0-rules.tsv` stays: its pinned
+  flags gain the two new OFF arms (the only moved row, the rtx-3090's mlp_2048_tf32, is `mma-combine`'s cut).
 
 ## Open problems attacked
 
@@ -140,8 +145,8 @@ Measured but not shipped (the replay's loser lines): `mma-depth` (`bk` 16 × 5 s
   below `exact_above` to the FFMA path instead of adding `abs·Σ(|a|+|b|)` to the gate.
 - Not attempted: bf16x6 / bf16x3n emission (the A100's and H100's candidates; F1 carries their numerics), the `wgmma`
   split (S3, after the hopper design's R1 / R6), F3 radix contiguity / `tf32-radix` re-measure, `j > 1` flushes, the
-  real-device run of the generated set (`MAPAL_SPLIT_DUMP` writes it for `mapal test --weakest`), the H100 `mma.sync`
-  rate measurement (`calib.cu matrix` at the next round).
+  H100 `mma.sync` rate measurement and the A100 winner line (`calib.cu matrix`, the forced / ruled arms at the next
+  rented round: the rate rule's θ = 1.3 has the 5080's loser and winner lines only).
 
 ## Commands
 
