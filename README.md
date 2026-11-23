@@ -174,12 +174,16 @@ Small sizes are now a single-thread kernel gap, not a scheduling one
 Current: the cross-part matrix against every competitor leg ([matrix](benches/results/evidence/matrix.md)); since
 2026-11-23 the best competitor is the fastest real-world implementation — torch.compile with CUDA graphs, SDPA
 (efficient / cuDNN), hand-written Triton, Liger, FlashAttention-2/3, FlashInfer
-([competitors](benches/results/evidence/local-rtx-5080/competitors.md); TensorRT-LLM does not install on torch 2.11).
+([competitors](benches/results/evidence/local-rtx-5080/competitors.md); TensorRT-LLM does not install on torch 2.11;
+the rented parts: [cross-arch 19a8a44e](benches/results/evidence/cross-arch/README.md#19a8a44e-all-competitors)).
 
-| RTX 5080, 86 rows | geomean Mapal / best | win / even / loss |
+| 86 rows, geomean Mapal / best (win / even / loss) | the legs before (torch eager / compile / SDPA / bf16, cuBLAS, cuBLASLt, CUTLASS, hand CUDA) | every leg |
 | --- | ---: | ---: |
-| the legs before (torch eager / compile / SDPA / bf16, cuBLAS, cuBLASLt, CUTLASS, hand CUDA) | 0.980 | 18 / 24 / 44 |
-| every leg | 1.001 | 18 / 22 / 46 |
+| RTX 5080 (local) | 0.980 (18 / 24 / 44) | 1.001 (18 / 22 / 46) |
+| RTX 3090 (260 W box) | 1.008 (36 / 9 / 41) | 1.054 (32 / 9 / 45) |
+| A100 SXM4 40 GB | 1.157 (16 / 15 / 55) | 1.199 (16 / 13 / 57) |
+| RTX 4090 (330 W box) | 1.031 (30 / 12 / 44) | 1.081 (24 / 13 / 49) |
+| H100 SXM | 1.154 (17 / 1 / 68) | 1.203 (16 / 1 / 69) |
 
 Mapal time / the best of cuBLAS, cuBLASLt, CUTLASS, PyTorch eager and `torch.compile` (`_tf32` rows: torch with TF32 on);
 below 1 = Mapal faster. Values pass on every program and arch. 61 of 132 cells at or below 1.0. † = carried from an

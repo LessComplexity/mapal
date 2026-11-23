@@ -4,7 +4,8 @@ Branch `local-rtx-5080` @ `8bba2a50` (kernel merging, hardware properties, model
 this round's tooling (`f4e6e270` vast wrappers, `3968f59c` / `bd9ae103` / `73360fbc` calibration on the box,
 `72ee9297` per-instance ssh key). Four vast.ai boxes in parallel, CUDA 13.0.2 devel image, torch 2.11.0+cu130.
 
-Cross-part matrix (60f0f8ce rows + the RTX 5080), Mapal vs the fastest same-precision competitor: [matrix.md](../matrix.md).
+Cross-part matrix (the 19a8a44e round's rows, every competitor leg, + the RTX 5080), Mapal vs the fastest same-precision
+competitor: [matrix.md](../matrix.md); the latest round: [19a8a44e (all competitors)](#19a8a44e-all-competitors).
 
 **Bundle, one per part** (`integrated_bundle.sh`, built locally, `LADDER=1`): the README GPU suite (35 programs and
 the two GEMM cells of `benches/local/gpu_bundle.sh`); the model-scale suite — the 12 natural Llama-layer programs
@@ -759,3 +760,242 @@ with the `body` and `exp` lines, `evidence-<part>.tsv`, profile archives with `p
 rest logs), `analysis/` (gates, props, body, arms, chainarms, gap, ms, bf16, compare, samecode, chains-decisions per
 part), `scripts/` (build, stems, launch, watchdog, ops_nsys, rest, rest_now, analyze, body, chainarms, kdiff, ntrace,
 drift, bf16, intents, cost, samecode, chains, offers).
+
+## 19a8a44e (all competitors)
+
+Branch `local-rtx-5080` @ `19a8a44e`: the long prefill as tile sites (`8354b6de`), caching-memory (`unchanged_plan`,
+retained cells / gathered rows, `retain-same`, `cone-span`, `arena-fit`; `3cdb0b9d`, `834e64cb`, `e966e535`) and the
+competitors step (`6dfd0d95`, `e3f841c1`: CUDA-graph `torch.compile`, SDPA backends, hand Triton, Liger,
+FlashAttention-2/3, FlashInfer) + this round's tooling (`comp_build.sh` jobs from the container's CPU quota and memory
+limit, FA3 on CUDA 13, `vast_part.sh` `OFFER_Q`, `matrix.py --skip`). Four vast.ai boxes in parallel, CUDA 13.0.2 devel
+image, torch 2.11.0+cu130 (Triton 3.6.0), Liger 0.8.5, FlashInfer 0.7.5.post1 (the part's jit-cache wheel),
+flash-attn v2.8.3.post2 built on each box (FA3: the H100). TensorRT-LLM not attempted (competitors.md). Matrix over all
+five parts, every leg per row by family, same-precision rule: [matrix.md](../matrix.md).
+
+**Bundle, one per part** (96 timed programs + the two GEMM cells, `LADDER=1`): the 60f0f8ce set (README suite, the f32 /
+TF32 / bf16-weight layer programs, 24 projections, lsm, XREF) + the RTX 5080's three long-rows rows (`attn_2048_64`,
+`attn_2048_128`, `softmax_rows_2048`: every part now times the 5080's 86 matrix rows) + the **12 KV-cache twins**
+(explicit `kvx` / naive `kvn`, B 1/8/32 × L 2048/8192, block decode; XREF) and their four px differentials. Arms (the
+same on every part, caching-memory.md §3): `unchanged` OFF (kvn B1 / B8), `retain-pieces` OFF (kvn B8), `cone-span`
+OFF (kvx B8 / B32, prefill T8192), `arena-fit` OFF (prefill / block prefill T2048), `arena` OFF (prefill T2048, kvx B8),
+`piece-delta` OFF (kvx B8); `retain-same` OFF equals the shipped emission on all 12 KV twins (no loop value there is the
+same on every trip) and was dropped: 11 arms built a part. **On each box**: `box_run.sh` REPS=30 as before (probes ×5
+ABBA with a traced process reporting `mapal_gpu_peak`), torch legs `TORCH_MIN=100` (every program finished: 96 / 96 on
+every part), then FA2 (and FA3) built with nothing timed beside it, `comp_bench.py` `COMP_MIN=35`, `TIMING=0` (the
+single-arm square-cell section off: the cells' rows come from the splitk section); `box_profile.sh` + this round's
+`ops_nsys.sh`: torch's peak device bytes one process per (program, leg) on the 22 KV + f32 layer rows
+(`torch_peak_proc.sh`'s legs), and nsys traces of the rows a new leg leads (`leads.py`: Mapal's process, the new leg,
+the old best torch leg).
+
+**Run notes.** (1) **a100, first box** (EPYC 7K62 host): from the second or third process of a program on, every Mapal
+kernel ran ×1.27 slower (pj_m2048_n28672_k4096: processes 1–2 26.7 ms, 3–15 34.2 ms; cuBLAS right after 26.0 ms; the
+60f0f8ce a100 26.86 ms), the whole Mapal column 1.19× its 60f0f8ce value against 1.08× for the gemm_lib legs — then the
+host dropped the ssh connection 176 min in (comp_bench at the projections) and the box was destroyed. Its results
+(streamed stdout, `a100-box1/`) are not in any table. A replacement A100 SXM4 on the 60f0f8ce a100's host (Ryzen 7 7700)
+ran the whole bundle: every Mapal row within 15 % of 60f0f8ce but `llm_pre_t8192`, pj_m2048_n28672 26.86 ms in all 15
+processes. (2) **H100 FA3**: `comp_build.sh`'s FA3 build failed in 29 s — its setup.py swaps a toolkit other than 12.8
+for NVIDIA's nvcc 12.6 front end but compiles against the image's CUDA 13 headers, whose CCCL moved to `include/cccl`
+(`fatal error: cuda/std/utility`). Rebuilt on the box with the image's nvcc 13.0 (93 s; setup.py's download skipped, now
+`comp_build.sh`'s path on CUDA ≥ 13) beside `box_profile.sh`'s untimed sections; its 17 `fa3-bf16` legs timed alone on
+the GPU afterwards. (3) **Power limits**: the 3090 box ran at 260 W and the 4090 at 330 W (60f0f8ce: 350 / 480 W): the
+4090's cuBLAS m2048 × 28672 GEMM 8.29 → 11.06 ms. Every leg of a part shares its box, so the tables are like-for-like
+within a part, not across rounds. (4) `nproc` showed the host's 96–256 threads against a 16–32-core quota: the FA builds
+take their jobs from the cgroup (`comp_build.sh`), 8–15 jobs, FA2 892–1436 s.
+
+### Boxes and cost
+
+| part | GPU (driver, power limit) | host CPU | offer | $/h | hours | cost | status |
+|---|---|---|---|---:|---:|---:|---|
+| rtx-3090 | RTX 3090 24 GB (615.71.09, **260 W**) | EPYC 7742 | 61732988 | 0.270 | 3.13 | $0.84 | done |
+| (a100 box 1) | A100-SXM4-40GB (595.91.07, 400 W) | EPYC 7K62 | 57328781 | 0.563 | 3.04 | $1.71 | Mapal kernels ×1.27 after warm-up; host lost at 176 min — not used |
+| (a100 rest try) | — | Ryzen 7 7700 | 56853932 | 0.580 | 0.05 | $0.03 | stopped for the full rerun |
+| a100 | A100-SXM4-40GB (595.91.07, 300 W) | Ryzen 7 7700 | 56853932 | 0.591 | 1.94 | $1.15 | done |
+| rtx-4090 | RTX 4090 24 GB (580.126.09, **330 W**) | EPYC 7K62 | 55549899 | 0.390 | 3.10 | $1.21 | done |
+| h100 | H100 80GB HBM3 SXM (595.91.07, 700 W) | Xeon Gold 6448Y | 29019361 | 2.360 | 2.80 | $6.61 | done (FA3 rebuilt on the box) |
+| **total** | | | | | | **$11.55** | every `mapal-xarch-*` instance destroyed (checked by label) |
+
+$/h is the instance's `dph_total`, hours from creation to destroy (`scripts/cost.py`). The H100 offer skipped the
+60f0f8ce H100 host (noisy on host-bound rows). The account's credit fell $17.40 over the window (238.31 → 220.91);
+other projects' instances bill through it.
+
+### Value gates — all pass
+
+| part | differential | probe gates (programs) | arms · candidates within D2/D3 | device-exact oracles | split programs | gemm_lib legs within | torch legs within | competitor legs within |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| rtx-3090 | 59 / 59 | 96 / 96 | 834 / 834 | 79 / 79 | 8 / 8 | 112 / 112 | 622 / 650 | 132 / 136 |
+| a100 | 78 / 78 | 96 / 96 | 871 / 871 | 79 / 79 | 8 / 8 | 112 / 112 | 626 / 650 | 133 / 136 |
+| rtx-4090 | 69 / 69 | 96 / 96 | 881 / 881 | 79 / 79 | 8 / 8 | 112 / 112 | 628 / 650 | 132 / 136 |
+| h100 | 78 / 78 | 96 / 96 | 865 / 865 | 79 / 79 | 8 / 8 | 112 / 112 | 626 / 650 | 149 / 153 |
+
+No Mapal value failed on any part, face, arm or site candidate: the KV twins (XREF within D2, the four px twins bit for
+bit on the exact face), the caching / memory arms, the long prefill's tile sites. **Competitor legs outside**: torch —
+every one a TF32 leg at the 1e-3 gate (the f32 `mlp*_2048` / `rt_mlp2_*` rows' TF32 modes and the `_tf32` twins' f32
+modes, 24 a part; the 3090 adds `compile-tf32` / `compile-cg-tf32` of `mlp_2048_tf32` / `mlp2_2048_tf32` at 3.7 /
+4.7·10⁻³: Inductor's Triton TF32 template, the 5080's same miss), as in every round;
+comp — `triton` FAILED on `lsm_1_131072` (all parts) and `lsm_4_32768` (not the a100: 164 KiB of shared memory) —
+the tutorial softmax holds a row in one program (OutOfResources) — and `triton-tf32` on `mlp_2048_tf32` /
+`mlp2_2048_tf32` at 3.7 / 4.7·10⁻³ against 10⁻³: the 5080's same four. Every CUDA-graph leg ran its graph (266 a part,
+0 `cg=skipped`).
+
+**Legs per part** (within / timed): torch eager / compile 282–285 / 296, CUDA graphs (`-cg`, `-ro`) 252–255 / 266, SDPA
+backends 88 / 88, Liger 29 / 29, FA2 17 / 17, FlashInfer 17 / 17, hand Triton 69–70 / 73, FA3 17 / 17 (H100), TensorRT-
+LLM `unavailable` (not installable on torch 2.11).
+
+### Old competitor set → every leg
+
+Geomean Mapal / best over the same 86 rows on every part; old set = the legs before the competitors step (torch eager /
+compile / SDPA / bf16, cuBLAS, cuBLASLt, CUTLASS, hand CUDA), re-timed on the same box. Verdict: even = |ratio − 1| ≤
+max(null, 5 %). The 5080 column is the competitors step's local run.
+
+| part | old set | every leg | win / even / loss: old → every | rows whose best is a new leg (> 5 % faster) | Mapal wins that disappear |
+|---|---:|---:|---|---|---|
+| rtx-5080 | 0.980 | **1.001** | 18/24/44 → 18/22/46 | 28 (10: graphs 5, Liger 3, FlashInfer 1, Triton 1) | none |
+| rtx-3090 | 1.008 | **1.054** | 36/9/41 → 32/9/45 | 49 (18: graphs 12, Triton 3, SDPA-efficient 2, Liger 1) | llm_pre_t2048 (sdpa-efficient), mlp_2048 (compile-ro, → even), mlp_2048_tf32 (compile-ro-tf32), pj_m128_n28672_k4096 (compile-ro, → even) |
+| a100 | 1.157 | **1.199** | 16/15/55 → 16/13/57 | 40 (13: graphs 6, Triton 3, SDPA 2, Liger 2) | none |
+| rtx-4090 | 1.031 | **1.081** | 30/12/44 → 24/13/49 | 41 (20: graphs 15, Liger 3, Triton 2) | llm_pre_t2048, llm_pre_t8192 (Liger), pj_m2048_n6144_k4096 (compile-ro), rt_mlp2_1024 (compile-cg); epi_4096, mlp2_2048 (compile-ro, → even) |
+| h100 | 1.154 | **1.203** | 17/1/68 → 16/1/69 | 36 (18: graphs 14, Liger 3, Triton 1) | llm_dec_b8_l2048_bf16w (bf16-compile-cg) |
+
+The new families that lead: **CUDA graphs** (`-cg` / `-ro`) on most changed rows — launch- and host-bound programs
+(attention / lsm rows, the bf16 decode steps, small MLPs, the causal family's steps) — **Liger** (its RMSNorm / RoPE /
+SwiGLU + SDPA's memory-efficient f32 attention) on every f32 prefill, **hand Triton** on every TF32 prefill (the fused-
+attention tutorial) and a few TF32 projections / softmax rows, **cuDNN SDPA** on the 3090 / a100 bf16 B32 decode.
+FlashAttention-2, FlashAttention-3 and FlashInfer are the fastest leg of **no row on the rented parts** (their decode
+legs run the rest of the layer as torch eager ops: FA3 B32 L8192 0.706 ms a step on the H100 against bf16-compile-ro's
+0.494).
+
+| row: Mapal / best (leg) [old set] | rtx-5080 | rtx-3090 | a100 | rtx-4090 | h100 |
+|---|---|---|---|---|---|
+| causal_1024_256 | 0.40 compile-cg [0.34] | 0.14 compile-cg [0.12] | 0.50 compile-cg [0.49] | 0.10 compile-cg [0.09] | 0.18 compile-cg [0.16] |
+| llm_pre_t8192 | 1.53 liger [0.95] | 1.58 liger [1.04] | 2.17 liger [1.14] | 1.61 liger [0.85] | 1.98 liger [1.17] |
+| llm_pre_t2048 | 1.19 liger [1.02] | 1.08 sdpa-efficient [0.93] | 1.27 liger [1.03] | 1.14 liger [0.84] | 1.36 liger [1.12] |
+| llm_pre_t2048_tf32 | 1.64 triton-tf32 [1.23] | 1.52 triton-tf32 [1.15] | 2.62 triton-tf32 [2.00] | 1.69 triton-tf32 [1.15] | 2.35 triton-tf32 [2.12] |
+| llm_dec_b32_l8192 (f32) | 0.37 compile | 0.38 compile-ro | 0.39 compile-cg | 0.39 compile | 0.27 compile |
+| llm_dec_b1_l2048_bf16w | 1.02 bf16-compile | 0.72 bf16-compile | 1.07 bf16-compile | 0.64 bf16-compile-cg [0.60] | 0.63 bf16-compile-cg [0.46] |
+| llm_dec_b8_l2048_bf16w | 1.56 bf16-compile | 2.32 bf16-compile | 1.49 bf16-compile | 1.43 bf16-compile | 1.15 bf16-compile-cg [0.92] |
+| llm_dec_b32_l8192_bf16w | 2.43 flashinfer [2.30] | 2.39 bf16-cudnn [1.32] | 2.61 bf16-cudnn [2.11] | 2.44 bf16-compile-cg [2.43] | 2.16 bf16-compile-ro [2.10] |
+| lsm_1_131072 | 0.70 compile-cg [0.64] | 12.0 compile-cg [10.3] | 13.8 compile-cg [10.8] | 9.92 compile-cg [8.49] | 13.7 compile-cg [7.33] |
+| attn_1024_64 | 1.36 compile-cg [1.32] | 2.18 compile-ro [1.71] | 1.17 sdpa-compile-cg [1.05] | 2.27 sdpa-compile-cg [1.91] | 2.10 compile-ro [1.73] |
+| pj_m2048_n6144_k4096 | 1.02 compile-cg | 0.93 eager | 1.00 compile-cg | 1.06 compile-ro [0.83] | 1.12 eager |
+| rt_mlp2_1024 | 1.01 compile | 0.85 compile-cg [0.84] | 1.59 compile-cg [1.25] | 1.07 compile-cg [0.92] | 1.09 compile-ro [1.06] |
+
+Every row, leg and family per part: matrix.md ("What the new legs change", "Every competitor leg").
+
+### Why (nsys, `prof/leads`)
+
+- **Liger on the f32 prefills** (all parts, the 5080's cause): the H100's T8192 Liger leg is `fmha_cutlassF_f32_aligned_
+  64x128_rf_sm80` 12.0 ms + two SIMT sgemms 6.7 ms each a call — the memory-efficient kernel streams key blocks with
+  the scores on chip and skips the masked ones; Mapal's attention materializes the scores per KV-head group (long-
+  prefill.md open 1 and 2). The same programs' **old-set** verdict moved the other way: Mapal's prefill T8192 went from
+  12–19× (60f0f8ce) to 0.85–1.17× torch-compile (`8354b6de`: 1731 → 154 ms on the 3090, 1431 → 132 a100, 753 → 65
+  4090, 828 → 52 H100).
+- **CUDA graphs on launch-bound rows**: the H100 bf16 B8 decode's plain `bf16-compile` step is a handful of µs-scale
+  kernels (cuDNN SDPA 26.9 µs, the fused RMSNorm + projection Triton template 19.0 µs, an `nvjet` GEMM 13.5 µs, …) with
+  the host's launch gaps between them; the graph replays the step: 3.30 → 2.66 ms a run, 0.166 ms a step against Mapal's
+  0.190. The lsm / attention rows likewise (lsm_1_131072 H100: compile 42.5 → compile-cg 22.7 µs); Mapal's lsm stays one
+  block a row on the rented parts (open 2).
+- **`compile-ro` beating cuBLAS on f32 GEMMs** (4090 pj_m2048_n6144 1.83 vs cuBLAS 2.31 ms, epi_4096 compile-ro 2.61
+  vs compile 3.28; 3090 mlp_2048, pj_m128_n28672): the eager / compile call runs `cutlass_80_simt_sgemm_256x128_8x4`
+  (cuBLAS's pick, 2.41 ms on the 4090 epi); inside the captured graph the GEMM is faster, but nsys traced graphs as one
+  node (its default `--cuda-graph-trace=graph`), so which algorithm the capture selects is **open** (open 3). On the
+  3090 host (EPYC 7742) the graph legs mostly save launch gaps: mlp_2048 eager 2.06 / compile 2.12 / graphs 1.63–1.65
+  ms over the same two 735 µs GEMMs.
+- **cuDNN SDPA on bf16 B32 decode** (3090 / a100): `cudnn_generated_fort_native_sdpa_sm80_flash_fprop` 736 µs a step
+  against torch's own flash kernel 961 µs (a100); Mapal reads the f32 KV cache (ADR-0043 open 3).
+
+### Mapal across rounds (60f0f8ce → now, same rows)
+
+Geomean of Mapal ms now / before over the 83 rows both matrices hold: 3090 0.962, a100 0.971, 4090 1.041, h100 0.912;
+the old set's best moved 1.057 / 0.998 / 1.092 / 0.946 (the 4090's 330 W cap slows both). Moves beyond 15 %: the
+long prefill T8192 **0.06–0.09×** on all four; 3090 llm_blkpre_t2048 1.33, mm_4096³ 1.34 (260 W); 4090 host-bound
+small programs 1.2–1.75 (decode_1024 14.7 → 25.8 ms, indep_512, mlp_512, lsm_32: an EPYC 7K62 host against
+60f0f8ce's EPYC 9354P) and mm_4096³ 1.46 (330 W); h100 host-bound rows **0.56–0.84** (causal 38.4 → 21.4 ms, decode,
+attention: the Xeon Gold host against the noisy 8480+ one).
+
+### Peak device memory: Mapal vs torch
+
+Mapal: `mapal_gpu_peak` of the shipped build (traced processes, the median); torch: one process per (program, leg), the
+fastest f32 leg among those measured (compile on every row but the naive twins: naive-compile), peak from the leg's
+inputs on (caching-memory.md's method). The 22 KV-twin and f32 layer rows:
+
+| part | geomean Mapal / torch | Mapal lower | Mapal higher |
+|---|---:|---:|---|
+| rtx-3090 | 0.89 | 19 | prefill T2048 1.44, T8192 1.56, block prefill 1.24 |
+| a100 | 0.88 | 19 | 1.46, 1.56, 1.25 |
+| rtx-4090 | 0.86 | 19 | 1.43, 1.56, 1.24 |
+| h100 | 0.86 | 19 | 1.40, 1.54, 1.22 |
+
+Mapal's bytes are the same on every part within 1–3 % (one arena: explicit KV B32 L2048 2 216–2 230 MB against
+torch-compile's 3 242–3 266, decode B32 L8192 2 285–2 299 against 3 278–3 302); torch's B1 decode peaks move with the
+part's kernels (dec B1 L2048 183 MB on the 3090, 226–250 elsewhere). The prefills hold 1.2–1.6× torch's peak on every
+part: the materialized score array (T2048: 512 MiB) — the 5080's finding, part-independent. Per row and part:
+`analysis/peaks.md`.
+
+### The automatic KV cache (naive twins) against torch
+
+Mapal naive ms (/ torch naive, / torch HF-cache f32); explicit / HF-cache; peak MB naive / torch naive:
+
+| shape | rtx-3090 | a100 | rtx-4090 | h100 |
+|---|---|---|---|---|
+| B1 L2048 | 9.0 (0.10, 1.16); 0.79; 286 / 313 | 9.2 (0.09, 1.48); 0.89; 286 / 322 | 5.7 (0.12, 0.98); 0.77; 285 / 361 | 4.0 (0.11, 0.98); 0.65; 291 / 363 |
+| B1 L8192 | 27.2 (0.08, 1.68); 0.86; 650 / 748 | 28.4 (0.08, 1.94); 0.90; 651 / 748 | 13.8 (0.07, 1.40); 0.87; 651 / 748 | 11.4 (0.08, 1.40); 0.70; 655 / 772 |
+| B8 L2048 | 59.4 (0.09, 1.85); 1.00; 1128 / 1321 | 53.8 (0.07, 2.00); 0.86; 1136 / 1321 | 24.5 (0.06, 1.25); 0.71; 1136 / 1321 | 21.4 (0.08, 1.63); 0.76; 1150 / 1345 |
+| B8 L8192 | 249 (0.09, 2.15); 0.88; 4023 / 4780 | 202 (0.07, 2.13); 0.84; 4031 / 4772 | 109 (0.07, 1.53); 0.62; 4031 / 4780 | 78.5 (0.07, 1.81); 0.76; 4041 / 4804 |
+| B32 L2048 | 240 (0.09, 2.05); 0.80; 4026 / 4778 | 203 (0.07, 2.13); 0.84; 4030 / 4778 | 107 (0.07, 1.54); 0.64; 4030 / 4778 | 78.1 (0.07, 1.78); 0.75; 4040 / 4802 |
+| block B1 L4096 | 28.6 (0.16, 1.19); 0.92; 1080 / 1130 | 27.0 (0.14, 1.54); 1.11; 1080 / 1130 | 23.3 (0.23, 1.24); 1.10; 1081 / 1154 | 13.6 (0.19, 1.46); 1.15; 1085 / 1156 |
+
+The naive program (no cache written) is **0.06–0.23× torch running the same naive program** at 0.79–0.96× its peak on
+every part, and 0.98–2.15× torch's HF-cache program — even with it at B1 L2048 on the 4090 / H100, behind it as the
+history grows (the first trip's full projection over the history: caching-memory.md open 1, demand). The explicit twin
+takes 0.62–1.00× HF-cache torch on the decode shapes and 0.92–1.15× on the block decode. The 5080 (caching-memory.md):
+naive 0.08–0.22× torch naive, 1.19–1.54× HF-cache.
+
+### Caching / memory arms (time × ON / peak vs ON)
+
+| workload | OFF | rtx-3090 | a100 | rtx-4090 | h100 |
+|---|---|---|---|---|---|
+| kvn B1 L2048 | unchanged | 14.4× / +0 | 10.5× / +0 | 6.34× / +0 | 9.72× / +0 |
+| kvn B8 L2048 | unchanged | 19.6× / +0 | 14.5× / +0 | 15.3× / +0 | 14.8× / +0 |
+| kvn B8 L2048 | retain-pieces | 19.2× / +0 | 14.2× / +0 | 14.9× / +0 | 14.3× / +0 |
+| kvx B8 L2048 | piece-delta | 1.20× / +0 | 1.14× / +0 | 1.32× / +0 | 1.46× / +0 |
+| kvx B8 L2048 | arena | 1.26× / −2 MB | 1.32× / −10 | 1.60× / −10 | 1.10× / −24 |
+| prefill T2048 | arena | 2.10× / +0 | 1.47× / +0 | 3.32× / +0 | 1.34× / +0 |
+| kvx B8 / B32 L2048, prefill T8192 | cone-span | 1.00× / +133 / +531 / +176 MB on every part | | | |
+| prefill / block prefill T2048 | arena-fit | 1.00× / +129 MB on every part | | | |
+
+Every mechanism keeps its sign on all four parts; the peak deltas are the same bytes everywhere (the arena's packing is
+part-independent), the time of the OFF arms is not: without `arena` the allocations land in the timed region (1.10–3.32×,
+largest on the slow-host 4090 / 3090 boxes), without the derived delta (`unchanged`) the projection over the history runs
+whole every trip (6–20×).
+
+### Evidence (intent check, `evidence-<part>.tsv`)
+
+3090 71 161 checks / 3 789 mismatches, a100 81 328 / 7 727, 4090 84 765 / 5 126, h100 85 211 / 9 311. The caching /
+memory intents hold on every part (`arena`, `entry-arena`, `carry-take`, `piece-delta`, `resident`, `retain-cell`,
+`retain-pieces`: 0 mismatches); `by-ref` "trace allocs == predicted" 160 a part (the entry arena's one allocation where
+two are predicted: caching-memory's standing item). The largest groups as in 60f0f8ce (`fma-pairs` contracting scalar
+tiles 1 056–1 221, a100 / H100 `face-registers` residency 1 644 / 1 774, H100 `pdl` entry 982, `prefetch` cover
+324–927); `calls` misses
+are the block programs' formed-not-realized chains (4090 10 / 74), `exp-hw` the exact-face builds — both open since
+60f0f8ce.
+
+### Open items (missing facts)
+
+1. **Flash-style streamed attention** (long-prefill open 1 / 2): now the largest LLM gap on every part — f32 prefill
+   1.08–2.17× Liger / SDPA-efficient, TF32 prefill 1.52–2.62× the Triton tutorial, peak 1.2–1.6× torch.
+2. **`row_iter_ns` is unmeasured on the rented profiles** (0: `row-slices` slices nothing; only the 5080's profile
+   carries it, and `calib.cu` has no row-walk kind): lsm_1_131072 runs one block (227–348 µs at 512 elements a lane,
+   slope 436–682 ns a lane-element over 32 → 512) against compile-cg's 23–26 µs, 9.9–13.8×. The property belongs in the
+   calibration (a `row` kind), measured per part.
+3. **The graph-captured cuBLAS algorithm** (4090 / 3090 GEMM rows): trace with `--cuda-graph-trace=node` to name the
+   kernel the capture runs, then put the shape's best algorithm's geometry against Mapal's tile.
+4. bf16 decode at B ≥ 8: 1.15–2.61× (the f32 KV cache, ADR-0043 open 3) — unchanged.
+5. The a100 first box's ×1.27 Mapal-only slowdown after warm-up (cuBLAS unaffected, the box gone before a clock or
+   ncu look): not reproduced on the replacement — recorded, open.
+6. Unchanged from 60f0f8ce: `calls` (rounds, host issue time, phases), Hopper TMA / warp specialization (H100 TF32 rows
+   1.3–3.1×, geomean 2.05), `cp.async` narrow panels.
+
+Raw (local, not in git): `.claude/raw-evidence/cross-arch/19a8a44e/<part>/` (results, run output, `calib-<part>.txt`,
+`evidence-<part>.tsv`, `prof-<part>.tgz` with `prof/leads` nsys traces and `prof/torch-peak-proc.txt`, torch / FA build
+logs, wisdom, tune), `a100-box1/` (the lost box's streamed output), `analysis/` (gates, props, gap, ms, cm, cmtab, peaks,
+compcmp, evidence-sum, rowiter per part), `scripts/` (stems, build, launch, watchdog, ops_nsys, leads, h100-patch/ the
+FA3 rebuild, analyze, cost, compcmp, peaks, cmtab, evsum, legcount, ktop, keyrows, rowiter).
