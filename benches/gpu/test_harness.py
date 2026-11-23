@@ -721,6 +721,33 @@ class CompetitorTests(unittest.TestCase):
         p.write_text('\n'.join(lines) + '\n')
         return p
 
+    def test_confirm_pick_keeps_a_program_win_and_reverts_a_loss(self):
+        # sweep-runtime-2: a fake program whose `iter ms` reads the wisdom's last line for each key — site a's pick
+        # makes the program faster (keep), site b's slower (revert: candidate 0 appended, the last line wins).
+        root = Path(self.tmp.name)
+        wdir = root / 'wisdom'
+        wdir.mkdir()
+        w = wdir / 'wisdom-dev-sm120.tsv'
+        w.write_text('00000000000000aa\t01\t4\t2\t5\t1\n00000000000000bb\t02\t4\t3\t5\t1\n')
+        exe = root / 'prog'
+        exe.write_text('#!/usr/bin/env python3\nimport os, pathlib\n'
+                       'last = {}\n'
+                       'for f in pathlib.Path(os.environ["MAPAL_WISDOM"]).glob("wisdom-*.tsv"):\n'
+                       '    for l in f.read_text().splitlines():\n'
+                       '        x = l.split("\\t"); last[x[0]] = int(x[3])\n'
+                       'ms = 10.0 - (1.0 if last["00000000000000aa"] else 0) + (1.0 if last["00000000000000bb"] else 0)\n'
+                       'print(f"out=[1 2 iter ms={ms} ]")\n')
+        exe.chmod(0o755)
+        out = subprocess.run(['python3', str(HERE / 'confirm_pick.py'), str(exe), str(wdir),
+                              '00000000000000aa:2:trial', '00000000000000bb:3:trial', '00000000000000cc:1:wisdom'],
+                             capture_output=True, text=True, check=True).stdout.splitlines()
+        self.assertEqual(len(out), 2, out)
+        self.assertTrue(out[0].startswith('confirm key=00000000000000aa pick=2') and out[0].endswith('keep'), out)
+        self.assertTrue(out[1].startswith('confirm key=00000000000000bb pick=3') and out[1].endswith('revert'), out)
+        lines = w.read_text().splitlines()
+        self.assertEqual(lines[-1].split('\t')[:4], ['00000000000000bb', '02', '4', '0'])
+        self.assertEqual(sum(l.startswith('00000000000000aa') for l in lines), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
