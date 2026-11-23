@@ -191,7 +191,9 @@ decode 1.2–4.3× slower on the 3090 / A100 / H100 (without those six rows the 
 1.074 / 1.179). The bf16 rows trail torch bf16 most on the A100 / H100 (`mma.sync` tiles, no `wgmma`). Since: the
 epilogue site's planned split launches on every part, the bf16 cache's scores kernel issues 16-byte loads (RTX 5080
 bf16 decode 1.05–1.29× faster), `vec-cells` reads the part's DRAM share an SM against its grid's spread — replayed
-against that round's arms, rented parts not re-timed ([regressions](benches/results/evidence/local-rtx-5080/regressions.md)).
+against that round's arms, rented parts not re-timed ([regressions](benches/results/evidence/local-rtx-5080/regressions.md)). Integrated
+with f32 tensor cores, Hopper wgmma / TMA and fp8 storage, the RTX 5080 column is 1.065 over the 120 rows (was 1.076;
+[integration](benches/results/evidence/local-rtx-5080/integration.md)).
 
 Mapal time / the best of cuBLAS, cuBLASLt, CUTLASS, PyTorch eager and `torch.compile` (`_tf32` rows: torch with TF32 on);
 below 1 = Mapal faster. Values pass on every program and arch. 61 of 132 cells at or below 1.0. † = carried from an

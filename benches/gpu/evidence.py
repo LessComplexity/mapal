@@ -256,6 +256,8 @@ def sass_facts(body):
             # half-precision (ADR-0043): 2-byte global loads (a narrow operand read in its format)
             ldg16=sum(o.startswith('LDG') and ('.U16' in o or '.S16' in o) for o in ops),
             ldg64=sum(o.startswith('LDG') and '64' in o.split('.') for o in ops),
+            # fp8-leftovers: 1-byte global loads (an fp8 operand read one element at a time)
+            ldg8=sum(o.startswith('LDG') and ('.U8' in o or '.S8' in o) for o in ops),
             ksteps=round(mac / acc, 2) if acc else 0,
             span=round(len(loop) / (mac / acc), 2) if acc and mac else 0,
             ffma_per_lds=round(mac / lc['LDS'], 2) if lc['LDS'] else 0,

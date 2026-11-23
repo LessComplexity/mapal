@@ -65,9 +65,11 @@ INTENT = {
         ('the narrow operand is loaded in its format in the hot loop: one element (LDG.U16: one thread a cell, a '
          'mixed-radix tile`s digit copies across the lanes) or 16 bytes (LDG.128: a mixed-radix tile`s digit copies '
          'adjacent along `k`, or a thread`s `vec-cells` cells, joined under the operand`s allocation alignment — '
+         'an fp8 operand`s element is LDG.U8 — '
          'cross-arch 3a8e654f: the bf16 KV cache`s scores kernel), a 4-element vector (LDG.64, the register-staged '
          'tile), or copied by cp.async (LDGSTS: `narrow-async`)',
-         "(sass.hot.ldg16 > 0 or plan.get('cells', 1) > 1 and sass.hot.ldg128 > 0) if plan.kind == 'naive' else "
+         "(sass.hot.ldg16 + sass.hot.get('ldg8', 0) > 0 or plan.get('cells', 1) > 1 and sass.hot.ldg128 > 0) "
+         "if plan.kind == 'naive' else "
          "sass.hot.ldg16 + sass.hot.ldg128 > 0 if 'radix' in plan "
          "else sass.ldgsts > 0 if plan.stages >= 2 else sass.hot.ldg64 > 0"),
         ('a narrow panel is register-staged (no cp.async, LDGSTS) unless the tile streams it (`stages` >= 2: '

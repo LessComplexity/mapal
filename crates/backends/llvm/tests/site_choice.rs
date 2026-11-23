@@ -1159,10 +1159,13 @@ fn a_looped_site_decides_once() {
 
 /// tune-context: a site's table carries `MAPAL_SITE_COLD` (bit 3) exactly
 /// where one of its operands lives in DRAM in the program — `residence_plan`
-/// against the part's L2 — so its trial evicts the L2 before each timed run
-/// (`mapal_gpu.c` `site_timed`): a 4096-wide GEMV over a 64 MiB weight and a
-/// 256 MiB one on the RTX 5080 (64 MiB L2) against the same sites on the
-/// RTX 5090's 96 MiB and a 1 MiB weight.
+/// against the working set the part's L2 keeps (`Gpu::l2_keep_bytes`) — so
+/// its trial evicts the L2 before each timed run (`mapal_gpu.c`
+/// `site_timed`): a 4096-wide GEMV over a 68 MiB weight and a 256 MiB one
+/// on the RTX 5080 (64 MiB L2, a cyclic stream kept to 1.025× it), against
+/// the 64 MiB weight there (integration: kept — cold trials picked a
+/// candidate 1.7× slower in context for pt_pj_m16_n4096_k4096), the same
+/// sites on the RTX 5090's 96 MiB and a 1 MiB weight.
 #[test]
 fn cold_flag_follows_residence() {
     let src = |k: u64| {
@@ -1184,7 +1187,8 @@ fn cold_flag_follows_residence() {
     };
     for (k, target, cold) in [
         (16384u64, "rtx-5080", true),
-        (4096, "rtx-5080", true),
+        (4352, "rtx-5080", true),
+        (4096, "rtx-5080", false),
         (4096, "rtx-5090", false),
         (64, "rtx-5080", false),
     ] {

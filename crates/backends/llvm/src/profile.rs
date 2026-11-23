@@ -842,6 +842,15 @@ pub struct DeviceCost {
     /// loss) from one of whole-tile boxes (2–5). 0 = not measured: derived
     /// ([`Gpu::tma_copy_ns`]).
     pub tma_copy_ns: u64,
+    /// integration (tune-context): **the largest cyclic working set the L2
+    /// keeps**, bytes — re-read back to back at no less than the midpoint of
+    /// the L2 and DRAM rates (`benches/local/l2keep.cu`; the RTX 5080's 64 MiB
+    /// L2 keeps a 64.6 MiB stream at 4.1 TB/s, 1.025× its size at 2.5, 1.05×
+    /// at 1.4: its DRAM rate by 1.1×). What separates an operand a program
+    /// re-reads from L2 across calls from one it streams from DRAM: a trial
+    /// evicts the L2 only past it ([`Gpu::l2_keep_bytes`]). 0 = not measured:
+    /// the nominal L2.
+    pub l2_keep_bytes: u64,
     /// flash-attention `stream` (P1): one block barrier of 256 threads
     /// with a dependent shared-memory round trip before it — what each window
     /// of a streamed unit pays per barrier on its block's critical path
@@ -913,6 +922,7 @@ pub const NO_PLAN: DeviceCost = DeviceCost {
     coop_body_cycles: 0,
     fly_bytes_per_sm: 0,
     tma_copy_ns: 0,
+    l2_keep_bytes: 0,
     bar_ns: 0,
 };
 
@@ -922,7 +932,7 @@ impl DeviceCost {
     /// overrides by name ([`Gpu::fp32_lanes`], [`Gpu::clock_khz`], and the
     /// hardware-properties the rung rules read: SMs, L2, shared memory,
     /// threads, registers and blocks per SM, the DRAM interface).
-    pub const NAMES: [&'static str; 42] = [
+    pub const NAMES: [&'static str; 43] = [
         "flops_per_ns",
         "bytes_per_ns",
         "launch_ns",
@@ -952,6 +962,7 @@ impl DeviceCost {
         "fly_bytes_per_sm",
         "bar_ns",
         "tma_copy_ns",
+        "l2_keep_bytes",
         "fp32_lanes",
         "clock_khz",
         "sms",
@@ -1050,6 +1061,7 @@ impl Gpu {
                 "fly_bytes_per_sm" => &mut d.fly_bytes_per_sm,
                 "bar_ns" => &mut d.bar_ns,
                 "tma_copy_ns" => &mut d.tma_copy_ns,
+                "l2_keep_bytes" => &mut d.l2_keep_bytes,
                 "fp32_lanes" => &mut self.fp32_lanes,
                 "clock_khz" => &mut self.clock_khz,
                 "sms" => &mut self.sms,
@@ -1105,6 +1117,7 @@ impl Gpu {
             "fly_bytes_per_sm" => d.fly_bytes_per_sm,
             "bar_ns" => d.bar_ns,
             "tma_copy_ns" => d.tma_copy_ns,
+            "l2_keep_bytes" => d.l2_keep_bytes,
             "fp32_lanes" => self.fp32_lanes,
             "clock_khz" => self.clock_khz,
             "sms" => self.sms,
@@ -1455,6 +1468,18 @@ impl Gpu {
         match d.fly_bytes_per_sm {
             0 => self.dram_peak_bytes_per_ns() * d.lat_ns / self.sms.max(1),
             f => f,
+        }
+    }
+
+    /// integration (tune-context): **the largest cyclic working set the
+    /// L2 keeps** — [`DeviceCost::l2_keep_bytes`] where measured, else the
+    /// nominal L2 ([`Self::l2_bytes`]). A site whose operand's working set
+    /// (`residence_plan`) is within it is re-read from L2 across the
+    /// program's calls: its trial does not evict the L2.
+    pub fn l2_keep_bytes(&self) -> u64 {
+        match self.cost.unwrap_or(NO_PLAN).l2_keep_bytes {
+            0 => self.l2_bytes,
+            b => b,
         }
     }
 
@@ -4725,6 +4750,7 @@ pub const RTX_4090: TargetProfile = TargetProfile {
             // its 958 GB/s DRAM peak first at 4 KiB in flight an SM.
             fly_bytes_per_sm: 4096,
             tma_copy_ns: 0,
+            l2_keep_bytes: 0,
             bar_ns: 0,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_89), 2.52 GHz under load. The
@@ -4778,6 +4804,7 @@ pub const H100: TargetProfile = TargetProfile {
             // copy at 128 B - 16 KiB for any ring depth >= 4 (186-302 ns alone); 32 KiB
             // boxes 352-475 ns (13.5 TB/s over the part at 16 KiB: 102 B/ns an SM).
             tma_copy_ns: 159,
+            l2_keep_bytes: 0,
             bar_ns: 0,
             // kernel-merging `calls`: `coop_body_cycles` not measured here —
             // derived, the rtx-5080's 4390 cycles at 1.807 GHz = 2429 ns a
@@ -4916,6 +4943,7 @@ pub const RTX_5090: TargetProfile = TargetProfile {
             // of its 1701 GB/s DRAM peak first at 8 KiB in flight an SM.
             fly_bytes_per_sm: 8192,
             tma_copy_ns: 0,
+            l2_keep_bytes: 0,
             bar_ns: 0,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_120), 2.41 GHz under load.
@@ -5042,6 +5070,9 @@ pub const RTX_5080: TargetProfile = TargetProfile {
             // depth >= 2 (234 ns alone: the latency); 16 / 32 KiB boxes 289 / 654 ns
             // (the SM's 50-57 B/ns, 4.2-4.8 TB/s over the part).
             tma_copy_ns: 197,
+            // integration: `l2keep.cu`, a cyclic read stream at 1.025× the
+            // 64 MiB L2 re-read at 2.5 TB/s (L2 4.1, DRAM 0.76-0.92).
+            l2_keep_bytes: 68_786_585,
             // flash-attention P1: `calib.cu bar`, 256 threads (16.9 ns).
             bar_ns: 17,
         }),

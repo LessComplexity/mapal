@@ -261,3 +261,12 @@ m128 0.87–1.21×, m2048 1.01–1.07× of OFF; $1.79.
 L2048 0.056 ms/step, 0.37× bf16w; blkdec 0.37 ms, 0.57×), the one-candidate split post table, calls-issue (issue
 queue), tune-context (cold / event trials: dec B8 L2048 bf16w 0.92×), the `call_keep` fact; open: fp8 MMA tiles,
 retain-call's consumer.
+
+**integration** (`integration.md`): regressions + f32-tensor-cores + hopper + fp8-leftovers on one branch. The one-candidate
+epilogue split fixed twice became one rung (`post-table`, OFF arm the emission before; `--cands=1` keeps the plan);
+narrow1 takes a format only where its warp product has the 16-bit geometry (fp8 × fp8 reached it); one matrix rate
+(P1) instead of two. The full GPU suite found two regressions no step's changed-programs run could see: hopper's
+per-kernel tensor-map lookup (+20–30 µs a program; now read once from the PTX at load) and the trial's cold flag at the
+L2's edge (pj_m16_n4096_k4096 1.74×; measured `l2_keep_bytes`, the cyclic working set the L2 keeps: 1.025× on the 5080).
+5080 column 1.076 → 1.065 (all 120 rows), 25/21/74 → 23/29/68; every step's row reproduces; session-controlled ABBA
+against the 3a8e654f binaries 0.92–1.055. Open: a ~1 µs runtime residual, the tune's pick variance (pre_t8192).

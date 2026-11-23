@@ -4022,13 +4022,15 @@ impl<'a> FnEmit<'a> {
                     t.flags |= super::zero::SITE_ZEROED;
                 }
                 // tune-context: an operand that lives in DRAM in the program
-                // (`residence_plan` against the part's L2) — its trial runs
-                // cold (`MAPAL_SITE_COLD`, `mapal_gpu.c` `site_timed`).
+                // (`residence_plan` against the working set the part's L2
+                // keeps, `Gpu::l2_keep_bytes`) — its trial runs cold
+                // (`MAPAL_SITE_COLD`, `mapal_gpu.c` `site_timed`).
                 if let Some(gpu) = self.profile.gpu() {
                     let res = self.ir.residence_plan(self.f);
+                    let keep = gpu.l2_keep_bytes();
                     let cold = slots.iter().any(|&s| {
                         self.pair_source(source, s)
-                            .is_some_and(|o| res.at(o, gpu.l2_bytes) == mapal_ir::Residence::Dram)
+                            .is_some_and(|o| res.at(o, keep) == mapal_ir::Residence::Dram)
                     });
                     if cold {
                         t.flags |= SITE_COLD;
