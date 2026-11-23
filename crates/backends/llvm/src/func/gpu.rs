@@ -7845,7 +7845,13 @@ impl<'a> FnEmit<'a> {
 
     /// per-site-choice B1/B2: site `site`'s table, `one` its retained row's
     /// one-row site (`row`) or the whole site. `None` with fewer than two
-    /// candidates.
+    /// candidates — but for a `tile-post` group whose one candidate splits
+    /// (`group_order`: a workspace whose reduce evaluates the epilogue): the
+    /// group's plain launch is its ordered kernel, so the split reaches the
+    /// device only through the table (the f8e4m3 decode's `wo` projection, a
+    /// scale and a residual after the fold: its one candidate `splitk16`
+    /// ran as 16 one-cell blocks, 108 against 39 µs a step for its bf16
+    /// twin's two-candidate table). A one-candidate table never trials.
     fn make_table(
         &self,
         source: ObjectId,
@@ -7855,7 +7861,11 @@ impl<'a> FnEmit<'a> {
         one: &TileSite,
         epi: Option<&EpiKernel>,
     ) -> Option<SiteTable> {
-        if cands.len() < 2 {
+        let split_post = epi.is_some_and(|e| e.post.is_some())
+            && cands
+                .first()
+                .is_some_and(|c| c.launch.combine != Combine::None);
+        if cands.len() < 2 && !split_post {
             return None;
         }
         let m = self.ir.in_edges(target)[0];
@@ -7871,7 +7881,7 @@ impl<'a> FnEmit<'a> {
             .unzip();
         Some(SiteTable {
             site: ids[0].0,
-            flags: if self.rerun_safe(source, target, site, m) {
+            flags: if cands.len() > 1 && self.rerun_safe(source, target, site, m) {
                 SITE_RERUN
             } else {
                 0

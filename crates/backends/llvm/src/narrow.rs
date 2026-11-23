@@ -195,9 +195,17 @@ pub(crate) fn defs(text: &str, device: bool, cvt_f8: bool) -> String {
             if text.contains(&format!("define internal {ft} {name}(")) {
                 continue;
             }
+            // A part with `cvt.rn.f16x2.e4m3x2` widens an `f8e4m3` pair in
+            // one instruction (exact: e4m3 ⊂ f16), then `cvt.f32.f16`; the
+            // integer form is ~13 operations an element (the 16-lane GEMV's
+            // ALU share, gemv-stream `vec-cells`). `f8e5m2` is f16's top
+            // byte: its integer form is already a shift.
+            let body = match (n, device && cvt_f8) {
+                (NarrowFloat::F8e4m3, true) => f8_widen_cvt_body(w),
+                _ => f8_widen_body(n, w),
+            };
             out.push_str(&format!(
-                "define internal {ft} {name}({it} %b) alwaysinline nounwind willreturn memory(none) {{\nentry:\n{}}}\n",
-                f8_widen_body(n, w)
+                "define internal {ft} {name}({it} %b) alwaysinline nounwind willreturn memory(none) {{\nentry:\n{body}}}\n"
             ));
         }
     }
@@ -234,6 +242,50 @@ fn f8_round_body(n: NarrowFloat) -> String {
         magic_bits = s.magic_bits,
         minn = s.min_normal_bits,
     )
+}
+
+/// An `f8e4m3` element (or `<l x i8>` vector) widened on a part with
+/// `cvt.rn.f16x2.e4m3x2` ([`crate::profile::Caps::cvt_f8`]): each byte pair
+/// (the lower byte to the lower half) to two `f16` values, exact, then to
+/// `f32`. A scalar is the pair `(b, 0)`'s lower half. Inline PTX (LLVM 23
+/// selects its intrinsic only from PTX 8.1).
+fn f8_widen_cvt_body(lanes: Option<u64>) -> String {
+    const CVT: &str = "asm \"cvt.rn.f16x2.e4m3x2 $0, $1;\", \"=r,h\"";
+    match lanes {
+        None => format!(
+            "  %z = zext i8 %b to i16\n  %h = call i32 {CVT}(i16 %z)\n  \
+             %t = trunc i32 %h to i16\n  %v = bitcast i16 %t to half\n  \
+             %f = fpext half %v to float\n  ret float %f\n"
+        ),
+        Some(l) if l % 2 == 1 => f8_widen_body(NarrowFloat::F8e4m3, lanes),
+        Some(l) => {
+            let pairs = l / 2;
+            let mut s = format!("  %p = bitcast <{l} x i8> %b to <{pairs} x i16>\n");
+            for k in 0..pairs {
+                s += &format!(
+                    "  %p{k} = extractelement <{pairs} x i16> %p, i64 {k}\n  \
+                     %h{k} = call i32 {CVT}(i16 %p{k})\n  \
+                     %v{k} = bitcast i32 %h{k} to <2 x half>\n  \
+                     %f{k} = fpext <2 x half> %v{k} to <2 x float>\n"
+                );
+            }
+            // concatenate the pairs into one `<l x float>`.
+            let mut prev = "poison".to_string();
+            for k in 0..pairs {
+                for j in 0..2 {
+                    let x = format!("%e{k}_{j}");
+                    s += &format!("  {x} = extractelement <2 x float> %f{k}, i64 {j}\n");
+                    let r = format!("%r{k}_{j}");
+                    s += &format!(
+                        "  {r} = insertelement <{l} x float> {prev}, float {x}, i64 {}\n",
+                        2 * k + j
+                    );
+                    prev = r;
+                }
+            }
+            s + &format!("  ret <{l} x float> {prev}\n")
+        }
+    }
 }
 
 /// An fp8 element (or `<l x i8>` vector) widened to `f32`: the bits built
