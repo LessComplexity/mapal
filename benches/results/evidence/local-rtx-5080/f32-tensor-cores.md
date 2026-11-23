@@ -168,6 +168,9 @@ FFMA tile, 0.40–0.47× torch f32; tf32x3 taken by the rate rule on the A100 on
 cut along `k` by a wave model: 10 programs 0.77–0.985, mlp_2048_tf32 1.09 → 1.03× the best TF32 leg),
 `mma-depth` measured losing (off).
 
+Calibration line (`calib/rtx-5080.calib`, measured by `calib.cu matrix`; the profile already carries the same
+values): append `mma_tf32_per_clk=256 mma_half_per_clk=512`.
+
 CLAUDE.md facts-table rows:
 
 | query | what it proves |
