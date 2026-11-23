@@ -2343,6 +2343,9 @@ fn launch_key(l: &Launch) -> String {
         // sweep-attention: `unit-uniform` decides which units exist (no
         // kernel text of a tile site's).
         .replace(", unit_uniform: false", "")
+        // sweep-attention-2: `stream-mma` decides a stream unit's kernel (no
+        // tile site's text).
+        .replace(", stream_mma: false", "")
         .replace(", cells: 1 }", " }")
 }
 

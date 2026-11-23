@@ -820,6 +820,8 @@ def flow_facts(f, dev):
                 # flash-attention `stream`: one pass over windows of the axis — its windows, whether a wholly
                 # masked window is skipped (`on`, else why / `none`), the axis-wide members never stored.
                 stream=1 if f.get('stream') else 0, windows=f.get('windows', 0) or 0,
+                # sweep-attention-2 `stream-mma`: the products on the warp matrix product.
+                stream_mma=1 if ':mma' in str(f.get('stream', '')) else 0,
                 skip=1 if str(f.get('skip', '')) == 'on' else 0,
                 n_dissolved=len([x for x in str(f.get('dissolved', '')).split(',') if x]),
                 # sweep-attention `unit-uniform`: the operands the unit's launch moves by a captured number.

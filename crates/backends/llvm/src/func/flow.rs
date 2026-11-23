@@ -2820,7 +2820,10 @@ impl<'a> FnEmit<'a> {
             "; mapal.plan kernel={name} kind=flow rows={} gx={blocks} block={threads} members={} rungs_on=flow{}{}\n",
             u.rows,
             u.members.len(),
-            if u.stream.is_some() {
+            // sweep-attention-2: a stream on the warp matrix product.
+            if u.stream.as_ref().is_some_and(|st| st.mma.is_some()) {
+                ",row-block,stream,stream-mma"
+            } else if u.stream.is_some() {
                 ",row-block,stream"
             } else if u.block.is_some() {
                 ",row-block"

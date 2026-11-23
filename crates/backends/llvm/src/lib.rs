@@ -898,6 +898,15 @@ pub struct GpuRungs {
     /// their laws (a ticket: a fence and one atomic, no second launch). Off
     /// (`--gpu-off=split-kv`): one block a row block.
     pub split_kv: bool,
+    /// sweep-attention-2 `stream-mma`: a stream unit whose products each
+    /// admit a 16-bit member the part has a warp matrix product for (its
+    /// `m16n8k16` geometry, the accumulator meeting the member's `u_a`) folds
+    /// them on it — the threads in the accumulator's fragment layout (two
+    /// rows and a quad's columns a thread), the row operand's fragments held
+    /// in registers, the producer's window cells passed to the consumer as
+    /// its `a` fragments — where the plan model prices it below the FFMA
+    /// stream. Off (`--gpu-off=stream-mma`): the FFMA stream.
+    pub stream_mma: bool,
     /// flash-attention F5 (a fact arm, `mapal_ir::FactArms::guard_box`): a
     /// stream group's masked producer has its mask's form, and a wholly
     /// masked window is skipped where F6 allows. Off (`--gpu-off=guard-box`,
@@ -1072,6 +1081,7 @@ impl GpuRungs {
         stream: true,
         stream_fact: true,
         split_kv: true,
+        stream_mma: true,
         guard_box: true,
         finite: true,
         unit_uniform: true,
@@ -1083,7 +1093,7 @@ impl GpuRungs {
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 130] = [
+    pub const NAMES: [&'static str; 131] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1214,6 +1224,7 @@ impl GpuRungs {
         "mma-depth",
         "unit-uniform",
         "round-store",
+        "stream-mma",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -1342,6 +1353,7 @@ impl GpuRungs {
             "stream" => &mut self.stream,
             "stream-fact" => &mut self.stream_fact,
             "split-kv" => &mut self.split_kv,
+            "stream-mma" => &mut self.stream_mma,
             "guard-box" => &mut self.guard_box,
             "finite" => &mut self.finite,
             "unit-uniform" => &mut self.unit_uniform,

@@ -5880,6 +5880,10 @@ pub struct FlashProg {
     /// query heads, every operand address moved by the loop's counter (a
     /// captured number), the outputs summed into a carried array.
     pub lp: bool,
+    /// sweep-attention-2 `stream-mma`: the model-scale forms' two products
+    /// admit the `bf16` member (`fold: bf16 | f32`), and more outputs are
+    /// printed (a spread of `P·V`'s cells, each within the member's bound).
+    pub half: bool,
 }
 
 pub fn flash_strategy() -> impl Strategy<Value = FlashProg> {
@@ -5926,8 +5930,62 @@ pub fn flash_strategy() -> impl Strategy<Value = FlashProg> {
                 causal,
                 mask,
                 lp: lp && heads > 0,
+                half: false,
             },
         )
+}
+
+/// sweep-attention-2 `stream-mma`: [`FlashProg`]'s model-scale forms whose
+/// products admit `bf16` — 16–64 tokens (whole 16-row warps; 48 leaves a
+/// 32-key window a tail), heads of width 16 or 32 in groups of 1–4, causal
+/// or not (the mask `−1e9` / `−8`), the head-group loop or not. The data are
+/// small multiples of `¼`, exact in `bf16`: the scores are exact on the
+/// tensor core, and the probabilities' rounding (`2⁻⁹` relative) is the
+/// member's whole error.
+pub fn flash_half_strategy() -> impl Strategy<Value = FlashProg> {
+    (
+        prop::sample::select(vec![16u64, 32, 48, 64]),
+        prop::sample::select(vec![16u64, 32]),
+        prop::sample::select(vec![1u64, 2, 4]),
+        prop::sample::select(vec![1u64, 2, 4]),
+        any::<bool>(),
+        0u8..2,
+        any::<bool>(),
+    )
+        .prop_map(|(n, d, heads, group, causal, mask, lp)| FlashProg {
+            n,
+            w: n,
+            d,
+            c: d,
+            scale: 0,
+            seed: 0,
+            down: false,
+            den_one: false,
+            form: 0,
+            stored: false,
+            heads,
+            group: group.min(heads),
+            causal,
+            mask,
+            lp,
+            half: true,
+        })
+}
+
+/// [`FlashProg::half`]'s fold annotation (`: bf16 | f32`), else none.
+fn flash_member(p: &FlashProg) -> &'static str {
+    if p.half { ": bf16 | f32" } else { "" }
+}
+
+/// [`FlashProg::half`]: eight more cells of `name` (of `len`) printed,
+/// spread over it.
+fn flash_spread(p: &FlashProg, name: &str, len: u64) -> String {
+    if !p.half {
+        return String::new();
+    }
+    (1..=8u64)
+        .map(|j| format!("    {name}[{}] -> println;\n", (j * len / 9 + j * 7) % len))
+        .collect()
 }
 
 /// [`FlashProg`]'s model-scale source (`heads > 0`): `T = n` tokens, the
@@ -5955,7 +6013,8 @@ pub fn flash_mh_src(p: &FlashProg) -> String {
         t * h * d
     );
     let fold = format!(
-        "(0.0, rdh) -> fold {{\n                acc, u -> acc + q[i * {} + hh * {d} + u] * kr[r * {} + (hh / {g}) * {d} + u]\n            }}",
+        "(0.0, rdh) -> fold{} {{\n                acc, u -> acc + q[i * {} + hh * {d} + u] * kr[r * {} + (hh / {g}) * {d} + u]\n            }}",
+        flash_member(p),
         h * d,
         kvh * d
     );
@@ -5978,14 +6037,16 @@ pub fn flash_mh_src(p: &FlashProg) -> String {
         "    rHT -> map {{\n        hi -> (0.0, rT) -> fold {{\n            acc, r -> acc + pe[hi * {t} + r]\n        }}\n    }} -> den;\n"
     );
     s += &format!(
-        "    rRD -> map {{\n        e -> e / {} -> i;\n        e % {} -> c;\n        c / {d} -> hh;\n        c % {d} -> u;\n        (0.0, rT) -> fold {{\n            acc, r -> acc + pe[(hh * {t} + i) * {t} + r] * vv[r * {} + (hh / {g}) * {d} + u]\n        }} -> av;\n        av / den[hh * {t} + i]\n    }} -> attf;\n",
+        "    rRD -> map {{\n        e -> e / {} -> i;\n        e % {} -> c;\n        c / {d} -> hh;\n        c % {d} -> u;\n        (0.0, rT) -> fold{} {{\n            acc, r -> acc + pe[(hh * {t} + i) * {t} + r] * vv[r * {} + (hh / {g}) * {d} + u]\n        }} -> av;\n        av / den[hh * {t} + i]\n    }} -> attf;\n",
         h * d,
         h * d,
+        flash_member(p),
         kvh * d
     );
     s += &format!(
-        "    attf[0] -> println;\n    attf[{}] -> println;\n    0.0 -> zero: f32;\n    (zero, attf) -> fold {{\n        acc, v -> acc + v\n    }} -> so;\n    so -> println;\n",
-        t * h * d - 1
+        "    attf[0] -> println;\n    attf[{}] -> println;\n{}    0.0 -> zero: f32;\n    (zero, attf) -> fold {{\n        acc, v -> acc + v\n    }} -> so;\n    so -> println;\n",
+        t * h * d - 1,
+        flash_spread(p, "attf", t * h * d)
     );
     if p.stored {
         s += &format!("    den[{}] -> println;\n", h * t - 1);
@@ -6025,7 +6086,8 @@ pub fn flash_loop_src(p: &FlashProg) -> String {
         t * g * d
     );
     let fold = format!(
-        "(0.0, rdh) -> fold {{\n                                acc, u -> acc + q[i * {} + (g * {g} + hh) * {d} + u] * kr[r * {} + g * {d} + u]\n                            }}",
+        "(0.0, rdh) -> fold{} {{\n                                acc, u -> acc + q[i * {} + (g * {g} + hh) * {d} + u] * kr[r * {} + g * {d} + u]\n                            }}",
+        flash_member(p),
         h * d,
         kvh * d
     );
@@ -6051,9 +6113,10 @@ pub fn flash_loop_src(p: &FlashProg) -> String {
         "                rHT -> map {{\n                    hi -> (0.0, rT) -> fold {{\n                        acc, r -> acc + pe[hi * {t} + r]\n                    }}\n                }} -> den;\n"
     );
     l += &format!(
-        "                rTG -> map {{\n                    e -> e / {} -> i;\n                    e % {} -> c;\n                    c / {d} -> hh;\n                    c % {d} -> u;\n                    (0.0, rT) -> fold {{\n                        acc, r -> acc + pe[(hh * {t} + i) * {t} + r] * vv[r * {} + g * {d} + u]\n                    }} -> av;\n                    av / den[hh * {t} + i]\n                }} -> attg;\n",
+        "                rTG -> map {{\n                    e -> e / {} -> i;\n                    e % {} -> c;\n                    c / {d} -> hh;\n                    c % {d} -> u;\n                    (0.0, rT) -> fold{} {{\n                        acc, r -> acc + pe[(hh * {t} + i) * {t} + r] * vv[r * {} + g * {d} + u]\n                    }} -> av;\n                    av / den[hh * {t} + i]\n                }} -> attg;\n",
         g * d,
         g * d,
+        flash_member(p),
         kvh * d
     );
     l += "                rTG -> map {\n                    e -> y[e] + attg[e]\n                } -> y;\n";
@@ -6061,8 +6124,9 @@ pub fn flash_loop_src(p: &FlashProg) -> String {
         "    loop {{\n        (g < {kvh}) -> {{\n            -true-> {{\n{l}                g + 1 -> g;\n                -> loop;\n            }}\n            -false-> y -> out;\n        }}\n    }}\n"
     );
     s += &format!(
-        "    out[0] -> println;\n    out[{}] -> println;\n    0.0 -> zero: f32;\n    (zero, out) -> fold {{\n        acc, v -> acc + v\n    }} -> so;\n    so -> println;\n",
-        t * g * d - 1
+        "    out[0] -> println;\n    out[{}] -> println;\n{}    0.0 -> zero: f32;\n    (zero, out) -> fold {{\n        acc, v -> acc + v\n    }} -> so;\n    so -> println;\n",
+        t * g * d - 1,
+        flash_spread(p, "out", t * g * d)
     );
     s + "}\n"
 }

@@ -321,7 +321,8 @@ INTENT = {
     # operand window by `cp.async` (LDGSTS) once a block; nothing axis-wide is stored. OFF (`--gpu-off=stream`):
     # the split realization (its tiles and the softmax flow unit, the scores and probabilities in memory).
     'stream': dict(applies="plan.kind == 'flow' and flow.stream == 1", on=[
-        ('the products fold in registers: FFMA where the face contracts', 'not contract or sass.ffma > 0'),
+        ('the products fold in registers: FFMA where the face contracts (HMMA: stream-mma)',
+         'not contract or sass.ffma > 0 or sass.hmma > 0'),
         ('only stored members leave the kernel: st.global iff a stored member', '(ptx.st_global > 0) == (flow.n_store > 0)'),
         ('an axis-wide member dissolved (the scores never stored)', 'flow.n_dissolved > 0'),
         ('the windows land by cp.async (sm_80+: LDGSTS)', 'sass.ldgsts > 0'),
@@ -330,6 +331,17 @@ INTENT = {
         ('every member body inlined: no call left in PTX', 'ptx.call == 0'),
         ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')],
         applies_off="plan.kind == 'flow'", off=[('no streamed unit', 'flow.stream == 0')]),
+    # sweep-attention-2 `stream-mma` (func/stream.rs): a stream unit whose products each admit a 16-bit member folds
+    # them on the warp matrix product (`:mma` in the stream label) — the threads in its accumulator layout, the row
+    # operand's `a` fragments in registers (no panel), the producer's cells passed on as the consumer's `a`
+    # fragments, every operand pair rounded once into a register (F2FP). `.off-stream-mma`: the FFMA stream.
+    'stream-mma': dict(applies="plan.kind == 'flow' and flow.stream_mma == 1", on=[
+        ('mma.sync.m16n8k16 in PTX', 'ptx.mma > 0'),
+        ('HMMA in SASS', 'sass.hmma > 0'),
+        ('the operand pairs rounded once into registers: F2FP in SASS', 'sass.f2fp > 0'),
+        ('the windows land by cp.async (LDGSTS)', 'sass.ldgsts > 0'),
+        ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')],
+        applies_off="plan.kind == 'flow' and flow.stream == 1", off=[('the FFMA stream: no HMMA', 'sass.hmma == 0')]),
     # sweep-attention `unit-uniform` (a fact arm): a stream unit whose tile reads an operand a captured number moves
     # (a head-group loop's counter) takes it as a pointer the launch moves (`moved=`); the kernel is the unmoved
     # group's stream. `.off-unit-uniform`: no unit holds such a tile (the split realization, each site alone).
