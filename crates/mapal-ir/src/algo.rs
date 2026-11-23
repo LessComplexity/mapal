@@ -821,7 +821,7 @@ impl TileSite {
 /// fold sits in a guard arm (then the site folds every cell and the arm
 /// decides per cell; every read of the fold is in bounds over the whole
 /// iteration space, checked on the site's affine reads).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct TilePost {
     /// The body's one fold, whose value the epilogue takes.
     pub fold: MorphismId,
@@ -833,6 +833,29 @@ pub struct TilePost {
     /// The fold runs under a guard arm of the body (a mask): the site
     /// computes it for every cell.
     pub guarded: bool,
+    /// sweep-attention `unit-uniform`: of `uniform`, the slots the work
+    /// after the fold reads — every other one only the fold's source takes (a
+    /// loop counter moving an operand's address: [`crate::RadixTile::ua`]),
+    /// so where this is empty an epilogue evaluated without the numbers is
+    /// the body's.
+    pub after: Vec<u32>,
+}
+
+/// The derived `Debug`'s text, `after` printed only where it is not every
+/// number (`uniform`): the backends key kernel ids on this text, so a site
+/// whose numbers the epilogue all reads keys as it always did.
+impl std::fmt::Debug for TilePost {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut d = f.debug_struct("TilePost");
+        d.field("fold", &self.fold)
+            .field("reads", &self.reads)
+            .field("uniform", &self.uniform)
+            .field("guarded", &self.guarded);
+        if self.after != self.uniform {
+            d.field("after", &self.after);
+        }
+        d.finish()
+    }
 }
 
 /// **A row-local in-order fold (S54 `rowfold`):** a `map` over `rows` whose
@@ -3388,6 +3411,7 @@ impl CategoryIr {
         let fsrc = self.morphisms.get(fold)?.source;
         let mut reads = Vec::new();
         let mut uniform = Vec::new();
+        let mut after = Vec::new();
         for &p in self.out_edges(bd.input) {
             let pm = self.morphisms.get(p)?;
             let Operation::Proj { index: slot } = pm.op else {
@@ -3407,10 +3431,14 @@ impl CategoryIr {
                     if !uniform.contains(&slot) {
                         uniform.push(slot);
                     }
+                    if !self.feeds_only(pm.target, fsrc, 0) && !after.contains(&slot) {
+                        after.push(slot);
+                    }
                 }
                 _ => return None,
             }
         }
+        after.sort_unstable();
         reads.sort_unstable();
         uniform.sort_unstable();
         let guarded = self
@@ -3422,6 +3450,7 @@ impl CategoryIr {
             reads,
             uniform,
             guarded,
+            after,
         })
     }
 

@@ -297,6 +297,12 @@ fn check_flash(clang: &str, i: usize, p: &testgen::FlashProg) -> Vec<(&'static s
         ));
         out.push(("panel batch", u64::from(unit.panel < unit.rows)));
         out.push(("extended group", u64::from(unit.extended)));
+        // sweep-attention: members after the consumer the pass leaves to
+        // their own launches (a head loop's carried sum).
+        out.push((
+            "trailing members",
+            u64::from(unit.members.len() > g.roles.len()),
+        ));
     }
     // A row a block takes a warp of lanes: windows of 32.
     let kb = match (axis < 16, b) {
@@ -348,6 +354,32 @@ fn check_flash(clang: &str, i: usize, p: &testgen::FlashProg) -> Vec<(&'static s
         out.push(("stored members", u64::from(field(l, "store").contains(';'))));
         out.push(("odd widths", u64::from(p.d % 4 != 0 || p.c % 4 != 0)));
         out.push(("one row a block", u64::from(b == 1)));
+        // sweep-attention `unit-uniform`: the head-group loop's operands
+        // moved by its counter at the launch.
+        out.push(("loop streamed", u64::from(p.lp)));
+        // The pass over the members before the trailing ones (their own
+        // launches after it, reading the consumer's stored rows).
+        let trailing = sp
+            .groups
+            .iter()
+            .any(|g| ir.unit_plan(f).groups[g.group].members.len() > g.roles.len());
+        out.push(("trailing streamed", u64::from(trailing)));
+        out.push(("moved operands", u64::from(!field(l, "moved").is_empty())));
+    }
+    if p.lp {
+        out.push(("loop programs", 1));
+        if lines.is_empty() {
+            let why: Vec<&str> = sp.refused.iter().map(|r| r.1).collect();
+            let host = host_line
+                .split_whitespace()
+                .filter(|f| f.starts_with("stream=") || f.starts_with("row_block="))
+                .collect::<Vec<_>>()
+                .join(",");
+            out.push((
+                Box::leak(format!("loop unstreamed:{}|{host}", why.join(",")).into_boxed_str()),
+                1,
+            ));
+        }
     }
     let mut builds = vec![("on", on)];
     // R3 split-KV: each row block's windows over 2 or 4 blocks (the last one
@@ -385,6 +417,16 @@ fn check_flash(clang: &str, i: usize, p: &testgen::FlashProg) -> Vec<(&'static s
             "finite off",
             emission(&ir, Some((b, kb, 0, 0)), &["finite"]),
         ));
+    }
+    if p.lp {
+        // `unit-uniform` off: no unit takes the moved operands (the split
+        // realization, every launch its own).
+        let em = emission(&ir, Some((b, kb, 0, 0)), &["unit-uniform"]);
+        out.push((
+            "unit-uniform off unstreamed",
+            u64::from(stream_lines(&em).is_empty()),
+        ));
+        builds.push(("unit-uniform off", em));
     }
     if i % 3 == 2 {
         // `cp.async` off: each thread loads and stores the windows.
@@ -473,6 +515,12 @@ fn stream_on_generated_attention() {
         "boxes checked",
         "guard:skip",
         "split-kv streamed",
+        "loop programs",
+        "loop streamed",
+        "trailing members",
+        "trailing streamed",
+        "moved operands",
+        "unit-uniform off unstreamed",
         "runs",
     ] {
         assert!(c.get(key).copied().unwrap_or(0) > 0, "{key}: {c:?}");

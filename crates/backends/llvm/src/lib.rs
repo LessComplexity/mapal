@@ -907,6 +907,13 @@ pub struct GpuRungs {
     /// `finite_plan` proves values finite. Off (`--gpu-off=finite`,
     /// `--no-finite`): nothing is, so no masked window is skipped.
     pub finite: bool,
+    /// sweep-attention `unit-uniform` (a fact arm,
+    /// `mapal_ir::FactArms::unit_uniform`): a tile whose operand address a
+    /// captured number moves (a loop counter slicing a KV head group) joins
+    /// `unit_plan`'s extended groups, the unit's launch moving that pointer
+    /// — attention inside a head-group loop streams. Off
+    /// (`--gpu-off=unit-uniform`): such a tile launches alone, as before.
+    pub unit_uniform: bool,
     /// f32-tensor-cores R-T1 `mma-combine`: a tensor-core tile site (TF32,
     /// 16-bit, split) cuts its `k` into `S` pieces whose partials add into
     /// the zeroed output (`splitk-atomic`) or a workspace (`splitk`) — the
@@ -1059,6 +1066,7 @@ impl GpuRungs {
         split_kv: true,
         guard_box: true,
         finite: true,
+        unit_uniform: true,
         mma_combine: true,
         split_tile: true,
         mma_depth: true,
@@ -1066,7 +1074,7 @@ impl GpuRungs {
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 128] = [
+    pub const NAMES: [&'static str; 129] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1195,6 +1203,7 @@ impl GpuRungs {
         "mma-combine",
         "split-tile",
         "mma-depth",
+        "unit-uniform",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -1325,6 +1334,7 @@ impl GpuRungs {
             "split-kv" => &mut self.split_kv,
             "guard-box" => &mut self.guard_box,
             "finite" => &mut self.finite,
+            "unit-uniform" => &mut self.unit_uniform,
             "mma-combine" => &mut self.mma_combine,
             "split-tile" => &mut self.split_tile,
             "mma-depth" => &mut self.mma_depth,
@@ -1685,6 +1695,7 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
         stream: !opts.gpu.off.stream_fact,
         finite: !opts.gpu.off.finite,
         guard_box: !opts.gpu.off.guard_box,
+        unit_uniform: !opts.gpu.off.unit_uniform,
     };
     if arms != ir.fact_arms() {
         return emit_detailed(&ir.refacted(arms), opts);

@@ -278,7 +278,8 @@ impl CategoryIr {
                     && s.k > 0
                     && s.a.ksplit.is_none()
                     && s.b.ksplit.is_none()
-                    && s.radix.as_ref().is_none_or(|r| !r.uniform());
+                    && (self.fact_arms().unit_uniform
+                        || s.radix.as_ref().is_none_or(|r| !r.uniform()));
                 if ok && !ext.contains_key(m) {
                     ext.insert(m, Cand::Tile(s.clone()));
                 }
@@ -369,6 +370,14 @@ impl CategoryIr {
                         (Cand::Tile(t), true) => self.digit_rows(r, t, &g, &outs, rows),
                         _ => None,
                     };
+                    // sweep-attention: an epilogue's reads of a per-row
+                    // member at the tile's own rows, by their digit forms
+                    // where `Reach` cannot say it (a one-head trip's head
+                    // digit `c ÷ d`, always `0`).
+                    let post_own = match (&cand[r], extended, &digit) {
+                        (Cand::Tile(t), true, None) => self.post_rows(r, t, &g, &outs, rows, |i| i),
+                        _ => Vec::new(),
+                    };
                     let mut reads = Vec::new();
                     let closed = fp.of(r).iter().all(|e| {
                         let member = outs.iter().position(|&o| o == e.producer);
@@ -405,9 +414,29 @@ impl CategoryIr {
                                     }
                                     _ => false,
                                 };
+                                // sweep-attention: a row operand the tile's own
+                                // plain read proves row `i` of the member
+                                // (`a[base + ci·i + ck·k]`, `ci` its row width,
+                                // every `k` inside the row) where `Reach`
+                                // cannot (a one-head trip's head digit).
+                                let tile_row = match &cand[r] {
+                                    Cand::Tile(t) if extended && row_operand => {
+                                        t.radix
+                                            .as_ref()
+                                            .is_none_or(|x| x.a.is_none() && x.ua.is_empty())
+                                            && t.a.ksplit.is_none()
+                                            && t.a.clane == 0
+                                            && t.a.ci == pw
+                                            && t.a.ck >= 1
+                                            && t.a.base + t.a.ck * (t.k - 1) < pw
+                                    }
+                                    _ => false,
+                                };
                                 let ok = e.law.is_none()
                                     && (row_operand || post_row)
-                                    && e.reach.within_rows(w, pw, rows);
+                                    && (e.reach.within_rows(w, pw, rows)
+                                        || tile_row
+                                        || (post_row && post_own.contains(&e.slot)));
                                 if ok && !reads.contains(&(e.slot, k)) {
                                     reads.push((e.slot, k));
                                 }
@@ -469,69 +498,116 @@ impl CategoryIr {
         }
         let rm = RowMap::of(digits, rows)?;
         let mut slots = vec![t.a.slot];
-        // The epilogue's reads of the group's per-row members.
+        // The epilogue's reads of the group's per-row members, each at the
+        // permuted row.
         if let Some(post) = &t.post {
-            let Operation::Map { body, captures } = map.op else {
-                return None;
-            };
-            let forms = self.radix_plan(body);
-            let input = self.func(body)?.input;
-            let out = t.radix.as_ref().and_then(|x| x.out.clone());
+            let at = self.post_rows(r, t, g, outs, rows, |i| rm.group_row(i));
             for &slot in &post.reads {
                 let src = self.pair_slot_source(map.source, slot)?;
-                let Some(p) = outs.iter().position(|&o| o == src) else {
+                if outs.contains(&src) && !at.contains(&slot) {
+                    return None;
+                }
+            }
+            slots.extend(at);
+        }
+        Some((rm, slots))
+    }
+
+    /// flash-attention F1 / sweep-attention: the epilogue slots of tile `r`
+    /// (`t.post`) that read a per-row member of the group `g` only at group
+    /// row `row(i)` for the tile's row `i` — every read of the slot in the
+    /// body an index whose digit form ([`CategoryIr::radix_plan`]) gives
+    /// that row at both end lanes of every row. The check where `Reach`
+    /// cannot say it: a head digit `c ÷ d` that is `0` on every cell of a
+    /// one-head trip, a digit permutation of the rows.
+    fn post_rows(
+        &self,
+        r: MorphismId,
+        t: &TileSite,
+        g: &[(MorphismId, u64, Vec<(u32, usize)>, Option<RowMap>)],
+        outs: &[ObjectId],
+        rows: u64,
+        row: impl Fn(u64) -> u64,
+    ) -> Vec<u32> {
+        let mut slots = Vec::new();
+        let Some(post) = &t.post else {
+            return slots;
+        };
+        let Some(map) = self.morphisms.get(r) else {
+            return slots;
+        };
+        let Operation::Map { body, captures } = map.op else {
+            return slots;
+        };
+        let Some(bd) = self.func(body) else {
+            return slots;
+        };
+        let forms = self.radix_plan(body);
+        let input = bd.input;
+        let out = t.radix.as_ref().and_then(|x| x.out.clone());
+        let cell = |i: u64, lane: u64| match &out {
+            Some(o) => o.at(i, lane, 0),
+            None => i * t.c + lane,
+        };
+        for &slot in &post.reads {
+            let Some(src) = self.pair_slot_source(map.source, slot) else {
+                continue;
+            };
+            let Some(p) = outs.iter().position(|&o| o == src) else {
+                continue;
+            };
+            if g[p].1 != 1 || g[p].3.is_some() {
+                continue;
+            }
+            // Every read of the slot in the body: its index's digits.
+            let mut any = false;
+            let mut all = true;
+            for &m in &bd.morphisms {
+                let mo = &self.morphisms[m];
+                if mo.op != Operation::Index {
                     continue;
+                }
+                let Some(arr) = self.pair_slot_source(mo.source, 0) else {
+                    all = false;
+                    break;
                 };
-                if g[p].1 != 1 || g[p].3.is_some() {
-                    return None;
+                if self.tile_input_proj_index(arr, input) != Some(slot) {
+                    continue;
                 }
-                // Every read of the slot in the body: its index's digits.
-                let mut any = false;
-                for &m in &self.func(body)?.morphisms {
-                    let mo = &self.morphisms[m];
-                    if mo.op != Operation::Index {
-                        continue;
-                    }
-                    let arr = self.pair_slot_source(mo.source, 0)?;
-                    if self.tile_input_proj_index(arr, input) != Some(slot) {
-                        continue;
-                    }
-                    let at = self.pair_slot_source(mo.source, 1)?;
-                    let form = forms.get(at)?;
-                    if form.digits.iter().any(|d| d.slot != captures) {
-                        return None;
-                    }
-                    let index = |e: u64| -> u64 {
-                        form.base
-                            + form
-                                .digits
-                                .iter()
-                                .map(|d| {
-                                    let q = e / d.stride;
-                                    d.coef * if d.radix == 0 { q } else { q % d.radix }
-                                })
-                                .sum::<u64>()
-                    };
-                    let cell = |i: u64, lane: u64| match &out {
-                        Some(o) => o.at(i, lane, 0),
-                        None => i * t.c + lane,
-                    };
-                    let ok = (0..rows).all(|i| {
-                        let want = rm.group_row(i);
-                        index(cell(i, 0)) == want && index(cell(i, t.c - 1)) == want
-                    });
-                    if !ok {
-                        return None;
-                    }
-                    any = true;
+                let form = self
+                    .pair_slot_source(mo.source, 1)
+                    .and_then(|at| forms.get(at))
+                    .filter(|f| f.digits.iter().all(|d| d.slot == captures));
+                let Some(form) = form else {
+                    all = false;
+                    break;
+                };
+                let index = |e: u64| -> u64 {
+                    form.base
+                        + form
+                            .digits
+                            .iter()
+                            .map(|d| {
+                                let q = e / d.stride;
+                                d.coef * if d.radix == 0 { q } else { q % d.radix }
+                            })
+                            .sum::<u64>()
+                };
+                let ok = (0..rows).all(|i| {
+                    let want = row(i);
+                    index(cell(i, 0)) == want && index(cell(i, t.c - 1)) == want
+                });
+                if !ok {
+                    all = false;
+                    break;
                 }
-                if !any {
-                    return None;
-                }
+                any = true;
+            }
+            if any && all {
                 slots.push(slot);
             }
         }
-        Some((rm, slots))
+        slots
     }
 
     #[allow(clippy::too_many_arguments)]

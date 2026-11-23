@@ -123,6 +123,13 @@ pub struct FactArms {
     /// Off (`--gpu-off=guard-box`, `--no-guard-box`): no mask form, every
     /// window computed.
     pub guard_box: bool,
+    /// sweep-attention `unit-uniform`: `unit_plan`'s extended pass takes a
+    /// mixed-radix tile whose operand address a captured number moves
+    /// ([`crate::RadixTile::ua`] / `ub`: a loop counter slicing a KV head
+    /// group, a decode position) — one value a launch, so the unit's launch
+    /// moves that operand's pointer. Off (`--gpu-off=unit-uniform`): such a
+    /// tile seeds and joins no extended group.
+    pub unit_uniform: bool,
 }
 
 impl Default for FactArms {
@@ -139,6 +146,7 @@ impl Default for FactArms {
             stream: true,
             finite: true,
             guard_box: true,
+            unit_uniform: true,
         }
     }
 }

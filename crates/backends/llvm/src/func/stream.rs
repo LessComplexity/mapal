@@ -266,6 +266,14 @@ impl Addr {
     }
 }
 
+/// sweep-attention `unit-uniform`: no number an epilogue site's body
+/// captures is read after its fold (`TilePost::after`: a loop counter only
+/// moves the fold's operands) — the epilogue, evaluated in the kernel
+/// without it, is the body's.
+fn post_numbers_ok(p: &mapal_ir::TilePost) -> bool {
+    p.after.is_empty()
+}
+
 /// A streamed unit's launch geometry.
 pub(crate) fn stream_geo(u: &Unit, st: &Stream) -> Geo {
     let n = u.members.len();
@@ -314,6 +322,11 @@ impl<'a> FnEmit<'a> {
         let Some(sg) = sp.of(gi) else {
             return Ok(None);
         };
+        // The members the pass covers (`StreamGroup::roles`): a unit of the
+        // whole group where trailing members follow is no stream unit.
+        if members.len() != sg.roles.len() {
+            return Ok(None);
+        }
         let gpu = self.profile.gpu().ok_or("unpriced")?;
         // What this realization emits: f32 values, plain tile sites whose
         // operands are memory, no per-row work outside the windows.
@@ -328,12 +341,13 @@ impl<'a> FnEmit<'a> {
                 (StreamRole::Row { .. }, _) => return Err("row"),
                 (StreamRole::Produce, UKind::Tile { site }) => {
                     // Plain, epilogue or mixed-radix addresses over memory
-                    // operands; no captured number, no narrow element yet.
-                    let ok = site.radix.as_ref().is_none_or(|r| !r.uniform())
-                        && site
-                            .post
-                            .as_ref()
-                            .is_none_or(|p| p.uniform.is_empty() && p.reads.is_empty())
+                    // operands — a captured number moving one (`unit-uniform`:
+                    // the launch moves its pointer) where the epilogue never
+                    // reads that number; no narrow element yet.
+                    let ok = site
+                        .post
+                        .as_ref()
+                        .is_none_or(|p| post_numbers_ok(p) && p.reads.is_empty())
                         && site.a.narrow.is_none()
                         && site.b.narrow.is_none()
                         && site.a.ksplit.is_none()
@@ -344,8 +358,10 @@ impl<'a> FnEmit<'a> {
                     }
                 }
                 (StreamRole::Consume { .. }, UKind::Tile { site }) => {
-                    let ok = site.radix.as_ref().is_none_or(|r| !r.uniform())
-                        && site.post.as_ref().is_none_or(|p| p.uniform.is_empty())
+                    // Its row operand the group's own rows: only its column
+                    // operand may be moved.
+                    let ok = site.radix.as_ref().is_none_or(|r| r.ua.is_empty())
+                        && site.post.as_ref().is_none_or(post_numbers_ok)
                         && site.b.narrow.is_none()
                         && site.b.ksplit.is_none()
                         && site.elem == f32t;
@@ -2086,6 +2102,16 @@ impl UnitGen<'_> {
                         }
                         _ => unreachable!("an epilogue reads memory or a per-row member"),
                     },
+                    // An array only the fold reads; a number only the
+                    // fold's operands take (`unit-uniform`): unread.
+                    None if post.uniform.contains(&s) => {
+                        let ty = field_ty[s as usize].clone();
+                        let v = match ty.as_str() {
+                            "float" | "double" | "half" | "bfloat" => "0.0",
+                            _ => "0",
+                        };
+                        (ty, v.to_string())
+                    }
                     None => ("ptr".to_string(), "null".to_string()),
                 }
             };

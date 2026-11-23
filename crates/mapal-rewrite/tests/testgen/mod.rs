@@ -5834,6 +5834,11 @@ pub struct FlashProg {
     /// The mask's value: 0 `−1e9`, 1 `−8` (inside the scores' reach of
     /// `exp`: a masked window adds a term no stand-in absorbs).
     pub mask: u8,
+    /// sweep-attention `unit-uniform`: the model-scale form inside a loop
+    /// over the KV heads ([`flash_loop_src`]) — each trip one KV head's
+    /// query heads, every operand address moved by the loop's counter (a
+    /// captured number), the outputs summed into a carried array.
+    pub lp: bool,
 }
 
 pub fn flash_strategy() -> impl Strategy<Value = FlashProg> {
@@ -5854,6 +5859,7 @@ pub fn flash_strategy() -> impl Strategy<Value = FlashProg> {
             prop::sample::select(vec![1u64, 2, 4]),
             any::<bool>(),
             0u8..2,
+            any::<bool>(),
         ),
     )
         .prop_map(
@@ -5861,7 +5867,7 @@ pub fn flash_strategy() -> impl Strategy<Value = FlashProg> {
                 (n, w, d, c),
                 (scale, seed, down, den_one),
                 (form, stored),
-                (heads, group, causal, mask),
+                (heads, group, causal, mask, lp),
             )| FlashProg {
                 // The model-scale form at sizes its sites run on the device.
                 n: if heads > 0 { n.clamp(16, 64) } else { n },
@@ -5878,6 +5884,7 @@ pub fn flash_strategy() -> impl Strategy<Value = FlashProg> {
                 group: group.min(heads.max(1)),
                 causal,
                 mask,
+                lp: lp && heads > 0,
             },
         )
 }
@@ -5945,9 +5952,86 @@ pub fn flash_mh_src(p: &FlashProg) -> String {
     s + "}\n"
 }
 
+/// [`FlashProg`]'s head-group loop form (`lp`, the long prefill's shape):
+/// a loop over the `H ÷ G` KV heads, each trip the scores of KV head `g`'s
+/// `G` query heads `[G][T][T]` (`q` read at head `g·G + hh`, the keys and
+/// values at KV head `g`: addresses a captured counter moves), their row
+/// max, `exp`, row sum and `P·V ÷ den` token-major (`[T][G·d]`), summed
+/// into a carried array — the same attention per trip as
+/// [`flash_mh_src`]'s heads, one KV head at a time.
+pub fn flash_loop_src(p: &FlashProg) -> String {
+    let (t, h, g, d) = (p.n, p.heads, p.group, p.d);
+    let kvh = h / g;
+    let data = |name: &str, len: u64, a: u64, b: u64, m: u64| {
+        format!(
+            "    {len} -> iota -> i_{name};\n    i_{name} -> map {{\n        t -> (t * {a} + {b}) % {m} - {} -> widen_f32 -> v;\n        v / 4.0\n    }} -> {name};\n",
+            m / 2
+        )
+    };
+    let mut s = String::from("fn main() {\n");
+    s += &data("q", t * h * d, 7, 13, 11);
+    s += &data("kr", t * kvh * d, 5, 3, 9);
+    s += &data("vv", t * kvh * d, 3, 1, 13);
+    s += &format!(
+        "    {d} -> iota -> rdh;\n    {t} -> iota -> rT;\n    {} -> iota -> rHT;\n    {} -> iota -> rHTT;\n    {} -> iota -> rTG;\n",
+        g * t,
+        g * t * t,
+        t * g * d
+    );
+    s += &format!(
+        "    (0.0, {}) -> fill -> y0;\n    mut y: [f32; {}] <- y0;\n    mut g: i32 <- 0;\n",
+        t * g * d,
+        t * g * d
+    );
+    let fold = format!(
+        "(0.0, rdh) -> fold {{\n                                acc, u -> acc + q[i * {} + (g * {g} + hh) * {d} + u] * kr[r * {} + g * {d} + u]\n                            }}",
+        h * d,
+        kvh * d
+    );
+    let mask = ["-1000000000.0", "-8.0"][p.mask as usize];
+    let body = match p.causal {
+        true => format!(
+            "(r <= i) -> {{\n                            -true-> {{\n                                {fold} -> dt;\n                                dt / 2.0\n                            }}\n                            -false-> {mask};\n                        }}"
+        ),
+        false => format!("{fold} -> dt;\n                        dt / 2.0"),
+    };
+    let mut l = String::new();
+    l += &format!(
+        "                rHTT -> map {{\n                    e -> e / {} -> hh;\n                    e / {t} % {t} -> i;\n                    e % {t} -> r;\n                    {body}\n                }} -> s;\n",
+        t * t
+    );
+    l += &format!(
+        "                rHT -> map {{\n                    hi -> (-1000000000.0, rT) -> fold {{\n                        acc, r -> s[hi * {t} + r] -> se;\n                        (se > acc) -> {{\n                            -true-> se;\n                            -false-> acc;\n                        }}\n                    }}\n                }} -> mx;\n"
+    );
+    l += &format!(
+        "                rHTT -> map {{\n                    e -> s[e] - mx[e / {t}] -> exp\n                }} -> pe;\n"
+    );
+    l += &format!(
+        "                rHT -> map {{\n                    hi -> (0.0, rT) -> fold {{\n                        acc, r -> acc + pe[hi * {t} + r]\n                    }}\n                }} -> den;\n"
+    );
+    l += &format!(
+        "                rTG -> map {{\n                    e -> e / {} -> i;\n                    e % {} -> c;\n                    c / {d} -> hh;\n                    c % {d} -> u;\n                    (0.0, rT) -> fold {{\n                        acc, r -> acc + pe[(hh * {t} + i) * {t} + r] * vv[r * {} + g * {d} + u]\n                    }} -> av;\n                    av / den[hh * {t} + i]\n                }} -> attg;\n",
+        g * d,
+        g * d,
+        kvh * d
+    );
+    l += "                rTG -> map {\n                    e -> y[e] + attg[e]\n                } -> y;\n";
+    s += &format!(
+        "    loop {{\n        (g < {kvh}) -> {{\n            -true-> {{\n{l}                g + 1 -> g;\n                -> loop;\n            }}\n            -false-> y -> out;\n        }}\n    }}\n"
+    );
+    s += &format!(
+        "    out[0] -> println;\n    out[{}] -> println;\n    0.0 -> zero: f32;\n    (zero, out) -> fold {{\n        acc, v -> acc + v\n    }} -> so;\n    so -> println;\n",
+        t * g * d - 1
+    );
+    s + "}\n"
+}
+
 /// [`FlashProg`]'s source text. Data are small integers over 4, the scores
 /// a few units wide, so `exp` stays well inside `f32`.
 pub fn flash_src(p: &FlashProg) -> String {
+    if p.lp {
+        return flash_loop_src(p);
+    }
     if p.heads > 0 {
         return flash_mh_src(p);
     }
