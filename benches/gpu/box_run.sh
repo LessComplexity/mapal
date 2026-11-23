@@ -565,7 +565,11 @@ if [ -n "${TORCH_PID:-}" ]; then
     # cross-arch 60f0f8ce: a box whose TORCH_MIN ends the legs early keeps the rows that need them: the bf16-weight
     # rows (torch bf16 is their only reference) first, then the README rows, the f32 layer, the projections last
     # (their gemm_lib legs are the like-for-like competitor already).
-    tp=$(ls vals 2>/dev/null | sed 's/\.txt$//' | awk '{ k = /_bf16w$/ ? 0 : /^pt_pj_/ ? 3 : /^pt_llm_/ ? 2 : 1; print k, $0 }' |
+    # TORCH_SKIP=<regex>: programs whose torch / comp legs are another program's (e.g. the bf16-storage twins
+    # `_bf16kv` / `_bf16`: every bf16 leg rounds weights, cache and activations to bfloat16, so their bf16 legs are
+    # the f32 program's; matrix.py takes them from the twin) are not timed twice.
+    tp=$(ls vals 2>/dev/null | sed 's/\.txt$//' | grep -Ev "${TORCH_SKIP:-^\$}" |
+        awk '{ k = /_bf16w$/ ? 0 : /^pt_pj_/ ? 3 : /^pt_llm_/ ? 2 : 1; print k, $0 }' |
         sort -s -k1,1n | cut -d' ' -f2 | tr '\n' ' ')
     # shellcheck disable=SC2086  # the stems are separate arguments
     [ -n "$tp" ] && timeout "${TORCH_MIN:-15}m" "${TORCH_PY:-python3}" torch_bench.py "$REPS" vals $tp 2>torch.err | tee -a "$LOG"

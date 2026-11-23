@@ -22,6 +22,11 @@ Rules
     _tf32   the TF32 legs: torch *-tf32, gemm_lib cublas-tf32 / lt-tf32 (+ `-fresh`), comp `triton-tf32`, `liger-tf32`.
     _bf16w  the bf16 legs: torch bf16 / bf16-compile(-cg / -ro) / bf16-cudnn / bf16-efficient (the layer in bfloat16),
             comp `*-bf16` (Liger, FlashAttention-2/3, FlashInfer, Triton).
+    _bf16kv the bf16 legs (weights and KV cache stored bf16, f32 compute: tensor-cores' bf16 KV cache).
+    _bf16   the bf16 legs (bf16 storage, products `: bf16 | f32`: torch bf16's face; `pj_*_bf16`, the layer twins).
+  A bf16-storage row without bf16 legs of its own takes its twin's (`legs_from`: the `_bf16w` twin, else the f32
+  program): a bf16 leg rounds weights, KV cache and activations to bfloat16, so the twins run one computation
+  (torch_bench.py `llm_workload` / `workload`); box_run.sh's TORCH_SKIP does not time it twice.
   Every leg counts only with `within=yes`; a CUDA-graph leg whose graph Inductor skipped (`cg=skipped`) does not
   count (it ran as a plain compile). `bf16_ref` = the row's (else its `_tf32`-less base stem's, else its `_bf16w`
   twin's) best bf16 leg: the real-world reference, reported apart, never the best of an f32 / tf32 row.
@@ -58,12 +63,12 @@ FAMILIES = [  # (key, title, workload pattern)
     ('gemm', 'GEMM cells & projections', r'(mm|pj|epi)_'),
     ('mlp', 'MLP chains', r'(mlp|mlp2|smlp)_'),
     ('attn', 'Attention / softmax / long rows', r'(attn|causal|decode|gen|prefill|lsm|softmax_rows|rowsum)_'),
-    ('llm', 'LLM decode / prefill / block (f32, tf32, bf16w)', r'llm_'),
+    ('llm', 'LLM decode / prefill / block (f32, tf32, bf16 storage)', r'llm_'),
     ('conv', 'Conv / FIR / elementwise', r'(conv|convmc|ew|ewconvew|fir|firew)_'),
     ('fan', 'Fan-in/out, loops, CPU+GPU', r'(diamond|fanout|indep|twin|loop|loopmm|rt)_'),
     ('other', 'Other', r''),
 ]
-PRECS = ('f32', 'tf32', 'bf16w')
+PRECS = ('f32', 'tf32', 'bf16w', 'bf16kv', 'bf16')
 EVEN = 0.05
 CFAMS = [  # (key, title): the competitor families of the every-leg tables, in column order
     ('vendor', 'vendor libs'), ('eager', 'torch eager'), ('compile', 'torch.compile'),
@@ -108,14 +113,21 @@ def family(w):
 
 
 def row_prec(w):
-    return 'bf16w' if w.endswith('_bf16w') else 'tf32' if w.endswith('_tf32') else 'f32'
+    return next((p for suf, p in (('_bf16w', 'bf16w'), ('_bf16kv', 'bf16kv'), ('_bf16', 'bf16'), ('_tf32', 'tf32'))
+                 if w.endswith(suf)), 'f32')
+
+
+def twins(prog):
+    """A bf16-storage program's twins whose bf16 legs are its own computation: the `_bf16w` twin, the f32 program."""
+    base = re.sub(r'_(bf16w|bf16kv|bf16|tf32)$', '', prog)
+    return [t for t in (base + '_bf16w', base) if t != prog]
 
 
 def leg_prec(leg):
     return 'bf16' if leg.startswith('torch-bf16') or leg.endswith('-bf16') else 'tf32' if 'tf32' in leg else 'f32'
 
 
-FAIR = {'f32': 'f32', 'tf32': 'tf32', 'bf16w': 'bf16'}
+FAIR = {'f32': 'f32', 'tf32': 'tf32', 'bf16w': 'bf16', 'bf16kv': 'bf16', 'bf16': 'bf16'}
 
 
 def per(w):
@@ -210,20 +222,27 @@ def rows_for(part, progs, legs, cells):
         null = abs(med(arms['null']) / s / on - 1) if arms.get('null') else None
         prec = row_prec(w)
         lg = legs.get(prog, {})
-        fair = {k: v[0] / s for k, v in lg.items() if v[1] and leg_prec(k) == FAIR[prec]}
-        every = {k: (round(v[0] / s, 6), v[3]) for k, v in lg.items() if leg_prec(k) == FAIR[prec]}
+        lf, src_legs = lg, None
+        if FAIR[prec] == 'bf16' and not any(leg_prec(k) == 'bf16' for k in lg):
+            for t in twins(prog):
+                if any(leg_prec(k) == 'bf16' for k in legs.get(t, {})):
+                    lf, src_legs = legs[t], t
+                    break
+        fair = {k: v[0] / s for k, v in lf.items() if v[1] and leg_prec(k) == FAIR[prec]}
+        every = {k: (round(v[0] / s, 6), v[3]) for k, v in lf.items() if leg_prec(k) == FAIR[prec]}
         best, bleg = pick(fair)
         tf32 = 'tf32' in prog
         old = {k: v[0] / s for k, v in lg.items() if v[1] and (k.startswith('torch-') or k.startswith('chain-'))
                and (tf32 or not k.endswith('-tf32')) and not is_new(k)}
         obest, oleg = pick(old)
         bf = {}
-        for b in (prog, prog.removesuffix('_tf32'), prog.removesuffix('_tf32') + '_bf16w'):
+        for b in (prog, prog.removesuffix('_tf32'), prog.removesuffix('_tf32') + '_bf16w', *twins(prog)):
             bf = bf or {k: v[0] / s for k, v in legs.get(b, {}).items() if v[1] and leg_prec(k) == 'bf16'}
         bref, bfleg = pick(bf)
         out.append(row(part, w, prec, on, best, bleg, null, bref, bfleg, src, obest, oleg,
                        {k: round(v, 6) for k, v in sorted(fair.items(), key=lambda kv: kv[1])},
-                       sorted({lg[k][2]['step'] for k in fair}), 'ms/step' if s > 1 else 'ms', every))
+                       sorted({lf[k][2]['step'] for k in fair}), 'ms/step' if s > 1 else 'ms', every))
+        out[-1]['legs_from'] = src_legs and src_legs[3:]
     for cell, (d, src) in sorted(cells.items()):
         g = {k: med(v) for k, v in d.items()}
         libs = {CELL_LIBS[k]: g[k] for k in CELL_LIBS if k in g}
@@ -320,7 +339,10 @@ def main(argv):
          '(|ratio − 1| ≤ max(null, 5 %)), plain = loss; `±n%` = a null above 5 %; `-` = not timed on that part. '
          'Decode rows of the LLM family are ms per step (16 steps / 16), every other row ms per program run.', '',
          '**Fairness:** f32 rows vs f32 legs, `_tf32` rows vs TF32 legs, `_bf16w` rows (bf16 weights, f32 '
-         'activations) vs the torch bf16 legs (bf16 throughout). The torch bf16 reference of an f32 / tf32 row is never '
+         'activations), `_bf16kv` rows (weights and KV cache bf16, f32 compute) and `_bf16` rows (bf16 storage, '
+         '`: bf16 | f32` products) vs the bf16 legs (bf16 throughout); a bf16-storage row without bf16 legs of its own '
+         'takes its twin\'s (`_bf16w`, else the f32 program: the same bf16 computation). The torch bf16 reference of an '
+         'f32 / tf32 row is never '
          'its best; it is listed apart ([bf16 reference](#bf16-real-world-reference)). Torch / gemm_lib legs count '
          'only with `within=yes`.', '',
          '**Competitors:** cuBLAS, cuBLASLt (gemm_lib, flushed and `-fresh`; chain_bench), CUTLASS `b2f249a` (stock '
@@ -487,7 +509,8 @@ def main(argv):
                 sources={p: srcs[p] for p in parts}, families={k: t for k, t, _ in FAMILIES},
                 competitor_families={k: t for k, t in CFAMS}, unavailable={p: sorted(missing[p]) for p in parts},
                 rule='ratio = mapal_ms / best_ms; best = fastest within leg at the row precision '
-                     '(f32 -> f32 legs, tf32 -> tf32 legs, bf16w -> torch bf16 legs)')
+                     '(f32 -> f32 legs, tf32 -> tf32 legs, bf16w / bf16kv / bf16 -> bf16 legs; legs_from: the twin '
+                     'whose bf16 legs a bf16-storage row takes)')
     (out_dir / 'matrix.json').write_text(json.dumps(dict(meta=meta, rows=allrows), indent=1) + '\n')
     print(f'wrote {out_dir}/matrix.md, matrix.json: {len(allrows)} rows, {len(flips)} verdict flips')
 
