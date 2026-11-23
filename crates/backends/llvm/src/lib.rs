@@ -864,6 +864,28 @@ pub struct GpuRungs {
     /// `finite_plan` proves values finite. Off (`--gpu-off=finite`,
     /// `--no-finite`): nothing is, so no masked window is skipped.
     pub finite: bool,
+    /// f32-tensor-cores R-T1 `mma-combine`: a tensor-core tile site (TF32,
+    /// 16-bit, split) cuts its `k` into `S` pieces whose partials add into
+    /// the zeroed output (`splitk-atomic`) or a workspace (`splitk`) — the
+    /// split the FMA tile takes (ADR-0040 D4), now on the `mma.sync` kernels:
+    /// each piece's `cp.async` pipeline over its own `k / S`, the seed on
+    /// piece 0. Off (`--gpu-off=mma-combine`): tensor tiles never split.
+    pub mma_combine: bool,
+    /// f32-tensor-cores R-F `split-tile`: a `{f32}` sum of products on the
+    /// default face (free order) takes a split realization on the part's
+    /// matrix instruction (`mapal_ir::split`: tf32x3, narrow1) where its
+    /// coefficient meets D2 at the site's `K` and the part's matrix rate pays
+    /// for the form's passes against its FFMA rate. Off (`--gpu-off=split-tile`):
+    /// the FFMA tile (the emission before it); on (`--gpu-on=split-tile`):
+    /// the split wherever the bound admits it, past the rate rule.
+    pub split_tile: bool,
+    /// f32-tensor-cores R-T2 `mma-depth`: a tensor-core tile takes the panel
+    /// depth keeping the most operand bytes in flight a block at its
+    /// residency (`profile::mma_depth_pick`: `bk` 16 × 5 stages against `bk`
+    /// 32 × 2) instead of the deepest panel two stages fit (S52). The rules
+    /// ship it off on every part (it lost every measured site); `--gpu-on=
+    /// mma-depth` measures it.
+    pub mma_depth: bool,
 }
 
 impl GpuRungs {
@@ -988,11 +1010,14 @@ impl GpuRungs {
         split_kv: true,
         guard_box: true,
         finite: true,
+        mma_combine: true,
+        split_tile: true,
+        mma_depth: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 119] = [
+    pub const NAMES: [&'static str; 122] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1112,6 +1137,9 @@ impl GpuRungs {
         "split-kv",
         "guard-box",
         "finite",
+        "mma-combine",
+        "split-tile",
+        "mma-depth",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -1236,6 +1264,9 @@ impl GpuRungs {
             "split-kv" => &mut self.split_kv,
             "guard-box" => &mut self.guard_box,
             "finite" => &mut self.finite,
+            "mma-combine" => &mut self.mma_combine,
+            "split-tile" => &mut self.split_tile,
+            "mma-depth" => &mut self.mma_depth,
             _ => return None,
         })
     }
@@ -1640,6 +1671,9 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     if !face.gpu.free {
         face.gpu.off.tf32_tile = true;
         face.gpu.off.half_tile = true;
+        // f32-tensor-cores: a split realization sums in the instruction's
+        // order — the default face only.
+        face.gpu.off.split_tile = true;
     }
     let opts = &face;
     // S62 `hostopt`: everything outside a device site is emitted against the

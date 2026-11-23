@@ -193,7 +193,7 @@ def sass_facts(body):
     """Whole-function opcode families + the hot loop (the backward-branch body with the most MAC/MMA)."""
     c, w = stats(body)
     f = {k: 0 for k in ('ffma', 'fmul', 'fadd', 'hmma', 'hgmma', 'ldg', 'ldgsts', 'lds', 'ldsm', 'sts', 'stg', 'bar',
-                        'red', 'atom', 'atomg', 'redg', 'ldl', 'stl')}
+                        'red', 'atom', 'atomg', 'redg', 'ldl', 'stl', 'vote')}
     f.update({k.lower(): v for k, v in c.items()})
     f.update({k.lower().replace('.', '_'): v for k, v in w.items()})
     f['insns'] = len(body)

@@ -138,6 +138,24 @@ pub fn pdl_pays(g: &Gpu, repeats: bool) -> bool {
     g.has_griddepcontrol() && d.pdl_launch_ns > 0 && d.pdl_launch_ns < d.dep_launch_ns && repeats
 }
 
+/// f32-tensor-cores R-F: the split rate rule's margin, per mille — a split
+/// form of `P` part products a k-step pays where the part's matrix rate
+/// reaches `θ · P` times its FFMA rate ([`split_rate_pays`]). `θ` = 1.3: the
+/// TF32 tile's realized efficiency deficit against the FFMA tile (Mapal TF32
+/// at 47–55 % of its peak against FFMA at 70–90 %, f32-tensor-cores design
+/// §4); between the rtx-5080's measured tf32x3 loser (256 against 3 · 256 an
+/// SM a clock: the forced ON arm, `rung_replay.tsv`) and its narrow1 winner
+/// (512 against 256).
+pub const SPLIT_RATE_PM: u64 = 1300;
+
+/// **f32-tensor-cores R-F, the part's side: a split form of `products`
+/// passes on `op` pays against the FFMA tile** — `matrix_flops_per_ns(op) ≥
+/// θ · P · ffma_flops_per_ns` ([`SPLIT_RATE_PM`]). Physical properties only:
+/// the SM's matrix and FFMA rates a clock (`calib.cu matrix`, `ffma`).
+pub fn split_rate_pays(g: &Gpu, op: &crate::profile::MatrixOp, products: u64) -> bool {
+    g.matrix_flops_per_ns(op) * 1000 >= SPLIT_RATE_PM * products * g.ffma_flops_per_ns()
+}
+
 /// FP32 lanes per SM below which the exact face's fully unrolled panel loop
 /// costs (`unroll`): the A100's 64-lane SM lost on the exact face.
 pub const FULL_FP32_LANES: u64 = 128;
@@ -244,6 +262,14 @@ pub fn rungs(g: &Gpu, wps: u64, face: Face) -> GpuRungs {
         rowfold_layout: false,
         streams: false,
         tf32_radix: false,
+        // f32-tensor-cores `mma-depth`: the TF32 tile's deepest-in-flight
+        // panel at its register-first residency lost every measured site
+        // on the rtx-5080 (128 × 4096 × 4096 `bk` 16 × 5 stages 0.143 against
+        // `bk` 32 × 2 0.135 ms; 128 × 4096 × 14336 0.490 / 0.454; 128 ×
+        // 28672 × 4096 0.722 / 0.696; 2048 × 4096 × 4096 `bk` 8 × 4 1.494 /
+        // 1.418; 128 × 6144 × 4096 null): off on every part, its ON arm
+        // measures it.
+        mma_depth: false,
         ..GpuRungs::ALL
     }
 }
@@ -252,8 +278,8 @@ pub fn rungs(g: &Gpu, wps: u64, face: Face) -> GpuRungs {
 mod tests {
     use super::*;
     use crate::profile::{
-        DeviceCost, GPU_PARTS, Machine, RTX_4090, RTX_5080, RTX_5090, TargetProfile, resolve,
-        wave_full,
+        DeviceCost, GPU_PARTS, Home, Machine, MmaFmt, RTX_4090, RTX_5080, RTX_5090, TargetProfile,
+        resolve, wave_full,
     };
     use mapal_ir::Ty;
 
@@ -368,6 +394,7 @@ mod tests {
             let mut repeats = None;
             let mut blocks = None;
             let mut wave = None;
+            let mut split = None;
             for kv in cond.split(',') {
                 let Some((k, v)) = kv.split_once('=') else {
                     continue;
@@ -377,6 +404,7 @@ mod tests {
                     "repeats" => repeats = Some(v == "1"),
                     "blocks" => blocks = Some(v.parse::<u64>().expect("blocks")),
                     "wave" => wave = Some(v.parse::<u64>().expect("wave")),
+                    "split" => split = Some(v),
                     _ => {
                         let n: u64 = v.parse().expect(line);
                         let mut over = [None; DeviceCost::NAMES.len()];
@@ -438,6 +466,18 @@ mod tests {
                     if let (Some(rep), "pdl") = (repeats, e.rung) {
                         v = pdl_pays(&g, rep);
                     }
+                    // f32-tensor-cores `split-tile`: the form's passes
+                    // against the part's matrix and FFMA rates.
+                    if let (Some(f), "split-tile") = (split, e.rung) {
+                        let (kind, fmt) = match f {
+                            "tf32x3" => (mapal_ir::split::SplitKind::Tf32x3, MmaFmt::Tf32),
+                            "narrow1" => (mapal_ir::split::SplitKind::Narrow1, MmaFmt::Bf16),
+                            _ => panic!("{line}: split form {f}"),
+                        };
+                        let op = g.caps.matrix_op(fmt, Home::Regs).expect(line);
+                        let p = mapal_ir::split::SplitForm::of(kind).products();
+                        v = v && split_rate_pays(&g, &op, p);
+                    }
                     // The wide tile's grid against its wave.
                     if let (Some(b), Some(w), "wide-fma") = (blocks, wave, e.rung) {
                         v = v && wide_fma_pays(&g, b, w);
@@ -472,7 +512,7 @@ mod tests {
         }
         assert_eq!(open, OPEN.to_vec(), "measurements the rules do not pick");
         // The counts the evidence file reports.
-        assert_eq!((picked, null, mixed, open.len()), (116, 68, 9, 18));
+        assert_eq!((picked, null, mixed, open.len()), (122, 68, 9, 18));
     }
 
     /// No rule reads a name, an architecture string or a version: a part

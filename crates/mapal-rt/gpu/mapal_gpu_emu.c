@@ -464,6 +464,46 @@ uint32_t emu_cvt_tf32f(float f) {
   memcpy(&x, &f, 4);
   return emu_cvt_tf32(x);
 }
+/* f32-tensor-cores: the accumulator datapath. MAPAL_EMU_MMA_G = g: the
+ * addends (c and the exact products) aligned to the largest one's exponent,
+ * each truncated toward zero below 2^(e_max - 23 - g), summed, and the sum
+ * truncated toward zero to f32 (`mma_calib.cu`: the RTX 5080 keeps g = 2
+ * on every warp format). Unset: the exact sum truncated once (g infinite). */
+static int mma_g(void) {
+  static int g = -2;
+  if (g == -2) {
+    const char *e = getenv("MAPAL_EMU_MMA_G");
+    g = e ? atoi(e) : -1;
+  }
+  return g;
+}
+static float mma_sum(double c, const double *p, int n) {
+  int g = mma_g();
+  double s = c, mx = fabs(c);
+  for (int i = 0; i < n; i++) mx = fmax(mx, fabs(p[i]));
+  if (g < 0 || mx == 0 || !isfinite(mx) || isnan(c)) {
+    for (int i = 0; i < n; i++) s += p[i];
+  } else {
+    int e;
+    (void)frexp(mx, &e);
+    double q = ldexp(1.0, (e - 1) - 23 - g);
+    s = trunc(c / q) * q;
+    for (int i = 0; i < n; i++) s += isnan(p[i]) ? p[i] : trunc(p[i] / q) * q;
+  }
+  float d = (float)s;
+  if (isfinite(d) && fabs((double)d) > fabs(s)) d = nextafterf(d, 0.0f);
+  return d;
+}
+/* f32-tensor-cores `split-tile`'s guard: `vote.sync.any` over the warp. */
+static int32_t w_vote[1024];
+int32_t emu_vote_any(int32_t p) {
+  w_vote[tid_x] = p != 0;
+  warp_meet(tid_x / 32);
+  int32_t any = 0, base = tid_x & ~31;
+  for (int l = 0; l < 32; l++) any |= w_vote[base + l];
+  warp_meet(tid_x / 32);
+  return any;
+}
 void emu_mma16(int32_t f16, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t b0,
                uint32_t b1, float c0, float c1, float c2, float c3) {
   uint32_t *ab = w_ab[tid_x];
@@ -477,17 +517,16 @@ void emu_mma16(int32_t f16, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, 
   if (f16 == 2) {
     for (int r = 0; r < 4; r++) {
       int row = g + 8 * (r >> 1), col = 2 * t + (r & 1);
-      double s = w_c[tid_x][r];
+      double pr[8];
       for (int k = 0; k < 8; k++) {
         uint32_t ar = w_ab[base + 4 * (row % 8) + k % 4][(row / 8) + 2 * (k / 4)];
         uint32_t br = w_ab[base + 4 * col + k % 4][4 + k / 4];
         float a, b;
         memcpy(&a, &ar, 4);
         memcpy(&b, &br, 4);
-        s += (double)a * (double)b;
+        pr[k] = (double)a * (double)b;
       }
-      float d = (float)s;
-      if (isfinite(d) && fabs((double)d) > fabs(s)) d = nextafterf(d, 0.0f);
+      float d = mma_sum(w_c[tid_x][r], pr, 8);
       memcpy(&t_frag[r], &d, 4);
     }
     warp_meet(tid_x / 32);
@@ -495,17 +534,16 @@ void emu_mma16(int32_t f16, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, 
   }
   for (int r = 0; r < 4; r++) {
     int row = g + 8 * (r >> 1), col = 2 * t + (r & 1);
-    double s = w_c[tid_x][r];
+    double pr[16];
     for (int k = 0; k < 16; k++) {
       /* A (row, k): lane 4(row%8) + (k%8)/2, register (row/8) + 2(k/8). */
       uint32_t ar = w_ab[base + 4 * (row % 8) + (k % 8) / 2][(row / 8) + 2 * (k / 8)];
       /* B (k, col): lane 4 col + (k%8)/2, register 4 + k/8. */
       uint32_t br = w_ab[base + 4 * col + (k % 8) / 2][4 + k / 8];
       float a = b16f((ar >> (16 * (k % 2))) & 0xffff, f16), b = b16f((br >> (16 * (k % 2))) & 0xffff, f16);
-      s += (double)a * (double)b;
+      pr[k] = (double)a * (double)b;
     }
-    float d = (float)s;
-    if (isfinite(d) && fabs((double)d) > fabs(s)) d = nextafterf(d, 0.0f);
+    float d = mma_sum(w_c[tid_x][r], pr, 16);
     memcpy(&t_frag[r], &d, 4);
   }
   warp_meet(tid_x / 32);

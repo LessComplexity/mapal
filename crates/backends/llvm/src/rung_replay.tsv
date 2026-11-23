@@ -8,7 +8,8 @@
 # benches/results/evidence/; the former GPU_RUNGS_OFF rows' cites, f3a9e792).
 # A cond may name a measured property of the box the part's profile does not carry (`<cost name>=<value>`, e.g. a
 # power-capped clock) or the site's side of a priced rule (`row_bytes=`: a retained row's k x c operand bytes;
-# `repeats=1|0`: the module's launches repeat in a loop or not), comma-separated. cross-arch lines: the round on
+# `repeats=1|0`: the module's launches repeat in a loop or not; `split=tf32x3|narrow1`: the split form whose passes the
+# part's matrix and FFMA rates price, `rules::split_rate_pays`), comma-separated. cross-arch lines: the round on
 # 8bba2a50 (benches/results/evidence/cross-arch/README.md, rules.md; raw .claude/raw-evidence/cross-arch/<part>/).
 # rung	part	fill	face	winner	cond	source
 affine	a100	A	E	null	-	base-a100 / -confirm _exact OFF/ON 1.004/1.006/0.991 vs 1.019/1.012/0.986, n=1024 0.997 vs 0.993
@@ -222,3 +223,9 @@ wide-fma	h100	F	C	off	blocks=224,wave=264	cross-arch 7a2b67bf on-wide-fma: pj_m1
 wide-fma	h100	F	C	on	blocks=512,wave=264	cross-arch 7a2b67bf on-wide-fma: pj_m2048_n4096_k4096 0.941, pj_m2048_n4096_k14336 0.964 (stream-K over 512 tiles)
 wide-fma	h100	F	C	on	blocks=768,wave=264	cross-arch 7a2b67bf on-wide-fma: pj_m2048_n6144_k4096 0.940 (pj_m2048_n28672 at 3 584 blocks 0.934)
 wide-fma	h100	F	C	on	blocks=1024,wave=264	cross-arch 7a2b67bf on-wide-fma: loop_4096 0.970, epi_4096 0.973 (4096^3, 3.88 waves)
+mma-combine	rtx-5080	U	T	on	-	f32-tensor-cores (benches/results/evidence/local-rtx-5080/f32-tensor-cores.md) ABBA, TF32 cut S=8 / unsplit: 128x6144x4096 0.1815 / 0.2389, 128x4096x14336 0.4163 / 0.4541, 128x4096x4096 0.1326 / 0.1349 ms; 128x28672x4096 (224 blocks, memory-bound) every cut lost: the site rule keeps it whole
+mma-combine	rtx-5080	F	T	on	-	f32-tensor-cores ABBA: 2048x4096x4096 TF32 S=4 1.3346 / 1.4179 ms (512 blocks on 168 slots, compute-bound)
+mma-depth	rtx-5080	U	T	off	-	f32-tensor-cores ABBA, deepest-in-flight panel / S52 panel: 128x4096x4096 bk16x5 0.1433 / bk32x2 0.1349, 128x4096x14336 0.4898 / 0.4541, 128x28672x4096 bk8x4 0.7215 / 0.6957 ms
+mma-depth	rtx-5080	F	T	off	-	f32-tensor-cores ABBA: 2048x4096x4096 bk8x4 1.4937 / bk16x2 1.4179 ms
+split-tile	rtx-5080	F	C	off	split=tf32x3	f32-tensor-cores ABBA, forced ON (tf32x3) / FFMA tile: 2048x4096x4096 f32 4.1018 / 1.8306, 128x4096x4096 0.3012 / 0.1433 ms (TF32 256 = FFMA 256 flops an SM a clock: three passes)
+split-tile	rtx-5080	F	C	on	split=narrow1	f32-tensor-cores ABBA, narrow1 / FFMA tile (bf16 x bf16 under {f32}): 2048x4096x4096 0.7882 / 1.6641, 128x4096x4096 0.0647 / 0.1378 ms (bf16 512 against FFMA 256)

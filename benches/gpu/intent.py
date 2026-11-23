@@ -433,6 +433,31 @@ INTENT = {
         ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')],
         applies_off="'bf16|f32' in plan.get('set', '') or 'f16|f32' in plan.get('set', '')", off=[
         ('no 16-bit mma: the FMA tile', "ptx.mma == 0 and plan.kind != 'mma'")]),
+    # f32-tensor-cores `split-tile` (R-F): a `{f32}` product (no member set) on a matrix instruction by a split
+    # form (`split=tf32x3`: hi / lo TF32 parts, three HMMA.1688 a tile and k8; `split=narrow1`: two operands of one
+    # narrow format, one HMMA.16816 a tile and k16), each k-step's products summed from a zeroed accumulator (`float
+    # 0.0` c operands) and added to the f32 accumulator by FADD (no FFMA in the loop but tf32x3's cold path);
+    # tf32x3's guard: one vote a warp (VOTE) after the k loop. OFF (`.off-split-tile`): the FFMA tile.
+    'split-tile': dict(applies_on="'split' in plan", on=[
+        ('mma.sync in PTX', 'ptx.mma > 0'),
+        ('HMMA in SASS and FADD (the round-to-nearest flush) beside it', 'sass.hmma > 0 and sass.fadd > 0'),
+        ('tf32x3: the guard`s warp vote', "plan.split != 'tf32x3' or sass.vote > 0"),
+        ('16-byte cp.async panels: LDGSTS in the hot loop, no LDG', 'sass.hot.ldgsts > 0 and sass.hot.ldg == 0'),
+        ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')],
+        applies_off="plan.get('set', '') in ('', 'f32')", off=[
+        ('no split form', "'split' not in plan")]),
+    # f32-tensor-cores `mma-combine` (R-T1): a tensor tile cut along k (`combine=atomic`, `S` pieces, 2..8, each
+    # >= 16 panels) where the cut lifts the grid's wave fill: grid = tiles x S, the partials added by RED.E.ADD.F32
+    # (4 a thread an m16n8 tile), the output zeroed before (memset). OFF (`.off-mma-combine`): never cut.
+    'mma-combine': dict(rule=True, applies_on="plan.kind == 'mma' and plan.combine == 'atomic'", on=[
+        ('2 <= S <= 8 pieces of >= 8 panels', '2 <= plan.S <= 8'),
+        ('the partials add into the output: RED in SASS', 'sass.red > 0'),
+        ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')],
+        applies_off="plan.kind == 'mma'", off=[
+        ('no tensor tile is cut', "plan.combine == 'none'")]),
+    # f32-tensor-cores `mma-depth` (R-T2): the tensor tile's panel depth keeping the most bytes in flight at its
+    # residency (bk 16 x 5 stages against bk 32 x 2): off on every part (measured losing); ON arm measures it.
+    'mma-depth': dict(applies="plan.kind == 'mma'", note='panel depth and stages: diff the `.on-mma-depth` arm'),
     # tensor-cores `narrow-async`: a streamed (`stages` >= 2) FMA tile over a narrow `b` copies its panel in the
     # format (8-byte LDGSTS, 4 elements) and widens each fragment as read. OFF: the register-staged tile.
     'narrow-async': dict(applies_on="plan.kind == 'tile' and 'narrow' in plan and plan.stages >= 2", on=[
