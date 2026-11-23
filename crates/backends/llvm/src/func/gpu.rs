@@ -1180,7 +1180,7 @@ pub(crate) fn launch_split(
             // cells where their grid alone puts a block on every SM; a split
             // kernel takes them where the split grid does ([`resized`]).
             let v = vec_fit(site, gpu, &rungs);
-            let cells = match vec_takes(site, gpu, v, 1) {
+            let cells = match vec_takes(site, gpu, &rungs, v, 1) {
                 true => v,
                 false => 1,
             };
@@ -1923,7 +1923,7 @@ fn split_cells(site: &TileSite, profile: &TargetProfile, l: Launch, s: u64) -> L
         return l;
     };
     let v = vec_fit(site, gpu, &l.rungs);
-    match vec_takes(site, gpu, v, s) {
+    match vec_takes(site, gpu, &l.rungs, v, s) {
         true => Launch {
             cells: v,
             gx: cell_blocks(site, v),
@@ -2203,6 +2203,9 @@ fn launch_key(l: &Launch) -> String {
         .replace(", vec_cells: false", "")
         .replace(", stream_fly: true", "")
         .replace(", stream_fly: false", "")
+        // regressions: `vec-spread` decides `cells` (keyed).
+        .replace(", vec_spread: true", "")
+        .replace(", vec_spread: false", "")
         // TMA: `bulk-stage` keys the mma tile's kernel through `smem` (its
         // stages' barriers); a launch it does not stage keys as before.
         .replace(", bulk_stage: true", "")
@@ -2707,12 +2710,18 @@ fn cell_blocks(site: &TileSite, cells: u64) -> u64 {
 pub(crate) const VEC_MIN_TRIPS: u64 = 8;
 
 /// Whether a one-thread-per-cell kernel folding `s` partitions takes `v`
-/// cells a thread: its vector grid puts a block on every SM at `s` and each
-/// partition keeps [`VEC_MIN_TRIPS`] trips.
-fn vec_takes(site: &TileSite, gpu: &Gpu, v: u64, s: u64) -> bool {
+/// cells a thread: its vector grid puts a block on every SM at `s`, each
+/// partition keeps [`VEC_MIN_TRIPS`] trips, and (`vec-spread`) the grid
+/// spreads over the SMs as the part's DRAM share asks
+/// ([`crate::rules::vec_cells_pay`] against one cell a thread at the same
+/// `s`).
+fn vec_takes(site: &TileSite, gpu: &Gpu, rungs: &crate::GpuRungs, v: u64, s: u64) -> bool {
+    let s = s.max(1);
     v > 1
         && cell_blocks(site, v) * s >= gpu.sms
-        && site.k / s.max(1) >= VEC_MIN_TRIPS * NAIVE_UNROLL
+        && site.k / s >= VEC_MIN_TRIPS * NAIVE_UNROLL
+        && (!rungs.vec_spread
+            || crate::rules::vec_cells_pay(gpu, cell_blocks(site, v) * s, cell_blocks(site, 1) * s))
 }
 
 /// gemv-stream `stream-fly`: the split of a streaming one-thread-per-cell
@@ -2745,7 +2754,7 @@ fn stream_split(
     };
     let v = vec_fit(site, gpu, rungs);
     match v > 1 {
-        true => Some(at(v)).filter(|&s| vec_takes(site, gpu, v, s)),
+        true => Some(at(v)).filter(|&s| vec_takes(site, gpu, rungs, v, s)),
         false => None,
     }
     .unwrap_or_else(|| at(1))
@@ -5283,10 +5292,32 @@ impl Kernel<'_> {
             _ => (format!("%a{t}"), format!("%b{t}")),
         };
         let (a0, b0) = ab(0);
-        // ADR-0043: a narrow operand's pointer is aligned to its format.
-        let narrow_align =
-            |r: &mapal_ir::TileRead| r.narrow.map_or(align, |n| align.min(n.bytes()));
-        let (aa, ab_) = (narrow_align(&self.site.a), narrow_align(&self.site.b));
+        // ADR-0043: a narrow operand's pointer is an allocation's (the
+        // arena's `ARENA_ALIGN`, a device allocation's) like any operand's;
+        // a launch that moves it by a captured number (`uniform-base`) moves
+        // it by whole register-staged vectors of its format
+        // ([`uniform_aligned`]: `lanes` elements, 8 bytes of bf16). Its
+        // copies' adjacent loads then form 16-byte loads (cross-arch
+        // 3a8e654f: the bf16 KV cache's scores kernel issued 2-byte loads
+        // under `align 2` — 4× the f32 cache's load instructions, 2.6× its
+        // time on the H100).
+        let lanes = GPU_VEC_BYTES / elem_bytes_of(&self.site.elem);
+        let narrow_align = |r: &mapal_ir::TileRead, moved: bool| {
+            r.narrow.map_or(align, |n| match moved {
+                true => align.min(lanes * n.bytes()),
+                false => align,
+            })
+        };
+        let moved = |a: bool| {
+            self.site
+                .radix
+                .as_deref()
+                .is_some_and(|x| !if a { &x.ua } else { &x.ub }.is_empty())
+        };
+        let (aa, ab_) = (
+            narrow_align(&self.site.a, moved(true)),
+            narrow_align(&self.site.b, moved(false)),
+        );
         let mut more = String::new();
         for t in 1..self.terms {
             let (a, b) = ab(t);
@@ -7799,7 +7830,12 @@ impl<'a> FnEmit<'a> {
         one: &TileSite,
         epi: Option<&EpiKernel>,
     ) -> Option<SiteTable> {
-        if cands.len() < 2 {
+        // One candidate launches as the rules' kernel — except a `tile-post`
+        // group's split (`group_order`): the single launch keeps an epilogue
+        // group ordered, so its realized combine is the table's (cross-arch
+        // 3a8e654f: the B1 decode's O projection, S 64 planned on the H100,
+        // ran its ordered 16-block kernel, 235 against 29 us).
+        if cands.len() < 2 && (epi.is_none() || cands[0].launch.combine == Combine::None) {
             return None;
         }
         let m = self.ir.in_edges(target)[0];

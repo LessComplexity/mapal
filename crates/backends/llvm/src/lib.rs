@@ -828,6 +828,12 @@ pub struct GpuRungs {
     /// [`profile::TargetProfile::split_stream`]). Off
     /// (`--gpu-off=stream-fly`): the warp fill (`fill-wave`) alone.
     pub stream_fly: bool,
+    /// regressions `vec-spread`: the vector cells (`vec-cells`) are taken
+    /// where the part's DRAM share an SM asks for the grid's spread only
+    /// when their grid holds the SMs as evenly as one cell a thread at the
+    /// same split ([`rules::vec_cells_pay`]). Off (`--gpu-off=vec-spread`):
+    /// the vector cells at any spread.
+    pub vec_spread: bool,
     /// gemv-stream `bulk-stage` (TMA): the warp `mma` tile's panels are
     /// staged by the part's bulk-copy engine ([`profile::Caps::bulk`]) where
     /// its geometry covers every panel row ([`profile::BulkCopy::box_fits`]):
@@ -982,6 +988,7 @@ impl GpuRungs {
         narrow_radix: true,
         vec_cells: true,
         stream_fly: true,
+        vec_spread: true,
         bulk_stage: true,
         stream: true,
         stream_fact: true,
@@ -992,7 +999,7 @@ impl GpuRungs {
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 119] = [
+    pub const NAMES: [&'static str; 120] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1106,6 +1113,7 @@ impl GpuRungs {
         "narrow-radix",
         "vec-cells",
         "stream-fly",
+        "vec-spread",
         "bulk-stage",
         "stream",
         "stream-fact",
@@ -1230,6 +1238,7 @@ impl GpuRungs {
             "narrow-radix" => &mut self.narrow_radix,
             "vec-cells" => &mut self.vec_cells,
             "stream-fly" => &mut self.stream_fly,
+            "vec-spread" => &mut self.vec_spread,
             "bulk-stage" => &mut self.bulk_stage,
             "stream" => &mut self.stream,
             "stream-fact" => &mut self.stream_fact,

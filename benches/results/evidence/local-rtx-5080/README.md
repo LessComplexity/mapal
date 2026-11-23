@@ -235,3 +235,13 @@ streamed kernel / 1.91 ms (scores never stored, masked windows skipped); the lay
 efficient** (was 1.17); `_tf32` 1.62 → 1.20, block prefill 1.01 → 0.94. Split-KV by a last-block ticket, P1 `bar_ns` 16.9 ns
 (`calib.cu bar`). Open: the split's price on L2-resident attention (attn rows stay split by cost; forced `s = 8` is
 15 % faster on `attn_1024_64`), decode (narrow cache + captured position), tensor cores, F8.
+
+**regressions** (`regressions.md`): the cross-arch 3a8e654f round's losers. (1) B1 decode: a `tile-post` site's
+planned workspace split was dropped by the one-candidate launch (the ordered 16-block kernel, H100 235 vs 29 µs) —
+it launches through its table; `stream-fly`'s intent checks post sites, `evidence.py` reads the A100 / H100 SMs from
+their profiles. (2) bf16 KV cache on HBM: the scores kernel's 2-byte loads (`align 2`; 256 a thread, 4× the f32
+cache's) — a narrow operand carries its allocation's alignment: 32 16-byte loads; the emulator checks every declared
+alignment at each launch; RTX 5080 bf16 decode 1.05–1.29× ABBA. (3) `vec-cells`: the DRAM share an SM
+(`DRAM_PER_SM_SPREAD`) against the vector grid's spread over the SMs (`vec_cells_pay`, OFF arm `vec-spread`), 11
+replay lines, 10 / 12 HBM cells picked. (4) the 4090's GEMVs / `lsm_32_8192`: 1.33× kernel × 15–29 µs of per-call
+host time; one fused lsm kernel measured slower (33.7 vs 23.0 µs) — open: the box's per-launch host time.

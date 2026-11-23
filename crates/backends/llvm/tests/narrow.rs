@@ -162,8 +162,10 @@ fn narrow_sites_and_roundings_are_facts() {
 /// D5 / D6 / D8 intents: the host defines `to_bf16` as the integer
 /// sequence and `to_f16` as `fptrunc`; the device both as `fptrunc`
 /// (`cvt.rn`); the narrow site's kernel loads `bfloat` and widens it (one
-/// thread a cell), its pointer aligned to 2; `--gpu-off=narrow-tile`: no
-/// tile kernel reads the format.
+/// thread a cell), its pointer an allocation's — aligned as the kernel's
+/// other operands (regressions: `align 2` kept the bf16 KV cache's scores
+/// kernel to 2-byte loads); `--gpu-off=narrow-tile`: no tile kernel reads
+/// the format.
 #[test]
 fn realization_per_side() {
     let ir = lower(GEMV);
@@ -192,7 +194,17 @@ fn realization_per_side() {
         .find(|k| k.contains("load bfloat"))
         .expect("a tile kernel loads the narrow operand");
     assert!(tile.contains("fpext bfloat"), "{tile}");
-    assert!(tile.contains("readonly align 2 %b"), "{tile}");
+    let align = |p: &str| {
+        let head = tile.lines().next().unwrap_or("");
+        let i = head
+            .find(&format!(" {p},"))
+            .or_else(|| head.find(&format!(" {p})")));
+        i.and_then(|i| head[..i].rsplit(" align ").next().map(str::to_string))
+    };
+    assert!(
+        align("%b").is_some() && align("%b") == align("%a"),
+        "{tile}"
+    );
     let off = emission(&ir, "rtx-5080", EmitOpts::default(), &["narrow-tile"]);
     let dev_off = off.device.as_deref().unwrap_or("");
     let sites = |d: &str| d.lines().filter(|l| l.starts_with("; mapal.site ")).count();

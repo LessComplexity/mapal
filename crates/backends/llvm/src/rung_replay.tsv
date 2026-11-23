@@ -222,3 +222,14 @@ wide-fma	h100	F	C	off	blocks=224,wave=264	cross-arch 7a2b67bf on-wide-fma: pj_m1
 wide-fma	h100	F	C	on	blocks=512,wave=264	cross-arch 7a2b67bf on-wide-fma: pj_m2048_n4096_k4096 0.941, pj_m2048_n4096_k14336 0.964 (stream-K over 512 tiles)
 wide-fma	h100	F	C	on	blocks=768,wave=264	cross-arch 7a2b67bf on-wide-fma: pj_m2048_n6144_k4096 0.940 (pj_m2048_n28672 at 3 584 blocks 0.934)
 wide-fma	h100	F	C	on	blocks=1024,wave=264	cross-arch 7a2b67bf on-wide-fma: loop_4096 0.970, epi_4096 0.973 (4096^3, 3.88 waves)
+vec-cells	a100	A	C	off	blocks=126,scalar=504	regressions (cross-arch 3a8e654f off-vec-cells, ON / OFF ABBA): pj_m1_n18432_k7168 0.953 — vector grid spread 1.71 vs the scalar grid's 1.07 at S 7
+vec-cells	a100	A	C	off	blocks=112,scalar=448	regressions (cross-arch 3a8e654f off-vec-cells): pj_m1_n2048_k7168 0.934 (S 56), n28672_k4096 0.965 (S 4), n4096_k14336 0.936 (S 28) — spread 1.93 vs 1.21
+vec-cells	a100	A	C	null	blocks=128,scalar=512	regressions (cross-arch 3a8e654f off-vec-cells): pj_m1_n4096_k4096 0.998 — spread 1.69 vs 1.27
+vec-cells	a100	A	C	on	blocks=192,scalar=768	regressions (cross-arch 3a8e654f off-vec-cells): pj_m1_n6144_k4096 1.035 — spread 1.125 both
+vec-cells	h100	A	C	off	blocks=144,scalar=576	regressions (cross-arch 3a8e654f off-vec-cells): pj_m1_n18432_k7168 0.944 — spread 1.83 vs 1.15
+vec-cells	h100	A	C	off	blocks=192,scalar=768	regressions (cross-arch 3a8e654f off-vec-cells): pj_m1_n6144_k4096 0.829 — spread 1.375 vs 1.03
+vec-cells	h100	A	C	off	blocks=224,scalar=896	regressions (cross-arch 3a8e654f off-vec-cells): pj_m1_n28672_k4096 0.962 (S 8; n2048_k7168 at S 112 null 0.989) — spread 1.18 vs 1.03
+vec-cells	h100	A	C	on	blocks=224,scalar=896	regressions (cross-arch 3a8e654f off-vec-cells): pj_m1_n4096_k14336 1.035 (S 56) — open: the same spread as the lost / null rows
+vec-cells	h100	A	C	null	blocks=256,scalar=1024	regressions (cross-arch 3a8e654f off-vec-cells): pj_m1_n4096_k4096 0.987 — spread 1.03 both
+vec-cells	rtx-3090	A	C	null	-	regressions (cross-arch 3a8e654f off-vec-cells): the six m = 1 projections 1.003-1.023, every grid null
+vec-cells	rtx-4090	A	C	mixed	-	regressions (cross-arch 3a8e654f off-vec-cells): DRAM-streamed n18432 / n28672 / n4096_k14336 null; the three whose operand fits the 72 MB L2 across the timed calls (n2048_k7168 59 MB 0.796, n4096_k4096 67 MB 0.967, n6144_k4096 0.920; 1.1-1.5 TB/s, above DRAM) lost at equal spread — open

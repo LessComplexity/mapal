@@ -69,7 +69,41 @@ pub fn host_device(dev: &str) -> String {
     // kernel-merging `calls`: the grid barrier is the emulator's
     // (`mapal_gsync` in `mapal_gpu_emu.c`), its PTX body dropped.
     let mut in_gsync = false;
+    // regressions: every pointer alignment a kernel declares (`align N %p`,
+    // the facts its vector loads are formed from) is checked at the kernel's
+    // entry on every emulated launch — a claim that does not hold aborts the
+    // run (on the device it is a misaligned-address fault).
+    let mut entry_checks: Vec<String> = Vec::new();
     for line in dev.lines() {
+        if !entry_checks.is_empty() {
+            let label = !line.starts_with(' ') && line.ends_with(':');
+            if label {
+                out.push_str(line);
+                out.push('\n');
+            }
+            for c in entry_checks.drain(..) {
+                out.push_str(&c);
+                out.push('\n');
+            }
+            if label {
+                continue;
+            }
+        }
+        if line.starts_with("define ptx_kernel ") {
+            let mut rest = line;
+            while let Some(i) = rest.find(" align ") {
+                rest = &rest[i + " align ".len()..];
+                let n: String = rest.chars().take_while(char::is_ascii_digit).collect();
+                let name: String = rest[n.len()..]
+                    .trim_start()
+                    .chars()
+                    .take_while(|c| *c != ',' && *c != ')')
+                    .collect();
+                if n.parse::<u64>().is_ok_and(|n| n > 1) && name.starts_with('%') {
+                    entry_checks.push(format!("  call void @emu_align(ptr {name}, i64 {n})"));
+                }
+            }
+        }
         if line.starts_with("define internal void @mapal_gsync(") {
             in_gsync = true;
             continue;
@@ -266,7 +300,17 @@ pub fn host_device(dev: &str) -> String {
     } else {
         ""
     };
+    // The entry checks' callee: abort where the address is not a multiple.
+    let align = "define internal void @emu_align(ptr %p, i64 %a) {\n  %i = ptrtoint ptr %p to i64\n  \
+                 %m = urem i64 %i, %a\n  %z = icmp eq i64 %m, 0\n  br i1 %z, label %ok, label %bad\nbad:\n  \
+                 call void @abort()\n  unreachable\nok:\n  ret void\n}\n";
+    let abort = match out.contains("declare void @abort()") {
+        true => "",
+        false => "declare void @abort()\n",
+    };
     out + lanes
+        + align
+        + abort
         + "declare i32 @emu_tid_x()\ndeclare i32 @emu_ctaid_x()\ndeclare i32 @emu_ctaid_y()\n\
            declare i32 @emu_nctaid_x()\ndeclare void @emu_barrier_k(i32, i32)\ndeclare void @mapal_gsync(ptr)\n\
            declare i32 @emu_laneid()\ndeclare float @emu_shfl_bfly(float, i32)\n\

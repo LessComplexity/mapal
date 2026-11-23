@@ -55,6 +55,39 @@ pub fn wide_fma_pays(g: &Gpu, blocks: u64, wave: u64) -> bool {
     g.dram_bytes_per_us_per_sm() < DRAM_PER_SM || blocks > wave
 }
 
+/// DRAM bytes per µs per SM ([`Gpu::dram_bytes_per_us_per_sm`]) at and above
+/// which a streaming one-thread-per-cell grid's spread over the SMs decides
+/// its cells (`vec-cells`, [`vec_cells_pay`]): the A100 (14 398) and H100 SXM
+/// (25 393) lost 3–17 % to the vector grid wherever it held the SMs less
+/// evenly than the scalar grid at the same split; the RTX 3090 / 5080 (11 414)
+/// and 4090 (7 875) did not separate on it. The midpoint of 11 414 and 14 398.
+pub const DRAM_PER_SM_SPREAD: u64 = 12_900;
+
+/// **The spread of a grid of `blocks` over `sms` SMs**, per mille: the most
+/// blocks one SM holds over the mean (`⌈blocks / sms⌉ · sms / blocks`; 1000 =
+/// every SM the same).
+pub fn grid_spread_pm(blocks: u64, sms: u64) -> u64 {
+    let sms = sms.max(1);
+    blocks.div_ceil(sms) * sms * 1000 / blocks.max(1)
+}
+
+/// **regressions `vec-cells`, priced at the site**: whether a streaming
+/// site's vector cells (`v` cells a thread, `vec_blocks` blocks at the split)
+/// pay against one cell a thread at the same split (`scalar_blocks`, `v`
+/// times the blocks). Where an SM's DRAM share is at or above
+/// [`DRAM_PER_SM_SPREAD`] the vector grid must spread over the SMs no less
+/// evenly than the scalar grid (cross-arch 3a8e654f, OFF / ON of the six
+/// m = 1 projections: A100 126 / 112 / 112 / 112 vector blocks on 108 SMs,
+/// spread 1.71–1.93 against the scalar grid's 1.07–1.21, lost 0.93–0.97;
+/// 192 blocks, 1.125 both, won 1.035; H100 144 / 192 / 224 blocks on 132,
+/// 1.18–1.83 against 1.03–1.15, lost 0.83–0.96; 256 blocks, 1.03 both,
+/// null). Below it the vector grid's 4× fewer load instructions decide (RTX
+/// 5080 1.03–1.42 won at every spread; RTX 3090 null).
+pub fn vec_cells_pay(g: &Gpu, vec_blocks: u64, scalar_blocks: u64) -> bool {
+    g.dram_bytes_per_us_per_sm() < DRAM_PER_SM_SPREAD
+        || grid_spread_pm(vec_blocks, g.sms) <= grid_spread_pm(scalar_blocks, g.sms)
+}
+
 /// FFMA flops per DRAM byte, per mille, at and above which `warp-fill`'s
 /// shrunk tile pays at one warp per scheduler on a contract face: the
 /// rtx-5080 (54.9) won it (loopmm_1024_8, smlp_4096_256_1024 1.15-1.24x the
@@ -282,7 +315,7 @@ mod tests {
     /// `local-rtx-5080/hardware-properties.md`. The replay must find exactly
     /// these: a rule change that fixes one moves it out, one that breaks a
     /// measurement fails here.
-    const OPEN: [(&str, &str, &str, &str); 18] = [
+    const OPEN: [(&str, &str, &str, &str); 19] = [
         // The launch does not read whether its operands are in L2 (flushed
         // L2 wins, warm L2 and the composed MLP lose): `residence_plan`.
         ("asyncstage", "h100-pcie", "on", "l2-flushed"),
@@ -326,6 +359,12 @@ mod tests {
         ("min-blocks", "h100", "on", "-"),
         ("min-blocks", "h100", "on", "-"),
         ("min-blocks", "a100", "on", "-"),
+        // regressions `vec-cells`: the H100's 4096 x 14336 projection won
+        // the vector grid (224 blocks on 132 SMs, spread 1.18 against the
+        // scalar grid's 1.03) by 3.5 %, where 2048 x 7168 and 28672 x 4096
+        // at the same grids were null / lost: the spread does not separate
+        // it (its 32-trip partitions against 8 and 64).
+        ("vec-cells", "h100", "on", "blocks=224,scalar=896"),
     ];
 
     /// **hardware-properties: every cited measurement, replayed.** For each
@@ -368,6 +407,7 @@ mod tests {
             let mut repeats = None;
             let mut blocks = None;
             let mut wave = None;
+            let mut scalar = None;
             for kv in cond.split(',') {
                 let Some((k, v)) = kv.split_once('=') else {
                     continue;
@@ -377,6 +417,7 @@ mod tests {
                     "repeats" => repeats = Some(v == "1"),
                     "blocks" => blocks = Some(v.parse::<u64>().expect("blocks")),
                     "wave" => wave = Some(v.parse::<u64>().expect("wave")),
+                    "scalar" => scalar = Some(v.parse::<u64>().expect("scalar")),
                     _ => {
                         let n: u64 = v.parse().expect(line);
                         let mut over = [None; DeviceCost::NAMES.len()];
@@ -442,6 +483,11 @@ mod tests {
                     if let (Some(b), Some(w), "wide-fma") = (blocks, wave, e.rung) {
                         v = v && wide_fma_pays(&g, b, w);
                     }
+                    // The vector cells' grid against the scalar grid's
+                    // spread at the same split.
+                    if let (Some(b), Some(sc), "vec-cells") = (blocks, scalar, e.rung) {
+                        v = v && vec_cells_pay(&g, b, sc);
+                    }
                     // A row-fitted grid's blocks: where `wave-gate` gates,
                     // its fact decides whether the fitted grid runs
                     // (`row-fit`) or yields (`wave-gate`).
@@ -472,7 +518,7 @@ mod tests {
         }
         assert_eq!(open, OPEN.to_vec(), "measurements the rules do not pick");
         // The counts the evidence file reports.
-        assert_eq!((picked, null, mixed, open.len()), (116, 68, 9, 18));
+        assert_eq!((picked, null, mixed, open.len()), (122, 71, 10, 19));
     }
 
     /// No rule reads a name, an architecture string or a version: a part

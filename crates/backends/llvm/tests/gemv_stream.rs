@@ -181,6 +181,132 @@ fn rules_per_part_and_arm() {
     assert!(dev.contains(", align 16"), "16-byte aligned");
 }
 
+/// A 1 × `c` × `k` GEMV ([`GEMV`]'s shape at other extents).
+fn gemv(c: u64, k: u64) -> String {
+    GEMV.replace("4096 -> iota -> t;", &format!("{c} -> iota -> t;"))
+        .replace("4096 -> iota -> kk;", &format!("{k} -> iota -> kk;"))
+        .replace(
+            "16777216 -> iota -> tw;",
+            &format!("{} -> iota -> tw;", c * k),
+        )
+        .replace("w[q * 4096 + j]", &format!("w[q * {c} + j]"))
+}
+
+/// regressions `vec-cells` (cross-arch 3a8e654f): on a part whose DRAM share
+/// an SM is at least `DRAM_PER_SM_SPREAD` the vector cells' grid must spread
+/// over the SMs as evenly as the scalar grid at the same split. 1 × 6144 ×
+/// 4096: 192 vector blocks — on the H100's 132 SMs spread 1.375 against the
+/// scalar grid's 1.03 (measured 0.829 ON / OFF): one cell a thread; on the
+/// A100's 108, 1.125 both (1.035 won): four cells. 1 × 18432 × 7168 on the
+/// A100: 126 vector blocks at S 7, 1.71 against 1.07 (0.953 lost). The RTX
+/// 5080 (11.4 KB/µs an SM) takes the vector cells at every spread.
+#[test]
+fn vec_cells_spread_per_part() {
+    let cells = |src: &str, target: &'static str| {
+        let ir = lower(src);
+        let mut gpu = GpuArms::default();
+        *gpu.off.rung("pdl").expect("rung") = true;
+        gpu.site_cands = 1;
+        let e = emit_detailed(
+            &ir,
+            &EmitOpts {
+                host: "generic",
+                target,
+                gpu,
+                ..EmitOpts::default()
+            },
+        )
+        .expect("emits");
+        let l = naive_lines(e.device.as_deref().unwrap_or(""));
+        assert_eq!(l.len(), 1, "{target}: {l:?}");
+        (
+            field(&l[0], "cells").unwrap_or(1),
+            field(&l[0], "gx").unwrap_or(0) * field(&l[0], "S").unwrap_or(1),
+        )
+    };
+    let n6144 = gemv(6144, 4096);
+    assert_eq!(cells(&n6144, "rtx-5080").0, 4);
+    assert_eq!(cells(&n6144, "a100"), (4, 192));
+    assert_eq!(cells(&n6144, "h100").0, 1);
+    let n18432 = gemv(18432, 7168);
+    assert_eq!(cells(&n18432, "a100").0, 1);
+    assert_eq!(cells(&n18432, "rtx-5080").0, 4);
+}
+
+/// The B1 decode's O projection: a GEMV whose map body goes on past its
+/// fold (`h = x + o·W`, a `tile-post` site).
+const GEMV_POST: &str = "fn main() {
+    4096 -> iota -> t;
+    4096 -> iota -> kk;
+    16777216 -> iota -> tw;
+    kk -> map { e -> (e * 7 + 3) % 5 -> widen_f32 -> v; v / 4.0 } -> a;
+    t -> map { e -> (e * 3 + 1) % 7 -> widen_f32 -> v; v / 2.0 } -> x;
+    tw -> map { e -> (e * 11 + 5) % 9 + 1 -> widen_f32 -> v; v / 8.0 } -> w;
+    t -> map { j -> (0.0, kk) -> fold { acc, q -> acc + a[q] * w[q * 4096 + j] } -> s; x[j] + s } -> y;
+    y[0] -> println;
+}
+";
+
+/// cross-arch 3a8e654f: a `tile-post` site's split is a workspace whose
+/// reduce launch runs the epilogue — launched through the site's table even
+/// when the table holds one candidate (the single launch keeps an epilogue
+/// group ordered). The H100 / A100 / 3090 planned S 64 / 32 / 32 for the B1
+/// decode's O projection (the A100 now 16: one cell a thread, `vec-spread`) and ran the ordered 16-block kernel (H100 235 us a
+/// call against 29 split). On every part: the post kernel launched is the
+/// split (a block on every SM), its reduce evaluates the epilogue, the host
+/// calls the table.
+#[test]
+fn post_split_launches_through_its_table() {
+    let ir = lower(GEMV_POST);
+    for (target, s, sms) in [
+        ("h100", 64, 132),
+        ("a100", 16, 108),
+        ("rtx-3090", 32, 82),
+        ("rtx-5080", 32, 84),
+    ] {
+        for cands in [1, 8] {
+            let mut gpu = GpuArms::default();
+            *gpu.off.rung("pdl").expect("rung") = true;
+            gpu.site_cands = cands;
+            let e = emit_detailed(
+                &ir,
+                &EmitOpts {
+                    host: "generic",
+                    target,
+                    gpu,
+                    ..EmitOpts::default()
+                },
+            )
+            .expect("emits");
+            let dev = e.device.as_deref().unwrap_or("");
+            let posts: Vec<String> = naive_lines(dev)
+                .into_iter()
+                .filter(|l| l.contains(" post=1"))
+                .collect();
+            assert!(!posts.is_empty(), "{target}: a post site\n{dev}");
+            assert!(
+                posts.iter().any(|l| l.contains(" combine=splitk ")
+                    && field(l, "S") == Some(s)
+                    && field(l, "gx").unwrap_or(0) * s >= sms),
+                "{target} cands {cands}: the planned split launched\n{posts:?}"
+            );
+            assert!(
+                !posts.iter().any(|l| l.contains(" combine=none ")),
+                "{target} cands {cands}: no ordered post kernel\n{posts:?}"
+            );
+            assert!(
+                dev.lines()
+                    .any(|l| l.contains(" kind=reduce ") && l.contains(" epi=1")),
+                "{target}: the reduce runs the epilogue"
+            );
+            assert!(
+                e.text.contains("call void @mapal_gpu_site("),
+                "{target}: launched through its table"
+            );
+        }
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy)]
 struct Cover {
     programs: u64,
@@ -190,11 +316,14 @@ struct Cover {
     vec_atomic: u64,
     vec_workspace: u64,
     vec_post: u64,
+    post_split: u64,
     vec_ordered: u64,
     vec_rows: u64,
     scalar_strided: u64,
     scalar_misaligned: u64,
     split_scalar: u64,
+    spread_refused: u64,
+    spread_kept: u64,
 }
 
 impl std::ops::AddAssign for Cover {
@@ -206,11 +335,14 @@ impl std::ops::AddAssign for Cover {
         self.vec_atomic += o.vec_atomic;
         self.vec_workspace += o.vec_workspace;
         self.vec_post += o.vec_post;
+        self.post_split += o.post_split;
         self.vec_ordered += o.vec_ordered;
         self.vec_rows += o.vec_rows;
         self.scalar_strided += o.scalar_strided;
         self.scalar_misaligned += o.scalar_misaligned;
         self.split_scalar += o.split_scalar;
+        self.spread_refused += o.spread_refused;
+        self.spread_kept += o.spread_kept;
     }
 }
 
@@ -243,6 +375,12 @@ fn check(clang: &str, p: &testgen::GemvProg) -> Cover {
             assert!(close(a, b, tol), "{what} line {i}: {a} vs {b}\n{src}");
         }
     };
+    // regressions `vec-spread`: at 6 and 8 SMs the RTX 5080's DRAM share an
+    // SM is 120–160 KB/µs, above `DRAM_PER_SM_SPREAD`: the vector cells only
+    // where their grid spreads as evenly as one cell a thread's (6 SMs: a
+    // count no power-of-two split divides, as 108 / 132 do not); OFF at any
+    // spread.
+    let mut vec_at: Vec<(u64, bool, bool)> = Vec::new();
     for (n, off) in [
         (2, &[][..]),
         (8, &[][..]),
@@ -250,6 +388,9 @@ fn check(clang: &str, p: &testgen::GemvProg) -> Cover {
         (2, &["vec-cells"][..]),
         (2, &["stream-fly"][..]),
         (2, &["splitk-atomic"][..]),
+        (6, &[][..]),
+        (6, &["vec-spread"][..]),
+        (8, &["vec-spread"][..]),
     ] {
         let on = emission(&ir, EmitOpts::default(), n, off);
         let dev = on.device.as_deref().unwrap_or("").to_string();
@@ -259,6 +400,10 @@ fn check(clang: &str, p: &testgen::GemvProg) -> Cover {
             check_default(&got, &format!("default {n} SMs {off:?} {mode:?}"));
         }
         let ls = naive_lines(&dev);
+        if off.is_empty() || off == ["vec-spread"] {
+            let vec = ls.iter().any(|l| field(l, "cells").unwrap_or(1) > 1);
+            vec_at.push((n, off.is_empty(), vec));
+        }
         if off.contains(&"vec-cells") {
             assert!(
                 ls.iter().all(|l| field(l, "cells").unwrap_or(1) == 1),
@@ -267,6 +412,9 @@ fn check(clang: &str, p: &testgen::GemvProg) -> Cover {
         }
         lines.extend(ls);
     }
+    let vec_on = |n: u64, rule: bool| vec_at.iter().any(|&(m, r, v)| m == n && r == rule && v);
+    let spread_refused = [6, 8].iter().any(|&n| vec_on(n, false) && !vec_on(n, true));
+    let spread_kept = [6, 8].iter().any(|&n| vec_on(n, true));
     let vec: Vec<&String> = lines
         .iter()
         .filter(|l| field(l, "cells").unwrap_or(1) > 1)
@@ -288,17 +436,24 @@ fn check(clang: &str, p: &testgen::GemvProg) -> Cover {
         vec_atomic: has(&|l| l.contains(" combine=atomic ")),
         vec_workspace: has(&|l| l.contains(" combine=splitk ")),
         vec_post: has(&|l| l.contains(" post=1")),
+        post_split: u64::from(
+            lines
+                .iter()
+                .any(|l| l.contains(" post=1") && l.contains(" combine=splitk ")),
+        ),
         vec_ordered: has(&|l| l.contains(" combine=none ")),
         vec_rows: has(&|l| field(l, "rows").unwrap_or(1) > 1),
         scalar_strided: u64::from(p.layout == 1 && !lines.is_empty()),
         scalar_misaligned: u64::from(misaligned && !lines.is_empty()),
         split_scalar: u64::from(scalar_stream),
+        spread_refused: u64::from(spread_refused),
+        spread_kept: u64::from(spread_kept),
     }
 }
 
 /// 64 generated programs: the exact face's bytes and the default face within
-/// its bound in every emulator mode, at 1, 2, 8 and 84 SMs and under the
-/// `vec-cells`, `stream-fly` and `splitk-atomic` OFF arms; every coverage
+/// its bound in every emulator mode, at 1, 2, 6, 8 and 84 SMs and under the
+/// `vec-cells`, `stream-fly`, `splitk-atomic` and `vec-spread` OFF arms; every coverage
 /// counter non-zero.
 #[test]
 fn generated_programs_keep_values_on_every_arm() {
@@ -328,11 +483,14 @@ fn generated_programs_keep_values_on_every_arm() {
         c.vec_atomic,
         c.vec_workspace,
         c.vec_post,
+        c.post_split,
         c.vec_ordered,
         c.vec_rows,
         c.scalar_strided,
         c.scalar_misaligned,
         c.split_scalar,
+        c.spread_refused,
+        c.spread_kept,
     ];
     assert!(all.iter().all(|&x| x > 0), "{c:?}");
 }

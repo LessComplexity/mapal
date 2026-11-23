@@ -891,9 +891,26 @@ def read(path):
     return None
 
 
+def profile_part(prof, path=PROFILE_RS):
+    """The part's own geometry from its `TargetProfile` (`name: "<prof>"` in profile.rs: `sms`, threads / blocks /
+    shared memory an SM) — the facts the rules read — where PARTS has no row (cross-arch 3a8e654f: the A100 / H100
+    had none, so every `occ.sms` intent held vacuously there). {} where the profile spells none."""
+    src = read(path) or ''
+    m = re.search(r'name: "%s",(.*?)(?:\npub const|\Z)' % re.escape(prof), src, re.S)
+    if not m:
+        return {}
+    body, out = m.group(1), {}
+    for key, field in (('sms', 'sms'), ('threads', 'max_threads_per_sm'), ('blocks', 'max_blocks_per_sm'),
+                       ('smem', 'smem_per_sm')):
+        f = re.search(r'\b%s: ([0-9_ *]+),' % field, body)
+        if f:
+            out[key] = eval(f.group(1).replace('_', ''), {})
+    return out
+
+
 def facts(d, sm):
     prof = os.path.basename(os.path.normpath(d))
-    part = PARTS.get(prof, {})
+    part = PARTS.get(prof) or profile_part(prof)
     lim = dict(threads=part.get('threads', 1536), blocks=part.get('blocks', 16), regs=65536, reg_unit=256,
                max_warps=part.get('threads', 1536) // 32, smem=part.get('smem', 102400), smem_reserved=1024)
     ev = os.path.join(d, 'evidence')

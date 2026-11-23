@@ -63,10 +63,12 @@ INTENT = {
     # diff.
     'narrow-tile': dict(applies="'narrow' in plan", on=[
         ('the narrow operand is loaded in its format in the hot loop: one element (LDG.U16: one thread a cell, a '
-         'mixed-radix tile`s digit copies), a 4-element vector (LDG.64, the register-staged tile, never LDG.128), or '
-         'copied by cp.async (LDGSTS: `narrow-async`)',
-         "sass.hot.ldg16 > 0 if plan.kind == 'naive' or 'radix' in plan else "
-         "sass.ldgsts > 0 if plan.stages >= 2 else sass.hot.ldg64 > 0"),
+         'mixed-radix tile`s digit copies across the lanes) or 16 bytes (LDG.128: a mixed-radix tile`s digit copies '
+         'adjacent along `k`, joined under the operand`s allocation alignment — cross-arch 3a8e654f: the bf16 KV '
+         'cache`s scores kernel), a 4-element vector (LDG.64, the register-staged tile), or copied by cp.async '
+         '(LDGSTS: `narrow-async`)',
+         "sass.hot.ldg16 > 0 if plan.kind == 'naive' else sass.hot.ldg16 + sass.hot.ldg128 > 0 if 'radix' in plan "
+         "else sass.ldgsts > 0 if plan.stages >= 2 else sass.hot.ldg64 > 0"),
         ('a narrow panel is register-staged (no cp.async, LDGSTS) unless the tile streams it (`stages` >= 2: '
          'tensor-cores `narrow-async`)', "plan.kind == 'naive' or plan.stages >= 2 or sass.hot.ldgsts == 0"),
         ('the products are f32 (FFMA, or FMUL + FADD on a separate-step face): the widened values exact — or, under '
@@ -589,8 +591,11 @@ INTENT = {
         ('one cell a thread: no 16-byte load of b', 'sass.hot.ldg128 == 0')]),
     # gemv-stream `stream-fly`: a streaming one-thread-per-cell site's split grid puts a block on every SM and keeps
     # the part's in-flight knee (`knee=`, calib.cu bw `fly`) in flight on each (`fly_sm=`: `NAIVE_UNROLL` loads of
-    # `cells · e_b` bytes a thread). OFF: the warp fill (`fill-wave`) alone.
-    'stream-fly': dict(rule=True, applies_on="plan.kind == 'naive' and 'knee' in plan and plan.combine in ('atomic', 'splitk')", on=[
+    # `cells · e_b` bytes a thread). OFF: the warp fill (`fill-wave`) alone. A `tile-post` site (`post=1`) on a free
+    # face is checked unsplit too: its split is a workspace whose reduce runs the epilogue, launched through its table
+    # (cross-arch 3a8e654f: the B1 decode's O projection planned S 64 ran its ordered 16-block kernel on the H100).
+    'stream-fly': dict(rule=True, applies_on="plan.kind == 'naive' and 'knee' in plan and (plan.combine in ('atomic', 'splitk')"
+                       " or (free and plan.get('post', 0) == 1))", on=[
         ('a block on every SM', 'plan.gx * plan.gy * plan.S >= occ.sms'),
         ('the knee in flight on every SM the grid uses (or the wave holds no more)',
          'plan.fly_sm >= plan.knee or plan.gx * plan.gy * plan.S >= occ.blocks_per_sm * occ.sms'),

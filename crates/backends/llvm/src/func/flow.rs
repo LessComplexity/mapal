@@ -950,10 +950,15 @@ impl<'a> FnEmit<'a> {
                         }
                     }
                 }
+                // A tile member absorbs a device launch only where the plan
+                // held it as one: an extended group's tile placed as a cell
+                // kernel (a narrow `P·V`) left `plan.cells` above.
                 absorbed += u
                     .members
                     .iter()
-                    .filter(|mb| matches!(mb.kind, UKind::Tile { .. }))
+                    .filter(|mb| {
+                        matches!(mb.kind, UKind::Tile { .. }) && self.device.contains_key(mb.m)
+                    })
                     .count();
                 let g: Vec<MorphismId> = u.members.iter().map(|mb| mb.m).collect();
                 refused.retain(|&(_, c, _)| !g.contains(&c));

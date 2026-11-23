@@ -187,8 +187,11 @@ the rented parts on the final code: [cross-arch 3a8e654f](benches/results/eviden
 
 On the final code the lsm rows split on every rented part (9.9–13.8× → 0.96–1.69× torch-compile-cg) and the 4090 /
 3090 decode chains form (0.41 / 0.75× the hand-written KV-cache decode); a GEMV epilogue site left unsplit makes B1
-decode 1.2–4.3× slower on the 3090 / A100 / H100 (open; without those six rows the 86-row geomeans are 0.996 / 1.145 /
-1.074 / 1.179). The bf16 rows trail torch bf16 most on the A100 / H100 (`mma.sync` tiles, no `wgmma`).
+decode 1.2–4.3× slower on the 3090 / A100 / H100 (without those six rows the 86-row geomeans are 0.996 / 1.145 /
+1.074 / 1.179). The bf16 rows trail torch bf16 most on the A100 / H100 (`mma.sync` tiles, no `wgmma`). Since: the
+epilogue site's planned split launches on every part, the bf16 cache's scores kernel issues 16-byte loads (RTX 5080
+bf16 decode 1.05–1.29× faster), `vec-cells` reads the part's DRAM share an SM against its grid's spread — replayed
+against that round's arms, rented parts not re-timed ([regressions](benches/results/evidence/local-rtx-5080/regressions.md)).
 
 Mapal time / the best of cuBLAS, cuBLASLt, CUTLASS, PyTorch eager and `torch.compile` (`_tf32` rows: torch with TF32 on);
 below 1 = Mapal faster. Values pass on every program and arch. 61 of 132 cells at or below 1.0. † = carried from an
