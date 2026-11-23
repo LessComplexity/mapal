@@ -208,3 +208,16 @@ capability geometry (`Caps::bulk`: granule, box dims, swizzle spans, transaction
 probed on sm_120: UTMALDG, SYNCS, clusters, multicast); its row-copy staging of the TF32 tile (`bulk-stage`) is exact
 but 4.3–14.5× slower, shipped off. Open: tensor-box staging (a host descriptor), the ordered epilogue GEMV's split,
 the L2 knee, `n × k` weights.
+
+**open-rules** (`open-rules.md`): the cross-arch open rules against their replay (rounds 7a2b67bf, 60f0f8ce; no
+rentals). Bug: a `tile-post` site's candidates were planned under other arms than the emission draws them, so the
+4090 block decode's chain formed with no cooperative launch (`site_choice`; and a merged unit's copied-out member,
+`hz_copied`) — formed = cooperative launches in 2990 sweep emissions and asserted on generated programs. `calls`: the
+bodies' change per round of the persistent grid (one round: none) and the phases' length (22 ‰ of the members' work at
+the part's peaks); unmeasured boundaries derived from the 5080's cycles — decode's chain forms again on the 3090 /
+4090 (won 1.48 / 1.20), the H100's long-phase chains stay refused: 18 / 20 measured signs. `wide-fma`: FP32 lanes per
+SM and, where an SM's DRAM share ≥ 14.6 KB/µs, the wide grid beyond one wave (H100 5 / 5 lines). `row-slices`: derived
+walk / latency on every part (the rented parts' lsm rows now slice). Intents: face from the host line, `pdl` by the
+module's programmatic flag (H100 89 / 89), `calls-kernel` by the IR's barrier count. Open: `min-blocks`, `warp-fill`,
+`grid-share`, the tune trial, the A100's one-round phases; no timed 5080 program changes code (A/B null by
+construction).
