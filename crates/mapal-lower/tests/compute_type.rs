@@ -139,3 +139,72 @@ fn narrow_members() {
     let out = mapal_syntax::format_source(&src).expect("formats");
     assert!(out.contains("-> fold: bf16 | f32 {"), "{out}");
 }
+
+/// sweep-gemm `round-store` (`precision_plan.store`): an f32 array a map
+/// produces whose every element read — through the captures of the nested
+/// map and fold — is a multiplicand of a `bf16`-admitting product is rounded
+/// once by its producer (`narrow_stored`: the producer's `Narrow`, each read's
+/// `Widen`, the carriers' narrow array type); any other reader, an `f16`
+/// member or a `{f32}` product keeps it f32.
+#[test]
+fn precision_plan_store_narrow() {
+    let gemv = |set: &str, extra: &str| {
+        format!(
+            "fn main() {{ 64 -> iota -> ia; ia -> map {{ t -> t -> widen_f32 -> v; v / 7.0 }} -> a;
+               256 -> iota -> ib; ib -> map {{ t -> t -> widen_f32 -> v; v / 9.0 -> to_bf16 }} -> w;
+               4 -> iota -> o; 64 -> iota -> kk;
+               o -> map {{ j -> (0.0, kk) -> fold{set} {{ acc, q -> w[q * 4 + j] -> widen_f32 -> y; acc + a[q] * y }} }} -> c;
+               c[0] -> println; {extra} }}"
+        )
+    };
+    let stores = |src: &str| -> usize {
+        let ir: CategoryIr = lower_ok(src);
+        ir.funcs()
+            .map(|(f, _)| ir.precision_plan(f).store.len())
+            .sum()
+    };
+    let src = gemv(": bf16 | f32", "");
+    assert_eq!(stores(&src), 1, "`a` rounds once at its producer");
+    let ir: CategoryIr = lower_ok(&src);
+    let g = ir.narrow_stored().expect("rewritten");
+    assert!(
+        mapal_ir::validate(&g).is_empty(),
+        "{:?}",
+        mapal_ir::validate(&g)
+    );
+    assert!(g.narrow_stored().is_none(), "idempotent");
+    let count = |ir: &CategoryIr, op: Operation| ir.morphisms().filter(|(_, m)| m.op == op).count();
+    assert_eq!(
+        count(&g, Operation::Narrow),
+        count(&ir, Operation::Narrow) + 1
+    );
+    assert_eq!(
+        count(&g, Operation::Widen),
+        count(&ir, Operation::Widen) + 1
+    );
+    let narrow_arrays = |ir: &CategoryIr| {
+        ir.objects()
+            .filter(|(_, o)| matches!(&o.ty, Ty::Array { elem, .. } if **elem == Ty::Narrow(mapal_ir::NarrowFloat::Bf16)))
+            .count()
+    };
+    assert!(narrow_arrays(&g) > narrow_arrays(&ir));
+    // Any other reader keeps it f32: a print, a `{f32}` product, an `f16`
+    // member (no value-range fact), an elementwise use.
+    assert_eq!(stores(&gemv(": bf16 | f32", "a[3] -> println;")), 0);
+    assert_eq!(stores(&gemv("", "")), 0);
+    assert_eq!(stores(&gemv(": f16 | f32", "")), 0);
+    assert_eq!(
+        stores(&gemv(
+            ": bf16 | f32",
+            "a -> map { x -> x + 1.0 } -> b2; b2[0] -> println;"
+        )),
+        0
+    );
+    assert_eq!(
+        stores(&gemv(
+            ": bf16 | f32",
+            "(0.0, kk) -> fold { s, q -> s + a[q] * 2.0 } -> z; z -> println;"
+        )),
+        0
+    );
+}

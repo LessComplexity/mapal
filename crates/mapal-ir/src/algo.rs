@@ -27,7 +27,9 @@ pub use algebra::{
 };
 pub use bounds::BoundsProof;
 pub use linear::LinearSite;
-pub use precision::{PrecisionPlan, bound_coef, bound_coef_unit, bound_coef_units, gamma};
+pub use precision::{
+    NarrowStore, PrecisionPlan, bound_coef, bound_coef_unit, bound_coef_units, gamma,
+};
 pub use radix::{AxisDigit, Digit, RadixAddr, RadixForm, RadixTile, uniform_at};
 pub use range::FinitePlan;
 pub use stream::{

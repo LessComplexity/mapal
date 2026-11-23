@@ -147,7 +147,23 @@ fn realization_per_arm() {
         1,
         "{big}"
     );
-    let on = emission(&ir, "rtx-5080", EmitOpts::default(), &["half-fill"]);
+    // sweep-gemm `round-store`: `a` (f32, read only by the `bf16` product)
+    // is stored rounded by its producer — a 2-byte panel, no conversion.
+    let stored = emission(&ir, "rtx-5080", EmitOpts::default(), &["half-fill"]);
+    let sl = half_lines(stored.device.as_deref().expect("device"));
+    assert_eq!(sl.len(), 1);
+    assert!(
+        sl[0].contains(" ea=2 eb=2") && sl[0].contains(" narrow=a:bf16+b:bf16 "),
+        "{}",
+        sl[0]
+    );
+    // Its OFF arm: the f32 operand rounded as each fragment is read.
+    let on = emission(
+        &ir,
+        "rtx-5080",
+        EmitOpts::default(),
+        &["half-fill", "round-store"],
+    );
     let dev = on.device.as_deref().expect("device");
     let lines = half_lines(dev);
     assert_eq!(lines.len(), 1, "{dev}");
@@ -460,6 +476,167 @@ fn generated_programs_within_the_member_bound() {
         c.fallback,
         c.f16_kernels,
         c.narrow_radix,
+    ];
+    assert!(all.iter().all(|&x| x > 0), "{c:?}");
+}
+
+/// sweep-gemm `round-store`: what one generated GEMM covers.
+#[derive(Default, Clone, Copy, Debug)]
+struct StoreCover {
+    programs: u64,
+    /// Arrays `PrecisionPlan::store` rounds at their producer.
+    stored: u64,
+    /// An f32-stored operand read as a 2-byte panel on the ON arm.
+    a_stored_tile: u64,
+    b_stored_tile: u64,
+    /// A stored operand on a site without the 16-bit tile (the FMA tile).
+    fma_reads: u64,
+    /// Refused: an f32 operand under `{f32}` or `: f16 | f32`.
+    refused: u64,
+    post: u64,
+}
+
+impl std::ops::AddAssign for StoreCover {
+    fn add_assign(&mut self, o: StoreCover) {
+        self.programs += o.programs;
+        self.stored += o.stored;
+        self.a_stored_tile += o.a_stored_tile;
+        self.b_stored_tile += o.b_stored_tile;
+        self.fma_reads += o.fma_reads;
+        self.refused += o.refused;
+        self.post += o.post;
+    }
+}
+
+/// One generated GEMM whose operands only the product reads
+/// (`testgen::half_src_with(p, true)`): the emulated device on the ON arm
+/// (the arrays rounded by their producers) in every emulator mode, and on
+/// the OFF arm (`round-store`: each reader rounds its copy), against the
+/// weakest member's interpreter within D3 from both sides.
+fn check_store(clang: &str, p: &testgen::HalfProg) -> StoreCover {
+    let (src, (pairs, k, _)) = testgen::half_src_with(p, true);
+    let ir = lower(&src);
+    let weak = floats(&run_weakest(&ir, 4_000_000_000, &[]).output);
+    let unit = match p.set {
+        1 => Some(2f64.powi(-8)),
+        2 => Some(2f64.powi(-11)),
+        _ => None,
+    };
+    let c = bound_coef_unit(k, unit) + bound_coef_unit(k, None);
+    let check_values = |got: &str, what: &str| {
+        let g = floats(got);
+        assert_eq!(g.len(), weak.len(), "{what}\n{src}");
+        for i in 0..pairs {
+            let (y, w, m) = (g[2 * i], weak[2 * i], weak[2 * i + 1]);
+            let tol = 2.0 * c * m + 2f64.powi(-22) * w.abs();
+            assert!(
+                (y - w).abs() <= tol,
+                "{what} pair {i}: {y} vs {w} (M {m}, tol {tol})\n{src}"
+            );
+        }
+    };
+    let stored: usize = ir
+        .funcs()
+        .map(|(f, _)| ir.precision_plan(f).store.len())
+        .sum();
+    // The fact: an f32 operand under `: bf16 | f32` is stored rounded; one
+    // under `{f32}` / `: f16 | f32`, or already narrow, is not.
+    // An epilogue reads `a` itself (`u·0.5 + a[i·k]`): an f32 reader.
+    let expect =
+        usize::from(p.set == 1 && p.fa == 0 && !p.post) + usize::from(p.set == 1 && p.fb == 0);
+    assert_eq!(stored, expect, "{src}");
+    assert_eq!(ir.narrow_stored().is_some(), stored > 0);
+    if let Some(g) = ir.narrow_stored() {
+        assert!(mapal_ir::validate(&g).is_empty(), "{src}");
+        assert!(g.narrow_stored().is_none(), "idempotent\n{src}");
+    }
+    let on = emission(&ir, "rtx-5080", EmitOpts::default(), &["half-fill"]);
+    let dev = on.device.as_deref().unwrap_or("").to_string();
+    let built = emu::build_emulated(clang, &on.text, &dev);
+    for mode in MODES {
+        let (got, _) = built.run(&mode);
+        check_values(&got, &format!("round-store {mode:?}"));
+    }
+    let off = emission(
+        &ir,
+        "rtx-5080",
+        EmitOpts::default(),
+        &["half-fill", "round-store"],
+    );
+    let dev_off = off.device.as_deref().unwrap_or("");
+    if stored == 0 {
+        assert_eq!(dev, dev_off, "nothing stored: the OFF arm's text\n{src}");
+    }
+    let got = emu::run_emulated(clang, &off.text, dev_off);
+    check_values(&got, "round-store OFF");
+    let lines = half_lines(&dev);
+    let narrow_line = |x: &str| {
+        u64::from(
+            p.set == 1
+                && dev
+                    .lines()
+                    .any(|l| l.starts_with("; mapal.plan ") && l.contains(x)),
+        )
+    };
+    StoreCover {
+        programs: 1,
+        stored: stored as u64,
+        a_stored_tile: u64::from(p.fa == 0) * u64::from(lines.iter().any(|l| l.contains(" ea=2"))),
+        b_stored_tile: u64::from(p.fb == 0) * u64::from(lines.iter().any(|l| l.contains(" eb=2"))),
+        fma_reads: u64::from(stored > 0 && lines.is_empty())
+            * (narrow_line("a:bf16") | narrow_line("b:bf16")),
+        refused: u64::from(p.set != 1 && (p.fa == 0 || p.fb == 0)),
+        post: u64::from(stored > 0 && p.post),
+    }
+}
+
+/// sweep-gemm `round-store` on 40 generated GEMMs (f32 / bf16 / f16 storage
+/// under `{f32}`, `: bf16 | f32`, `: f16 | f32`; `b` k × n or n × k;
+/// epilogues): the fact per operand, the rewritten graph valid and
+/// idempotent, values within the bound on the emulated device in every mode
+/// and under the OFF arm; every coverage counter non-zero.
+#[test]
+fn round_store_on_generated_programs() {
+    let Some(clang) = emu::clang() else {
+        return;
+    };
+    let mut runner = TestRunner::deterministic();
+    // The draws' operand formats and sets, leaned toward the case the rung
+    // reads: f32 operands (half the `a`s, a third of the `b`s) under
+    // `: bf16 | f32` (three programs in four).
+    let progs: Vec<testgen::HalfProg> = (0..40)
+        .map(|i| {
+            let mut p = testgen::half_prog_strategy()
+                .new_tree(&mut runner)
+                .unwrap()
+                .current();
+            p.attn = false;
+            if i % 4 != 3 {
+                p.set = 1;
+            }
+            if i % 2 == 0 {
+                p.fa = 0;
+            }
+            if i % 3 == 0 {
+                p.fb = 0;
+            }
+            p
+        })
+        .collect();
+    let covers = testgen::par_check(&progs, |_, p| check_store(&clang, p));
+    let mut c = StoreCover::default();
+    for k in covers {
+        c += k;
+    }
+    eprintln!("round-store generated: {c:?}");
+    let all = [
+        c.programs,
+        c.stored,
+        c.a_stored_tile,
+        c.b_stored_tile,
+        c.fma_reads,
+        c.refused,
+        c.post,
     ];
     assert!(all.iter().all(|&x| x > 0), "{c:?}");
 }
