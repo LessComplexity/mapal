@@ -157,3 +157,108 @@ regressions step's narrow-operand alignment (0.298 → 0.270).
   the f8w rows' first evidence pass (599 mismatches, the classes the f32 / bf16w rows already carry: full-tile,
   kmajor-a, grid-share, fill-wave on the decode GEMV kernels).
 - No tailored fixes (`docs/tailored-fixes.md` unchanged).
+
+## Sweep merge
+
+Branch `local-rtx-5080`: `a31cd014` + `--no-ff` merges of `sprint/sweep-attention` (`083d9b8d`), `sprint/sweep-gemm`
+(`80e6d240`) and `sprint/sweep-runtime` (`d7cae90a`), then the integration commit (the "For integration" sections, the
+two harness fixes below, this evidence). Raw: `.claude/raw-evidence/local-rtx-5080/integration2/` (`tests.log`,
+`tests-collided.log`, `counters-*.log`, `resS/` `resM/`, `abba_*.txt`); the emission comparison scripts and tables in
+the perf scratch `integration2/` (`alone_k.py`, `alone_k.tsv`).
+
+**Run in parallel (the user asked for speed): 75 min from merge to the regenerated column**, against integration 1's
+45 min for the workspace tests alone. One release build of every test binary and bundle tool (52 s); the workspace
+through sweep-runtime's `test_par.py` on CCDs 2–3 (4 binaries at a time: **955 s**, 776 worker-seconds held for
+Tctl > 85 C); both GPU bundles on CCD 1 at the same time (the bundle cache reused 58 + 87 stems; a thermal guard
+stopped the bundle tree 7 times, 618 s, above 85 C — never a test binary or a timed process); the timed suite on
+CCD 0 as soon as its bundle was ready (overlapping the tests' second half), the model-scale run (+ every competitor
+leg) after it; the emission comparison and the counter runs on CCDs 2–3 during the timed runs.
+
+| merge | conflicts | resolution |
+| --- | --- | --- |
+| sweep-attention | none | — |
+| sweep-gemm | `GpuRungs::NAMES` (`unit-uniform` beside `round-store`) | both: 130 names |
+| sweep-runtime | none (`testgen/mod.rs`, `evidence.py` merged clean) | — |
+
+**Merged emission against each step alone** (`alone_k.py`: every timed program, rtx-5080, default face, emitted by
+the merged emitter and by each branch's; device = the multiset of kernel bodies with ids, metadata numbers and
+`; mapal.` comments dropped; host = the text with ids numbered by first appearance). Device: 105 programs equal
+`a31cd014`, 7 equal sweep-attention's (T8192's stream; the streamed kernels' `nvvm.minctasm`), 23 sweep-gemm's
+(round-store), 2 the superposition of both (`llm_pre_t2048_bf16`, `llm_blkpre_t2048_bf16`). Host: one program
+(`llm_blkdec_b1_l4096_bf16`) matches no arm only through a `; mapal.` flow comment that carries both steps' fields;
+its code equals sweep-gemm's. No interaction: each row runs its step's code.
+
+### Tests
+
+- **Workspace** (`test_par.py --bins 4`, `RUST_TEST_THREADS=8 MAPAL_PAR=2 MAPAL_TESTGEN_JOBS=4`): 125 binaries
+  (124 + doc tests), **1524 passed, 0 failed, 7 ignored**.
+- **Found: `test_par.py` named a binary's log and times key by its target only.** Seven target names exist in two
+  packages (`golden`, `differential`, `acceptance`, `captures`, `narrow`, `widen`, `format`: 15 binaries), so two
+  binaries shared one log file (a failure's log could be overwritten) and one times key (longest-first order). Fixed:
+  the package directory is part of the name (124 distinct). The 15 rerun alone: 160 passed, 0 failed; the other logs
+  1364 — the total stands.
+- **Counters on the merged code** (`--nocapture`): `flash_attention` generated — 128 programs, 39 head-group loops,
+  31 streamed with moved operands, 12 trailing members (4 streamed), 39 unstreamed with `unit-uniform` off, 90
+  streamed, 731 emulator runs; `half_tile` round-store generated — 40 programs: stored 32, a-tiles 6, b-tiles 10, FMA
+  reads 12, refused 2, epilogues 6. Both equal their step's counts; every counter > 0.
+- **Evidence** (static, both bundles): mismatches bS 246 → 246, bM 5329 → 5321 (T8192's spill gone from five
+  classes, one `kmajor-a`), no new class; `unit-uniform` 6 on / 221 off ok, `round-store` 36 ok; the runtime
+  `trace allocs == predicted` 30 → 0 (sweep-runtime's fix). Value gates: 41 suite programs, 96 model-scale programs +
+  128 px differentials pass on every arm.
+
+### Time (`resS` / `resM` against integration 1's `resS-final` / `resM-final`)
+
+The 32 programs whose code moved: geomean 0.934; each reproduces its step's ON time. The 105 others: 0.977 (session).
+
+| workload (5080) | integration 1 | sweep merge | step alone (step) | fastest competitor (leg) | explanation |
+| --- | ---: | ---: | ---: | --- | --- |
+| llm_pre_t8192 | 89.55 | **47.93** | 48.89 (attention) | 53.22 (liger) | one streamed kernel a KV-head group; peak 2991 → 776 MB (0.41× torch-compile's 1916) |
+| llm_pre_t2048 | 7.222 | 6.604 | 6.861 (attention) | 7.213 (liger) | stream kernel `minctasm` (no spill) |
+| pj_m128_n4096_k4096_bf16 | 0.0773 | 0.0634 | 0.0640 (gemm) | 0.0532 (torch-bf16) | 2-byte `a` panel |
+| pj_m2048_n6144_k4096_bf16 | 1.080 | 0.937 | 0.938 (gemm) | 0.883 (torch-bf16-compile-cg) | same |
+| llm_blkpre_t2048_bf16 | 11.62 | 10.74 | 10.75 (gemm) | 8.036 (torch-bf16-compile-cg) | stored activations + stream `minctasm` |
+| llm_blkdec_b1_l4096_bf16 (ms/step) | 0.615 | 0.582 | 0.580 (gemm) | 0.558 (torch-bf16-compile) | stored activations |
+| pj_m128_n28672_k4096_bf16 | 0.3844 | 0.3995 | 0.4037 (gemm) | 0.3174 (triton-bf16) | panel depth (sweep-gemm open, reproduced) |
+
+**Unchanged code slower than 5 %: none from the merge.** Four rows ran > 5 % slower than integration 1's run with
+equal code; old (integration 1 bundle, its wisdom) against new binaries, same session, ABBA on CPUs 0–7:
+`llm_dec_b1_l2048_f8w` 0.999 (both 1.15 ms; integration 1's run 0.892 — open, below), `pj_m1_n4096_k4096` 0.961
+(16 reps; 1.129 at 8: a bimodal GEMV), `llm_dec_b32_l2048_f8w` 1.002, `llm_dec_b32_l2048` **1.047** — the tune's pick
+(site 2 candidate 3 there, 0 here), the tune-variance item.
+
+**The session gap is partly the timed CPUs.** Integration 1 timed on CPUs 8–15; 3a8e654f and this run on 0–7. The
+9970X's per-core clock ceilings differ by CCD (ACPI CPPC `highest_perf`: 211–241 on CCD 0, 166 on CCDs 1 and 3,
+171–206 on CCD 2). The same binaries, 0–7 against 8–15 (ABBA, 8 reps): lsm_1_131072 0.81, pj_m1_n4096_k4096 0.89,
+ew_4096 0.94, mlp_512 / indep_512 0.95, lsm_32_8192 0.97, pj_m1_n2048 0.99, attn_1024_64 1.00, dec_b1_l2048_f8w 1.00.
+And `lsm_32_8192` is bimodal by process (0.018 / 0.0235 ms in one batch): integration 1's "lsm 1.3–1.5× session"
+is that mode plus the CPU set, not code. Harness fix: `benches/local/timed_cpus.sh` — the timed scripts'
+busy check read CPUs 0–7 whatever `CPUS` was (integration 1 timed on 8–15 while checking 0–7); it now reads the
+timed set, and `conditions.txt` records the set's `cppc` range.
+
+### The RTX 5080 column (matrix.md: integration → sweep merge; legs from this session's runs)
+
+| geomean Mapal / best (rows) | integration | sweep merge |
+| --- | ---: | ---: |
+| GEMM cells & projections | 1.115 (47) | 1.079 (47) |
+| MLP chains | 1.095 (6) | 1.073 (6) |
+| Attention / softmax / long rows | 0.883 (14) | 0.818 (14) |
+| LLM decode / prefill / block | 1.211 (37) | 1.151 (37) |
+| Conv / FIR / elementwise | 0.549 (7) | 0.530 (7) |
+| Fan-in/out, loops, CPU+GPU | 1.081 (9) | 1.061 (9) |
+| all tf32 rows | 1.198 (13) | 1.194 (13) |
+| all bf16w / bf16kv / bf16 rows | 1.861 / 1.252 / 1.139 | 1.795 / 1.195 / 1.067 |
+| **all rows** | **1.065 (120)** | **1.021 (120)** |
+| win / even / loss | 23 / 29 / 68 | 28 / 31 / 61 |
+
+The code moved 32 rows (above); the rest of the shift is the session (CPU set, the legs re-timed in the same session).
+
+### Open problems attacked (integration)
+
+- **Closed**: `test_par.py`'s shared logs (15 binaries); the timed scripts' busy check on the wrong CPUs and the
+  unrecorded CPU set (`timed_cpus.sh`); sweep-runtime's T8192 peak memory (closed by sweep-attention's stream,
+  measured here: 1.56× → 0.41× torch).
+- **Attempted, open**: the tune's pick variance — a third row (`llm_dec_b32_l2048` 1.047, equal code; fp8's M3
+  in-context confirmation unbuilt); `llm_dec_b1_l2048_f8w` 0.892 (integration 1, fp8-leftovers) against 1.15 ms
+  (both bundles here, ABBA 0.999, either CPU set) — equal code and picks, so a machine state the conditions do not
+  yet record (the 42 MB fp8 working set in a 64 MB L2 shared with the display).
+- No tailored fixes (`docs/tailored-fixes.md` unchanged).

@@ -8,7 +8,7 @@ usage: benches/local/test_par.py [--bins N] [--logs DIR] [--no-doc] [cargo test 
 Builds every selected test binary once (`cargo test --release --no-run`), then runs them N at a time
 (`--bins`, default: the CPUs this process may run on / 8), longest first by the last run's times
 (`target/test-par-times.tsv`), each in its package directory (as cargo does) and its own process group,
-its output in `<logs>/<binary>.log`. The environment passes through (RUST_TEST_THREADS, MAPAL_TESTGEN_JOBS,
+its output in `<logs>/<package dir>.<binary>.log`. The environment passes through (RUST_TEST_THREADS, MAPAL_TESTGEN_JOBS,
 MAPAL_TEST_JOBS, MAPAL_PAR, ...): the binaries check exactly what `cargo test` runs them to check; only
 their order in time differs. Doc tests run as one more job (`--no-doc`: not).
 
@@ -53,8 +53,11 @@ def build(sel):
         m = json.loads(line)
         if m.get("reason") != "compiler-artifact" or not m.get("executable") or not m["profile"]["test"]:
             continue
-        name = f'{m["target"]["name"]}-{m["target"]["kind"][0]}'
-        jobs.append((name, [m["executable"]], Path(m["manifest_path"]).parent))
+        # The package directory in the name: seven test targets (golden, differential, acceptance, ...) exist in two
+        # packages each, and one name would share a log file (and a times key) between two binaries.
+        pkg = Path(m["manifest_path"]).parent
+        name = f'{pkg.name}.{m["target"]["name"]}-{m["target"]["kind"][0]}'
+        jobs.append((name, [m["executable"]], pkg))
     return jobs
 
 

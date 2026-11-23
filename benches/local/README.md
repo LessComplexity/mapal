@@ -4,6 +4,10 @@ Threadripper 9970X + RTX 5080 (sm_120), CUDA at `/opt/cuda`. Evidence lands in
 `benches/results/evidence/local-rtx-5080/`; raw output in `.claude/raw-evidence/local-rtx-5080/<step>/` (never in git).
 Before a timed step: load < 3, no game, the bench lock held (`flock`); heavy runs pinned (`taskset -c 16-31,48-63`),
 Tctl watched (`sensors`), parallelism lowered above 85 C.
+Timed processes run on the cores with the highest clock ceiling, `CPUS=0-7` (CCD 0, CPPC `highest_perf` 211–241;
+CCD 1 / 3 166): the same binaries run host-bound 15–90 µs programs 0.81–1.00× as long there as on 8–15, so runs
+compare only on one set — `timed_cpus.sh` (sourced by the timed scripts) checks that set's busy share and writes its
+`cppc` range into `conditions.txt`.
 
 ## Per step: changed programs, then one full suite
 

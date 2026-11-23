@@ -270,3 +270,32 @@ per-kernel tensor-map lookup (+20–30 µs a program; now read once from the PTX
 L2's edge (pj_m16_n4096_k4096 1.74×; measured `l2_keep_bytes`, the cyclic working set the L2 keeps: 1.025× on the 5080).
 5080 column 1.076 → 1.065 (all 120 rows), 25/21/74 → 23/29/68; every step's row reproduces; session-controlled ABBA
 against the 3a8e654f binaries 0.92–1.055. Open: a ~1 µs runtime residual, the tune's pick variance (pre_t8192).
+
+**sweep-attention** (`sweep-attention.md`): `llm_pre_t8192` (f32) 89.55 → **48.89 ms**, 0.92× Liger (was 1.69×): each
+KV-head group's attention is one streamed kernel (`unit-uniform`: a tile whose operand address a loop counter moves
+joins the stream unit, the launch moves the pointer; `TilePost::after`), the stream kernel's blocks per SM declared
+from its geometry (`nvvm.minctasm`: 168 registers, no spill). Three fact bugs the generated head-group loops found
+(`d = T` taken for the producer, one-head row reads proved by digit forms, a carried sum after the consumer).
+OFF arm `--gpu-off=unit-uniform`. Open: bf16-weight prefill (`Bf16x3n` unemitted), tensor cores in the stream kernel,
+decode attention (captured position, batch-moved K window, bf16 cache windows), the tune's pick variance.
+
+**sweep-gemm** (`sweep-gemm.md`): round-store — an f32 array read only by bf16 products is stored rounded by its
+producer (`precision_plan.store`, `narrow_stored` + the site-plan guard; OFF arm `--gpu-off=round-store`); 25 `_bf16`
+programs: m128 bf16 1.11–1.18×, m2048 n6144 1.15×, m1 GEMVs 1.16–1.19×, LLM bf16 rows 1.01–1.14×, m128 n28672 0.97×
+(panel depth, open); sm_120's `FHFMA.BF16` counted as the FFMA it is (92 false mismatches). Open: the m128 n28672
+panel depth, the m1 GEMVs' per-call zero, m128 TF32.
+
+**sweep-runtime** (`sweep-runtime.md`): tests 3–4× faster per emulated binary (the emulator compiled once, lld) and
+run side by side (`benches/local/test_par.py`); site_geometry's loops in parallel; the runtime alloc check's false
+mismatch fixed (282 → 0); bundles no longer stop on a stale `mapal` CLI. Prefill peak: T2048 0.42×, block prefill
+0.74× torch since flash-attention. Epilogue groups forfeit stream-K on 2048 sites (fan / MLP rows 4–9 %): measured,
+the priced rule replayed 9 / 13, open (stream-K epilogue or the plan model's refit).
+
+**integration — sweep merge** (`integration.md` § Sweep merge, `open-problems.md`): the three sweeps on one branch
+(one conflict: both new rungs in the rung table), every timed program's emission the superposition of its step's
+change, 1524 tests (`test_par.py`: 16 min, was 45), the full suite + model scale + every competitor leg in one
+session. 5080 column 1.065 → **1.021** (28 / 31 / 61); `llm_pre_t8192` 47.9 ms, 0.90× Liger, peak 0.41× torch.
+Found: `test_par.py`'s shared log names, and the timed scripts' busy check on the wrong CPUs — the 9970X's CCD 0
+cores have the highest clock ceiling, and host-bound programs run 0.81–1.00× as long there as on CCD 1 (integration 1
+timed on CCD 1): `timed_cpus.sh` records the set. Open: the tune's pick variance (a third row), the f8w B1 decode's
+session spread (0.89 / 1.15 ms on equal code).
