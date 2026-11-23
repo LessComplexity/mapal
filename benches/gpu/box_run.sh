@@ -468,6 +468,14 @@ for o in "$PROF"/pt_*.host.o; do
         sp=$(site_picks "$tr")
         say "tune prog=$b face=${face:-_default} rc=$rc sites=$(( $(wc -w <<< "$sp") )) trials=$(grep -c 'op=trial ' <<< "$tr") picks=[$sp] module_ms=$(module_ms "$tr")"
         [ "$rc" -eq 0 ] || { say "VALIDATION FAILED (tune $s process exit)"; exit 1; }
+        # sweep-runtime-2: each pick the trial made is confirmed in its program — the program with the pick against
+        # the same wisdom with that site's candidate 0, three alternating pairs; a pick the program is not faster
+        # with goes back to candidate 0 in the wisdom (confirm_pick.py). CONFIRM=0: the trial's pick stands.
+        if [ "${CONFIRM:-1}" = 1 ] && grep -qE ':[1-9][0-9]*:trial' <<< "$sp"; then
+            MAPAL_PTX="$PROF/$s.ptx" python3 confirm_pick.py "./pt_$s" "$MAPAL_WISDOM" $sp |
+                while read -r l; do say "$l prog=$b face=${face:-_default}"; done
+            sp=$(MAPAL_GPU_TRACE=1 MAPAL_PTX="$PROF/$s.ptx" "./pt_$s" 2>&1 >/dev/null | site_picks "$(cat)")
+        fi
         grep -qE ':[1-9][0-9]*:' <<< "$sp" && tuned=1
         for t in "$s" "$s.c1"; do
             if [ -x "pt_$t" ] && { [ -x "pt_$s.c1" ] || [ "${LOAD_ALL:-0}" = 1 ]; }; then

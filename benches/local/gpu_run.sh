@@ -7,9 +7,19 @@ B=${1:-$G/bundle}; REPS=${2:-30}; R=$G/results
 mkdir -p "$R"
 nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv > "$R/gpu-apps-before.csv"
 nvidia-smi --query-gpu=utilization.gpu,clocks.sm,temperature.gpu,power.draw --format=csv >> "$R/gpu-apps-before.csv"
+# sweep-runtime-2: the GPU's P-state and clocks through the run (5 a second) — between processes the RTX 5080 drops
+# to P8 (405 MHz memory) and a program's iterations may run before it is back at P0 / P1 (15 GHz): a state the
+# other conditions do not show (`llm_dec_b1_l2048_f8w` 0.892 / 1.15 ms on equal code). Summary: gpu-clocks.txt.
+nvidia-smi --query-gpu=timestamp,pstate,clocks.sm,clocks.mem,utilization.gpu,power.draw --format=csv,noheader \
+    -lms 200 > "$R/gpu-clocks.csv" 2>/dev/null &
+SMI=$!
+trap 'kill $SMI 2>/dev/null' EXIT
 cd "$B" && env PATH=/opt/cuda/bin:$PATH CUDA=/opt/cuda TORCH_PY=${TORCH_PY:-$G/venv/bin/python} TORCH_MIN=${TORCH_MIN:-120} COMP_MIN=${COMP_MIN:-60} \
     bash box_run.sh rtx-5080 sm_120 "$REPS" > "$R/box.out" 2>&1
 rc=$?
+kill $SMI 2>/dev/null
+awk -F', ' '$5 + 0 > 0 { n[$2 " sm=" $3 " mem=" $4]++ } END { for (k in n) print n[k], k }' "$R/gpu-clocks.csv" |
+    sort -rn > "$R/gpu-clocks.txt"
 cp results-rtx-5080.txt evidence-rtx-5080.tsv wisdom-rtx-5080.tsv "$R/" 2>/dev/null
 nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv > "$R/gpu-apps-after.csv"
 python3 "$ROOT/benches/local/gap.py" "$R/results-rtx-5080.txt" > "$R/gap.md"

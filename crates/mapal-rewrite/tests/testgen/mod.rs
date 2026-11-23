@@ -4894,6 +4894,61 @@ pub fn gemm_src(p: &GemmProg) -> (String, (u64, u64, u64)) {
     (gemm_src_at(p, m, n, k), (m, n, k))
 }
 
+/// sweep-runtime-2 `streamk-epi`: a [`GemmProg`] at `(m, n, k)` whose product
+/// `y` has cell-wise readers — an epilogue group (S54) — chosen by `chain`:
+/// 0 an affine map (`y·½ + 1`), 1 a per-column bias then a relu (a guard),
+/// 2 a join with a second closed-form array (`y + d`), 3 two members (an
+/// affine map and its square plus `y`), with `y` itself printed too (the
+/// site's output stored beside the members'). Integer operands in `-2 ..= 2`
+/// and dyadic constants: every fold order and every cut of the fold prints
+/// the same bits. Five cells of the last value printed.
+pub fn gemm_epi_src_at(p: &GemmProg, m: u64, n: u64, k: u64, chain: u8) -> String {
+    let base = gemm_src_at(p, m, n, k);
+    let body = base
+        .split("    y[")
+        .next()
+        .expect("the product's source")
+        .to_string();
+    let mn = m * n;
+    let mut s = body;
+    let out = match chain % 4 {
+        0 => {
+            s += "    ic -> map {\n        t -> y[t] * 0.5 + 1.0\n    } -> z;\n";
+            "z"
+        }
+        1 => {
+            s += &format!(
+                "    {n} -> iota -> jb;\n    jb -> map {{\n        t -> (t * 3 + 1) % 7 - 3 -> widen_f32\n    }} -> bv;\n"
+            );
+            s += &format!(
+                "    ic -> map {{\n        t ->\n        y[t] + bv[t % {n}] -> u;\n        (u > 0.0) -> {{\n            -true-> u;\n            -false-> 0.0;\n        }}\n    }} -> z;\n"
+            );
+            "z"
+        }
+        2 => {
+            s += "    ic -> map {\n        t -> (t * 5 + 2) % 9 - 4 -> widen_f32\n    } -> d;\n";
+            s += "    ic -> map {\n        t -> y[t] + d[t]\n    } -> z;\n";
+            "z"
+        }
+        _ => {
+            s += "    ic -> map {\n        t -> y[t] * 0.5 + 1.0\n    } -> z1;\n";
+            s += "    ic -> map {\n        t -> z1[t] * z1[t] + y[t]\n    } -> z;\n";
+            "z"
+        }
+    };
+    let last = mn - 1;
+    for c in [0, last, (m - 1) * n, mn / 2 + n / 3, 2 * n - 1] {
+        s += &format!("    {out}[{}] -> println;\n", c.min(last));
+    }
+    if chain % 4 == 3 {
+        s += &format!(
+            "    y[{}] -> println;\n    z1[{last}] -> println;\n",
+            mn / 3
+        );
+    }
+    s + "}\n"
+}
+
 // --- half-precision (ADR-0043): narrow float storage --------------------------
 
 /// A program over `bf16` / `f16` storage: an `f32` activation `a`

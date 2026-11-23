@@ -1188,6 +1188,16 @@ static void site_run(void *e, uint32_t i) {
   }
   if (c->zero && (!x->zeroed || x->trialed) && !x->nozero)
     mapal_gpu_zero(x->ptrs[x->out], c->zero);
+  if (c->ws && !c->rid) {
+    /* sweep-runtime-2 `streamk-epi`: a workspace without a reduce kernel —
+     * a group's stream-K kernel adds its sums and draws its tiles' tickets
+     * there, zeroed first; it follows the table's pointers. */
+    d[x->nptr] = mapal_gpu_alloc(x->ws_slot, x->ws_max);
+    mapal_gpu_zero(d[x->nptr], c->ws);
+    args[x->nptr] = &d[x->nptr];
+    launch_on(k, c->id, args, x->nptr + 1, c->gx, c->gy, c->block, c->smem);
+    return;
+  }
   if (c->ws)
     d[x->out] = mapal_gpu_alloc(x->ws_slot, x->ws_max);
   if (x->coop) {
@@ -1308,7 +1318,7 @@ void mapal_gpu_site(uint64_t site, uint32_t flags, uint32_t stream, uint32_t n,
                     const struct mapal_cand *cands, uint32_t nptr,
                     const uint64_t *ptrs, uint32_t out, uint64_t *ws_slot) {
   load_module();
-  if (nptr > 32 || out >= nptr || !n) {
+  if (nptr > 31 || out >= nptr || !n) {
     fprintf(stderr, "mapal_gpu: site with %u pointers, out %u, %u candidates\n",
             nptr, out, n);
     exit(102);

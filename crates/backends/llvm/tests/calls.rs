@@ -333,10 +333,30 @@ fn every_part_prices_chains() {
                 "0"
             );
         }
-        // The parts nobody calibrated price theirs (derived boundaries).
+        // The parts nobody calibrated price theirs (derived boundaries) —
+        // but where an epilogue group's site walks stream-K
+        // (sweep-runtime-2 `streamk-epi`): a stream-K site is no chain
+        // member, so a program of such sites has no chain to price.
         for part in ["rtx-5090", "h100-pcie"] {
             let h = emit(&ir, part, None);
-            assert!(!h.is_empty() && !h.contains("unpriced"), "{part} {p}: {h}");
+            let streams = || {
+                let e = emit_detailed(
+                    &ir,
+                    &EmitOpts {
+                        host: "generic",
+                        target: part,
+                        ..EmitOpts::default()
+                    },
+                )
+                .expect("emits");
+                e.device.unwrap_or_default().lines().any(|l| {
+                    l.starts_with("; mapal.plan ")
+                        && l.contains(" combine=streamk ")
+                        && l.contains(" epi=1 ")
+                })
+            };
+            assert!(!h.contains("unpriced"), "{part} {p}: {h}");
+            assert!(!h.is_empty() || streams(), "{part} {p}: {h}");
         }
     }
 }

@@ -1046,8 +1046,8 @@ void mapal_gpu_launchv(uint64_t id, uint32_t stream, uint32_t nptr, const uint64
   (void)stream;
   emu_trace_launch(id);
   kv_t k = (kv_t)sym("mapal_tile", id);
-  void *p[16 + EMU_TMAP_MAX];
-  for (uint32_t i = 0; i < nptr && i < 16; i++) p[i] = (void *)ptrs[i];
+  void *p[32 + EMU_TMAP_MAX];
+  for (uint32_t i = 0; i < nptr && i < 32; i++) p[i] = (void *)ptrs[i];
   /* hopper-wgmma-tma: the maps follow the pointers. */
   struct emu_tmap tm[EMU_TMAP_MAX];
   uint32_t nm = emu_tmaps(id, ptrs, nptr, tm);
@@ -1233,6 +1233,13 @@ static void site_run(void *e, uint32_t i) {
   uint64_t p[32];
   memcpy(p, x->ptrs, x->nptr * sizeof *p);
   if (c->zero && (!x->zeroed || x->trialed)) mapal_gpu_zero(x->ptrs[x->out], c->zero);
+  if (c->ws && !c->rid) {
+    /* `streamk-epi`: the zeroed workspace follows the table's pointers. */
+    p[x->nptr] = mapal_gpu_alloc(x->ws_slot, x->ws_max);
+    mapal_gpu_zero(p[x->nptr], c->ws);
+    mapal_gpu_launchv(c->id, x->stream, x->nptr + 1, p, c->gx, c->gy, c->block, c->smem);
+    return;
+  }
   if (c->ws) p[x->out] = mapal_gpu_alloc(x->ws_slot, x->ws_max);
   if (x->coop) {
     mapal_gpu_launch_coop(c->id, x->stream, x->nptr, p, c->gx, c->gy, c->block, c->smem);
@@ -1270,7 +1277,7 @@ static void site_warm(void *e) {
 }
 void mapal_gpu_site(uint64_t site, uint32_t flags, uint32_t stream, uint32_t n, const struct mapal_cand *cands,
                     uint32_t nptr, const uint64_t *ptrs, uint32_t out, uint64_t *ws_slot) {
-  if (nptr > 32 || out >= nptr || !n) {
+  if (nptr > 31 || out >= nptr || !n) {
     fprintf(stderr, "emu: site with %u pointers, out %u, %u candidates\n", nptr, out, n);
     exit(102);
   }
