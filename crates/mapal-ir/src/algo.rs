@@ -34,7 +34,7 @@ pub use stream::{
     BoxClass, GuardBox, GuardSide, StreamGroup, StreamGuard, StreamLaw, StreamPlan, StreamRole,
     extreme_up,
 };
-pub use unchanged::UnchangedPlan;
+pub use unchanged::{CallKeep, UnchangedPlan};
 
 /// A non-trivial loop SCC and its merge objects (DESIGN §7; the backend
 /// capability predicate). One entry per non-trivial SCC.

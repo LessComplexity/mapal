@@ -40,10 +40,10 @@ mod validate;
 
 pub use access::{AccessPlan, Hazard};
 pub use algo::{
-    Affine, AxisDigit, BoundsProof, BoxClass, CellRead, CellSite, Checkpoint, Delta, DepLaw, Digit,
-    Edge, ElemPlan, ElemSrc, EmissionClass, EmissionPlan, FinitePlan, FmaPair, FoldCombine,
-    FoldCombinePlan, Footprint, FootprintPlan, GuardArm, GuardBox, GuardSide, GuardSite,
-    LastUsePlan, LinearSite, LoopPlan, LoopScc, MovePlan, MoveSite, Outside, PathPlan,
+    Affine, AxisDigit, BoundsProof, BoxClass, CallKeep, CellRead, CellSite, Checkpoint, Delta,
+    DepLaw, Digit, Edge, ElemPlan, ElemSrc, EmissionClass, EmissionPlan, FinitePlan, FmaPair,
+    FoldCombine, FoldCombinePlan, Footprint, FootprintPlan, GuardArm, GuardBox, GuardSide,
+    GuardSite, LastUsePlan, LinearSite, LoopPlan, LoopScc, MovePlan, MoveSite, Outside, PathPlan,
     PrecisionPlan, RadixAddr, RadixForm, RadixTile, Reach, Regroup, RescaleArg, RowDep, RowFoldOp,
     RowFoldSite, StepAlgebra, StepFlags, StreamGroup, StreamGuard, StreamLaw, StreamPlan,
     StreamRole, Tap, Task, TaskId, TaskKind, TileKSplit, TilePlan, TilePost, TileRead, TileSite,
