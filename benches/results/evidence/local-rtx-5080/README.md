@@ -245,3 +245,19 @@ alignment at each launch; RTX 5080 bf16 decode 1.05–1.29× ABBA. (3) `vec-cell
 (`DRAM_PER_SM_SPREAD`) against the vector grid's spread over the SMs (`vec_cells_pay`, OFF arm `vec-spread`), 11
 replay lines, 10 / 12 HBM cells picked. (4) the 4090's GEMVs / `lsm_32_8192`: 1.33× kernel × 15–29 µs of per-call
 host time; one fused lsm kernel measured slower (33.7 vs 23.0 µs) — open: the box's per-launch host time.
+
+**f32-tensor-cores** (`f32-tensor-cores.md`): the warp accumulator keeps two guard bits on every format (the member
+bound is sound) and the 5080's TF32 rate equals its FFMA rate (256 flops / SM clk; 16-bit 512) — `mapal_ir::split`
+(split forms' a-priori coefficient against D2), `split-tile` (narrow1: `{f32}` over two bf16 operands 2.1–2.4× the
+FFMA tile, 0.40–0.47× torch f32; tf32x3 taken by the rate rule on the A100 only), `mma-combine` (TF32 / 16-bit tiles
+cut along `k` by a wave model: 10 programs 0.77–0.985, mlp_2048_tf32 1.09 → 1.03× the best TF32 leg),
+`mma-depth` measured losing (off).
+
+**hopper-wgmma-tma** (`hopper.md`): warp-specialized TF32 wgmma fed by 2 tensor boxes a stage (R1 price on the
+measured `tma_copy_ns`: 5080 197 / H100 159 ns), producer-rounded aT, setmaxnreg; H100 SXM: MLP tf32 1.17–1.25×,
+m128 0.87–1.21×, m2048 1.01–1.07× of OFF; $1.79.
+
+**fp8-leftovers** (`fp8-leftovers.md`): fp8 storage (f8e4m3 / f8e5m2, saturating, C1 cvt), `_f8w` decode rows (B1
+L2048 0.056 ms/step, 0.37× bf16w; blkdec 0.37 ms, 0.57×), the one-candidate split post table, calls-issue (issue
+queue), tune-context (cold / event trials: dec B8 L2048 bf16w 0.92×), the `call_keep` fact; open: fp8 MMA tiles,
+retain-call's consumer.

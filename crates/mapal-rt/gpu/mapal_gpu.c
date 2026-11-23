@@ -135,6 +135,51 @@ static CUmodule module;
 static CUcontext ctx;
 /* per-site-choice: the module text's hash (a wisdom key's half). */
 static uint64_t module_hash;
+/* integration: the kernels whose recipe global `<kernel>_tmap` the loaded PTX
+ * declares (hopper-wgmma-tma), read once from the image at load, off any timed
+ * path. A launch of any other kernel never asks the driver for a recipe: the
+ * failing `cuModuleGetGlobal` per kernel cost ~10 us each inside a program's
+ * first timed iteration (RTX 5080, ABBA against the runtime before it: mlp_512
+ * 0.040 -> 0.060 ms, lsm_32_8192 0.023 -> 0.049). -1: more names than the table
+ * holds (or one too long): every kernel is asked, as before. */
+#define TMAP_NAMES 64
+static char tmap_names[TMAP_NAMES][48];
+static int n_tmap_names;
+static int ident_char(char c) {
+  return c == '_' || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') ||
+         (c >= 'A' && c <= 'Z');
+}
+static void tmap_scan(const char *ptx) {
+  for (const char *p = strstr(ptx, "_tmap"); p; p = strstr(p + 5, "_tmap")) {
+    const char *s = p;
+    while (s > ptx && ident_char(s[-1]))
+      s--;
+    size_t n = (size_t)(p - s);
+    if (!n || n >= sizeof tmap_names[0]) {
+      n_tmap_names = -1;
+      return;
+    }
+    int seen = 0;
+    for (int i = 0; i < n_tmap_names && !seen; i++)
+      seen = !strncmp(tmap_names[i], s, n) && !tmap_names[i][n];
+    if (seen)
+      continue;
+    if (n_tmap_names == TMAP_NAMES) {
+      n_tmap_names = -1;
+      return;
+    }
+    memcpy(tmap_names[n_tmap_names], s, n);
+    tmap_names[n_tmap_names++][n] = 0;
+  }
+}
+static int tmap_listed(const char *name) {
+  if (n_tmap_names < 0)
+    return 1;
+  for (int i = 0; i < n_tmap_names; i++)
+    if (!strcmp(tmap_names[i], name))
+      return 1;
+  return 0;
+}
 
 /* `preload`: every `.entry` of the module, resolved at load. `smem` is the
  * dynamic shared-memory limit already set on it (the attribute is set once).
@@ -215,6 +260,7 @@ static void init_all(void) {
   fclose(f);
   module_hash = choice_fnv(ptx, (size_t)n, CHOICE_FNV0);
   CK(cuModuleLoadData(&module, ptx));
+  tmap_scan(ptx);
   if (flags & PRELOAD)
     preload(ptx);
   free(ptx);
@@ -515,13 +561,21 @@ struct tmap_e {
   CUdeviceptr ptr[TMAP_MAX];
   CUtensorMap map[TMAP_MAX];
 };
-static struct tmap_e tmaps[256];
+static struct tmap_e *tmaps; /* TMAP_KERNELS entries, made at the first recipe */
+#define TMAP_KERNELS 256
 static size_t n_tmaps;
+static struct tmap_e tmap_none; /* a kernel the module declares no recipe for */
 static struct tmap_e *tmap_of(CUfunction fn, const char *name) {
+  if (!tmap_listed(name))
+    return &tmap_none;
   for (size_t i = 0; i < n_tmaps; i++)
     if (tmaps[i].fn == fn)
       return &tmaps[i];
-  if (n_tmaps == sizeof tmaps / sizeof *tmaps) {
+  if (!tmaps && !(tmaps = calloc(TMAP_KERNELS, sizeof *tmaps))) {
+    fprintf(stderr, "mapal_gpu: tensor-map table: out of memory\n");
+    exit(102);
+  }
+  if (n_tmaps == TMAP_KERNELS) {
     fprintf(stderr, "mapal_gpu: tensor-map table full\n");
     exit(102);
   }

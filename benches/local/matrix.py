@@ -24,6 +24,8 @@ Rules
             comp `*-bf16` (Liger, FlashAttention-2/3, FlashInfer, Triton).
     _bf16kv the bf16 legs (weights and KV cache stored bf16, f32 compute: tensor-cores' bf16 KV cache).
     _bf16   the bf16 legs (bf16 storage, products `: bf16 | f32`: torch bf16's face; `pj_*_bf16`, the layer twins).
+    _f8w    fp8 legs (f8e4m3 weights with per-channel scales, f32 compute: fp8-leftovers): none is installed (no
+            torchao), so the row is `(no leg)`; its `_bf16w` twin's best bf16 leg is its bf16 reference, never its best.
   A bf16-storage row without bf16 legs of its own takes its twin's (`legs_from`: the `_bf16w` twin, else the f32
   program): a bf16 leg rounds weights, KV cache and activations to bfloat16, so the twins run one computation
   (torch_bench.py `llm_workload` / `workload`); box_run.sh's TORCH_SKIP does not time it twice.
@@ -68,7 +70,7 @@ FAMILIES = [  # (key, title, workload pattern)
     ('fan', 'Fan-in/out, loops, CPU+GPU', r'(diamond|fanout|indep|twin|loop|loopmm|rt)_'),
     ('other', 'Other', r''),
 ]
-PRECS = ('f32', 'tf32', 'bf16w', 'bf16kv', 'bf16')
+PRECS = ('f32', 'tf32', 'bf16w', 'bf16kv', 'bf16', 'f8w')
 EVEN = 0.05
 CFAMS = [  # (key, title): the competitor families of the every-leg tables, in column order
     ('vendor', 'vendor libs'), ('eager', 'torch eager'), ('compile', 'torch.compile'),
@@ -113,13 +115,14 @@ def family(w):
 
 
 def row_prec(w):
-    return next((p for suf, p in (('_bf16w', 'bf16w'), ('_bf16kv', 'bf16kv'), ('_bf16', 'bf16'), ('_tf32', 'tf32'))
+    return next((p for suf, p in (('_bf16w', 'bf16w'), ('_bf16kv', 'bf16kv'), ('_bf16', 'bf16'), ('_tf32', 'tf32'),
+                                  ('_f8w', 'f8w'))
                  if w.endswith(suf)), 'f32')
 
 
 def twins(prog):
     """A bf16-storage program's twins whose bf16 legs are its own computation: the `_bf16w` twin, the f32 program."""
-    base = re.sub(r'_(bf16w|bf16kv|bf16|tf32)$', '', prog)
+    base = re.sub(r'_(bf16w|bf16kv|bf16|tf32|f8w)$', '', prog)
     return [t for t in (base + '_bf16w', base) if t != prog]
 
 
@@ -127,7 +130,7 @@ def leg_prec(leg):
     return 'bf16' if leg.startswith('torch-bf16') or leg.endswith('-bf16') else 'tf32' if 'tf32' in leg else 'f32'
 
 
-FAIR = {'f32': 'f32', 'tf32': 'tf32', 'bf16w': 'bf16', 'bf16kv': 'bf16', 'bf16': 'bf16'}
+FAIR = {'f32': 'f32', 'tf32': 'tf32', 'bf16w': 'bf16', 'bf16kv': 'bf16', 'bf16': 'bf16', 'f8w': 'f8'}
 
 
 def per(w):
@@ -341,7 +344,9 @@ def main(argv):
          '**Fairness:** f32 rows vs f32 legs, `_tf32` rows vs TF32 legs, `_bf16w` rows (bf16 weights, f32 '
          'activations), `_bf16kv` rows (weights and KV cache bf16, f32 compute) and `_bf16` rows (bf16 storage, '
          '`: bf16 | f32` products) vs the bf16 legs (bf16 throughout); a bf16-storage row without bf16 legs of its own '
-         'takes its twin\'s (`_bf16w`, else the f32 program: the same bf16 computation). The torch bf16 reference of an '
+         'takes its twin\'s (`_bf16w`, else the f32 program: the same bf16 computation); `_f8w` rows (fp8 weights, f32 '
+         'compute) vs fp8 legs, of which none is installed: `(no leg)`, their `_bf16w` twin\'s bf16 leg is a reference '
+         'only. The torch bf16 reference of an '
          'f32 / tf32 row is never '
          'its best; it is listed apart ([bf16 reference](#bf16-real-world-reference)). Torch / gemm_lib legs count '
          'only with `within=yes`.', '',

@@ -49,7 +49,7 @@ PARTS = {
 KERNEL_RUNGS = ('arch-rungs interleave unroll min-blocks warp prefetch mma async wide ldmatrix warp-fill idx32 affine '
                 'pad wide-fma wgmma-hopper raster l2-gate pdl row-fit wave-gate grid-share panel-regs fill-rows '
                 'cell-fill asyncstage splitk splitk-atomic streamk row-split fill-wave fit-first tf32-radix kmajor-a full-tile '
-                'async-depth bank-plan streamk-fill k-fill vec-cells stream-fly bulk-stage wgmma-ws ws-regs').split()
+                'async-depth bank-plan streamk-fill k-fill vec-cells stream-fly bulk-stage wgmma-ws ws-regs tma-digits').split()
 GPU_SYMS = ('alloc arena copy2d d2h_on d2h event free gen h2d h2d_async h2d_on init launch_l2 launchv launch launch_coop '
             'pin sync tile unpin zero').split()
 PROFILE_RS = os.path.join(HERE, '..', '..', 'crates', 'backends', 'llvm', 'src', 'profile.rs')
@@ -339,7 +339,8 @@ def host_facts(ll, asm):
             for x in ('sites', 'folded', 'kernels', 'gated', 'stopped', 'none'):
                 zf[x] += k.get(x, 0) if isinstance(k.get(x), int) else 0
         zf['tails'] = len(re.findall(r'; mapal\.zero sites=', ll))
-        zf['flagged'] = len(re.findall(r'@mapal_gpu_site\(i64 -?\d+, i32 [23],', ll))
+        # (flags bit 1 = ZEROED; fp8-leftovers' COLD (8) and COOP (4) ride beside it)
+        zf['flagged'] = sum(int(x) & 2 != 0 for x in re.findall(r'@mapal_gpu_site\(i64 -?\d+, i32 (\d+),', ll))
         # A direct atomic / stream-K launch (no table: `--cands=1`) folded: no zero call right before it.
         lines = ll.splitlines()
         zf['direct'] = sum(1 for i, x in enumerate(lines)
@@ -1119,7 +1120,7 @@ def check(d, results=None, out=sys.stdout):
                     continue
                 # exp-hw: a face whose order is not free takes the oracle's steps (its OFF realization).
                 state = 'off' if rung in off or (rung == 'exp-hw' and not ns['free']) else 'on' if rung in kon or rung in (
-                    'row-slices', 'exp-hw', 'exp-rescale', 'slice-launches') or rung.startswith(('face', 'exec', 'module', 'window', 'radix-tile', 'tf32-tile', 'plan-cost', 'linear', 'choice', 'fma-pairs', 'horizontal-', 'calls-', 'narrow-tile', 'half-tile', 'narrow-async', 'staged-regs')) else 'off'  # plan-cost / linear: gated by the plan line itself (`applies`), not rungs_on
+                    'row-slices', 'exp-hw', 'exp-rescale', 'slice-launches') or rung.startswith(('face', 'exec', 'module', 'window', 'radix-tile', 'tf32-tile', 'plan-cost', 'linear', 'choice', 'fma-pairs', 'horizontal-', 'calls-', 'narrow-tile', 'half-tile', 'narrow-async', 'staged-regs', 'split-tile', 'mma-combine')) else 'off'  # plan-cost / linear / the site-priced split-tile, mma-combine: gated by the plan line itself (`applies`), not rungs_on
                 rows += [(prof, stem, k, f'{rung}:{state}', *r) for r in run_intent(it, state, ns)]
         # host rungs: one row per stem (kernel `-`)
         if not e['host'].get('calls'):

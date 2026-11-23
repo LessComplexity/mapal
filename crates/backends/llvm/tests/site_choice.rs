@@ -474,6 +474,9 @@ fn candidate_zero_is_the_pre_sprint_emission() {
         // and decode_1024_256's 5-unit chain on the rtx-5090 (members 1.9,
         // 1.9, 0.001, 0.6, 0.6 µs at the part's peaks) — regolded; the
         // rtx-5080's rows are unchanged (`--gpu-off=calls-issue`: the one before).
+        // hopper-wgmma-tma: the 2048² TF32 MLP site takes the warp-specialized
+        // wgmma tile on the sm_90a profiles (h100-pcie's pt_mlp_2048_tf32);
+        // its OFF arm keeps the emission before it.
         for f in [
             target.as_str(),
             "--host=x86-64-v3",
@@ -486,6 +489,7 @@ fn candidate_zero_is_the_pre_sprint_emission() {
             "--gpu-off=k-fill,streamk-fill",
             "--gpu-off=vec-cells,stream-fly,bulk-stage",
             "--gpu-off=mma-combine,split-tile",
+            "--gpu-off=wgmma-ws",
         ]
         .iter()
         .chain(face_flags)

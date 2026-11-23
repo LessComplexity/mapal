@@ -2305,6 +2305,8 @@ fn launch_key(l: &Launch) -> String {
         .replace(", horizontal: false", "")
         .replace(", calls: false", "")
         .replace(", calls_issue: false", "")
+        // integration: `post-table` decides the host's launch path only.
+        .replace(", post_table: false", "")
         // half-precision: `narrow-tile` decides which sites exist (no kernel text).
         .replace(", narrow_tile: false", "")
         // tensor-cores: `half-tile` / `narrow-async` choose the kernel (no
@@ -9211,9 +9213,10 @@ impl<'a> FnEmit<'a> {
         // group's split (`group_order`): the single launch keeps the group
         // ordered, so its realized combine is the table's (cross-arch
         // 3a8e654f: the B1 decode's O projection, S 64 planned on the H100,
-        // ran its ordered 16-block kernel, 235 against 29 us). `--cands=1`,
-        // the OFF arm of tables, keeps the emission before them.
-        let split_epi = self.gpu_arms.site_cands > 1
+        // ran its ordered 16-block kernel, 235 against 29 us). `post-table`
+        // (OFF: the ordered kernel, the emission before); `--cands=1` keeps
+        // it — candidate 0 is the rules' plan, and this is its launch.
+        let split_epi = host_rungs(self.profile, self.contract, self.gpu_arms).post_table
             && epi.is_some()
             && cands
                 .first()

@@ -304,6 +304,33 @@ fn post_split_launches_through_its_table() {
                 "{target}: launched through its table"
             );
         }
+        // integration: the OFF arm (`--gpu-off=post-table`) is the emission
+        // before it — where the site keeps one candidate, the ordered kernel.
+        let mut gpu = GpuArms::default();
+        *gpu.off.rung("pdl").expect("rung") = true;
+        *gpu.off.rung("post-table").expect("rung") = true;
+        gpu.site_cands = 1;
+        let e = emit_detailed(
+            &ir,
+            &EmitOpts {
+                host: "generic",
+                target,
+                gpu,
+                ..EmitOpts::default()
+            },
+        )
+        .expect("emits");
+        let dev = e.device.as_deref().unwrap_or("");
+        assert!(
+            naive_lines(dev)
+                .iter()
+                .any(|l| l.contains(" post=1") && l.contains(" combine=none ")),
+            "{target} post-table off: the ordered post kernel"
+        );
+        assert!(
+            !e.text.contains("call void @mapal_gpu_site("),
+            "{target} post-table off"
+        );
     }
 }
 

@@ -629,6 +629,15 @@ pub struct GpuRungs {
     /// (`func/calls.rs` `chain_ns`). Off (`--gpu-off=calls-issue`): the price
     /// without the host terms, the emission before it.
     pub calls_issue: bool,
+    /// integration (regressions item 1 + fp8-leftovers): an epilogue group
+    /// whose candidate 0 is a split (`group_order`: a workspace whose reduce
+    /// evaluates the epilogue) launches through its site table even with one
+    /// candidate — the plain launch runs an epilogue group's ordered kernel
+    /// (the B1 decode's O projection on the H100 235 against 29 µs, the f8w
+    /// decode's `wo` 108 against 39 µs a step). `--cands=1` keeps it (candidate
+    /// 0 is the rules' plan, realized). Off (`--gpu-off=post-table`): the
+    /// ordered kernel, the emission before it.
+    pub post_table: bool,
     /// long-rows `row-slices`: a flow unit whose few rows leave the part's
     /// SMs idle runs each row over several blocks — every fold's partial
     /// state per block, combined by `fold_combine`'s law (its own `⊕`, a
@@ -1010,6 +1019,7 @@ impl GpuRungs {
         horizontal: true,
         calls: true,
         calls_issue: true,
+        post_table: true,
         row_slices: true,
         cond_bounds: true,
         carry_made: true,
@@ -1056,7 +1066,7 @@ impl GpuRungs {
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 127] = [
+    pub const NAMES: [&'static str; 128] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1142,6 +1152,7 @@ impl GpuRungs {
         "horizontal",
         "calls",
         "calls-issue",
+        "post-table",
         "row-slices",
         "cond-bounds",
         "carry-made",
@@ -1274,6 +1285,7 @@ impl GpuRungs {
             "horizontal" => &mut self.horizontal,
             "calls" => &mut self.calls,
             "calls-issue" => &mut self.calls_issue,
+            "post-table" => &mut self.post_table,
             "row-slices" => &mut self.row_slices,
             "cond-bounds" => &mut self.cond_bounds,
             "carry-made" => &mut self.carry_made,
