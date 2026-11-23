@@ -777,6 +777,24 @@ fn uniform_base_refuses_a_slice_past_the_array() {
     }
 }
 
+/// Does a plan line move a narrow operand's pointer (`narrow=b:bf16 …
+/// ubase=a,b`)?
+fn narrow_uniform(ps: &[&str]) -> bool {
+    let field = |l: &str, k: &str| -> String {
+        l.split(' ')
+            .find_map(|w| w.strip_prefix(k))
+            .unwrap_or("")
+            .to_string()
+    };
+    ps.iter().any(|l| {
+        let ub = field(l, "ubase=");
+        field(l, "narrow=")
+            .split('+')
+            .filter_map(|x| x.split(':').next())
+            .any(|o| !o.is_empty() && ub.split(',').any(|u| u == o))
+    })
+}
+
 /// One generated sliced program ([`testgen::SliceProg`]): the facts' and
 /// plans' coverage, and its values on the device (every mode, every site
 /// candidate) and the host against the interpreter; the OFF arm's on a third.
@@ -813,6 +831,12 @@ fn check_slice(clang: &str, i: usize, p: &testgen::SliceProg) -> Vec<(&'static s
     if facts > 0 && tiles.is_empty() {
         c.push(("uniform-refused", 1));
     }
+    // ADR-0043 under `uniform-base`: a narrow (`bf16`) operand whose pointer
+    // the counter moves — by its own 2-byte elements.
+    let narrow_moved = narrow_uniform(&ps);
+    if narrow_moved {
+        c.push(("narrow-uniform-tiles", 1));
+    }
     if em.text.contains("; mapal.take") {
         c.push(("carry-takes", 1));
     }
@@ -845,14 +869,30 @@ fn check_slice(clang: &str, i: usize, p: &testgen::SliceProg) -> Vec<(&'static s
         assert_eq!(got, want, "uniform-base, carry-take off\n{src}");
         c.push(("off-arm-runs", 1));
     }
+    // The tile launch path (`resident` off): each operand copied from where
+    // its terms move it, its bytes its own storage's.
+    if i % 3 == 1 || narrow_moved {
+        let off = device_emission(&ir, &["resident"]);
+        let got = emu::run_emulated(clang, &off.text, off.device.as_deref().unwrap_or(""));
+        assert_eq!(got, want, "resident off\n{src}");
+        let offp = plans(&off);
+        if offp.iter().any(|l| l.contains(" ubase=")) {
+            c.push(("launch-path-uniform", 1));
+        }
+        if narrow_uniform(&offp) {
+            c.push(("launch-path-narrow", 1));
+        }
+    }
     c
 }
 
 /// Generated sliced programs (`testgen::slice_strategy`): 1–4 KV groups a
 /// loop's trips, 1, 2 or 4 query heads a group, QKᵀ or P·V (plain, masked
 /// where the counter moves the mask, scaled, per-row divisors), K/V shared or
-/// per sequence, head widths 3–32, the group's projection into a carried `y`.
-/// Every reach counter is non-zero.
+/// per sequence, stored `f32` or `bf16` (the narrow operand's pointer moved in
+/// its own 2-byte elements, on the resident and the tile launch path), head
+/// widths 3–32, the group's projection into a carried `y`. Every reach counter
+/// is non-zero.
 #[test]
 fn uniform_base_on_generated_programs() {
     let Some(clang) = emu::clang() else {
@@ -882,6 +922,9 @@ fn uniform_base_on_generated_programs() {
         "uniform-post-tiles",
         "uniform-splits",
         "uniform-refused",
+        "narrow-uniform-tiles",
+        "launch-path-uniform",
+        "launch-path-narrow",
         "carry-takes",
         "candidate-runs",
         "off-arm-runs",

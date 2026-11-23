@@ -221,3 +221,62 @@ rule ships it on repeating launches only) — pre-existing, outside this step.
 2. A state whose next value is made once could stay device-resident without a carry.
 3. `coop_body_ns` on the rtx-4090 / rtx-3090 / a100 / h100: their forced suite chains. (§5: calibrated by `calib.cu
    body` and derived on every part; its own open items there.)
+
+# Review after 60f0f8ce — a narrow operand's counter step, a callee's device loop (RTX 5080, 2026-11-23)
+
+Two findings of the independent review of the commits after 60f0f8ce, each fixed with a generated test that fails
+without the fix. Raw output in `.claude/raw-evidence/local-rtx-5080/review-narrow-callee/`.
+
+| finding | cause | fix | test (fails without the fix) |
+| --- | --- | --- | --- |
+| `uniform-base` × `narrow-radix`: a `bf16` KV cache read under a head-group loop gives wrong values | the launch moved a narrow operand's pointer by `coef · 4` bytes (the product's `elem`), not `coef · 2` (its storage): `kc` moved `gg · 32` bytes for a step of 8 elements = 16 bytes; the tile launch path (`resident` off) also copied a narrow operand as `n · 4` bytes, `n · 2` past its host array | `resident.rs` `emit_site_resident` and `gpu.rs`'s tile launch: each operand's term and bytes from its own storage (`TileRead::elem_bytes`) | `device_geometry.rs` `uniform_base_on_generated_programs`: `SliceProg::narrow` (K/V stored `to_bf16`, read `-> widen_f32`) and the tile launch path run on every narrow-moved program and a third of the rest. Without the resident fix: wrong values in the 4 modes; without the launch fix: SIGSEGV in the emulator (the over-read) |
+| a function that runs a device loop and returns its array (`-> ret`) returns zeros or uninitialised bytes; pre-existing (60f0f8ce too) | `resident`'s `uses` counted only in-function readers; a returned value has none, so the loop exit (and any device output returned) was `keep` — never copied out, and a `devgen` array could be built on the device only | `resident.rs` `uses`: a value made in the function that escapes it (`last_use_plan`'s `escapes`: it reaches `Return` / `Output`) is a `Host` use — the caller reads a host value. The callee's loop stays device-carried; one `mapal_gpu_d2h` of the result at the exit | `caching_memory.rs` `caching_on_generated_programs`: `HistoryProg::callee` (the loop in a callee called once, or from `main`'s loop, each result the next call's input) and `params` (which inputs are parameters). Without the fix: `0 … NaN` against the interpreter |
+
+## 1. The narrow operand's step
+
+Repro (the review's `narrow_uniform.mapal`: QKᵀ over a `bf16` K cache, 2 KV groups, `narrow=b:bf16 radix=a ubase=a,b`)
+on the RTX 5080 itself (`--gpu-off=place` so the small sites are device sites): interpreter `−158 −53 204 −211`;
+HEAD `−63 52 89 −11` (resident) and `−13 46 90 33` (`resident` off); now the interpreter's values on every arm
+(shipped, `place`, `place,resident`, `place,uniform-base`, `place,narrow-radix`). Host IR: `mul i64 %gg, 16` (was 32).
+
+The review's alignment claim is not real: `uniform_aligned` is right in element units. A kernel's widest load of an
+operand is `lanes = 16 / e` elements of its own storage — 16 bytes of `f32`, `<4 x bfloat>` (8 bytes, `align 8`) of a
+narrow operand — and the kernels that copy 16 narrow bytes at once take no mixed-radix site (`narrow_streams`,
+`half_operands`, `vec_fit` all require `site.radix.is_none()`). So `coef · 4 % 16 == 0` ⇔ `coef % lanes == 0` keeps both
+aligned. The PTX of the repro: the narrow `kc` parameter `.align 2`, read by `ld.global.nc.b16`; the 16-byte
+`ld.global.nc.v4.b32` are the f32 `q` panel's. The check now states it per operand (`(coef · e_o) % (lanes · e_o)`, the
+same decisions). A `d = 4` head (an 8-byte `bf16` step) forms no narrow tile site in the generated programs (its
+attention is a per-cell kernel), so that step is reasoned, not run on the hardware.
+
+## 2. A callee's device loop
+
+Repro (the review's `ONCE`: `inner` runs 3 trips of `wt` map, projection fold, `hy` carried; `(w0, h0) -> inner -> out`)
+on the RTX 5080: interpreter `−33.25 39 −43.5`; HEAD `−0 −0 −0` (`place,calls` off), `−2 −76432.12 −76432.12` (`place`
+off); now the interpreter's on every arm. `NESTED` (inner called from a 3-trip loop): `15072.133 252118.98 −183187.8` on
+every arm (was uninitialised). Host IR of `inner`: the same `carried=0:1024:device h2d=0 d2h=0` trip, plus one
+`call void @mapal_gpu_d2h(ptr %o1, …, i64 1024)` at the exit — the one copy the dataflow requires (the result leaves
+the function).
+
+Open: in a callee whose `g` (read by the per-row scale and the exit's sign cell) is a parameter, the history loop's
+carries stay on the host (`carried=…:two / one`, the history crossing every trip) where the same loop in `main`, or
+with `g` built in the callee, is device-carried. A parameter operand of a device cell is the missing piece; values are
+right either way.
+
+## Emission and time
+
+The shipped emission of every `benches/**/*.mapal` program (448) is byte-identical to HEAD (less `; mapal.` comments,
+host and device) on the rtx-5080, the h100 and the rtx-5080 with `place` off; `suite_diff.py --base HEAD`: 35 suite
+programs + 2 cells × 5 faces the same — nothing to time (null by construction). With `--gpu-off=place,resident` (a
+measurement arm) 48 `bf16` programs differ only in `mapal_gpu_tile`'s narrow operand bytes (`n · 2`, was `n · 4`).
+
+## Tests
+
+`uniform_base_on_generated_programs` (64 programs, 4 emulator modes, candidate picks, the CPU build, two OFF arms):
+narrow-uniform-tiles 7, launch-path-uniform 1, launch-path-narrow 1, uniform-tiles 38, uniform-post-tiles 38,
+uniform-splits 9, uniform-refused 26, carry-takes 24, candidate-runs 38, off-arm-runs 22.
+`caching_on_generated_programs` (96 programs): callee-device-loops 38, called-in-a-loop 14, retained 223,
+retained-cell-kernels 174, gathered-sites 33, same-cells 47, cone-shared 30, fit-smaller 1, off-arm-runs 32. Each
+checked against the code without its fix (a toggle, removed): the narrow step — wrong values in every mode; the launch
+path's sizes — SIGSEGV; the escape — `0 … NaN`. `mapal-backend-llvm` (44 binaries, 447 tests) and `mapal-rewrite`
+(22 binaries, 99 tests) pass. (The first run hit 94 °C at `site_choice` and was stopped; the rest ran at 8 test
+threads on 8 cores.)

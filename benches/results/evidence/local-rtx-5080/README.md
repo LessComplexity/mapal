@@ -147,7 +147,11 @@ over wholly masked slices (NaN → the sequential fold's value; lsm_1_131072's s
 loop's next state made once (no device carry: the device printed the initial value), `calls`' missing body price
 (`coop_body_cycles`: `calib.cu body` measures it here, 4390 cycles = 1792 ns a chain; every other part derives it at its
 own clock — 4090 / 3090 form causal / gen / prefill, nothing re-forms the H100's smlp / firew losers; this part
-unchanged), and `intent.py` entries for `row-slices`, `exp-hw`, `exp-rescale` (44 checks ok).
+unchanged), and `intent.py` entries for `row-slices`, `exp-hw`, `exp-rescale` (44 checks ok). The review after
+60f0f8ce (same file, second part): a `bf16` operand's pointer moved by a loop counter in the product's 4-byte elements
+(`uniform-base` × `narrow-radix`: wrong values; now its own 2-byte elements, and its copy size on the tile launch path),
+and a callee's device loop that returned its array without copying it out (`escapes` is now a host use) — both fixed
+with generated tests (`SliceProg::narrow`, `HistoryProg::callee`); no shipped suite emission moves, nothing timed.
 
 **half-precision** (`half-precision.md`): ADR-0043 — `bf16` / `f16` storage types (`to_bf16` / `to_f16` round an f32 once,
 `widen_f32` widens exactly; no arithmetic on narrow values; the interpreter's bits on every face and backend),

@@ -21,8 +21,10 @@
 //! - **Generated programs** (`testgen::history_strategy`): growing-history
 //!   loops — one or more sequences, a write in range or piece form, past the
 //!   end too — with row folds, per-row scales, capture-free maps,
-//!   projections, windows and a carried constant's transpose, against the
-//!   interpreter in every emulator mode and with each consumer off.
+//!   projections, windows and a carried constant's transpose — in `main`, or
+//!   in a callee that returns the loop's array (called once, or from a
+//!   loop) — against the interpreter in every emulator mode and with each
+//!   consumer off.
 
 use mapal_backend_llvm::{Emission, EmitOpts, GpuArms, emit_detailed};
 use mapal_interp::{Outcome, run};
@@ -454,11 +456,31 @@ fn arena_bytes(em: &Emission) -> u64 {
         .unwrap_or(0)
 }
 
+/// Does a function other than `main` carry a loop state on the device
+/// (`; mapal.move … carried=…:device`) and copy its result out?
+fn callee_device_loop(em: &Emission) -> bool {
+    em.text.split("\ndefine ").skip(1).any(|f| {
+        !f.contains("@mapal_main(")
+            && f.lines().any(|l| {
+                l.starts_with("; mapal.move") && l.contains("carried=") && l.contains(":device")
+            })
+            && f.contains("call void @mapal_gpu_d2h(")
+    })
+}
+
 fn check_history(clang: &str, i: usize, p: &testgen::HistoryProg) -> Vec<(&'static str, u64)> {
     let src = testgen::history_prog_src(p);
     let ir = lower(&src);
     let want = interp(&ir);
-    let f = ir.entry();
+    // The history loop's function: `main`, or the callee `step`.
+    let f = match p.callee {
+        0 => ir.entry(),
+        _ => ir
+            .funcs()
+            .find(|(_, fd)| fd.name == "step")
+            .map(|(f, _)| f)
+            .expect("the callee stays a function"),
+    };
     let up = ir.unchanged_plan(f);
     let mut c = vec![("programs", 1)];
     let derived = up
@@ -510,6 +532,14 @@ fn check_history(clang: &str, i: usize, p: &testgen::HistoryProg) -> Vec<(&'stat
     }
     if em.text.contains("call void @mapal_gpu_copy2d(") {
         c.push(("gathered-sites", 1));
+    }
+    // A callee whose loop carries its state on the device: the result it
+    // returns is copied out at the loop's exit (`escapes`: a host use).
+    if p.callee > 0 && callee_device_loop(&em) {
+        c.push(("callee-device-loops", 1));
+        if p.callee == 2 {
+            c.push(("called-in-a-loop", 1));
+        }
     }
     let ex = emu::build_emulated(clang, &em.text, dev);
     for (mode, (got, _)) in MODES.iter().zip(ex.run_each(&MODES)) {
@@ -574,6 +604,8 @@ fn caching_on_generated_programs() {
         "same-cells",
         "cone-shared",
         "fit-smaller",
+        "callee-device-loops",
+        "called-in-a-loop",
         "off-arm-runs",
     ] {
         assert!(c.get(key).copied().unwrap_or(0) > 0, "{key}: {c:?}");

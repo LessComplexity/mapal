@@ -4487,8 +4487,10 @@ pub fn layer_prog_src(p: &LayerProg) -> String {
 /// as an attention half (QKᵀ or P·V, plain, masked at a position the
 /// counter moves, or scaled per row) and the group's projection added into
 /// a carried `y`. Head widths include odd ones (`d = 3`: a pointer moved by
-/// a non-vector step); `b` rows the staged tiles take. Every value is a small integer or an exact quotient
-/// by 2 or 4, so every face and fold order agrees with the interpreter.
+/// a non-vector step; `d = 4`: one 16-byte vector of `f32`); `b` rows the staged tiles take. The K/V
+/// cache is stored `f32` or `bf16` (`narrow`: `to_bf16`, read `-> widen_f32` — ADR-0043's narrow
+/// operand, its pointer moved by the counter in its own 2-byte elements). Every value is a small
+/// integer or an exact quotient by 2 or 4, so every face and fold order agrees with the interpreter.
 #[derive(Clone, Debug)]
 pub struct SliceProg {
     /// Query rows (tokens or sequences), KV groups (the loop's trips),
@@ -4509,6 +4511,8 @@ pub struct SliceProg {
     /// A row fold reads the carry's init before the loop (its device copy
     /// then dies at the loop's entry: long-prefill `carry-take`).
     pub pre: bool,
+    /// The K/V cache stored `bf16` (ADR-0043), read through `widen_f32`.
+    pub narrow: bool,
 }
 
 pub fn slice_strategy() -> impl Strategy<Value = SliceProg> {
@@ -4520,15 +4524,15 @@ pub fn slice_strategy() -> impl Strategy<Value = SliceProg> {
         ),
         (
             prop::sample::select(vec![16u64, 64]),
-            prop::sample::select(vec![3u64, 8, 32]),
+            prop::sample::select(vec![3u64, 4, 8, 32]),
             prop::sample::select(vec![16u64, 64]),
         ),
         any::<bool>(),
         0u8..3,
-        (any::<bool>(), any::<bool>()),
+        (any::<bool>(), any::<bool>(), any::<bool>()),
     )
         .prop_map(
-            |((b, groups, per), (l, d, n), qk, epi, (shared, pre))| SliceProg {
+            |((b, groups, per), (l, d, n), qk, epi, (shared, pre, narrow))| SliceProg {
                 b,
                 groups,
                 per,
@@ -4539,6 +4543,7 @@ pub fn slice_strategy() -> impl Strategy<Value = SliceProg> {
                 epi,
                 shared,
                 pre,
+                narrow,
             },
         )
 }
@@ -4562,7 +4567,12 @@ pub fn slice_prog_src(p: &SliceProg) -> String {
     };
     let mut s = String::from("fn main() {\n");
     s += &data("q", b * h * d, 5, 3, 7);
-    s += &data("kc", kn, 3, 1, 5);
+    s += &match p.narrow {
+        true => {
+            data("kc", kn, 3, 1, 5).replace("widen_f32 } -> kc;", "widen_f32 -> to_bf16 } -> kc;")
+        }
+        false => data("kc", kn, 3, 1, 5),
+    };
     s += &data("pe", b * h * l, 7, 2, 5);
     s += &data("w", g * kk * n, 3, 2, 5);
     s += &data("y0", b * n, 5, 1, 9);
@@ -4584,9 +4594,19 @@ pub fn slice_prog_src(p: &SliceProg) -> String {
         "    mut y: [f32; {}] <- y0;\n    mut gg: i32 <- 0;\n",
         b * n
     );
+    // The cache's element: `f32` read in the product, or `bf16` widened
+    // first (an exact widening the narrow tile site reads through).
+    let kread = format!("kc[(({kb}r) * {g} + gg) * {d} + u]");
+    let (kpre, kv) = match p.narrow {
+        true => (
+            format!("{kread} -> widen_f32 -> kv;\n                        "),
+            "kv".to_string(),
+        ),
+        false => (String::new(), kread),
+    };
     let att = if p.qk {
         let fold = format!(
-            "(0.0, rd) -> fold {{\n                        acc, u -> acc + q[(bb * {h} + gg * {per} + hh) * {d} + u] * kc[(({kb}r) * {g} + gg) * {d} + u]\n                    }}"
+            "(0.0, rd) -> fold {{\n                        acc, u -> {kpre}acc + q[(bb * {h} + gg * {per} + hh) * {d} + u] * {kv}\n                    }}"
         );
         let body = match p.epi {
             0 => format!("{fold}"),
@@ -4600,7 +4620,7 @@ pub fn slice_prog_src(p: &SliceProg) -> String {
         )
     } else {
         let fold = format!(
-            "(0.0, rl) -> fold {{\n                        acc, r -> acc + pe[(bb * {h} + gg * {per} + hh) * {l} + r] * kc[(({kb}r) * {g} + gg) * {d} + u]\n                    }}"
+            "(0.0, rl) -> fold {{\n                        acc, r -> {kpre}acc + pe[(bb * {h} + gg * {per} + hh) * {l} + r] * {kv}\n                    }}"
         );
         let body = match p.epi {
             0 => format!("{fold}"),
@@ -5247,6 +5267,14 @@ pub struct HistoryProg {
     /// transform that dies there (a prebuilt cache's inputs): the loop's own
     /// buffers may take its bytes (`cone-span`).
     pub prebuilt: bool,
+    /// Where the loop runs: 0 in `main`; 1 in a callee `step` (its exit
+    /// value the result: `-> ret`) `main` calls once; 2 that callee called
+    /// from `main`'s two-trip loop, each result the next call's `x0`. A
+    /// callee's device loop leaves its result on the host for the caller.
+    pub callee: u8,
+    /// A callee's inputs besides `x0`: bit 0 `w`, bit 1 `g`, bit 2 `h0` a
+    /// parameter, else built in the callee.
+    pub params: u8,
 }
 
 pub fn history_strategy() -> impl Strategy<Value = HistoryProg> {
@@ -5266,9 +5294,20 @@ pub fn history_strategy() -> impl Strategy<Value = HistoryProg> {
             any::<bool>(),
             any::<bool>(),
         ),
+        (0u8..3, 0u8..8),
     )
         .prop_map(
-            |(b, l, d, n, trips, p0, rows_form, (rowfold, same, rot, constant, late, prebuilt))| {
+            |(
+                b,
+                l,
+                d,
+                n,
+                trips,
+                p0,
+                rows_form,
+                (rowfold, same, rot, constant, late, prebuilt),
+                (callee, params),
+            )| {
                 HistoryProg {
                     b,
                     l,
@@ -5283,6 +5322,8 @@ pub fn history_strategy() -> impl Strategy<Value = HistoryProg> {
                     constant,
                     late,
                     prebuilt,
+                    callee,
+                    params,
                 }
             },
         )
@@ -5296,11 +5337,23 @@ pub fn history_prog_src(p: &HistoryProg) -> String {
             "    {len} -> iota -> i_{name};\n    i_{name} -> map {{ t -> (t * {a} + {c}) % 5 - 2 -> widen_f32 }} -> {name};\n"
         )
     };
-    let mut s = String::from("fn main() {\n");
-    s += &data("w", d * n, 3, 1);
-    s += &data("g", d, 2, 3);
-    s += &data("x0", b * d, 7, 2);
-    s += &data("h0", b * l * d, 3, 4);
+    // The inputs: built in `main` (a callee's parameters) or in the callee.
+    let inputs = [
+        ("w", d * n, 3, 1, p.params & 1 != 0),
+        ("g", d, 2, 3, p.params & 2 != 0),
+        ("x0", b * d, 7, 2, true),
+        ("h0", b * l * d, 3, 4, p.params & 4 != 0),
+    ];
+    let (mut head, mut s) = (String::new(), String::new());
+    let mut sig = Vec::new();
+    for (name, len, a, c, param) in inputs {
+        if p.callee == 0 || param {
+            head += &data(name, len, a, c);
+            sig.push((name, len));
+        } else {
+            s += &data(name, len, a, c);
+        }
+    }
     s += &format!(
         "    {} -> iota -> rBL;\n    {d} -> iota -> rD;\n    {} -> iota -> rHD;\n    {} -> iota -> rBLN;\n    \
          {} -> iota -> rLN;\n    {} -> iota -> rBD;\n    {} -> iota -> rDN;\n",
@@ -5405,12 +5458,47 @@ pub fn history_prog_src(p: &HistoryProg) -> String {
     for line in body.lines() {
         s += &format!("                {line}\n");
     }
-    s += "                t + 1 -> t;\n                -> loop;\n            }\n            -false-> x -> out;\n        }\n    }\n";
+    let exit = if p.callee == 0 { "out" } else { "ret" };
+    s += &format!(
+        "                t + 1 -> t;\n                -> loop;\n            }}\n            -false-> x -> {exit};\n        }}\n    }}\n"
+    );
+    let mut prints = String::new();
     for c in 0..b * d {
-        s += &format!("    out[{c}] -> println;\n");
+        prints += &format!("    out[{c}] -> println;\n");
     }
-    s += "    0.0 -> zero: f32;\n    (zero, out) -> fold { acc, v -> acc + v } -> sum;\n    sum -> println;\n}\n";
-    s
+    prints += "    0.0 -> zero: f32;\n    (zero, out) -> fold { acc, v -> acc + v } -> sum;\n    sum -> println;\n";
+    let params: Vec<String> = sig
+        .iter()
+        .map(|(x, len)| format!("{x}: [f32; {len}]"))
+        .collect();
+    let step = format!(
+        "fn step({}) -> [f32; {}] {{\n{s}}}\n\n",
+        params.join(", "),
+        b * d
+    );
+    // The call's argument: the one parameter, or their product.
+    let args = |x0: &str| {
+        let names: Vec<&str> = sig
+            .iter()
+            .map(|&(x, _)| if x == "x0" { x0 } else { x })
+            .collect();
+        match names.len() {
+            1 => names[0].to_string(),
+            _ => format!("({})", names.join(", ")),
+        }
+    };
+    match p.callee {
+        0 => format!("fn main() {{\n{head}{s}{prints}}}\n"),
+        1 => format!(
+            "{step}fn main() {{\n{head}    {} -> step -> out;\n{prints}}}\n",
+            args("x0")
+        ),
+        _ => format!(
+            "{step}fn main() {{\n{head}    mut xo: [f32; {}] <- x0;\n    mut u: i32 <- 0;\n    loop {{\n        (u < 2) -> {{\n            -true-> {{\n                {} -> step -> xr;\n                xr -> xo;\n                u + 1 -> u;\n                -> loop;\n            }}\n            -false-> xo -> out;\n        }}\n    }}\n{prints}}}\n",
+            b * d,
+            args("xo")
+        ),
+    }
 }
 
 // --- gemv-stream: matrix-vector sites (`vec-cells`, `stream-fly`) ------------

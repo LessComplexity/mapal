@@ -641,6 +641,13 @@ impl<'a> FnEmit<'a> {
 
     /// Every use of array `o`, through the pointer-only products that carry it.
     /// A by-value `Pair` is `Fwd` when the carry owns it (`fwd`), else `Host`.
+    ///
+    /// A value made here that outlives the call (`last_use_plan`'s `escapes`:
+    /// it reaches the function's `Return` / `Output`) is read by the caller,
+    /// on the host — a function's result is a host value — so it is a `Host`
+    /// use even with no reader in the function: a loop exit or a site output
+    /// returned by a callee is copied out, never kept or built device-only.
+    /// (A `Parameter` escapes as a borrow, not a read: it is not counted.)
     fn uses(
         &self,
         sites: &SecondaryMap<MorphismId, DevSite>,
@@ -649,6 +656,15 @@ impl<'a> FnEmit<'a> {
         fwd: &[MorphismId],
     ) -> Vec<Use> {
         let mut out = Vec::new();
+        if self.lup.escapes(o)
+            && self.ir.try_owner(o) == Some(self.f)
+            && self
+                .ir
+                .object(o)
+                .is_some_and(|x| x.kind != ObjectKind::Parameter)
+        {
+            out.push(Use::Host);
+        }
         for &m in self.ir.out_edges(o) {
             let morph = self.ir.morphism(m).expect("morphism resolves");
             match morph.op {
@@ -3879,11 +3895,11 @@ impl<'a> FnEmit<'a> {
         if let Some(site) = site.filter(|s| slots == [s.a.slot, s.b.slot])
             && let Some(r) = site.radix.as_deref()
         {
-            let e = match &site.elem {
-                Ty::Float { bits } => u64::from(*bits) / 8,
-                _ => 4,
-            };
-            for (i, ds) in [(0, &r.ua), (1, &r.ub)] {
+            // A term moves the operand by whole elements of its own storage:
+            // a narrow operand's (ADR-0043, a `bf16` KV cache) are 2 bytes,
+            // not the product's `elem`.
+            for (i, read, ds) in [(0, &site.a, &r.ua), (1, &site.b, &r.ub)] {
+                let e = read.elem_bytes(&site.elem);
                 if let Some(off) = self.uniform_bytes(source, ds, e) {
                     let p = self.tmp();
                     self.line(format!("{p} = add i64 {}, {off}", ops[i]));

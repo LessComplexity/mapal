@@ -312,14 +312,23 @@ pub(crate) fn uniform_site(site: &TileSite) -> bool {
 }
 
 /// The pointer a launch moves by a captured number keeps the alignment every
-/// kernel declares for it (a 16-byte vector, [`GPU_VEC_BYTES`]): each term's
-/// step is whole vectors. Otherwise the site is no device site.
+/// kernel's widest load of that operand assumes: a vector of `lanes =
+/// 16 / e` elements in the operand's own storage — 16 bytes of an `f32`
+/// operand ([`GPU_VEC_BYTES`]); a narrow operand's register-staged vector is
+/// the same `lanes` elements of its format (`<4 x bfloat>`, 8 bytes, ADR-0043),
+/// and the kernels that copy 16 narrow bytes at once (`narrow-async`'s
+/// `cp.async`, the 16-bit `mma` panels, `vec-cells`) take no mixed-radix site.
+/// Each term's step, in the operand's bytes, is whole such vectors. Otherwise
+/// the site is no device site.
 fn uniform_aligned(site: &TileSite) -> bool {
-    let e = elem_bytes_of(&site.elem);
+    let lanes = GPU_VEC_BYTES / elem_bytes_of(&site.elem);
     site.radix.as_deref().is_none_or(|r| {
-        r.ua.iter()
-            .chain(&r.ub)
-            .all(|d| (d.coef * e).is_multiple_of(GPU_VEC_BYTES))
+        [(&r.ua, &site.a), (&r.ub, &site.b)]
+            .iter()
+            .all(|(ds, read)| {
+                let e = read.elem_bytes(&site.elem);
+                ds.iter().all(|d| (d.coef * e).is_multiple_of(lanes * e))
+            })
     })
 }
 
@@ -8045,13 +8054,16 @@ impl<'a> FnEmit<'a> {
             return;
         }
         let src_ty = self.obj_ty(source);
-        let bytes = |ty: &Ty| {
+        // Each operand's bytes in its own storage (a narrow operand's 2-byte
+        // elements, ADR-0043); the output's are `elem`'s.
+        let (ea, eb) = (site.a.elem_bytes(&site.elem), site.b.elem_bytes(&site.elem));
+        let bytes = |ty: &Ty, e: u64| {
             let (_, n) = array_parts(ty);
-            n * elem_bytes_of(&site.elem)
+            n * e
         };
-        let a_bytes = bytes(src_ty.component_ty(site.a.slot).expect("tile a array"));
-        let b_bytes = bytes(src_ty.component_ty(site.b.slot).expect("tile b array"));
-        let o_bytes = bytes(&self.obj_ty(target));
+        let a_bytes = bytes(src_ty.component_ty(site.a.slot).expect("tile a array"), ea);
+        let b_bytes = bytes(src_ty.component_ty(site.b.slot).expect("tile b array"), eb);
+        let o_bytes = bytes(&self.obj_ty(target), elem_bytes_of(&site.elem));
         let a_ptr = self
             .array_operand_ptr(source, Some(site.a.slot))
             .expect("tile a ptr");
@@ -8063,10 +8075,9 @@ impl<'a> FnEmit<'a> {
         let (mut a_ptr, mut b_ptr, mut a_bytes, mut b_bytes) =
             (a_ptr, b_ptr, a_bytes.to_string(), b_bytes.to_string());
         if let Some(r) = site.radix.as_deref() {
-            let e = elem_bytes_of(&site.elem);
-            for (ds, p, n) in [
-                (&r.ua, &mut a_ptr, &mut a_bytes),
-                (&r.ub, &mut b_ptr, &mut b_bytes),
+            for (ds, e, p, n) in [
+                (&r.ua, ea, &mut a_ptr, &mut a_bytes),
+                (&r.ub, eb, &mut b_ptr, &mut b_bytes),
             ] {
                 if let Some(off) = self.uniform_bytes(source, ds, e) {
                     let (q, m) = (self.tmp(), self.tmp());
