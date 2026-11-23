@@ -7,7 +7,9 @@ Tctl watched (`sensors`), parallelism lowered above 85 C.
 Timed processes run on the cores with the highest clock ceiling, `CPUS=0-7` (CCD 0, CPPC `highest_perf` 211–241;
 CCD 1 / 3 166): the same binaries run host-bound 15–90 µs programs 0.81–1.00× as long there as on 8–15, so runs
 compare only on one set — `timed_cpus.sh` (sourced by the timed scripts) checks that set's busy share and writes its
-`cppc` range into `conditions.txt`.
+`cppc` range into `conditions.txt`. Every timed run (`gpu_run.sh`, `model_scale_run.sh`) samples the GPU's P-state and
+clocks five times a second into `gpu-clocks.csv` (summary `gpu-clocks.txt`): between processes the 5080 may drop to
+P8, a state the other conditions do not show.
 
 ## Per step: changed programs, then one full suite
 

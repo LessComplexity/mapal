@@ -174,19 +174,37 @@ fn decode_merges_its_rows_and_query() {
     assert!(!off.device.as_deref().unwrap().contains("@hz.mapal_tile_"));
 
     // `pt_rt_mlp2_1024`'s trip: the two input cells (4096 blocks each; their
-    // last waves, 64 blocks each, share one) are one launch; `d1` and `c2`
-    // (128-block GEMMs whose last waves fill one alone) stay two.
+    // last waves, 64 blocks each, share one) are one launch. `d1` and `c2`
+    // (128-block GEMMs) walk their tiles by stream-K on the 5080 since
+    // sweep-gemm-2 (`streamk-price`: one wave of CTAs each), so no merge is
+    // weighed for them; with that rule off they are the 128-block launches
+    // whose last waves fill one alone, refused (integration 3: the merged
+    // workspace run found this expectation stale).
     let ir = bench("pt_rt_mlp2_1024");
     let h = host_line(&shipped(&ir, "rtx-5080", true));
-    assert_eq!(
+    let key = |h: &str| {
         (
-            field(&h, "groups"),
-            field(&h, "cells"),
-            field(&h, "refused")
-        ),
-        ("1", "2", "waves:1"),
-        "{h}"
-    );
+            field(h, "groups").to_string(),
+            field(h, "cells").to_string(),
+            field(h, "refused").to_string(),
+        )
+    };
+    assert_eq!(key(&h), ("1".into(), "2".into(), "0".into()), "{h}");
+    let mut gpu = GpuArms::default();
+    *gpu.off.rung("calls").unwrap() = true;
+    *gpu.off.rung("streamk-price").unwrap() = true;
+    let unpriced = emit_detailed(
+        &ir,
+        &EmitOpts {
+            target: "rtx-5080",
+            host: "generic",
+            gpu,
+            ..EmitOpts::default()
+        },
+    )
+    .unwrap();
+    let h = host_line(&unpriced);
+    assert_eq!(key(&h), ("1".into(), "2".into(), "waves:1".into()), "{h}");
 }
 
 /// A decode step small enough to emulate: values equal the interpreter under

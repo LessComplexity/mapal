@@ -101,8 +101,10 @@ def regs(s):
 
 
 def hot_loop(body):
+    """The backward-branch body with the most MAC, descending into a nested loop that holds more than half of it
+    (evidence.py `innermost`: a stream-K piece loop's epilogue around its k loop)."""
     addr = [a for a, _ in body]
-    best = None
+    best, spans = None, []
     for i, (a, ins) in enumerate(body):
         _, op, rest = split(ins)
         if op.split('.')[0] != 'BRA':
@@ -117,8 +119,15 @@ def hot_loop(body):
         loop = body[j:i + 1]
         nf = mac(loop)
         key = (nf, -len(loop))
+        spans.append((key, loop, t, a))
         if best is None or key > best[0]:
             best = (key, loop, t, a)
+    while best is not None:
+        inner = [s for s in spans if best[2] <= s[2] and s[3] <= best[3] and (s[2], s[3]) != (best[2], best[3])
+                 and 2 * s[0][0] > best[0][0]]
+        if not inner:
+            break
+        best = max(inner, key=lambda s: s[0])
     return best
 
 

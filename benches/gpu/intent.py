@@ -67,10 +67,11 @@ INTENT = {
          'adjacent along `k`, or a thread`s `vec-cells` cells, joined under the operand`s allocation alignment — '
          'an fp8 operand`s element is LDG.U8 — '
          'cross-arch 3a8e654f: the bf16 KV cache`s scores kernel), a 4-element vector (LDG.64, the register-staged '
-         'tile), or copied by cp.async (LDGSTS: `narrow-async`)',
+         'tile; a mixed-radix tile`s k-major `b` copied along its rows, sweep-attention-2 `kmajor-b`), or copied by '
+         'cp.async (LDGSTS: `narrow-async`)',
          "(sass.hot.ldg16 + sass.hot.get('ldg8', 0) > 0 or plan.get('cells', 1) > 1 and sass.hot.ldg128 > 0) "
          "if plan.kind == 'naive' else "
-         "sass.hot.ldg16 + sass.hot.ldg128 > 0 if 'radix' in plan "
+         "sass.hot.ldg16 + sass.hot.ldg64 + sass.hot.ldg128 > 0 if 'radix' in plan "
          "else sass.ldgsts > 0 if plan.stages >= 2 else sass.hot.ldg64 > 0"),
         ('a narrow panel is register-staged (no cp.async, LDGSTS) unless the tile streams it (`stages` >= 2: '
          'tensor-cores `narrow-async`)', "plan.kind == 'naive' or plan.stages >= 2 or sass.hot.ldgsts == 0"),
@@ -81,19 +82,23 @@ INTENT = {
     'module': dict(applies="plan.kind != 'gen'", on=[
         ('every kernel in the device module is launched by the host', 'mod.launched > 0')]),
     # The site-priced rungs (`row-split`: `row_split_pays`; `wide-fma`: `wide_fma_pays`, open-rules) may be off at a
-    # site where the part's rung is on: the table holds the part's side, the plan line the site's.
+    # site where the part's rung is on: the table holds the part's side, the plan line the site's. An epilogue
+    # group's kernel (`plan.epi`) is drawn under the group's order (`gpu.rs epi_order`): a `tile-post` group's atomic
+    # split and stream-K off, any other group's atomic and workspace splits off (sweep-runtime-2 `streamk-epi`) —
+    # those may be off where the part has them on (integration 3).
     'arch-rungs': dict(rule=True, applies=ANY, on=[
-        ("the kernel's rungs are the rules' at its fill and face (a site-priced rung at most off)",
-         "set(plan.rungs_on) - {'row-split', 'wide-fma'} == set(table.rungs_on) - {'row-split', 'wide-fma'}"
-         " and set(plan.rungs_on) & {'row-split', 'wide-fma'} <= set(table.rungs_on)")],
+        ("the kernel's rungs are the rules' at its fill and face (a site-priced rung, or a split an epilogue "
+         "group's order takes off, at most off)",
+         "set(plan.rungs_on) - ({'row-split', 'wide-fma'} | ({'splitk', 'splitk-atomic', 'streamk'} if plan.get('epi', 0) else set())) == set(table.rungs_on) - ({'row-split', 'wide-fma'} | ({'splitk', 'splitk-atomic', 'streamk'} if plan.get('epi', 0) else set()))"
+         " and set(plan.rungs_on) & ({'row-split', 'wide-fma'} | ({'splitk', 'splitk-atomic', 'streamk'} if plan.get('epi', 0) else set())) <= set(table.rungs_on)")],
         off=[('every rung on', 'set(plan.rungs_on) == set(table.rungs_on)')]),
     # ---- FMA tile rungs ------------------------------------------------------------------------------
     'unroll': dict(applies=TILE + ' and plan.bk > 1', on=[
         # tile-efficiency T2: a k-major (f32) trip takes 4 k steps
         ('LLVM fully unrolled the bk-step loop (loop-unroll FullyUnrolled = bk, bk/4 k-major)',
-         'remarks.opt.full_unroll == (plan.bk // 4 if plan.kmajor == 1 else plan.bk)'),
+         '(plan.bk // 4 if plan.kmajor == 1 else plan.bk) in remarks.opt.full_unrolls'),
         ('one hot-loop trip holds >= bk k-steps', 'sass.hot.ksteps >= plan.bk')],
-        off=[('LLVM did not fully unroll it', 'remarks.opt.full_unroll != plan.bk'),
+        off=[('LLVM did not fully unroll it', 'plan.bk not in remarks.opt.full_unrolls'),
              ('fewer than bk k-steps per trip', 'sass.hot.ksteps < plan.bk')]),
     'prefetch': dict(applies=TILE + ' and plan.stages == 1 and sass.hot.ldg > 0', on=[
         ("the next panel's LDGs are covered by this panel's math", 'sass.hot.ldg_cover_min > 0')],
@@ -282,8 +287,10 @@ INTENT = {
         note='ON: `h2d_on` calls where one chain reads an upload: diff the arm'),
     'eager-init': dict(host=True, applies='host.device_sites > 0', on=[
         ("one init, main's first call", 'host.calls.init == 1')]),
+    # An epilogue group launched through its site's candidate table (`mapal_gpu_site`: per-site-choice, and the
+    # sweep-runtime-2 ticket's workspace) takes its n pointers there (integration 3).
     'epilogue': dict(host=True, applies='dev.epi > 0', on=[
-        ('epilogue kernels launched over n pointers', 'host.calls.launchv > 0')]),
+        ('epilogue kernels launched over n pointers (launchv, or a site table)', 'host.calls.launchv + host.calls.site > 0')]),
     'devmap': dict(host=True, applies='dev.cell > 0', on=[
         ('cell kernels launched over n pointers', 'host.calls.launchv > 0')]),
     'streams': dict(host=True, note='stream ids in launchv: diff the arm (`.fs`)'),

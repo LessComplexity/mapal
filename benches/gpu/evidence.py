@@ -51,7 +51,7 @@ KERNEL_RUNGS = ('arch-rungs interleave unroll min-blocks warp prefetch mma async
                 'cell-fill asyncstage splitk splitk-atomic streamk row-split fill-wave fit-first tf32-radix kmajor-a full-tile '
                 'async-depth bank-plan streamk-fill k-fill vec-cells stream-fly bulk-stage wgmma-ws ws-regs tma-digits kmajor-b').split()
 GPU_SYMS = ('alloc arena copy2d d2h_on d2h event free gen h2d h2d_async h2d_on init launch_l2 launchv launch launch_coop '
-            'pin sync tile unpin zero').split()
+            'pin site sync tile unpin zero').split()
 PROFILE_RS = os.path.join(HERE, '..', '..', 'crates', 'backends', 'llvm', 'src', 'profile.rs')
 
 
@@ -147,7 +147,7 @@ def ptx_facts(text):
         waits = [int(m.group(1)) for x in lines if (m := re.match(r'cp\.async\.wait_group\s+(\d+)', x))]
         f['wait_n_max'] = max(waits, default=-1)
         labels = {m[1]: i for i, x in enumerate(lines) if (m := re.match(r'^(\$L__\w+):', x))}
-        best = None
+        best, spans = None, []
         for i, x in enumerate(lines):
             m = re.search(r'bra(?:\.uni)?\s+(\$L__\w+);', x)
             if m and m[1] in labels and labels[m[1]] < i:
@@ -155,8 +155,11 @@ def ptx_facts(text):
                 seg = lines[labels[m[1]]:i + 1]
                 c = ptx_counts(seg)
                 key = (c['fma_f32'] + c['mul_f32'] + c['mma'] + c['wgmma'], -len(seg))
+                spans.append((labels[m[1]], i, key, seg, c))
                 if best is None or key > best[0]:
-                    best = (key, seg, c)
+                    best = (key, seg, c, labels[m[1]], i)
+        if best is not None:
+            best = innermost(best, spans)[:3]
         if best is None:  # no loop (a fully unrolled fold): the whole body is the hot region
             seg = lines
             best = (None, seg, ptx_counts(seg))
@@ -193,6 +196,21 @@ def ptxas_facts(text):
 MAC = ('FFMA', 'FMUL', 'HMMA', 'HGMMA')
 
 
+def innermost(best, spans):
+    """The hot loop: from the loop with the most multiply work (`best`: key, body, …, first, last), descend into a
+    loop nested inside it that holds more than half that work. It runs at least once a trip of the outer one, so it
+    holds most of the executed products; the outer loop's other products are its own non-loop code — a stream-K
+    piece loop's epilogue store around its k loop (integration 3: the `streamk-epi` ticket kernels, whose member
+    multiplies made the piece loop out-count the k loop)."""
+    while True:
+        inner = [s for s in spans if best[-2] <= s[0] and s[1] <= best[-1] and (s[0], s[1]) != (best[-2], best[-1])
+                 and 2 * s[2][0] > best[0][0]]
+        if not inner:
+            return best
+        s = max(inner, key=lambda s: s[2])
+        best = (s[2], *s[3:], s[0], s[1])
+
+
 def sass_facts(body):
     """Whole-function opcode families + the hot loop (the backward-branch body with the most MAC/MMA)."""
     c, w = stats(body)
@@ -204,17 +222,21 @@ def sass_facts(body):
     # exp (ADR-0042) `exp-hw`: the SFU's `ex2` (the hardware form's MUFU.EX2).
     f['mufu_ex2'] = sum(1 for _, ins in body if split(ins)[1].startswith('MUFU.EX2'))
     addr = [a for a, _ in body]
-    best = None
+    best, spans = None, []
     for i, (a, ins) in enumerate(body):
         _, op, rest = split(ins)
         m = re.search(r'0x([0-9a-f]+)', rest) if op.split('.')[0] == 'BRA' else None
         if not m or int(m.group(1), 16) >= a or int(m.group(1), 16) not in addr:
             continue
-        loop = body[addr.index(int(m.group(1), 16)):i + 1]
+        j = addr.index(int(m.group(1), 16))
+        loop = body[j:i + 1]
         ops = Counter(split(x)[1].split('.')[0] for _, x in loop)
         key = (sum(ops[k] for k in MAC), -len(loop))
+        spans.append((j, i, key, loop))
         if best is None or key > best[0]:
-            best = (key, loop)
+            best = (key, loop, j, i)
+    if best is not None:
+        best = innermost(best, spans)[:2]
     if best is None or best[0][0] == 0:  # no MAC loop (a fully unrolled fold): the whole body
         best = ((0, 0), body)
     if best:
@@ -295,6 +317,9 @@ def remark_facts(recs, fn=None):
     f = Counter(f'{k.lower()}_{p}_{n}'.replace('-', '_') for k, p, n, _, _ in rs)
     f = dict(f)
     f['full_unroll'] = max((int(a.get('UnrollCount', 0)) for k, p, n, _, a in rs if n == 'FullyUnrolled'), default=0)
+    # Every FullyUnrolled count: a kernel may unroll more loops than its bk-step one (a stream-K ticket kernel's
+    # epilogue store over its rows, integration 3), so the bk-step check asks for its own count among them.
+    f['full_unrolls'] = sorted({int(a.get('UnrollCount', 0)) for k, p, n, _, a in rs if n == 'FullyUnrolled'})
     f['partial_unroll'] = max((int(a.get('UnrollCount', 0)) for k, p, n, _, a in rs
                                if p == 'loop-unroll' and k == 'Passed' and n != 'FullyUnrolled'), default=0)
     f['vectorized'] = sum(1 for k, p, n, _, _ in rs if p == 'loop-vectorize' and k == 'Passed')

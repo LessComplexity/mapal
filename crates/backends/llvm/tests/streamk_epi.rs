@@ -49,6 +49,20 @@ fn emission(ir: &CategoryIr, off: &[&str], geom: &[&str]) -> Emission {
 /// of 2 SMs: a stream-K walk over more tiles than blocks, at extents the
 /// emulator runs).
 fn emission_on(ir: &CategoryIr, off: &[&str], geom: &[&str], props: &[(&str, u64)]) -> Emission {
+    emission_with(ir, off, geom, props, false)
+}
+
+/// [`emission_on`], the sites placed by the rules where `placed` (`place`
+/// on: a split's zeroed output is a resident launch's — the shipped
+/// emission, under which an under-filled site may stream by its price;
+/// `--gpu-off=place` launches it unsplit).
+fn emission_with(
+    ir: &CategoryIr,
+    off: &[&str],
+    geom: &[&str],
+    props: &[(&str, u64)],
+    placed: bool,
+) -> Emission {
     let mut cost: CostOver = [None; DeviceCost::NAMES.len()];
     for &(n, v) in props {
         cost[DeviceCost::NAMES.iter().position(|x| *x == n).expect(n)] = Some(v);
@@ -57,8 +71,10 @@ fn emission_on(ir: &CategoryIr, off: &[&str], geom: &[&str], props: &[(&str, u64
         site_cands: 1,
         ..GpuArms::default()
     };
-    for r in ["place", "pdl", "streams", "pinned", "horizontal", "calls"]
+    let place: &[&str] = if placed { &[] } else { &["place"] };
+    for r in place
         .iter()
+        .chain(&["pdl", "streams", "pinned", "horizontal", "calls"])
         .chain(off)
     {
         *gpu.off.rung(r).expect("rung") = true;
@@ -132,16 +148,37 @@ fn streamk_epi_rule_on_generated_shapes() {
     let progs: Vec<testgen::GemmProg> = (0..64)
         .map(|_| strat.new_tree(&mut runner).unwrap().current())
         .collect();
-    let counts = testgen::par_check(&progs, |z, p| {
-        let (m, n, k) = testgen::gemm_dims(p);
+    // Each program at the generator's extents, then (integration 3: the
+    // merge with sweep-gemm-2 `streamk-price`) at drawn extents in the band
+    // where an under-filled site streams by the part's rates — 768–1536 a
+    // side, 512–4096 deep on the 5080's 168 slots — so a group's stream-K
+    // walk is reached by each rule (`walk=class|fill|price`).
+    let shapes: Vec<(usize, &testgen::GemmProg, bool)> = progs
+        .iter()
+        .enumerate()
+        .flat_map(|(z, p)| [(z, p, false), (z, p, true)])
+        .collect();
+    let counts = testgen::par_check(&shapes, |_, &(z, p, band)| {
+        let pick = |d: u8, v: &[u64]| v[usize::from(d) % v.len()];
+        let (m, n, k) = match band {
+            false => testgen::gemm_dims(p),
+            true => (
+                pick(p.dims[0], &[768, 1024, 1536]),
+                pick(p.dims[1], &[768, 1024, 1280]),
+                pick(p.dims[2], &[512, 1024, 2048, 4096]),
+            ),
+        };
         let chain = (z % 4) as u8;
         let src = testgen::gemm_epi_src_at(p, m, n, k, chain);
-        let ctx = format!("#{z} {m}x{n}x{k} chain {chain}");
+        let ctx = format!("#{z} {m}x{n}x{k} chain {chain} band {band}");
         let ir = lower(&src);
+        // The band's shapes under the shipped placement (`place` on).
+        let emission =
+            |ir: &CategoryIr, off: &[&str], geom: &[&str]| emission_with(ir, off, geom, &[], band);
         let on = emission(&ir, &[], &[]);
         let grouped = combines(&on, "1");
         if grouped.is_empty() {
-            return [0, 0, 0];
+            return [0; 6];
         }
         assert_eq!(grouped.len(), 1, "{ctx}: one group kernel {grouped:?}");
         let alone = emission(&ir, &["epilogue"], &[]);
@@ -165,18 +202,46 @@ fn streamk_epi_rule_on_generated_shapes() {
         );
         let off = emission(&ir, &["streamk-epi"], &[]);
         assert_eq!(combines(&off, "1"), vec!["none".to_string()], "{ctx} OFF");
-        match streams {
-            true => [1, 0, 1],
-            false => [0, 1, 1],
+        if !streams {
+            return [0, 1, 1, 0, 0, 0];
         }
+        // The group's walk is its site's (the plan line's `walk`): one wave
+        // of CTAs over the launched tiles, every panel of every tile once.
+        let t = tile_plans(&on)
+            .into_iter()
+            .find(|t| t["epi"] == "1")
+            .expect("the group kernel");
+        let walk = t.get("walk").cloned().unwrap_or_default();
+        let num = |k: &str| t[k].parse::<u64>().expect(k);
+        let (tiles, panels) = (num("gx") * num("gy"), num("k") / num("bk"));
+        if walk == "price" {
+            let (ctas, iters) = (num("ctas"), num("iters"));
+            assert!(
+                ctas * iters >= tiles * panels && (ctas - 1) * iters < tiles * panels,
+                "{ctx} the priced walk covers its tiles once {t:?}"
+            );
+        }
+        [
+            1,
+            0,
+            1,
+            usize::from(walk == "class"),
+            usize::from(walk == "fill"),
+            usize::from(walk == "price"),
+        ]
     });
     let sum = |i: usize| counts.iter().map(|c| c[i]).sum::<usize>();
     let (tickets, ordered, groups) = (sum(0), sum(1), sum(2));
-    eprintln!("streamk-epi plans: {groups} groups, {tickets} stream-K tickets, {ordered} ordered");
+    let (class, fill, price) = (sum(3), sum(4), sum(5));
+    eprintln!(
+        "streamk-epi plans: {groups} groups, {tickets} stream-K tickets (walk class {class}, fill {fill}, \
+         price {price}), {ordered} ordered"
+    );
     assert!(
         tickets >= 4 && ordered >= 4,
         "both sides reached ({tickets}, {ordered})"
     );
+    assert!(price >= 2, "a group at a priced walk reached ({price})");
 }
 
 const MODES: [[(&str, &str); 2]; 3] = [
@@ -209,19 +274,31 @@ fn streamk_epi_values_through_the_emulator() {
     };
     let mut runner = TestRunner::deterministic();
     let strat = testgen::gemm_prog_strategy();
-    let progs: Vec<testgen::GemmProg> = (0..16)
+    let progs: Vec<testgen::GemmProg> = (0..24)
         .map(|_| strat.new_tree(&mut runner).unwrap().current())
         .collect();
     let counts = testgen::par_check(&progs, |z, p| {
         let pick = |d: u8, v: &[u64]| v[usize::from(d) % v.len()];
         let small = z % 2 == 1;
-        let (m, n, k) = match small {
-            false => (
+        // integration 3: programs 16.. on the 5080's properties with 4 SMs
+        // and `streamk-fill` off — the class rule's walk (`iters + 1 <
+        // split`) over 6 tiles on 8 slots, many pieces a tile. A priced walk
+        // (sweep-gemm-2 `streamk-price`) runs this same kernel: the rule
+        // that chose stream-K only sets `(ctas, iters)`, which the walk's
+        // pieces read alike (the plan test above reaches the priced walk).
+        let priced = z >= 16;
+        let (m, n, k) = match (priced, small) {
+            (true, _) => (
+                pick(p.dims[0], &[256, 384]),
+                pick(p.dims[1], &[256, 384]),
+                pick(p.dims[2], &[256, 512]),
+            ),
+            (_, false) => (
                 pick(p.dims[0], &[64, 128]),
                 pick(p.dims[1], &[256, 512]),
                 pick(p.dims[2], &[512, 1024]),
             ),
-            true => (
+            (_, true) => (
                 pick(p.dims[0], &[256, 384]),
                 pick(p.dims[1], &[384, 512]),
                 pick(p.dims[2], &[256, 512]),
@@ -229,18 +306,23 @@ fn streamk_epi_values_through_the_emulator() {
         };
         let chain = ((z / 2) % 4) as u8;
         let src = testgen::gemm_epi_src_at(p, m, n, k, chain);
-        let ctx = format!("#{z} {m}x{n}x{k} chain {chain} small {small}");
+        let ctx = format!("#{z} {m}x{n}x{k} chain {chain} small {small} priced {priced}");
         let ir = lower(&src);
-        let (geom, props): (&[&str], &[(&str, u64)]) = match small {
-            false => (&["kfill=1"], &[]),
-            true => (&[], &[("sms", 2)]),
+        let (off0, geom, props): (&[&str], &[&str], &[(&str, u64)]) = match (priced, small) {
+            (true, _) => (&["streamk-fill"], &[], &[("sms", 4)]),
+            (_, false) => (&[], &["kfill=1"], &[]),
+            (_, true) => (&[], &[], &[("sms", 2)]),
         };
-        let on = emission_on(&ir, &[], geom, props);
+        let on = emission_with(&ir, off0, geom, props, priced);
         if combines(&on, "1") != vec!["streamk".to_string()] {
-            return [0, 0, 0, 0];
+            return [0, 0, 0, 0, 0];
         }
+        let walk_class = tile_plans(&on)
+            .iter()
+            .any(|t| t["epi"] == "1" && t.get("walk").is_some_and(|w| w == "class"));
         let (whole, shared) = tile_kinds(&on);
-        let off = emission_on(&ir, &["streamk-epi"], geom, props);
+        let off_arm: Vec<&str> = off0.iter().copied().chain(["streamk-epi"]).collect();
+        let off = emission_with(&ir, &off_arm, geom, props, priced);
         let dev = |e: &Emission| e.device.clone().unwrap_or_default();
         let want = interp(&ir);
         assert!(want.lines().count() >= 5, "{ctx}\n{want}");
@@ -255,14 +337,22 @@ fn streamk_epi_values_through_the_emulator() {
             assert_eq!(got, want, "{ctx} streamk-epi {env:?}\n{src}");
             runs += 1;
         }
-        [1, runs, whole as usize, shared as usize]
+        [
+            1,
+            runs,
+            whole as usize,
+            shared as usize,
+            usize::from(walk_class),
+        ]
     });
     let sum = |i: usize| counts.iter().map(|c| c[i]).sum::<usize>();
-    let (tickets, runs, whole, shared) = (sum(0), sum(1), sum(2), sum(3));
+    let (tickets, runs, whole, shared, class) = (sum(0), sum(1), sum(2), sum(3), sum(4));
     eprintln!(
-        "streamk-epi values: {tickets} ticket programs ({whole} whole tiles, {shared} shared), {runs} emulated runs"
+        "streamk-epi values: {tickets} ticket programs ({whole} whole tiles, {shared} shared; {class} on the \
+         class walk), {runs} emulated runs"
     );
     assert!(tickets >= 4, "the ticket valued on {tickets} programs");
+    assert!(class >= 2, "the ticket valued on the class walk ({class})");
     assert!(
         whole >= 4 && shared >= 8,
         "both tile kinds valued ({whole}, {shared})"

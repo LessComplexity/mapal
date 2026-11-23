@@ -34,10 +34,19 @@ while :; do
 done
 cond start
 nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv > "$R/gpu-apps-before.csv"
+# The GPU's P-state and clocks through the run (5 a second; sweep-runtime-2's gpu_run.sh sampling, here since
+# integration 3: the full suite and model scale run through this script) -> gpu-clocks.csv, summary gpu-clocks.txt.
+nvidia-smi --query-gpu=timestamp,pstate,clocks.sm,clocks.mem,utilization.gpu,power.draw --format=csv,noheader \
+    -lms 200 > "$R/gpu-clocks.csv" 2>/dev/null &
+SMI=$!
+trap 'kill $SMI 2>/dev/null' EXIT
 (cd "$B" && taskset -c "$CPUS" env PATH=/opt/cuda/bin:$PATH CUDA=/opt/cuda TORCH_PY="${TORCH_PY:?TORCH_PY}" \
     TORCH_MIN="${TORCH_MIN:-300}" COMP_MIN="${COMP_MIN:-120}" PROBE_REPS="${PROBE_REPS:-5}" TIMING=0 LADDER="${LADDER:-1}" \
     bash box_run.sh rtx-5080 sm_120 "$REPS" > "$R/box.out" 2>&1)
 rc=$?
+kill $SMI 2>/dev/null
+awk -F', ' '$5 + 0 > 0 { n[$2 " sm=" $3 " mem=" $4]++ } END { for (k in n) print n[k], k }' "$R/gpu-clocks.csv" |
+    sort -rn > "$R/gpu-clocks.txt"
 cond end
 flock -u 9
 cp "$B"/results-rtx-5080.txt "$B"/evidence-rtx-5080.tsv "$B"/wisdom-rtx-5080.tsv "$R/" 2>/dev/null

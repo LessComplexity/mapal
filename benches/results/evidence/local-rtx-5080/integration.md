@@ -262,3 +262,138 @@ The code moved 32 rows (above); the rest of the shift is the session (CPU set, t
   (both bundles here, ABBA 0.999, either CPU set) — equal code and picks, so a machine state the conditions do not
   yet record (the 42 MB fp8 working set in a 64 MB L2 shared with the display).
 - No tailored fixes (`docs/tailored-fixes.md` unchanged).
+
+## Second sweep merge
+
+Branch `local-rtx-5080`: `4c29387e` + `--no-ff` merges of `sprint/sweep-attention-2` (`0992dea6`), `sprint/sweep-gemm-2`
+(`43af51cf`) and `sprint/sweep-runtime-2` (`683ae4d6`), then the integration commit (the "For integration" sections,
+the fixes below, this evidence). Raw: `.claude/raw-evidence/local-rtx-5080/integration3/` (`tests.log`, `counters.log`,
+`streamk_epi.log`, `horizontal-rerun.log`, `resS/` `resM/`, `resM-gpu-clocks.csv`); scripts, the emission comparison
+(`alone_k.py`, `alone_k.tsv`) and the evidence re-checks (`evcheck/`) in the perf scratch `integration3/`. Bundles under
+`target/int3/` (the shared `/tmp` tmpfs was near full). Timeline: tests on CCDs 2–3 (1042 s, workers held 803 s for
+Tctl > 85 C) beside both bundles on CCD 1 (1629 s, a thermal guard held the tree 817 s); the suite then model scale
+on CCD 0 (05:06–05:56), the A/B after them.
+
+| merge | conflicts | resolution |
+| --- | --- | --- |
+| sweep-attention-2 | none | — |
+| sweep-gemm-2 | `GpuRungs::NAMES` (`stream-mma`, `kmajor-b` beside `warm-zero`, `streamk-price`) | all four: 134 names |
+| sweep-runtime-2 | `GpuRungs` (+ `streamk-epi`: 135), `launch_key`'s dropped fields, `kernel_text` (the group stream-K assert beside `streamk-price`'s `walk`), `evidence.py`'s plan-gated rungs, `c0-rules.tsv` | both sides; the golden regenerated: the same 6 rows sweep-runtime-2 moved |
+
+**Merged emission against each step alone** (`alone_k.py`, as integration 2: 137 timed programs, rtx-5080, default
+face). Device: 71 equal `4c29387e`, 51 attention-2's, 1 gemm-2's, 10 runtime-2's, 3 the superposition, **1 none**
+(`rt_mlp2_1024`). Host: 27 base, 2 attention-2's, 96 gemm-2's (warm-zero's init word), 8 superposition, **4 none**
+(`rt_mlp2_1024`, `smlp_4096_256_1024`, `epi_4096`, `loop_4096`). The interactions, each found and handled:
+
+- **`streamk-price` × `streamk-epi`** (`rt_mlp2_1024`, `smlp`): an epilogue group at a site the part's rates now stream
+  takes the ticket (`walk=price epi=1`), which neither step emitted. Generated: `streamk_epi.rs`'s plans now also draw
+  each program at `streamk-price`'s band (768–1536 a side, 512–4096 deep, the shipped placement): 83 groups, 67
+  tickets (walk class 27, fill 24, **price 16**), 16 ordered; the priced walk covers its tiles once. Values: 10
+  ticket programs (10 whole tiles, 49 shared; 8 more at 4 SMs on the class walk), 30 emulated runs, interpreter =
+  ON = OFF. Time (same session, ABBA, `--gpu-off=streamk-epi`): `rt_mlp2_1024` 2.6187 → **2.5705** (0.982, null
+  0.001), `smlp` 0.1616 → 0.1599 (0.989, inside its null 0.019).
+- **`warm-zero` × `streamk-epi`**: `module_zeroes` read only a table row's `zero` bytes; the ticket's workspace (`ws`,
+  no reduce kernel) is zeroed by the runtime too. Fixed (a row with `rid` 0 and `ws` > 0 counts; unit test): `epi_4096`
+  and `loop_4096`, whose only zero is the workspace, now warm the memset path (init word 9 → 41, 13 → 45). Their
+  iterations take 3.5 / 27 ms, so the 13–17 µs moved out of the first call is below their null.
+- **`streamk-price` × the `horizontal` test**: `rt_mlp2_1024`'s two 128-block GEMMs now walk by stream-K, so the
+  refusal the test asserted (`waves:1`) is never weighed; sweep-gemm-2 ran 11 of the 126 binaries. The test now
+  asserts no refusal under the shipped rules and `waves:1` with `streamk-price` off.
+
+### Tests
+
+- **Workspace** (`test_par.py --bins 4`, `RUST_TEST_THREADS=8 MAPAL_PAR=2 MAPAL_TESTGEN_JOBS=4`): 126 binaries,
+  **1530 passed, 1 failed** (`horizontal`, above), 7 ignored; after the fix `horizontal` 3 / 3 and `streamk_epi` 2 / 2
+  (extended) — **1531 passed, 0 failed**.
+- **Counters on the merged code** (`counters.log`): `stream-mma` 48 programs (48 on the matrix instruction, 24 causal,
+  19 loops, 10 split-KV, 6 tails), 250 emulator runs; `kmajor-b` 40 programs, 61 vector-copy tiles, 107 runs;
+  `streamk-price` 17 priced walks of 43 under-filled kernels, 3 programs / 9 runs; `streamk-epi` as above. Each equals
+  its step's count where the step drew the same programs; every counter > 0.
+- `rung_replay.tsv`: 230 lines, 130 picked / 71 null / 10 mixed / 19 open (`open-rules.md`).
+- `benches/gpu/test_harness.py`: 6 failures, all present without this merge's checker edits; 5 fail at `4c29387e`, the
+  sixth (`search.py` plan: `--splitk=2` reaches `rowsum_2048` on the 4090) is skipped there for want of an emitter, and
+  the `4c29387e` emitter emits the same split — stale harness expectations, not this merge's (open).
+
+### Evidence (static, both bundles)
+
+The ticket kernels and `kmajor-b`'s decode copies met checks written before them. Each new class was read in the SASS
+/ PTX / remarks; the checker was wrong in these, and is fixed generically:
+
+| check | what the checker did | fix | bS | bM |
+| --- | --- | --- | ---: | ---: |
+| hot loop (`face-fma`, `face-registers`, `prefetch`, `idx32`, `wide-fma`, `kmajor-a`) | took a stream-K piece loop for the hot loop: its epilogue store's FMULs (`st_whole`, laid out before the k loop) out-counted the k loop's FFMA-only body | `innermost`: from the loop with the most products, descend into a nested loop holding more than half of them (`evidence.py`, `sass_stats.py`) | −57 | −32 |
+| `arch-rungs` | read an epilogue group's order (`epi_order`: atomic / workspace splits off, a `tile-post` group's stream-K off) as rungs off | those may be off on an `epi` kernel | −22 | −2 |
+| `unroll` | compared the largest `FullyUnrolled` count (a ticket's 8-row store) with bk / 4 | the bk-step count among them (`full_unrolls`) | −2 | 0 |
+| `epilogue` | required `launchv`; a group launched through its site table (`mapal_gpu_site`) has its n pointers there | `launchv + site` (`site` counted) | −11 | 0 |
+| `narrow-tile` | a mixed-radix tile's narrow operand: 2- or 16-byte loads only; `kmajor-b` copies 4 bf16 a `LDG.64` | `LDG.64` counts | 0 | −46 |
+
+Totals: bS 321 (old checker) → **229** (integration 2: 246); bM 5561 → **5481** (integration 2: 5321). What remains
+new in bM against integration 2 is real and recorded: `idx32` on 56 `kmajor-b` kernels at i32 indices (34
+`IMAD.WIDE` for 33 `LDG.64` a trip — one 64-bit address a key row, one over the rung's bound; open), the `px_…off-place`
+differential arms' `kmajor-b` kernels spilling (12 rows, the OFF-place arms only, not timed), `prefetch` cover 0 on
+19 more kernels — the B1 decode programs' `kmajor-b` copies (the next panel's vector LDGs consumed before the math that
+should cover them) and the block prefill's ticket kernels (`llm_blkpre_t2048` 25.29 → 25.31 ms, null) — open.
+
+### Time (`resS` / `resM` against integration 2's)
+
+Value gates: 41 suite programs and 96 model-scale programs pass on every arm, 128 px differentials pass. Equal-code
+programs (20, `alone_k` base on both sides): geomean **0.990**, none slower than 5 %. Programs whose code moved (117):
+0.927. The tune's in-program confirmation ran live (`confirm_pick.py`, median rule): 13 confirms in the suite, 7 kept,
+6 reverted.
+
+| workload (5080) | sweep merge | second merge | step alone (step) | fastest competitor (leg) | explanation |
+| --- | ---: | ---: | ---: | --- | --- |
+| llm_pre_t2048_bf16 | 3.774 | **2.636** | 2.645 (attention-2) | 1.935 (torch-bf16-compile-cg) | stream kernel on HMMA (`stream-mma`) |
+| llm_blkpre_t2048_bf16 | 10.74 | **9.593** | 9.61 (attention-2) | 8.071 (torch-bf16-compile-cg) | same |
+| llm_dec_b32_l8192_bf16kv (ms/step) | 2.430 | **1.657** | 1.676 (attention-2) | 1.482 (flashinfer-bf16) | `kmajor-b`: keys copied along their rows |
+| llm_dec_b8_l8192_bf16kv | 0.7351 | **0.5111** | 0.512 (attention-2) | 0.4841 (fa2-bf16) | same |
+| llm_dec_b32_l8192 (f32) | 3.586 | **2.800** | 2.816 (attention-2) | 9.525 (torch-compile) | same, 16-byte vectors |
+| pj_m1_n2048_k7168 | 0.0307 | **0.0249** | 0.0275 (gemm-2) | 0.0266 (cublas-fresh) | `warm-zero` |
+| pj_m16_n2048_k7168 | 0.0460 | **0.0387** | 0.0392 (gemm-2) | 0.0492 (cublas-fresh) | same |
+| pj_m1_n4096_k4096_bf16 | 0.0336 | **0.0231** | — | 0.0492 (torch-bf16-compile-cg) | same |
+| loopmm_1024_8 | 0.6494 | **0.6117** | 0.6121 (gemm-2) | 0.5878 (torch-compile-cg) | `streamk-price` |
+| rt_mlp2_2048 | 16.27 | **14.65** | 14.71 (runtime-2) | 15.57 (torch-compile-cg) | `streamk-epi` |
+| fanout_2048 | 0.9853 | **0.9177** | 0.9265 (runtime-2) | 0.9132 (chain-streams) | same |
+| mlp_2048 | 0.9467 | **0.8816** | 0.8921 (runtime-2) | 0.9134 (chain-lt) | same |
+| loop_4096 | 28.33 | **26.88** | 27.03 (runtime-2) | 28.58 (chain-lt) | same |
+| rt_mlp2_1024 | 2.559 | 2.567 | 2.512 (gemm-2) | 2.518 (torch-compile-cg) | the interaction above (ON/OFF 0.982 same session) |
+| llm_dec_b1_l2048_f8w (program) | 1.1517 | 0.8477 | — | (no leg) | the session item: siblings ≤ 3 % |
+
+Slower than integration 2 by > 2 %: `mlp_512` 1.054 (bimodal by process: in one A/B batch on 0.0395, null 0.0373 —
+its null is 7 %), `llm_kvx_b8_l2048` 1.037 (null 2.9 %; `kmajor-b` code, every one of its 59 programs ON 1.01–1.45×
+faster in its own A/B), `convmc_8_64_56_3` 1.023 (equal code). `pj_m1_n4096_k4096` reads 0.0411 here (its five `on`
+samples 0.0378–0.0469) against sweep-gemm-2's 0.0311: the bimodal GEMV integration 2 named.
+
+**The f8w B1 decode.** `llm_dec_b1_l2048_f8w` 1.1517 → 0.8477 ms while every sibling moved ≤ 3 % under `kmajor-b`:
+the 0.89 / 1.15 split is the session, not the code. This is the first full run with the GPU's clocks sampled (the
+model-scale script did not record them; it does now): P0 / P1 at 14.8–15.0 GHz memory through the run (5848 samples:
+2 at P8, 46 at P3, all between phases). The slow state's clocks remain unrecorded (attempted-open).
+
+### The RTX 5080 column (matrix.md: sweep merge → second merge; legs from this session's runs)
+
+| geomean Mapal / best (rows) | sweep merge | second merge |
+| --- | ---: | ---: |
+| GEMM cells & projections | 1.079 (47) | 1.036 (47) |
+| MLP chains | 1.073 (6) | 1.054 (6) |
+| Attention / softmax / long rows | 0.818 (14) | 0.836 (14) |
+| LLM decode / prefill / block | 1.151 (37) | 1.045 (37) |
+| Conv / FIR / elementwise | 0.530 (7) | 0.525 (7) |
+| Fan-in/out, loops, CPU+GPU | 1.061 (9) | 1.017 (9) |
+| all tf32 rows | 1.194 (13) | 1.176 (13) |
+| all bf16w / bf16kv / bf16 rows | 1.795 / 1.195 / 1.067 | 1.661 / 1.048 / 0.975 |
+| **all rows** | **1.021 (120)** | **0.973 (120)** |
+| win / even / loss | 28 / 31 / 61 | 30 / 38 / 52 |
+
+Attention's 0.818 → 0.836 is the legs: `causal_1024_256`, `gen` / `prefill_1024_512_256` and `decode_1024_256`
+torch-compile-cg / chain-cache ran 12–17 % faster this session on equal Mapal times.
+
+### Open problems attacked (integration)
+
+- **Closed**: the merge's two interactions (`warm-zero` × the ticket workspace; a group at a priced walk, now generated
+  and timed); the stale `horizontal` expectation; five evidence-checker misreadings of the new kernels (table above);
+  the full suite / model scale not recording GPU clocks (`model_scale_run.sh` → `gpu-clocks.csv`, `.txt`).
+- **Attempted, open**: the f8w B1 session state (now 0.848 ms with clocks recorded at P0 / P1; the slow state not seen
+  again).
+- **Open (found here)**: `kmajor-b`'s per-row 64-bit addresses at i32 indices (`idx32`, 56 rows) and its B1 decode
+  copies' prefetch cover; `test_harness.py`'s 6 stale expectations.
+- No tailored fixes (`docs/tailored-fixes.md` unchanged).

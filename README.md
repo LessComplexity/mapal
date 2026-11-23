@@ -196,7 +196,12 @@ with f32 tensor cores, Hopper wgmma / TMA and fp8 storage, the RTX 5080 column i
 [integration](benches/results/evidence/local-rtx-5080/integration.md)). With the sweeps (attention inside the KV-head-group loop streamed:
 8192-token prefill 89.5 → 47.9 ms, 0.90× Liger, peak memory 0.41× torch; f32 activations read only by bf16 products
 stored rounded: bf16 projections 1.02–1.22× faster, m128 × 28672 1.04× slower) it is 1.021 (28 / 31 / 61), the same session's legs
-([integration, sweep merge](benches/results/evidence/local-rtx-5080/integration.md#sweep-merge)).
+([integration, sweep merge](benches/results/evidence/local-rtx-5080/integration.md#sweep-merge)). With the second sweeps
+(the streamed attention kernel on `mma.sync`: bf16 prefill 3.77 → 2.64 ms; the decode keys copied along their rows:
+B32 × 8192 bf16 decode 2.43 → 1.66 ms a step; the driver's memset path warmed before the clock: m1 / m16 GEMVs
+0.81–0.84×; an under-filled site's stream-K priced by the part's rates; epilogue groups keep stream-K through a
+ticket: 2048 MLP / fan rows 0.90–0.95×) it is **0.973** (30 / 38 / 52)
+([integration, second sweep merge](benches/results/evidence/local-rtx-5080/integration.md#second-sweep-merge)).
 
 Mapal time / the best of cuBLAS, cuBLASLt, CUTLASS, PyTorch eager and `torch.compile` (`_tf32` rows: torch with TF32 on);
 below 1 = Mapal faster. Values pass on every program and arch. 61 of 132 cells at or below 1.0. † = carried from an

@@ -20,6 +20,8 @@ Scratch and replay scripts: `.claude/raw-evidence/local-rtx-5080/open-rules/`.
 
 `rung_replay.tsv` + `rules::tests::rung_rules_replay`: **211 lines — 116 picked, 68 null, 9 mixed, 18 open** (was 200:
 108 / 67 / 9 / 16). New: the 7a2b67bf round's wide-fma arms (8 lines); the H100 PCIe line split by face and size.
+Since then (the second sweep merge, `integration.md` § Second sweep merge): **230 lines — 130 picked, 71 null, 10 mixed,
+19 open**, the last two lines sweep-gemm-2's `streamk-price` replay (`sweep-gemm-2.md` §2).
 
 ## (b) Formed but not realized
 

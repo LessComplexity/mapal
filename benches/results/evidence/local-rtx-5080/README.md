@@ -299,3 +299,36 @@ Found: `test_par.py`'s shared log names, and the timed scripts' busy check on th
 cores have the highest clock ceiling, and host-bound programs run 0.81–1.00× as long there as on CCD 1 (integration 1
 timed on CCD 1): `timed_cpus.sh` records the set. Open: the tune's pick variance (a third row), the f8w B1 decode's
 session spread (0.89 / 1.15 ms on equal code).
+
+**sweep-attention-2** (`sweep-attention-2.md`): the streamed attention kernel folds its products on
+`mma.sync.m16n8k16` where every product admits bf16 (`stream-mma`: `stream::mma_fmt`, `TileSite::half` ×
+`Caps::matrix_op`, priced by `stream_ns` on `mma_half_per_clk`) — `llm_pre_t2048_bf16` 3.77 → **2.65 ms** (1.95× →
+1.37× torch-bf16-compile-cg), `llm_blkpre_t2048_bf16` 10.74 → 9.61 (1.34× → 1.20×). The decode rows' scores kernel
+copies its keys along their rows (`kmajor-b`: a register-staged tile's k-major `b`) — `llm_dec_b32_l8192_bf16kv` 2.43 →
+**1.68 ms** a step (1.60× → 1.10× torch-bf16-cudnn), B8 1.51× → 1.05×, B1 0.96× → 0.85×, f32 B32 L8192 0.37× → 0.29×;
+the explicit-cache twin B32 L2048 69.9 → 49.2 ms (0.65× torch's HF cache). OFF arms `--gpu-off=stream-mma`,
+`--gpu-off=kmajor-b`. Open: bf16-weight prefill (A100 / H100 rates), TF32 stream, decode as one stream, small programs,
+the naive-cache demand fact; stream-mma at 40 % of the bf16 peak (f32-staged windows, no `ldmatrix`).
+
+**sweep-gemm-2** (`sweep-gemm-2.md`): warm-zero — the driver's lazy memset init (13–17 µs a process's first ≥ 8 KiB
+fill) moved before the clock: one-call atomic-split programs 0.77–0.98× (pj_m1 GEMVs 0.77–0.81×); streamk-price — an
+under-filled site's stream-K priced by the part's FMA tile / `red` / zero rates (site-level wave quantization):
+loopmm 0.94×, rt_mlp2_1024 0.94×, smlp 0.96×. OFF arms `--gpu-off=warm-zero`, `--gpu-off=streamk-price`. Open: the m1
+GEMV L2-edge geometry, TF32 per-fragment cvt (a TF32-exact storage fact), the 3090 / A100 / H100 `red` rate.
+
+**sweep-runtime-2** (`sweep-runtime-2.md`): an epilogue group keeps its site's stream-K walk (`streamk-epi`: whole
+tiles stored, shared tiles through a ticket) — rt_mlp2_2048 0.906, fanout 0.937, mlp2 0.940, mlp 0.943, loop_4096
+0.951, indep 0.954, diamond 0.964, epi_4096 0.965 (mlp_2048, rt_mlp2_2048 and loop_4096 ahead of their fastest
+competitor); the tune's trial picks confirmed in their program (`confirm_pick.py`, OFF `CONFIRM=0`); an ordered launch
+behind a stream-K plan fixed; the GPU's P-state and clocks recorded through every timed run (`gpu-clocks.txt`). OFF
+arm `--gpu-off=streamk-epi`. Open: the f8w B1 decode's session spread (clocks now recorded), the ~1 µs residual.
+
+**integration — second sweep merge** (`integration.md` § Second sweep merge, `open-problems.md`): the three second
+sweeps on one branch; two interactions found by comparing each program's merged emission with each step's and handled
+(a group at a priced stream-K site takes the ticket: generated plans reach it, `rt_mlp2_1024` 0.982 ON/OFF;
+`warm-zero` now counts the ticket's workspace zero), a stale `horizontal` expectation, five evidence-checker
+misreadings of the new kernels (the hot loop of a stream-K piece loop, an epilogue group's order, one unroll count
+among several, table-launched groups, `kmajor-b`'s 8-byte bf16 vectors: bS 321 → 229, bM 5561 → 5481). 1531 tests;
+the full suite + model scale + every competitor leg in one session, the GPU's clocks now recorded by the model-scale
+script too. 5080 column 1.021 → **0.973** (30 / 38 / 52); equal-code programs 0.990. Open: `kmajor-b`'s per-row
+64-bit addresses and B1 prefetch cover, the f8w B1 decode's slow state (0.848 ms here at P0 / P1).
