@@ -317,6 +317,15 @@ impl FnEmit<'_> {
                 },
                 calls.rounds
             );
+            // calls-issue: the host issue time and each priced chain.
+            if calls.issue_ns > 0.0 {
+                plan.calls_line = format!(
+                    "{} issue_ns={:.0} priced={}\n",
+                    plan.calls_line.trim_end(),
+                    calls.issue_ns,
+                    calls.priced.join(";")
+                );
+            }
         }
         let refusals: usize = refused.iter().sum();
         let flat: Vec<&HzGroup> = plan.hz.iter().filter(|g| !g.persistent()).collect();

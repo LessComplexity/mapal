@@ -2187,6 +2187,7 @@ fn launch_key(l: &Launch) -> String {
         .replace(", row_stage: false", "")
         .replace(", horizontal: false", "")
         .replace(", calls: false", "")
+        .replace(", calls_issue: false", "")
         // half-precision: `narrow-tile` decides which sites exist (no kernel text).
         .replace(", narrow_tile: false", "")
         // tensor-cores: `half-tile` / `narrow-async` choose the kernel (no
