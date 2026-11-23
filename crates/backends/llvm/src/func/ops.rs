@@ -163,6 +163,18 @@ impl<'a> FnEmit<'a> {
             Operation::Widen => {
                 let (sllt, val) = self.load_whole(source).expect("widen operand");
                 let tllt = lower_ty(&self.obj_ty(target)).expect("widen target");
+                // ADR-0043 slice 3: an fp8 element widens by the module's
+                // `@mapal.widen_*` (exact; `crate::narrow`).
+                if let Ty::Narrow(n) = self.obj_ty(source)
+                    && n.bytes() == 1
+                {
+                    let (r, t) = (self.tmp(), self.tmp());
+                    for l in crate::narrow::widen_lines(n, &sllt, &val, &tllt, &r, &t) {
+                        self.line(l);
+                    }
+                    self.store_obj(target, &tllt, &r);
+                    return;
+                }
                 let cvt = match (self.obj_ty(source), self.obj_ty(target)) {
                     (Ty::Int { bits: 32, .. }, Ty::Int { bits: 64, .. }) => "sext",
                     (Ty::Int { bits: 32, .. }, Ty::Float { .. }) => "sitofp",

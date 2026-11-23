@@ -102,6 +102,14 @@ impl Ty {
     pub fn f16() -> Ty {
         Ty::Narrow(NarrowFloat::F16)
     }
+    /// ADR-0043 slice 3: the `f8e4m3` storage type.
+    pub fn f8e4m3() -> Ty {
+        Ty::Narrow(NarrowFloat::F8e4m3)
+    }
+    /// ADR-0043 slice 3: the `f8e5m2` storage type.
+    pub fn f8e5m2() -> Ty {
+        Ty::Narrow(NarrowFloat::F8e5m2)
+    }
 
     /// Bytes one scalar of this ty occupies in memory (`Int`/`Float`:
     /// `bits / 8`, at least 1; a narrow float its format's; `Bool` 1), else
@@ -188,19 +196,43 @@ pub enum NarrowFloat {
     /// IEEE-754 binary16: 1 sign, 5 exponent, 10 fraction bits — 11
     /// significand bits, largest finite 65504.
     F16,
+    /// OCP fp8 E4M3 ("FN", ADR-0043 slice 3): 1 sign, 4 exponent, 3 fraction
+    /// bits — 4 significand bits, largest finite 448, no infinity
+    /// (`S.1111.111` is the NaN); its rounding saturates.
+    F8e4m3,
+    /// OCP fp8 E5M2: 1 sign, 5 exponent, 2 fraction bits — 3 significand
+    /// bits, largest finite 57344 (binary16's top byte); its rounding
+    /// saturates.
+    F8e5m2,
 }
 
 impl NarrowFloat {
+    /// Every format, the 16-bit ones first.
+    pub const ALL: [NarrowFloat; 4] = [
+        NarrowFloat::Bf16,
+        NarrowFloat::F16,
+        NarrowFloat::F8e4m3,
+        NarrowFloat::F8e5m2,
+    ];
     /// Bytes one element occupies in memory.
     pub fn bytes(self) -> u64 {
-        2
+        match self {
+            NarrowFloat::Bf16 | NarrowFloat::F16 => 2,
+            NarrowFloat::F8e4m3 | NarrowFloat::F8e5m2 => 1,
+        }
     }
-    /// The surface name (`bf16`, `f16`).
+    /// The surface name (`bf16`, `f16`, `f8e4m3`, `f8e5m2`).
     pub fn name(self) -> &'static str {
         match self {
             NarrowFloat::Bf16 => "bf16",
             NarrowFloat::F16 => "f16",
+            NarrowFloat::F8e4m3 => "f8e4m3",
+            NarrowFloat::F8e5m2 => "f8e5m2",
         }
+    }
+    /// The format a surface type name names.
+    pub fn of_name(name: &str) -> Option<NarrowFloat> {
+        NarrowFloat::ALL.into_iter().find(|n| n.name() == name)
     }
 }
 

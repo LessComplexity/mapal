@@ -1,0 +1,383 @@
+fn main() {
+    4096 -> iota -> i_x0;
+    i_x0 -> map {
+        t -> (t % 101 * 7 + 13) % 101 - 50 -> widen_f32 -> v;
+        v / 29.0
+    } -> x0;
+    4096 -> iota -> i_g1;
+    i_g1 -> map {
+        t -> (t % 97 * 5 + 3) % 97 - 48 -> widen_f32 -> v;
+        1.0 + v / 400.0
+    } -> g1;
+    25165824 -> iota -> i_wqkv_f;
+    i_wqkv_f -> map {
+        t -> (t % 103 * 11 + 57) % 103 - 51 -> widen_f32 -> v;
+        v / 1856.0
+    } -> wqkv_f;
+    16777216 -> iota -> i_wo_f;
+    i_wo_f -> map {
+        t -> (t % 97 * 5 + 3) % 97 - 48 -> widen_f32 -> v;
+        v / 1856.0
+    } -> wo_f;
+    262144 -> iota -> i_cs;
+    i_cs -> map {
+        t -> (t % 89 * 3 + 1) % 89 - 44 -> widen_f32 -> v;
+        v / 50.0
+    } -> cs;
+    262144 -> iota -> i_sn;
+    i_sn -> map {
+        t -> (t % 107 * 13 + 7) % 107 - 53 -> widen_f32 -> v;
+        v / 50.0
+    } -> sn;
+    4194304 -> iota -> i_kc0;
+    i_kc0 -> map {
+        t -> (t % 109 * 17 + 29) % 109 - 54 -> widen_f32 -> v;
+        v / 29.0
+    } -> kc0;
+    4194304 -> iota -> i_vc0;
+    i_vc0 -> map {
+        t -> (t % 101 * 7 + 13) % 101 - 50 -> widen_f32 -> v;
+        v / 29.0
+    } -> vc0;
+    4096 -> iota -> i_g2;
+    i_g2 -> map {
+        t -> (t % 103 * 11 + 57) % 103 - 51 -> widen_f32 -> v;
+        1.0 + v / 400.0
+    } -> g2;
+    58720256 -> iota -> i_wg_f;
+    i_wg_f -> map {
+        t -> (t % 89 * 3 + 1) % 89 - 44 -> widen_f32 -> v;
+        v / 1856.0
+    } -> wg_f;
+    58720256 -> iota -> i_wu_f;
+    i_wu_f -> map {
+        t -> (t % 107 * 13 + 7) % 107 - 53 -> widen_f32 -> v;
+        v / 1856.0
+    } -> wu_f;
+    58720256 -> iota -> i_wd_f;
+    i_wd_f -> map {
+        t -> (t % 109 * 17 + 29) % 109 - 54 -> widen_f32 -> v;
+        v / 3472.3
+    } -> wd_f;
+    6144 -> iota -> jn_wqkv;
+    4096 -> iota -> kk_wqkv;
+    jn_wqkv -> map {
+        j -> (0.0, kk_wqkv) -> fold {
+            m, k -> wqkv_f[k * 6144 + j] -> x;
+            (x > m) -> {
+                -true-> x;
+                -false-> m;
+            }
+        } -> hi;
+        (0.0, kk_wqkv) -> fold {
+            m, k -> 0.0 - wqkv_f[k * 6144 + j] -> x;
+            (x > m) -> {
+                -true-> x;
+                -false-> m;
+            }
+        } -> lo;
+        (hi > lo) -> {
+            -true-> hi;
+            -false-> lo;
+        } -> am;
+        am / 448.0
+    } -> s_wqkv;
+    i_wqkv_f -> map {
+        t -> wqkv_f[t] / s_wqkv[t % 6144] -> to_f8e4m3
+    } -> wqkv;
+    4096 -> iota -> jn_wo;
+    4096 -> iota -> kk_wo;
+    jn_wo -> map {
+        j -> (0.0, kk_wo) -> fold {
+            m, k -> wo_f[k * 4096 + j] -> x;
+            (x > m) -> {
+                -true-> x;
+                -false-> m;
+            }
+        } -> hi;
+        (0.0, kk_wo) -> fold {
+            m, k -> 0.0 - wo_f[k * 4096 + j] -> x;
+            (x > m) -> {
+                -true-> x;
+                -false-> m;
+            }
+        } -> lo;
+        (hi > lo) -> {
+            -true-> hi;
+            -false-> lo;
+        } -> am;
+        am / 448.0
+    } -> s_wo;
+    i_wo_f -> map {
+        t -> wo_f[t] / s_wo[t % 4096] -> to_f8e4m3
+    } -> wo;
+    14336 -> iota -> jn_wg;
+    4096 -> iota -> kk_wg;
+    jn_wg -> map {
+        j -> (0.0, kk_wg) -> fold {
+            m, k -> wg_f[k * 14336 + j] -> x;
+            (x > m) -> {
+                -true-> x;
+                -false-> m;
+            }
+        } -> hi;
+        (0.0, kk_wg) -> fold {
+            m, k -> 0.0 - wg_f[k * 14336 + j] -> x;
+            (x > m) -> {
+                -true-> x;
+                -false-> m;
+            }
+        } -> lo;
+        (hi > lo) -> {
+            -true-> hi;
+            -false-> lo;
+        } -> am;
+        am / 448.0
+    } -> s_wg;
+    i_wg_f -> map {
+        t -> wg_f[t] / s_wg[t % 14336] -> to_f8e4m3
+    } -> wg;
+    14336 -> iota -> jn_wu;
+    4096 -> iota -> kk_wu;
+    jn_wu -> map {
+        j -> (0.0, kk_wu) -> fold {
+            m, k -> wu_f[k * 14336 + j] -> x;
+            (x > m) -> {
+                -true-> x;
+                -false-> m;
+            }
+        } -> hi;
+        (0.0, kk_wu) -> fold {
+            m, k -> 0.0 - wu_f[k * 14336 + j] -> x;
+            (x > m) -> {
+                -true-> x;
+                -false-> m;
+            }
+        } -> lo;
+        (hi > lo) -> {
+            -true-> hi;
+            -false-> lo;
+        } -> am;
+        am / 448.0
+    } -> s_wu;
+    i_wu_f -> map {
+        t -> wu_f[t] / s_wu[t % 14336] -> to_f8e4m3
+    } -> wu;
+    4096 -> iota -> jn_wd;
+    14336 -> iota -> kk_wd;
+    jn_wd -> map {
+        j -> (0.0, kk_wd) -> fold {
+            m, k -> wd_f[k * 4096 + j] -> x;
+            (x > m) -> {
+                -true-> x;
+                -false-> m;
+            }
+        } -> hi;
+        (0.0, kk_wd) -> fold {
+            m, k -> 0.0 - wd_f[k * 4096 + j] -> x;
+            (x > m) -> {
+                -true-> x;
+                -false-> m;
+            }
+        } -> lo;
+        (hi > lo) -> {
+            -true-> hi;
+            -false-> lo;
+        } -> am;
+        am / 448.0
+    } -> s_wd;
+    i_wd_f -> map {
+        t -> wd_f[t] / s_wd[t % 4096] -> to_f8e4m3
+    } -> wd;
+    1 -> iota -> rR;
+    4096 -> iota -> rD;
+    4096 -> iota -> rRD;
+    6144 -> iota -> rRQ;
+    128 -> iota -> rdh;
+    16 -> iota -> r16;
+    14336 -> iota -> rF;
+    14336 -> iota -> rRF;
+    32 -> iota -> rBH;
+    131072 -> iota -> rBHL;
+    4194304 -> iota -> rC;
+    4096 -> iota -> rL;
+    mut kc: [f32; 4194304] <- kc0;
+    mut vc: [f32; 4194304] <- vc0;
+    mut x: [f32; 4096] <- x0;
+    mut t: i32 <- 0;
+    () -> time -> t0;
+    loop {
+        (t < 16) -> {
+            -true-> {
+                4080 + t -> p;
+                rR -> map {
+                    b -> (0.0, rD) -> fold {
+                        acc, i -> x[b * 4096 + i] -> rv;
+                        acc + rv * rv
+                    } -> ss;
+                    ss / 4096.0 + 0.00001 -> ra;
+                    0.5 + 0.5 * ra -> s0;
+                    (s0, r16) -> fold {
+                        acc, k -> 0.5 * (acc + ra / acc)
+                    } -> sd;
+                    1.0 / sd
+                } -> rinv;
+                rRD -> map {
+                    e -> x[e] * rinv[e / 4096] * g1[e % 4096]
+                } -> xn;
+                rRQ -> map {
+                    e -> e / 6144 -> b;
+                    e % 6144 -> j;
+                    (0.0, rD) -> fold {
+                        acc, k -> wqkv[k * 6144 + j] -> widen_f32 -> wv;
+                        acc + xn[b * 4096 + k] * wv
+                    } -> u8;
+                    u8 * s_wqkv[j]
+                } -> qkv;
+                rRD -> map {
+                    e -> e / 4096 -> b;
+                    e % 4096 -> c;
+                    c % 128 -> ri;
+                    (ri < 64) -> {
+                        -true-> qkv[b * 6144 + c] * cs[p * 64 + ri] - qkv[b * 6144 + c + 64] * sn[p * 64 + ri];
+                        -false-> qkv[b * 6144 + c] * cs[p * 64 + ri - 64] + qkv[b * 6144 + c - 64] * sn[p * 64 + ri - 64];
+                    }
+                } -> q;
+                rC -> map {
+                    c -> c / 4194304 -> b;
+                    c / 1024 % 4096 -> r;
+                    (r == p) -> {
+                        -true-> {
+                            c % 1024 -> u;
+                            u % 128 -> ri;
+                            (ri < 64) -> {
+                                -true-> qkv[b * 6144 + 4096 + u] * cs[p * 64 + ri] - qkv[b * 6144 + 4096 + u + 64] * sn[p * 64 + ri];
+                                -false-> qkv[b * 6144 + 4096 + u] * cs[p * 64 + ri - 64] + qkv[b * 6144 + 4096 + u - 64] * sn[p * 64 + ri - 64];
+                            } -> kn;
+                            kn
+                        }
+                        -false-> kc[c];
+                    }
+                } -> kc;
+                rC -> map {
+                    c -> c / 4194304 -> b;
+                    c / 1024 % 4096 -> r;
+                    (r == p) -> {
+                        -true-> qkv[b * 6144 + 5120 + c % 1024];
+                        -false-> vc[c];
+                    }
+                } -> vc;
+                rBHL -> map {
+                    e -> e / 131072 -> b;
+                    e / 4096 % 32 -> h;
+                    e % 4096 -> r;
+                    (r <= p) -> {
+                        -true-> {
+                            (0.0, rdh) -> fold {
+                                acc, i -> acc + q[b * 4096 + h * 128 + i] * kc[((b * 4096 + r) * 8 + h / 4) * 128 + i]
+                            } -> dt;
+                            dt / 11.3137085
+                        }
+                        -false-> -1000000000.0;
+                    }
+                } -> s;
+                rBH -> map {
+                    bh -> (-1000000000.0, rL) -> fold {
+                        acc, r -> s[bh * 4096 + r] -> se;
+                        (se > acc) -> {
+                            -true-> se;
+                            -false-> acc;
+                        }
+                    }
+                } -> mx;
+                rBHL -> map {
+                    e -> s[e] - mx[e / 4096] -> exp
+                } -> pe;
+                rBH -> map {
+                    bh -> (0.0, rL) -> fold {
+                        acc, r -> acc + pe[bh * 4096 + r]
+                    }
+                } -> den;
+                rRD -> map {
+                    e -> e / 4096 -> b;
+                    e % 4096 -> c;
+                    c / 128 -> h;
+                    c % 128 -> i;
+                    (0.0, rL) -> fold {
+                        acc, r -> acc + pe[(b * 32 + h) * 4096 + r] * vc[((b * 4096 + r) * 8 + h / 4) * 128 + i]
+                    } -> av;
+                    av / den[b * 32 + h]
+                } -> att;
+                rRD -> map {
+                    e -> e / 4096 -> b;
+                    e % 4096 -> j;
+                    (0.0, rD) -> fold {
+                        acc, k -> wo[k * 4096 + j] -> widen_f32 -> wv;
+                        acc + att[b * 4096 + k] * wv
+                    } -> u8;
+                    u8 * s_wo[j] -> y;
+                    x[e] + y
+                } -> h1;
+                rR -> map {
+                    b -> (0.0, rD) -> fold {
+                        acc, i -> h1[b * 4096 + i] -> rv;
+                        acc + rv * rv
+                    } -> ss;
+                    ss / 4096.0 + 0.00001 -> ra;
+                    0.5 + 0.5 * ra -> s0;
+                    (s0, r16) -> fold {
+                        acc, k -> 0.5 * (acc + ra / acc)
+                    } -> sd;
+                    1.0 / sd
+                } -> rinv2;
+                rRD -> map {
+                    e -> h1[e] * rinv2[e / 4096] * g2[e % 4096]
+                } -> hn;
+                rRF -> map {
+                    e -> e / 14336 -> b;
+                    e % 14336 -> j;
+                    (0.0, rD) -> fold {
+                        acc, k -> wg[k * 14336 + j] -> widen_f32 -> wv;
+                        acc + hn[b * 4096 + k] * wv
+                    } -> u8;
+                    u8 * s_wg[j]
+                } -> gt;
+                rRF -> map {
+                    e -> e / 14336 -> b;
+                    e % 14336 -> j;
+                    (0.0, rD) -> fold {
+                        acc, k -> wu[k * 14336 + j] -> widen_f32 -> wv;
+                        acc + hn[b * 4096 + k] * wv
+                    } -> u8;
+                    u8 * s_wu[j]
+                } -> up;
+                rRF -> map {
+                    e -> gt[e] -> sv;
+                    0.0 - sv -> exp -> en;
+                    sv / (1.0 + en) -> sg;
+                    sg * up[e]
+                } -> hh;
+                rRD -> map {
+                    e -> e / 4096 -> b;
+                    e % 4096 -> j;
+                    (0.0, rF) -> fold {
+                        acc, k -> wd[k * 4096 + j] -> widen_f32 -> wv;
+                        acc + hh[b * 14336 + k] * wv
+                    } -> u8;
+                    u8 * s_wd[j] -> y2;
+                    h1[e] + y2
+                } -> x;
+                t + 1 -> t;
+                -> loop;
+            }
+            -false-> x -> out;
+        }
+    }
+    () -> time -> t1;
+    out[0] -> println;
+    out[1] -> println;
+    out[2051] -> println;
+    out[4095] -> println;
+    "iter ms=" -> print;
+    t1 - t0 -> println;
+}

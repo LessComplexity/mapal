@@ -26,8 +26,9 @@ use super::resident::Window;
 use super::*;
 use crate::profile::{
     Face, GPU_RESIDENT_BLOCKS, GPU_VEC_BYTES, Gpu, GpuMmaTile, GpuTile, GpuWgmmaTile, Home, MMA_K,
-    MMA_M, MMA_N, MmaFmt, NAIVE_UNROLL, PlanComb, PlanCost, PlanShape, WARPGROUP_WARPS,
-    WGMMA_ATOM_ROWS, WGMMA_K, WGMMA_M, WGMMA_SWIZZLE_BYTES, bank_degree, fma_held_regs,
+    MMA_M, MMA_N, MMA_SYNC_16, MmaFmt, NAIVE_UNROLL, PlanComb, PlanCost, PlanShape,
+    WARPGROUP_WARPS, WGMMA_ATOM_ROWS, WGMMA_K, WGMMA_M, WGMMA_SWIZZLE_BYTES, bank_degree,
+    fma_held_regs,
 };
 use crate::{Order, Reduced};
 use mapal_ir::split::{SplitForm, SplitKind};
@@ -2303,6 +2304,7 @@ fn launch_key(l: &Launch) -> String {
         .replace(", row_stage: false", "")
         .replace(", horizontal: false", "")
         .replace(", calls: false", "")
+        .replace(", calls_issue: false", "")
         // half-precision: `narrow-tile` decides which sites exist (no kernel text).
         .replace(", narrow_tile: false", "")
         // tensor-cores: `half-tile` / `narrow-async` choose the kernel (no
@@ -3207,7 +3209,13 @@ fn split_operands(site: &TileSite, gpu: &Gpu) -> Option<(SplitKind, MmaFmt, u64,
     match (site.a.narrow, site.b.narrow) {
         (Some(x), Some(y)) if x == y => {
             let fmt = MmaFmt::of_narrow(x);
-            gpu.caps.matrix_op(fmt, Home::Regs)?;
+            // The split tile issues the 16-bit warp product's geometry
+            // (m16n8k16, two-byte fragments): a format whose warp product
+            // has another (fp8's m16n8k32) has no split kernel.
+            let op = gpu.caps.matrix_op(fmt, Home::Regs)?;
+            if op.shape != MMA_SYNC_16 {
+                return None;
+            }
             let (ea, eb) = mma16_layout(site, fmt)?;
             Some((SplitKind::Narrow1, fmt, ea, eb))
         }
@@ -4538,7 +4546,8 @@ pub(crate) fn device_module(
     }
     // ADR-0043: the device's narrow roundings (`cvt.rn`).
     {
-        let defs = crate::narrow::defs(&out, true);
+        let cvt_f8 = profile.gpu().is_some_and(|g| g.caps.cvt_f8);
+        let defs = crate::narrow::defs(&out, true, cvt_f8);
         out.push_str(&defs);
     }
     // `pdl`: the runtime launches every kernel behind a kernel as a dependent
@@ -5940,7 +5949,14 @@ impl Kernel<'_> {
                     "{w} = load {nt}, ptr addrspace(1) {p}, align {}",
                     n.bytes()
                 ));
-                k.line(format!("{v} = fpext {nt} {w} to {t}"));
+                let tt = if n.bytes() == 1 {
+                    k.tmp()
+                } else {
+                    String::new()
+                };
+                for l in crate::narrow::widen_lines(n, nt, &w, &t, &v, &tt) {
+                    k.line(l);
+                }
                 return v;
             }
             let p = k.gep(1, arr, &idx);
@@ -6050,7 +6066,14 @@ impl Kernel<'_> {
                         "{w} = load {nt}, ptr addrspace(1) {p}, align {}",
                         n.bytes()
                     ));
-                    self.line(format!("{x} = fpext {nt} {w} to {t}"));
+                    let tt = if n.bytes() == 1 {
+                        self.tmp()
+                    } else {
+                        String::new()
+                    };
+                    for l in crate::narrow::widen_lines(n, nt, &w, &t, &x, &tt) {
+                        self.line(l);
+                    }
                     x
                 }
                 None => {
@@ -6071,7 +6094,15 @@ impl Kernel<'_> {
                     self.line(format!(
                         "{w} = load <{v} x {nt}>, ptr addrspace(1) {p}, align {GPU_VEC_BYTES}"
                     ));
-                    self.line(format!("{x} = fpext <{v} x {nt}> {w} to {vt}"));
+                    let nvt = format!("<{v} x {nt}>");
+                    let tt = if n.bytes() == 1 {
+                        self.tmp()
+                    } else {
+                        String::new()
+                    };
+                    for l in crate::narrow::widen_lines(n, &nvt, &w, &vt, &x, &tt) {
+                        self.line(l);
+                    }
                     x
                 }
                 None => {
@@ -8465,7 +8496,14 @@ impl Kernel<'_> {
             k.line(format!(
                 "{w} = load {nty}, ptr addrspace(1) {gp}, align {nal}"
             ));
-            k.line(format!("{v} = fpext {nty} {w} to {ty}"));
+            let tt = if n.bytes() == 1 {
+                k.tmp()
+            } else {
+                String::new()
+            };
+            for l in crate::narrow::widen_lines(n, &nty, &w, ty, &v, &tt) {
+                k.line(l);
+            }
             v
         };
         let load_panels = |k: &mut Self, k0: &str| -> Vec<String> {
@@ -8552,14 +8590,23 @@ impl Kernel<'_> {
                     let gi = gidx(k, rb, &b_kc, p, gsrc, *goff, &k0, &kb);
                     // `narrow-async`: the `b` region keeps its place in the
                     // stage, its elements narrow: element `si` of the f32
-                    // layout is narrow element `si + so + bs_off`.
+                    // layout is narrow element `si + (4 / e − 1)·(so + bs_off)`
+                    // (the region packed from its first byte; `e` 2 keeps the
+                    // 16-bit formats' text).
                     if let Some(n) = nb {
                         let nt = crate::narrow::llvm_ty(n);
                         let gp = k.gep_ty(1, nt, "%b", &gi);
                         let si = k.op("add", sdst, &so);
                         let si = k.plus(si, *soff);
-                        let ni = k.op("add", &si, &so);
-                        let ni = k.plus(ni, bs_off);
+                        let (ni, f) = match n.bytes() {
+                            2 => (k.op("add", &si, &so), 1),
+                            e => {
+                                let f = 4 / e - 1;
+                                let c = k.op("mul", &so, f);
+                                (k.op("add", &si, &c), f)
+                            }
+                        };
+                        let ni = k.plus(ni, f * bs_off);
                         let sp = k.gep_ty(3, nt, smem, &ni);
                         k.line(format!(
                             "call void @llvm.nvvm.cp.async.ca.shared.global.{}(ptr addrspace(3) {sp}, ptr addrspace(1) {gp})",
@@ -8706,10 +8753,19 @@ impl Kernel<'_> {
             let r = k.op("add", &r, off);
             let r = k.op("add", &r, &cbase);
             // `narrow-async`: the stage's narrow `b` region (see `issue`).
+            // The narrow region packs from the f32 region's first byte: f32
+            // element `r` is narrow element `r + (4 / e − 1)·(stage + bs_off)`
+            // (`e` 2: the 16-bit formats' text as it was; 1: fp8).
             let r = match narrow {
-                Some(_) => {
+                Some(n) if n.bytes() == 2 => {
                     let x = k.op("add", &r, &cbase);
                     k.plus(x, bs_off)
+                }
+                Some(n) => {
+                    let f = 4 / n.bytes() - 1;
+                    let c = k.op("mul", &cbase, f);
+                    let x = k.op("add", &r, &c);
+                    k.plus(x, f * bs_off)
                 }
                 None => r,
             };
@@ -8737,7 +8793,14 @@ impl Kernel<'_> {
                         "{y} = load {nwt}, ptr addrspace(3) {sp}, align {}",
                         w * nf.bytes()
                     ));
-                    k.line(format!("{x} = fpext {nwt} {y} to {wt}"));
+                    let tt = if nf.bytes() == 1 {
+                        k.tmp()
+                    } else {
+                        String::new()
+                    };
+                    for l in crate::narrow::widen_lines(nf, &nwt, &y, &wt, &x, &tt) {
+                        k.line(l);
+                    }
                     x
                 } else {
                     let sp = k.gep(3, smem, &si);
@@ -9128,7 +9191,13 @@ impl<'a> FnEmit<'a> {
 
     /// per-site-choice B1/B2: site `site`'s table, `one` its retained row's
     /// one-row site (`row`) or the whole site. `None` with fewer than two
-    /// candidates.
+    /// candidates — but for a `tile-post` group whose one candidate splits
+    /// (`group_order`: a workspace whose reduce evaluates the epilogue): the
+    /// group's plain launch is its ordered kernel, so the split reaches the
+    /// device only through the table (the f8e4m3 decode's `wo` projection, a
+    /// scale and a residual after the fold: its one candidate `splitk16`
+    /// ran as 16 one-cell blocks, 108 against 39 µs a step for its bf16
+    /// twin's two-candidate table). A one-candidate table never trials.
     fn make_table(
         &self,
         source: ObjectId,
@@ -9138,12 +9207,18 @@ impl<'a> FnEmit<'a> {
         one: &TileSite,
         epi: Option<&EpiKernel>,
     ) -> Option<SiteTable> {
-        // One candidate launches as the rules' kernel — except a `tile-post`
-        // group's split (`group_order`): the single launch keeps an epilogue
-        // group ordered, so its realized combine is the table's (cross-arch
+        // One candidate launches as the rules' kernel — except an epilogue
+        // group's split (`group_order`): the single launch keeps the group
+        // ordered, so its realized combine is the table's (cross-arch
         // 3a8e654f: the B1 decode's O projection, S 64 planned on the H100,
-        // ran its ordered 16-block kernel, 235 against 29 us).
-        if cands.len() < 2 && (epi.is_none() || cands[0].launch.combine == Combine::None) {
+        // ran its ordered 16-block kernel, 235 against 29 us). `--cands=1`,
+        // the OFF arm of tables, keeps the emission before them.
+        let split_epi = self.gpu_arms.site_cands > 1
+            && epi.is_some()
+            && cands
+                .first()
+                .is_some_and(|c| c.launch.combine != Combine::None);
+        if cands.len() < 2 && !split_epi {
             return None;
         }
         let m = self.ir.in_edges(target)[0];
@@ -9159,7 +9234,7 @@ impl<'a> FnEmit<'a> {
             .unzip();
         Some(SiteTable {
             site: ids[0].0,
-            flags: if self.rerun_safe(source, target, site, m) {
+            flags: if cands.len() > 1 && self.rerun_safe(source, target, site, m) {
                 SITE_RERUN
             } else {
                 0

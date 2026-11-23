@@ -174,6 +174,9 @@ pub fn emit_with_opts(ir: &CategoryIr, opts: &EmitOpts) -> Result<String, EmitEr
     // ADR-0043: narrow storage types, where the program has one.
     if ir.objects().any(|(_, o)| ty_has_narrow(&o.ty)) {
         out.push_str(module::narrow_headers());
+        if ir.objects().any(|(_, o)| ty_has_f8(&o.ty)) {
+            out.push_str("#include <cuda_fp8.h>\n");
+        }
     }
 
     let sg = emit_str_globals(&strings);
@@ -294,6 +297,18 @@ fn ty_has_narrow(ty: &mapal_ir::Ty) -> bool {
         Ty::Array { elem, .. } => ty_has_narrow(elem),
         Ty::Tuple(ts) => ts.iter().any(ty_has_narrow),
         Ty::Struct { fields, .. } => fields.iter().any(|(_, t)| ty_has_narrow(t)),
+        _ => false,
+    }
+}
+
+/// ADR-0043 slice 3: whether `ty` holds an fp8 float anywhere.
+fn ty_has_f8(ty: &mapal_ir::Ty) -> bool {
+    use mapal_ir::Ty;
+    match ty {
+        Ty::Narrow(n) => n.bytes() == 1,
+        Ty::Array { elem, .. } => ty_has_f8(elem),
+        Ty::Tuple(ts) => ts.iter().any(ty_has_f8),
+        Ty::Struct { fields, .. } => fields.iter().any(|(_, t)| ty_has_f8(t)),
         _ => false,
     }
 }

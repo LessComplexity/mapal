@@ -437,12 +437,107 @@ enum Chg {
     Num,
 }
 
+/// **Across-call retention at one call site** (`retain-call`,
+/// [`CategoryIr::call_keep`]): a `Call(g)` site of `f` inside a loop of `f`
+/// runs once per trip; the callee input slots whose argument is the same at
+/// every execution of the site — an object made outside every loop that
+/// contains the site, or one [`UnchangedPlan::same`] says is equal on every
+/// trip (objects are immutable: the same object is the same value) — and
+/// with [`UnchangedPlan::inputs`] of the callee, the callee values all of
+/// whose input slots are kept: on every execution after the site's first
+/// they equal the first's (the consumer computes them once and retains
+/// them). A site outside every loop runs once per call of `f`: nothing
+/// kept.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CallKeep {
+    pub callee: Option<FuncId>,
+    /// Bit `k`: the argument of the callee's input slot `k` is the same at
+    /// every execution of the site (slots past 63 share bit 63, never kept).
+    pub kept: u64,
+    /// The callee's values whose input slots are all kept (at least one:
+    /// a constant-only value, mask 0, is the same at every site already).
+    pub values: Vec<ObjectId>,
+    /// The loops (their `LoopMerge`) containing the site.
+    pub loops: Vec<ObjectId>,
+}
+
 impl CategoryIr {
     /// The unchanged-since-last-time query (see the module doc): per loop
     /// body array, the cells that may differ from the previous trip; per
     /// value, the input slots it depends on. Stored on the graph.
     pub fn unchanged_plan(&self, f: FuncId) -> UnchangedPlan {
         self.fact(f, |s| &s.unchanged_plan, || self.unchanged_plan_compute(f))
+    }
+
+    /// **`call_keep`** ([`CallKeep`]): every `Call` site of `f` with the
+    /// callee slots its loops keep and the callee values kept with them.
+    /// Stored on the graph; built from `loop_structure`, `unchanged_plan(f)`
+    /// (`same`) and `unchanged_plan(callee)` (`inputs`), so nested sites
+    /// compose: a callee's own call site carries its arguments' masks.
+    pub fn call_keep(&self, f: FuncId) -> SecondaryMap<MorphismId, CallKeep> {
+        self.fact(f, |s| &s.call_keep, || self.call_keep_compute(f))
+    }
+
+    fn call_keep_compute(&self, f: FuncId) -> SecondaryMap<MorphismId, CallKeep> {
+        let mut out = SecondaryMap::new();
+        let Some(fd) = self.func(f) else {
+            return out;
+        };
+        let loops = self.loop_structure(f);
+        let up = self.unchanged_plan(f);
+        for &m in &fd.morphisms {
+            let Some(mm) = self.morphism(m) else { continue };
+            let Operation::Call(g) = mm.op else { continue };
+            let inl: Vec<&super::LoopScc> = loops
+                .iter()
+                .filter(|l| l.objects.contains(&mm.target) || l.objects.contains(&mm.source))
+                .collect();
+            let gin = self.func(g).map(|gd| gd.input);
+            let arity = match gin.and_then(|i| self.object(i)).map(|o| &o.ty) {
+                Some(Ty::Tuple(ts)) => Some(ts.len() as u32),
+                Some(_) => None,
+                None => continue,
+            };
+            let same_at = |a: ObjectId| {
+                up.same.contains_key(a) || inl.iter().all(|l| !l.objects.contains(&a))
+            };
+            let mut kept = 0u64;
+            if !inl.is_empty() {
+                match arity {
+                    None => {
+                        if same_at(mm.source) {
+                            kept = 1;
+                        }
+                    }
+                    Some(n) => {
+                        for k in 0..n.min(63) {
+                            let args = self.component_sources(mm.source, k).unwrap_or_default();
+                            if !args.is_empty() && args.iter().all(|&a| same_at(a)) {
+                                kept |= 1 << k;
+                            }
+                        }
+                    }
+                }
+            }
+            let gup = self.unchanged_plan(g);
+            let mut values: Vec<ObjectId> = gup
+                .inputs
+                .iter()
+                .filter(|&(_, &mask)| kept != 0 && mask != 0 && mask & !kept == 0)
+                .map(|(o, _)| o)
+                .collect();
+            values.sort();
+            out.insert(
+                m,
+                CallKeep {
+                    callee: Some(g),
+                    kept,
+                    values,
+                    loops: inl.iter().flat_map(|l| l.merges.iter().copied()).collect(),
+                },
+            );
+        }
+        out
     }
 
     /// The reads of map `m`'s cell over rows of `q` cells (see [`Lin`]):

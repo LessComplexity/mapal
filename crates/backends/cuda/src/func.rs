@@ -2019,6 +2019,11 @@ pub(crate) fn const_literal(v: &Value) -> String {
         Value::Narrow(mapal_ir::NarrowFloat::F16, b) => {
             format!("__ushort_as_half((unsigned short){b:#06x})")
         }
+        // ADR-0043 slice 3: the pattern in the storage byte.
+        Value::Narrow(n @ (mapal_ir::NarrowFloat::F8e4m3 | mapal_ir::NarrowFloat::F8e5m2), b) => {
+            let t = crate::ty::lower_ty(&mapal_ir::Ty::Narrow(*n)).expect("fp8 lowers");
+            format!("[] {{ {t} v; v.__x = (__nv_fp8_storage_t){b:#04x}; return v; }}()")
+        }
         Value::F32(x) => float_literal(
             x.is_nan(),
             x.is_sign_negative(),

@@ -27,14 +27,14 @@ pub use algebra::{
 };
 pub use bounds::BoundsProof;
 pub use linear::LinearSite;
-pub use precision::{PrecisionPlan, bound_coef, bound_coef_unit, gamma};
+pub use precision::{PrecisionPlan, bound_coef, bound_coef_unit, bound_coef_units, gamma};
 pub use radix::{AxisDigit, Digit, RadixAddr, RadixForm, RadixTile, uniform_at};
 pub use range::FinitePlan;
 pub use stream::{
     BoxClass, GuardBox, GuardSide, StreamGroup, StreamGuard, StreamLaw, StreamPlan, StreamRole,
     extreme_up,
 };
-pub use unchanged::UnchangedPlan;
+pub use unchanged::{CallKeep, UnchangedPlan};
 
 /// A non-trivial loop SCC and its merge objects (DESIGN §7; the backend
 /// capability predicate). One entry per non-trivial SCC.
@@ -792,6 +792,22 @@ impl TileSite {
             f16: self.half == Some(crate::ty::NarrowFloat::F16),
         }
         .unit()
+    }
+
+    /// ADR-0043 slice 3 (per-operand units, D3): each multiplicand's unit
+    /// roundoff under the weakest member — an operand stored narrow in a
+    /// format that embeds in the member's ([`crate::narrow::NarrowForm::embeds_in`])
+    /// is the member's value unchanged (its rounding is the identity: 0);
+    /// any other operand rounds with the member's unit. `None` where the
+    /// product is `{f32}`.
+    pub fn units(&self) -> Option<(f64, f64)> {
+        let u = self.unit()?;
+        let member = self.half.map(crate::narrow::NarrowForm::of);
+        let op = |r: &TileRead| match (r.narrow, member) {
+            (Some(n), Some(m)) if crate::narrow::NarrowForm::of(n).embeds_in_form(&m) => 0.0,
+            _ => u,
+        };
+        Some((op(&self.a), op(&self.b)))
     }
 }
 

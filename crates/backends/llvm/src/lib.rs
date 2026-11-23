@@ -622,6 +622,13 @@ pub struct GpuRungs {
     /// launches they replace (`func/calls.rs`). Off (`--gpu-off=calls`):
     /// every chain its launches, the emission before it.
     pub calls: bool,
+    /// calls-issue (ADR plan-cost D2 in `calls`): the separate form of a chain
+    /// pays each dependent launch's host issue where the host is slower than
+    /// the member before it — `max(launch, issue − d_prev)` per boundary, the
+    /// host's measured `issue_ns` against the members' device time
+    /// (`func/calls.rs` `chain_ns`). Off (`--gpu-off=calls-issue`): the price
+    /// without the host terms, the emission before it.
+    pub calls_issue: bool,
     /// long-rows `row-slices`: a flow unit whose few rows leave the part's
     /// SMs idle runs each row over several blocks — every fold's partial
     /// state per block, combined by `fold_combine`'s law (its own `⊕`, a
@@ -1002,6 +1009,7 @@ impl GpuRungs {
         row_stage: true,
         horizontal: true,
         calls: true,
+        calls_issue: true,
         row_slices: true,
         cond_bounds: true,
         carry_made: true,
@@ -1048,7 +1056,7 @@ impl GpuRungs {
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 126] = [
+    pub const NAMES: [&'static str; 127] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1133,6 +1141,7 @@ impl GpuRungs {
         "row-stage",
         "horizontal",
         "calls",
+        "calls-issue",
         "row-slices",
         "cond-bounds",
         "carry-made",
@@ -1264,6 +1273,7 @@ impl GpuRungs {
             "row-stage" => &mut self.row_stage,
             "horizontal" => &mut self.horizontal,
             "calls" => &mut self.calls,
+            "calls-issue" => &mut self.calls_issue,
             "row-slices" => &mut self.row_slices,
             "cond-bounds" => &mut self.cond_bounds,
             "carry-made" => &mut self.carry_made,
@@ -2013,7 +2023,7 @@ fn emit_module(
         out.push_str(&crate::exp::defs(&funcs, real));
     }
     // ADR-0043: the host's narrow roundings, for the formats a body rounds to.
-    out.push_str(&crate::narrow::defs(&funcs, false));
+    out.push_str(&crate::narrow::defs(&funcs, false, false));
     // Same rule for the SME leg: the emitted call IS the requirement, so the
     // three intrinsic declarations and the one streaming panel kernel appear
     // exactly when some tile site took the SME rung. A module without one is

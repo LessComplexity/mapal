@@ -5232,6 +5232,181 @@ pub fn half_src(p: &HalfProg) -> (String, (usize, u64, u64)) {
     (src, (cells.len(), d, s))
 }
 
+// --- fp8 storage (ADR-0043 slice 3) -------------------------------------------
+
+/// A sum of products over fp8 storage: `b` (`k × n`, or `n × k` read
+/// transposed under `bt`) rounded once from an `f32` law into `f8e4m3` /
+/// `f8e5m2` (`fmt` 0 / 1), at a range that stays normal, saturates past the
+/// format's largest finite or reaches its subnormals (`range` 0 / 1 / 2);
+/// `a` `f32` or the same fp8 format (`fa`); the fold under `{f32}`,
+/// `: bf16 | f32` or `: f16 | f32` (`set` 0 / 1 / 2). The scale is
+/// dataflow (`scale`): 0 none; 1 per tensor — the weight's `amax` by two
+/// whole max folds, `b = w / (amax / max) -> to_f8`, the epilogue `u · s`;
+/// 2 per column — `sc[j]` in the epilogue; 3 a factor inside the fold
+/// (`acc + x·y·sf`, constant along `k`: `DepLaw::Factor`). Then cells
+/// rounding into the format (every seventh `exp(1000) = inf`: saturates), a
+/// loop carrying an fp8 array (`looped`) and a whole fold over widened
+/// values.
+#[derive(Clone, Debug)]
+pub struct F8Prog {
+    pub dims: [u8; 3],
+    pub fmt: u8,
+    pub fa: bool,
+    pub set: u8,
+    pub bt: bool,
+    pub scale: u8,
+    pub range: u8,
+    pub looped: bool,
+    pub law: [u8; 2],
+}
+
+pub fn f8_prog_strategy() -> impl Strategy<Value = F8Prog> {
+    (
+        (any::<u8>(), any::<u8>(), any::<u8>()),
+        prop::sample::select(vec![0u8, 0, 1]),
+        prop::bool::weighted(0.4),
+        prop::sample::select(vec![0u8, 0, 1, 2]),
+        prop::bool::weighted(0.4),
+        prop::sample::select(vec![0u8, 1, 1, 2, 3]),
+        prop::sample::select(vec![0u8, 0, 0, 1, 2]),
+        prop::bool::weighted(0.4),
+        (any::<u8>(), any::<u8>()),
+    )
+        .prop_map(
+            |(d, fmt, fa, set, bt, scale, range, looped, (l0, l1))| F8Prog {
+                dims: [d.0, d.1, d.2],
+                fmt,
+                fa,
+                set,
+                bt,
+                scale,
+                range,
+                looped,
+                law: [l0, l1],
+            },
+        )
+}
+
+/// The surface name of an [`F8Prog`]'s format.
+pub fn f8_fmt(p: &F8Prog) -> &'static str {
+    if p.fmt == 1 { "f8e5m2" } else { "f8e4m3" }
+}
+
+/// [`F8Prog`]'s source and its checks `(cells, k, m·n)`: the first `cells` pairs
+/// of printed lines are a value and its `M = Σ|x·y·sf|` scaled as the value
+/// (the epilogue's positive scale) over a `k`-step fold; the later lines
+/// pass through a rounding into the format.
+pub fn f8_src(p: &F8Prog) -> (String, (usize, u64, u64)) {
+    let pick = |d: u8, v: &[u64]| v[usize::from(d) % v.len()];
+    let fmt = f8_fmt(p);
+    let max = if p.fmt == 1 { "57344.0" } else { "448.0" };
+    let set = match p.set {
+        1 => ": bf16 | f32",
+        2 => ": f16 | f32",
+        _ => "",
+    };
+    let m = pick(p.dims[0], &[1, 4, 16, 32, 64]);
+    let n = pick(p.dims[1], &[16, 32, 64, 128]);
+    let k = pick(p.dims[2], &[16, 32, 64, 128, 256]);
+    let (a1, a2) = (
+        u64::from(p.law[0] % 13) * 2 + 3,
+        u64::from(p.law[1] % 11) * 2 + 5,
+    );
+    let rng = match p.range {
+        1 => "* 1000.0",
+        2 if p.fmt == 1 => "* 0.000001",
+        2 => "* 0.0001",
+        _ => "/ 9.0",
+    };
+    let (mk, kn, mn) = (m * k, k * n, m * n);
+    let mut s = format!(
+        "fn main() {{\n    {mk} -> iota -> ia;\n    \
+         ia -> map {{ t -> (t * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> af;\n    \
+         {kn} -> iota -> ib;\n    \
+         ib -> map {{ t -> (t * {a2} + 57) % 103 - 51 -> widen_f32 -> v; v {rng} }} -> bf;\n    \
+         {n} -> iota -> inn;\n    {mn} -> iota -> ic;\n    {k} -> iota -> kr;\n"
+    );
+    // The scale, as dataflow.
+    let (post, mpost, factor) = match p.scale {
+        1 => {
+            s += "    (0.0, ib) -> fold { mx, t -> bf[t] -> x; (x > mx) -> { -true-> x; -false-> mx; } } -> hi;\n    \
+                  (0.0, ib) -> fold { mx, t -> 0.0 - bf[t] -> x; (x > mx) -> { -true-> x; -false-> mx; } } -> lo;\n    \
+                  (hi > lo) -> { -true-> hi; -false-> lo; } -> amax;\n";
+            s += &format!(
+                "    amax / {max} -> s;\n    ib -> map {{ t -> bf[t] / s -> to_{fmt} }} -> b;\n"
+            );
+            (" -> u; u * s".to_string(), " -> u; u * s".to_string(), "")
+        }
+        2 => {
+            s += "    inn -> map { j -> j % 5 + 1 -> widen_f32 -> v; v * 0.25 } -> sc;\n";
+            s += &format!("    ib -> map {{ t -> bf[t] -> to_{fmt} }} -> b;\n");
+            (
+                " -> u; u * sc[j]".to_string(),
+                " -> u; u * sc[j]".to_string(),
+                "",
+            )
+        }
+        _ => {
+            s += &format!("    ib -> map {{ t -> bf[t] -> to_{fmt} }} -> b;\n");
+            (
+                String::new(),
+                String::new(),
+                if p.scale == 3 { " * sf" } else { "" },
+            )
+        }
+    };
+    if p.scale == 3 {
+        s += "    kr[3] -> widen_f32 -> f3;\n    f3 * 0.125 -> sf;\n";
+    }
+    let ar = if p.fa {
+        s += &format!("    ia -> map {{ t -> af[t] -> to_{fmt} }} -> a;\n");
+        format!("a[i * {k} + q] -> widen_f32")
+    } else {
+        format!("af[i * {k} + q]")
+    };
+    let bi = if p.bt {
+        format!("b[j * {k} + q]")
+    } else {
+        format!("b[q * {n} + j]")
+    };
+    let abs = "(pv > 0.0) -> { -true-> pv; -false-> 0.0 - pv; } -> av; acc + av";
+    s += &format!(
+        "    ic -> map {{ t -> t / {n} -> i; t % {n} -> j; (0.0, kr) -> fold{set} {{ acc, q -> {ar} -> x; {bi} -> widen_f32 -> y; acc + x * y{factor} }}{post} }} -> y;\n    \
+         ic -> map: f32 {{ t -> t / {n} -> i; t % {n} -> j; (0.0, kr) -> fold {{ acc, q -> {ar} -> x; {bi} -> widen_f32 -> y; x * y{factor} -> pv; {abs} }}{mpost} }} -> mag;\n"
+    );
+    let cells = [
+        u64::from(p.law[0]) * 7 % mn,
+        mn / 2,
+        mn - 1 - u64::from(p.law[1]) % n.min(mn),
+    ];
+    for c in cells {
+        s += &format!("    y[{c}] -> println;\n    mag[{c}] -> println;\n");
+    }
+    // Cells rounding into the format: every seventh `exp(1000) = +inf`,
+    // which saturates to the format's largest finite.
+    s += &format!(
+        "    ic -> map {{ e -> (e % 7 == 0) -> {{ -true-> 1000.0 -> exp -> to_{fmt}; -false-> y[e] -> to_{fmt}; }} }} -> z;\n"
+    );
+    let fin = if p.looped {
+        s += &format!(
+            "    mut st: [{fmt}; {mn}] <- z;\n    mut it: i32 <- 0;\n    loop {{\n        (it < 3) -> {{\n            -true-> {{\n                \
+             ic -> map {{ e -> st[e] -> widen_f32 -> v; v * 1.5 + 0.25 -> to_{fmt} }} -> st;\n                \
+             it * 5 % {mn} -> c;\n                st[c] -> widen_f32 -> sv;\n                sv + 1.0 -> to_{fmt} -> sn;\n                \
+             st[c] <- sn;\n                it + 1 -> it;\n                -> loop;\n            }}\n            -false-> st -> fin;\n        }}\n    }}\n"
+        );
+        "fin"
+    } else {
+        "z"
+    };
+    for c in [0, 1, mn / 2, mn - 1] {
+        s += &format!("    {fin}[{c}] -> widen_f32 -> println;\n");
+    }
+    s += &format!(
+        "    0.0 -> zero: f32;\n    (zero, {fin}) -> fold {{ acc, v -> v -> widen_f32 -> x; acc + x }} -> sum;\n    sum -> println;\n}}\n"
+    );
+    (s, (cells.len(), k, mn))
+}
+
 /// caching-memory: a growing-history loop — the loop carries a history of `b`
 /// sequences × `l` rows × `d` cells and writes the step's input row into it
 /// at position `p0 + t` (one row of every sequence; past the end: no write),
@@ -5930,6 +6105,8 @@ pub fn split_src_at(p: &SplitProg, m: u64, n: u64, k: u64) -> (String, (usize, u
         1 => (Some("bf16"), Some("bf16")),
         2 => (Some("f16"), Some("f16")),
         3 => (None, Some("bf16")),
+        4 => (Some("f8e4m3"), Some("f8e4m3")),
+        5 => (Some("f8e5m2"), Some("f8e5m2")),
         _ => (None, None),
     };
     // The narrow formats' range: the wide / tiny / largest laws keep their

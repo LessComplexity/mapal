@@ -41,15 +41,15 @@ mod validate;
 
 pub use access::{AccessPlan, Hazard};
 pub use algo::{
-    Affine, AxisDigit, BoundsProof, BoxClass, CellRead, CellSite, Checkpoint, Delta, DepLaw, Digit,
-    Edge, ElemPlan, ElemSrc, EmissionClass, EmissionPlan, FinitePlan, FmaPair, FoldCombine,
-    FoldCombinePlan, Footprint, FootprintPlan, GuardArm, GuardBox, GuardSide, GuardSite,
-    LastUsePlan, LinearSite, LoopPlan, LoopScc, MovePlan, MoveSite, Outside, PathPlan,
+    Affine, AxisDigit, BoundsProof, BoxClass, CallKeep, CellRead, CellSite, Checkpoint, Delta,
+    DepLaw, Digit, Edge, ElemPlan, ElemSrc, EmissionClass, EmissionPlan, FinitePlan, FmaPair,
+    FoldCombine, FoldCombinePlan, Footprint, FootprintPlan, GuardArm, GuardBox, GuardSide,
+    GuardSite, LastUsePlan, LinearSite, LoopPlan, LoopScc, MovePlan, MoveSite, Outside, PathPlan,
     PrecisionPlan, RadixAddr, RadixForm, RadixTile, Reach, Regroup, RescaleArg, RowDep, RowFoldOp,
     RowFoldSite, StepAlgebra, StepFlags, StreamGroup, StreamGuard, StreamLaw, StreamPlan,
     StreamRole, Tap, Task, TaskId, TaskKind, TensorAxis, TensorDim, TensorForm, TileKSplit,
     TilePlan, TilePost, TileRead, TileSite, TripPhase, TripSplit, UnchangedPlan, WaitEntry,
-    bound_coef, bound_coef_unit, extreme_up, gamma, uniform_at,
+    bound_coef, bound_coef_unit, bound_coef_units, extreme_up, gamma, uniform_at,
 };
 pub use builder::{Dest, FnBuilder, IrBuilder, IrError, LoopHandle};
 pub use facts::FactArms;

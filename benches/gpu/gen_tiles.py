@@ -1268,6 +1268,41 @@ def llm_ops(P, rows, positions, cache, ffn, w16=False, kv16=False):
     return ops
 
 
+# fp8 storage (ADR-0043 slice 3): `w8` stores the layer's weights as `f8e4m3` with a per-output-channel scale — the
+# f32 law's weight `{n}_f`, its column's largest magnitude by two whole max folds over `k`, `s_{n}[j] = amax / 448`,
+# the weight `{n}_f[t] / s_{n}[t % N] -> to_f8e4m3` (saturating, round to nearest even), read through its exact
+# widening, the scale in the projection's epilogue (`u · s_{n}[j]`): a quarter of the f32 weight bytes a step moves.
+# The quantization runs once, before the timed loop; the f32 weights die there.
+def llm_w8_dims(P):
+    D, H, Hk, dh, F = P["D"], P["H"], P["Hk"], P["dh"], P["F"]
+    NQ = (H + 2 * Hk) * dh
+    return {"wqkv": (D, NQ), "wo": (D, D), "wg": (D, F), "wu": (D, F), "wd": (F, D)}
+
+
+def llm_ops_w8(P, rows, positions, cache, ffn):
+    """`llm_ops` with each weight's f32 law named `{n}_f` (quantized by `llm_f8`)."""
+    return [(f"{n}_f" if n in LLM_WEIGHTS else n, ln, k, b) for n, ln, k, b in llm_ops(P, rows, positions, cache, ffn)]
+
+
+def llm_f8(P, ffn):
+    """Each weight's per-column scale and its fp8 copy."""
+    s = ""
+    for n, (K, N) in llm_w8_dims(P).items():
+        if n in ("wg", "wu", "wd") and not ffn:
+            continue
+        mx = lambda x: f"(0.0, kk_{n}) -> fold {{ m, k -> {x} -> x; (x > m) -> {{ -true-> x; -false-> m; }} }}"  # noqa: E731
+        s += (f"    {N} -> iota -> jn_{n};\n    {K} -> iota -> kk_{n};\n"
+              f"    jn_{n} -> map {{ j -> {mx(f'{n}_f[k * {N} + j]')} -> hi; {mx(f'0.0 - {n}_f[k * {N} + j]')} -> lo; "
+              f"(hi > lo) -> {{ -true-> hi; -false-> lo; }} -> am; am / 448.0 }} -> s_{n};\n"
+              f"    i_{n}_f -> map {{ t -> {n}_f[t] / s_{n}[t % {N}] -> to_f8e4m3 }} -> {n};\n")
+    return s
+
+
+def llm_ep(name, w8):
+    """A projection's epilogue under `w8`: its column's scale."""
+    return f" -> u8; u8 * s_{name}[j]" if w8 else ""
+
+
 def llm_w(name, idx, w16):
     """A fold step's read of weight `name` at `idx`: `(binding, value)` — the element itself, or (`w16`) its exact
     widening bound first."""
@@ -1276,17 +1311,19 @@ def llm_w(name, idx, w16):
     return f"{name}[{idx}] -> widen_f32 -> wv; ", "wv"
 
 
-def llm_ffn(P, src, dst, w16=False):
+def llm_ffn(P, src, dst, w16=False, w8=False):
     """`dst = src + down(SiLU(gate(n)) · up(n))`, n = RMSNorm(src)."""
     D, F = P["D"], P["F"]
-    (bg, vg), (bu, vu), (bd, vd) = (llm_w("wg", f"k * {F} + j", w16), llm_w("wu", f"k * {F} + j", w16),
-                                    llm_w("wd", f"k * {D} + j", w16))
+    w = w16 or w8
+    (bg, vg), (bu, vu), (bd, vd) = (llm_w("wg", f"k * {F} + j", w), llm_w("wu", f"k * {F} + j", w),
+                                    llm_w("wd", f"k * {D} + j", w))
+    eg, eu, ed = llm_ep("wg", w8), llm_ep("wu", w8), llm_ep("wd", w8)
     return (f"    rR -> map {{ b -> {llm_rms(f'{src}[b * {D} + i]', D)} }} -> rinv2;\n"
             f"    rRD -> map {{ e -> {src}[e] * rinv2[e / {D}] * g2[e % {D}] }} -> hn;\n"
-            f"    rRF -> map {{ e -> e / {F} -> b; e % {F} -> j; (0.0, rD) -> fold {{ acc, k -> {bg}acc + hn[b * {D} + k] * {vg} }} }} -> gt;\n"
-            f"    rRF -> map {{ e -> e / {F} -> b; e % {F} -> j; (0.0, rD) -> fold {{ acc, k -> {bu}acc + hn[b * {D} + k] * {vu} }} }} -> up;\n"
+            f"    rRF -> map {{ e -> e / {F} -> b; e % {F} -> j; (0.0, rD) -> fold {{ acc, k -> {bg}acc + hn[b * {D} + k] * {vg} }}{eg} }} -> gt;\n"
+            f"    rRF -> map {{ e -> e / {F} -> b; e % {F} -> j; (0.0, rD) -> fold {{ acc, k -> {bu}acc + hn[b * {D} + k] * {vu} }}{eu} }} -> up;\n"
             f"    rRF -> map {{ e -> {llm_silu('gt[e]')} -> sg; sg * up[e] }} -> hh;\n"
-            f"    rRD -> map {{ e -> e / {D} -> b; e % {D} -> j; (0.0, rF) -> fold {{ acc, k -> {bd}acc + hh[b * {F} + k] * {vd} }} -> y2; {src}[e] + y2 }} -> {dst};\n")
+            f"    rRD -> map {{ e -> e / {D} -> b; e % {D} -> j; (0.0, rF) -> fold {{ acc, k -> {bd}acc + hh[b * {F} + k] * {vd} }}{ed} -> y2; {src}[e] + y2 }} -> {dst};\n")
 
 
 def llm_head(P, rows, ffn, extra=""):
@@ -1319,14 +1356,16 @@ def llm_loop(cond, body, step, exit_):
             f"                {step};\n                -> loop;\n            }}\n            -false-> {exit_};\n        }}\n    }}\n")
 
 
-def llm_decode(B, L, S, ffn, timed=True, P=LLM, pv=False, w16=False, kv16=False):
+def llm_decode(B, L, S, ffn, timed=True, P=LLM, pv=False, w16=False, kv16=False, w8=False):
     """S decode steps of B sequences against a KV cache of capacity L (`w16`: bf16 weights, ADR-0043; `kv16`: a
-    bf16 KV cache)."""
+    bf16 KV cache; `w8`: f8e4m3 weights with per-column scales, ADR-0043 slice 3)."""
     D, H, Hk, dh = P["D"], P["H"], P["Hk"], P["dh"]
     G, KD, NQ, sq = H // Hk, Hk * dh, (H + 2 * Hk) * dh, f"{dh ** 0.5:.7f}"
     C = B * L * KD
     rope = (lambda *a: llm_rope_pv(*a, closed=True)) if pv else llm_rope
-    (bq, vq), (bo, vo) = llm_w("wqkv", f"k * {NQ} + j", w16), llm_w("wo", f"k * {D} + j", w16)
+    w = w16 or w8
+    (bq, vq), (bo, vo) = llm_w("wqkv", f"k * {NQ} + j", w), llm_w("wo", f"k * {D} + j", w)
+    eq, eo = llm_ep("wqkv", w8), llm_ep("wo", w8)
     # `kv16`: a cache element's read binds its widening; a new row is rounded once into the format.
     (bk_, vk_), (bv_, vv_) = (llm_w("kc", f"((b * {L} + r) * {Hk} + h / {G}) * {dh} + i", kv16),
                               llm_w("vc", f"((b * {L} + r) * {Hk} + h / {G}) * {dh} + i", kv16))
@@ -1335,7 +1374,9 @@ def llm_decode(B, L, S, ffn, timed=True, P=LLM, pv=False, w16=False, kv16=False)
         vk_, vv_ = "kv", "vv"
     to16 = " -> to_bf16" if kv16 else ""
     ct = "bf16" if kv16 else "f32"
-    s = "fn main() {\n" + "".join(llm_law(*o) for o in llm_ops(P, B, L, C, ffn, w16, kv16))
+    ops = llm_ops_w8(P, B, L, C, ffn) if w8 else llm_ops(P, B, L, C, ffn, w16, kv16)
+    s = "fn main() {\n" + "".join(llm_law(*o) for o in ops)
+    s += llm_f8(P, ffn) if w8 else ""
     s += llm_head(P, B, ffn, f"    {B * H} -> iota -> rBH;\n    {B * H * L} -> iota -> rBHL;\n"
                              f"    {C} -> iota -> rC;\n    {L} -> iota -> rL;\n")
     s += (f"    mut kc: [{ct}; {C}] <- kc0;\n    mut vc: [{ct}; {C}] <- vc0;\n    mut x: [f32; {B * D}] <- x0;\n"
@@ -1345,7 +1386,7 @@ def llm_decode(B, L, S, ffn, timed=True, P=LLM, pv=False, w16=False, kv16=False)
         f"    {L - S} + t -> p;\n"
         f"    rR -> map {{ b -> {llm_rms(f'x[b * {D} + i]', D)} }} -> rinv;\n"
         f"    rRD -> map {{ e -> x[e] * rinv[e / {D}] * g1[e % {D}] }} -> xn;\n"
-        f"    rRQ -> map {{ e -> e / {NQ} -> b; e % {NQ} -> j; (0.0, rD) -> fold {{ acc, k -> {bq}acc + xn[b * {D} + k] * {vq} }} }} -> qkv;\n"
+        f"    rRQ -> map {{ e -> e / {NQ} -> b; e % {NQ} -> j; (0.0, rD) -> fold {{ acc, k -> {bq}acc + xn[b * {D} + k] * {vq} }}{eq} }} -> qkv;\n"
         f"    rRD -> map {{ e -> e / {D} -> b; e % {D} -> c; {rope('qkv', f'b * {NQ}', 'c', 'p', dh)} }} -> q;\n"
         f"    rC -> map {{ c -> c / {L * KD} -> b; c / {KD} % {L} -> r; (r == p) -> {{ -true-> {{ c % {KD} -> u; "
         f"{rope('qkv', f'b * {NQ} + {D}', 'u', 'p', dh)} -> kn; kn{to16} }} -false-> kc[c]; }} }} -> kc;\n"
@@ -1357,9 +1398,9 @@ def llm_decode(B, L, S, ffn, timed=True, P=LLM, pv=False, w16=False, kv16=False)
         f"    rBH -> map {{ bh -> (0.0, rL) -> fold {{ acc, r -> acc + pe[bh * {L} + r] }} }} -> den;\n"
         f"    rRD -> map {{ e -> e / {D} -> b; e % {D} -> c; c / {dh} -> h; c % {dh} -> i; (0.0, rL) -> fold {{ acc, r -> "
         f"{bv_}acc + pe[(b * {H} + h) * {L} + r] * {vv_} }} -> av; av / den[b * {H} + h] }} -> att;\n"
-        f"    rRD -> map {{ e -> e / {D} -> b; e % {D} -> j; (0.0, rD) -> fold {{ acc, k -> {bo}acc + att[b * {D} + k] * {vo} }} -> y; x[e] + y }} -> {'h1' if ffn else 'x'};\n")
+        f"    rRD -> map {{ e -> e / {D} -> b; e % {D} -> j; (0.0, rD) -> fold {{ acc, k -> {bo}acc + att[b * {D} + k] * {vo} }}{eo} -> y; x[e] + y }} -> {'h1' if ffn else 'x'};\n")
     if ffn:
-        body += llm_ffn(P, "h1", "x", w16)
+        body += llm_ffn(P, "h1", "x", w16, w8)
     s += llm_loop(f"t < {S}", body, "t + 1 -> t", "x -> out")
     return s + llm_tail(P, B, timed)
 
@@ -1529,6 +1570,14 @@ for B in (1, 8, 32):
                                                    llm_kmax(LLM, False, L, LLM_STEPS))
 llm_progs["pt_llm_blkdec_b1_l4096_bf16w"] = (llm_decode(1, 4096, LLM_STEPS, True, w16=True),
                                             llm_kmax(LLM, True, 4096, LLM_STEPS))
+# fp8 storage (ADR-0043 slice 3): the decode rows with f8e4m3 weights and per-column scales (`_f8w`) — a quarter of
+# the f32 weight bytes, half of `_bf16w`'s.
+for B in (1, 8, 32):
+    for L in (2048, 8192):
+        llm_progs[f"pt_llm_dec_b{B}_l{L}_f8w"] = (llm_decode(B, L, LLM_STEPS, False, w8=True),
+                                                 llm_kmax(LLM, False, L, LLM_STEPS))
+llm_progs["pt_llm_blkdec_b1_l4096_f8w"] = (llm_decode(1, 4096, LLM_STEPS, True, w8=True),
+                                          llm_kmax(LLM, True, 4096, LLM_STEPS))
 # tensor-cores: the bf16 KV cache (`_bf16kv`: weights and cache bf16, f32 compute — the default face) and the bf16
 # face of torch's bf16 legs (`_bf16`: the same storage, every fold `: bf16 | f32`); the prefills with bf16 weights
 # (`_bf16w`) and their bf16 face.
@@ -1569,6 +1618,11 @@ llm_progs["px_llm_dec_b2_l16_bf16w"] = (llm_decode(2, 16, 3, False, False, LLM_P
                                        llm_kmax(LLM_PX, False, 16, 3, 128))
 llm_progs["px_llm_blkdec_b2_l16_bf16w"] = (llm_decode(2, 16, 3, True, False, LLM_PX, w16=True),
                                           llm_kmax(LLM_PX, True, 16, 3, 128))
+# fp8 storage (ADR-0043 slice 3): the interpreter-sized twins of `_f8w`.
+llm_progs["px_llm_dec_b2_l16_f8w"] = (llm_decode(2, 16, 3, False, False, LLM_PX, w8=True),
+                                     llm_kmax(LLM_PX, False, 16, 3, 128))
+llm_progs["px_llm_blkdec_b2_l16_f8w"] = (llm_decode(2, 16, 3, True, False, LLM_PX, w8=True),
+                                        llm_kmax(LLM_PX, True, 16, 3, 128))
 for ffn, name in ((False, "dec"), (True, "blkdec")):
     src = llm_decode(2, 16, 3, ffn, False, LLM_PX, w16=True, kv16=True)
     llm_progs[f"px_llm_{name}_b2_l16_bf16kv"] = (src, llm_kmax(LLM_PX, ffn, 16, 3, 128))

@@ -468,6 +468,12 @@ fn candidate_zero_is_the_pre_sprint_emission() {
         // one before them. f32-tensor-cores too (`mma-combine` cuts the
         // rtx-3090's mlp_2048_tf32 tile, `split-tile` takes the A100's `{f32}`
         // products): their OFF arms keep the emission before them.
+        // calls-issue prices the separate form as the host issues it (the
+        // profile's `issue_ns`): on the rtx-5090 (2370 ns) and rtx-4090
+        // (2850 ns), px_mlp2_64_f64's two chains of 64–147 ns members form,
+        // and decode_1024_256's 5-unit chain on the rtx-5090 (members 1.9,
+        // 1.9, 0.001, 0.6, 0.6 µs at the part's peaks) — regolded; the
+        // rtx-5080's rows are unchanged (`--gpu-off=calls-issue`: the one before).
         for f in [
             target.as_str(),
             "--host=x86-64-v3",
@@ -1144,5 +1150,47 @@ fn a_looped_site_decides_once() {
         let (d, trials, launches, err) = run(&extra);
         assert_eq!(d, vec![(want.0.into(), want.1)], "{err}");
         assert_eq!((trials, launches), (0, trips), "{err}");
+    }
+}
+
+/// tune-context: a site's table carries `MAPAL_SITE_COLD` (bit 3) exactly
+/// where one of its operands lives in DRAM in the program — `residence_plan`
+/// against the part's L2 — so its trial evicts the L2 before each timed run
+/// (`mapal_gpu.c` `site_timed`): a 4096-wide GEMV over a 64 MiB weight and a
+/// 256 MiB one on the RTX 5080 (64 MiB L2) against the same sites on the
+/// RTX 5090's 96 MiB and a 1 MiB weight.
+#[test]
+fn cold_flag_follows_residence() {
+    let src = |k: u64| {
+        format!(
+            "fn main() {{
+    {k} -> iota -> ia;
+    ia -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> a;
+    {kn} -> iota -> ib;
+    ib -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 }} -> b;
+    4096 -> iota -> oc;
+    {k} -> iota -> kc;
+    oc -> map {{ j -> (0.0, kc) -> fold {{ acc, q -> acc + a[q] * b[q * 4096 + j] }} }} -> c;
+    c[0] -> println;
+    c[4095] -> println;
+}}
+",
+            kn = k * 4096
+        )
+    };
+    for (k, target, cold) in [
+        (16384u64, "rtx-5080", true),
+        (4096, "rtx-5080", true),
+        (4096, "rtx-5090", false),
+        (64, "rtx-5080", false),
+    ] {
+        let s = src(k);
+        let ir = lower(&s);
+        let em = emission(&ir, target, EmitOpts::default(), 8, &[], &[]);
+        let ts = tables(&em.text);
+        assert!(!ts.is_empty() || k == 64, "k {k} {target}: a table");
+        for t in &ts {
+            assert_eq!(t.flags & 8 != 0, cold, "k {k} {target}: flags {}", t.flags);
+        }
     }
 }

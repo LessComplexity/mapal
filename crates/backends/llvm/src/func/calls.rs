@@ -135,6 +135,24 @@ pub(crate) fn persistent_fit(levels: &[Vec<Shape>], gpu: &Gpu) -> Result<u64, Re
 /// A member body inside the persistent kernel runs without its launch's
 /// read-only path and at the merged kernel's registers; that change grows
 /// with the phase, not with the boundaries: [`CALLS_PHASE_PM`] of it.
+///
+/// calls-issue (plan-cost D2's `op_ns`): **the host's issue time** — the
+/// separate form issues one launch per unit from the host, unit `k` at
+/// `k · issue`, so a unit starts when the one before it is done and its
+/// launch gap passed (`s_{k−1} + d_{k−1} + launch_at(k)`) or when it is
+/// issued, whichever is later: the host runs ahead behind a long unit, and
+/// the device idles only where the issues outrun the work (`d`: `unit_ns`,
+/// its members' work at the part's peaks — [`CALLS_PHASE_PM`]'s `work_ns`
+/// per unit). A per-boundary `max(launch, issue − d_prev)` (D2's `op_ns`
+/// with no queue) over-formed: it charged the RTX 5080's causal chain
+/// (units 7.1 µs, 1.1 µs, then three tiny maps) 1.7 µs a tiny boundary
+/// while the host was 7 µs ahead, and the chain forced there measured
+/// 1.106× (`open-rules.md`). The chain is one issue. `issue_ns` is the
+/// host's measured property
+/// ([`crate::profile::DeviceCost::issue_ns`]); `0` (a part without it, or
+/// `--gpu-off=calls-issue`) is the price before it exactly, and the price is
+/// non-decreasing in `issue_ns`: a slower host forms every chain a faster
+/// one forms.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn chain_ns(
     units: &[u64],
@@ -145,12 +163,27 @@ pub(crate) fn chain_ns(
     looped: bool,
     rounds: u64,
     work_ns: f64,
+    unit_ns: &[f64],
+    issue_ns: f64,
 ) -> Option<(f64, f64)> {
     let (d, _) = gpu.chain_cost();
-    let sep = units
+    let gaps = units
         .iter()
         .map(|&b| d.launch_at(b, gpu.sms, pdl))
-        .sum::<Option<f64>>()?;
+        .collect::<Option<Vec<f64>>>()?;
+    let mut sep: f64 = gaps.iter().sum();
+    if issue_ns > 0.0 && unit_ns.len() == units.len() && !units.is_empty() {
+        // The host issues unit `k` at `k · issue`; the device starts it when
+        // the unit before it is done and its launch gap passed, or when it
+        // is issued, whichever is later — the host runs ahead behind a long
+        // unit and the device idles only where the issues outrun the work.
+        let mut s = 0.0f64;
+        for k in 1..units.len() {
+            s = (s + unit_ns[k - 1] + gaps[k]).max(k as f64 * issue_ns);
+        }
+        let work: f64 = unit_ns[..units.len() - 1].iter().sum();
+        sep = sep.max(gaps[0] + s - work);
+    }
     let first = if looped { 0 } else { d.coop_first_ns };
     let body = if rounds > 1 { gpu.coop_body_ns() } else { 0.0 }
         + work_ns * CALLS_PHASE_PM as f64 / 1000.0;
@@ -204,6 +237,10 @@ pub(super) struct CallsStats {
     /// The widest level of any priced chain, in rounds of its persistent
     /// grid ([`chain_rounds`]).
     pub rounds: u64,
+    /// calls-issue: the host issue time the prices read (0: off), and each
+    /// priced chain's `persistent:separate:unit ns,…` (evidence).
+    pub issue_ns: f64,
+    pub priced: Vec<String>,
 }
 
 /// A placed member: `(step, level, zero_ok, out)` — its step in the sequence,
@@ -531,19 +568,62 @@ impl FnEmit<'_> {
         });
         let rounds = chain_rounds(&lv, grid);
         stats.rounds = stats.rounds.max(rounds);
-        let work: f64 = c
-            .members
+        let member_ns = |i: usize| match seq[i] {
+            Step::Op(m) => self.calls_work_ns(&access[i], m, gpu),
+            Step::Loop(_) => 0.0,
+        };
+        let work: f64 = c.members.iter().map(|&(i, ..)| member_ns(i)).sum();
+        // calls-issue: each unit's device time (its members' phases) and the
+        // host's issue time, where the rung is on.
+        let unit_ns: Vec<f64> = c
+            .units
             .iter()
-            .map(|&(i, ..)| match seq[i] {
-                Step::Op(m) => self.calls_work_ns(&access[i], m, gpu),
-                Step::Loop(_) => 0.0,
-            })
-            .sum();
-        let Some((per, sep)) =
-            chain_ns(&unit_blocks, grid, barriers, gpu, pdl, looped, rounds, work)
-        else {
+            .map(|u| u.iter().map(|&i| member_ns(i)).sum())
+            .collect();
+        let issue = match gpu::host_rungs(self.profile, self.contract, self.gpu_arms).calls_issue {
+            true => gpu.cost.map_or(0, |d| d.issue_ns) as f64,
+            false => 0.0,
+        };
+        let Some((per, sep)) = chain_ns(
+            &unit_blocks,
+            grid,
+            barriers,
+            gpu,
+            pdl,
+            looped,
+            rounds,
+            work,
+            &unit_ns,
+            issue,
+        ) else {
             return;
         };
+        // The intent line names a chain only where the host term moved its
+        // decision (a module whose decisions it did not move keeps its text).
+        let (_, sep0) = chain_ns(
+            &unit_blocks,
+            grid,
+            barriers,
+            gpu,
+            pdl,
+            looped,
+            rounds,
+            work,
+            &[],
+            0.0,
+        )
+        .expect("priced above");
+        if (per > sep) != (per > sep0) {
+            stats.issue_ns = issue;
+            stats.priced.push(format!(
+                "{per:.0}:{sep0:.0}>{sep:.0}:{}",
+                unit_ns
+                    .iter()
+                    .map(|u| format!("{u:.0}"))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ));
+        }
         // `--calls=force` (measurement: the suite's forced chains against the
         // shipped build): the cost test aside.
         if !self.gpu_arms.calls_force && per > sep {
@@ -871,6 +951,68 @@ mod tests {
             .expect("rtx-5080 has a GPU")
     }
 
+    /// [`chain_ns`] without the host's issue term (`issue_ns` 0).
+    #[allow(clippy::too_many_arguments)]
+    fn chain_ns0(
+        units: &[u64],
+        grid: u64,
+        barriers: u64,
+        gpu: &Gpu,
+        pdl: bool,
+        looped: bool,
+        rounds: u64,
+        work_ns: f64,
+    ) -> Option<(f64, f64)> {
+        chain_ns(
+            units,
+            grid,
+            barriers,
+            gpu,
+            pdl,
+            looped,
+            rounds,
+            work_ns,
+            &[],
+            0.0,
+        )
+    }
+
+    /// calls-issue: at `issue_ns` 0 the price is the price before the host
+    /// term, for any unit times; the separate form's price is non-decreasing
+    /// in `issue_ns` (a slower host forms every chain a faster one forms);
+    /// a member longer than the issue hides it; the RTX 5080's decode chain
+    /// (three units of a few µs each) stays refused at its host's measured
+    /// 1690 ns, and a host slow enough to idle between them forms it.
+    #[test]
+    fn host_issue_prices_the_separate_form() {
+        let g = gpu();
+        let units = [3u64, 128, 128];
+        let (per0, sep0) = chain_ns0(&units, 128, 2, g, false, true, 1, 0.0).unwrap();
+        for d in [[0.0; 3], [500.0, 4000.0, 20.0], [1e6; 3]] {
+            let (per, sep) = chain_ns(&units, 128, 2, g, false, true, 1, 0.0, &d, 0.0).unwrap();
+            assert_eq!((per, sep), (per0, sep0));
+        }
+        let d = [300.0, 900.0, 200.0];
+        let mut last = sep0;
+        for issue in [0.0, 500.0, 1690.0, 4000.0, 8000.0, 25_000.0] {
+            let (per, sep) = chain_ns(&units, 128, 2, g, false, true, 1, 0.0, &d, issue).unwrap();
+            assert_eq!(per, per0, "the chain is one issue");
+            assert!(sep >= last, "{issue}: {sep} < {last}");
+            last = sep;
+        }
+        // Members longer than the issue: no host term.
+        let long = [5000.0; 3];
+        let (_, sep) = chain_ns(&units, 128, 2, g, false, true, 1, 0.0, &long, 1690.0).unwrap();
+        assert_eq!(sep, sep0);
+        // The decode chain's members (a few µs of work each): refused at
+        // 1690 ns as before; formed on a host idling ~8 µs between them.
+        let dec = [2500.0, 3000.0, 2000.0];
+        let (per, sep) = chain_ns(&units, 128, 2, g, false, true, 1, 0.0, &dec, 1690.0).unwrap();
+        assert!(per > sep, "{per} {sep}");
+        let (per, sep) = chain_ns(&units, 128, 2, g, false, true, 1, 0.0, &dec, 12_000.0).unwrap();
+        assert!(per <= sep, "{per} {sep}");
+    }
+
     fn shape(blocks: u64, block: u64, smem: u64, per_sm: u64, args: usize) -> Shape {
         Shape {
             blocks,
@@ -932,7 +1074,7 @@ mod tests {
         let body = g.coop_body_ns();
         assert!((body - 4390.0 / 2.45).abs() < 0.5, "{body}");
         let at128 = 553.0 + 44.0 * 1.89;
-        let (per, sep) = chain_ns(&[3, 128, 128], 128, 2, g, false, true, 1, 0.0).expect("priced");
+        let (per, sep) = chain_ns0(&[3, 128, 128], 128, 2, g, false, true, 1, 0.0).expect("priced");
         assert!(
             (per - (2044.0 + 2.0 * at128)).abs() < 0.5 && (sep - 1950.0).abs() < 0.5,
             "{per} {sep}"
@@ -940,24 +1082,24 @@ mod tests {
         assert!(per > sep);
         // The phases: 22 ‰ of their work at the part's peaks.
         let (long, _) =
-            chain_ns(&[3, 128, 128], 128, 2, g, false, true, 1, 100_000.0).expect("priced");
+            chain_ns0(&[3, 128, 128], 128, 2, g, false, true, 1, 100_000.0).expect("priced");
         assert!((long - per - 2200.0).abs() < 0.5, "{long} {per}");
         // The grid-stride form (more than one round) pays the bodies'
         // measured change (`calib.cu body`, 4 rounds: 1792 ns).
         let (strided, _) =
-            chain_ns(&[3, 512, 512], 128, 2, g, false, true, 4, 0.0).expect("priced");
+            chain_ns0(&[3, 512, 512], 128, 2, g, false, true, 4, 0.0).expect("priced");
         assert!((strided - per - body).abs() < 0.5, "{strided} {per}");
         // Outside every loop it also pays the process's first cooperative
         // launch (38 us).
-        let (once, _) = chain_ns(&[3, 128, 128], 128, 2, g, false, false, 1, 0.0).expect("priced");
+        let (once, _) = chain_ns0(&[3, 128, 128], 128, 2, g, false, false, 1, 0.0).expect("priced");
         assert!((once - per - 38_000.0).abs() < 0.5, "{once} {per}");
         // Programmatic dependent launches (486 ns each): further apart.
-        let (_, sep) = chain_ns(&[3, 128, 128], 128, 2, g, true, true, 1, 0.0).expect("priced");
+        let (_, sep) = chain_ns0(&[3, 128, 128], 128, 2, g, true, true, 1, 0.0).expect("priced");
         assert!((sep - 1458.0).abs() < 0.5, "{sep}");
         // A long chain of one-block launches: twelve barriers of one block
         // (553 ns priced) against twelve more plain launches — still not
         // enough to pay the cooperative launch back here.
-        let (per, sep) = chain_ns(&[1; 13], 1, 12, g, false, true, 1, 0.0).expect("priced");
+        let (per, sep) = chain_ns0(&[1; 13], 1, 12, g, false, true, 1, 0.0).expect("priced");
         assert!(per > sep, "{per} {sep}");
         // Without the cooperative launch's price, the barriers alone win a
         // one-round chain; the grid-stride form's bodies keep it separate.
@@ -968,10 +1110,10 @@ mod tests {
             ..*g
         };
         let (per, sep) =
-            chain_ns(&[3, 128, 128], 128, 2, &g2, false, true, 1, 0.0).expect("priced");
+            chain_ns0(&[3, 128, 128], 128, 2, &g2, false, true, 1, 0.0).expect("priced");
         assert!(per <= sep, "{per} {sep}");
         let (per, sep) =
-            chain_ns(&[3, 512, 512], 128, 2, &g2, false, true, 4, 0.0).expect("priced");
+            chain_ns0(&[3, 512, 512], 128, 2, &g2, false, true, 4, 0.0).expect("priced");
         assert!(per > sep, "{per} {sep}");
         assert!((d.gsync_at(504, g.sms).unwrap() - (553.0 + 420.0 * 1.89)).abs() < 0.5);
         // open-rules: a part without the measured barrier and launch costs
@@ -991,7 +1133,7 @@ mod tests {
             ),
             (562, 660, 494, 2078)
         );
-        let (per, sep) = chain_ns(&[3, 128, 128], 128, 2, p5090, true, true, 1, 0.0).unwrap();
+        let (per, sep) = chain_ns0(&[3, 128, 128], 128, 2, p5090, true, true, 1, 0.0).unwrap();
         assert!(
             per > sep,
             "the 5090 prices decode as the 5080 does: {per} {sep}"
@@ -1020,20 +1162,20 @@ mod tests {
         };
         for (n, dec_save) in [("rtx-4090", 656.0), ("rtx-3090", 522.0)] {
             let g = part(n);
-            let (per, sep) = chain_ns(&[3, 128, 128], 128, 2, &g, false, true, 1, 0.0).unwrap();
+            let (per, sep) = chain_ns0(&[3, 128, 128], 128, 2, &g, false, true, 1, 0.0).unwrap();
             assert!(
                 (sep - per - dec_save).abs() < 1.0,
                 "{n} decode: {per} {sep}"
             );
             let (per, sep) =
-                chain_ns(&[3, 128, 1, 4, 1, 32], 128, 5, &g, false, true, 1, 0.0).unwrap();
+                chain_ns0(&[3, 128, 1, 4, 1, 32], 128, 5, &g, false, true, 1, 0.0).unwrap();
             assert!(per < sep, "{n} causal: {per} {sep}");
         }
         let a100 = part("a100");
         let causal = [3, 128, 1, 4, 1, 32];
-        let (per, sep) = chain_ns(&causal, 128, 5, &a100, false, true, 1, 0.0).unwrap();
+        let (per, sep) = chain_ns0(&causal, 128, 5, &a100, false, true, 1, 0.0).unwrap();
         assert!((sep - per - 2021.0).abs() < 1.0, "{per} {sep}");
-        let (per, sep) = chain_ns(&causal, 128, 5, &a100, false, true, 4, 0.0).unwrap();
+        let (per, sep) = chain_ns0(&causal, 128, 5, &a100, false, true, 4, 0.0).unwrap();
         assert!(
             per > sep && (a100.coop_body_ns() - 3113.0).abs() < 1.0,
             "{per} {sep}"
@@ -1042,7 +1184,7 @@ mod tests {
         let flops = 2.0 * (4096.0 * 256.0 * 1024.0) * 2.0;
         let work = flops / h100.ffma_flops_per_ns() as f64;
         assert!(work > 70_000.0, "{work}");
-        let (per, sep) = chain_ns(&[256, 256], 256, 1, &h100, false, true, 1, work).unwrap();
+        let (per, sep) = chain_ns0(&[256, 256], 256, 1, &h100, false, true, 1, work).unwrap();
         assert!(
             per > sep && sep - (per - work * 0.022) > 600.0,
             "{per} {sep}"

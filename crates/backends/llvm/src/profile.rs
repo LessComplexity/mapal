@@ -246,6 +246,11 @@ pub struct Caps {
     /// from it, within the geometry [`RegRealloc`] states; `None`: every
     /// thread keeps the count the block launched with.
     pub reg_realloc: Option<RegRealloc>,
+    /// `cvt.rn.satfinite.{e4m3,e5m2}x2.f32` and `cvt.rn.f16x2.{e4m3,e5m2}x2`:
+    /// two fp8 conversions an instruction (ADR-0043 slice 3, C1). Without it
+    /// the fp8 roundings are the host's integer sequence
+    /// ([`mapal_ir::narrow::f8_from_f32`]).
+    pub cvt_f8: bool,
 }
 
 /// `setmaxnreg.{inc,dec}`'s geometry: the per-thread counts a warpgroup may
@@ -410,11 +415,14 @@ impl MmaFmt {
         }
     }
 
-    /// The format a 16-bit member multiplies in (ADR-0043 D4).
+    /// The format a narrow storage format (or 16-bit member, ADR-0043 D4)
+    /// multiplies in.
     pub fn of_narrow(n: mapal_ir::NarrowFloat) -> MmaFmt {
         match n {
             mapal_ir::NarrowFloat::Bf16 => MmaFmt::Bf16,
             mapal_ir::NarrowFloat::F16 => MmaFmt::F16,
+            mapal_ir::NarrowFloat::F8e4m3 => MmaFmt::E4m3,
+            mapal_ir::NarrowFloat::F8e5m2 => MmaFmt::E5m2,
         }
     }
 
@@ -634,11 +642,13 @@ pub const CAPS_WARP_MMA: Caps = Caps {
     ex2: Some(EX2_UNITS),
     bulk: None,
     reg_realloc: None,
+    cvt_f8: false,
 };
 
 /// [`CAPS_WARP_MMA`] with the fp8 warp products: the RTX 4090 (8.9).
 pub const CAPS_WARP_MMA_F8: Caps = Caps {
     matrix: &MATRIX_WARP_F8,
+    cvt_f8: true,
     ..CAPS_WARP_MMA
 };
 
@@ -693,6 +703,7 @@ pub const fn caps_of_cc(cc: u64, arch_specific: bool) -> Caps {
         } else {
             None
         },
+        cvt_f8: cc >= 89,
     }
 }
 

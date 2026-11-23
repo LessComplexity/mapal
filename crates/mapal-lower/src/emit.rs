@@ -2635,7 +2635,7 @@ impl Emitter<'_> {
                 LCode::InvalidWiden,
                 sp,
                 format!(
-                    "cannot widen `{}` to `{}`; legal lattice: i32→i64, i32→f32, i32→f64, f32→f64, bf16|f16→f32|f64",
+                    "cannot widen `{}` to `{}`; legal lattice: i32→i64, i32→f32, i32→f64, f32→f64, bf16|f16|f8e4m3|f8e5m2→f32|f64",
                     ty_name(&source),
                     ty_name(&target)
                 ),

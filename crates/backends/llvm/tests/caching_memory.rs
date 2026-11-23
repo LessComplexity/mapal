@@ -611,3 +611,102 @@ fn caching_on_generated_programs() {
         assert!(c.get(key).copied().unwrap_or(0) > 0, "{key}: {c:?}");
     }
 }
+
+/// retain-call `call_keep` (the across-call consumer's fact): a `layer`
+/// called in a decode-like loop with loop-invariant weights keeps the
+/// weight slot and the callee values made from it alone (`wt`), never one
+/// mixing the changing slot (`y`); an argument rebuilt every trip from the
+/// counter is not kept; one made every trip from invariant data only
+/// (`same`) is; a site outside every loop keeps nothing; a nested site's
+/// callee values compose through its own masks; the retained values equal
+/// on every trip (the interpreter's output of the program).
+#[test]
+fn call_keep_marks_the_slots_a_loop_keeps() {
+    let src = "fn scale(w: [f32; 64]) -> [f32; 64] {
+    64 -> iota -> i;
+    i -> map { e -> w[e] * 2.0 } -> ws;
+    ws -> ret;
+}
+fn layer(w: [f32; 64], x: [f32; 8]) -> [f32; 8] {
+    w -> scale -> wt;
+    8 -> iota -> r;
+    r -> map { j -> (0.0, r) -> fold { acc, k -> acc + x[k] * wt[k * 8 + j] } -> u; u / 64.0 } -> y;
+    y -> ret;
+}
+fn main() {
+    64 -> iota -> iw;
+    iw -> map { t -> t % 13 - 6 -> widen_f32 -> v; v / 9.0 } -> w;
+    8 -> iota -> ix;
+    ix -> map { t -> t -> widen_f32 } -> x0;
+    mut x: [f32; 8] <- x0;
+    mut t: i32 <- 0;
+    loop {
+        (t < 3) -> {
+            -true-> {
+                (w, x) -> layer -> xa;
+                iw -> map { e -> w[e] + 1.0 } -> wsame;
+                (wsame, xa) -> layer -> xb;
+                t -> widen_f32 -> tf;
+                iw -> map { e -> w[e] + tf } -> wnew;
+                (wnew, xb) -> layer -> x;
+                t + 1 -> t;
+                -> loop;
+            }
+            -false-> x -> out;
+        }
+    }
+    (w, out) -> layer -> z;
+    z[0] -> println;
+    z[7] -> println;
+}
+";
+    let ir = lower_raw(src);
+    let f = ir.entry();
+    let ck = ir.call_keep(f);
+    let fname = |g: mapal_ir::FuncId| ir.func(g).map(|d| d.name.clone()).unwrap_or_default();
+    let mut sites: Vec<(u64, usize, usize, String)> = ck
+        .iter()
+        .map(|(_, k)| {
+            (
+                k.kept,
+                k.values.len(),
+                k.loops.len(),
+                fname(k.callee.unwrap()),
+            )
+        })
+        .collect();
+    sites.sort();
+    eprintln!("call_keep: {sites:?}");
+    // four `layer` sites: three in the loop (w kept; wsame kept; wnew not),
+    // one after it (nothing kept).
+    let layer: Vec<_> = sites.iter().filter(|s| s.3 == "layer").collect();
+    assert_eq!(layer.len(), 4, "{sites:?}");
+    assert_eq!(
+        layer.iter().filter(|s| s.0 == 1 && s.2 == 1).count(),
+        2,
+        "{sites:?}"
+    );
+    assert_eq!(layer.iter().filter(|s| s.0 == 0).count(), 2, "{sites:?}");
+    // the kept sites retain the values made of `w` alone (`wt` through the
+    // nested `scale` call, its product) and nothing mixing `x`.
+    let (_, k) = ck.iter().find(|(_, k)| k.kept == 1).expect("a kept site");
+    let g = k.callee.unwrap();
+    let gup = ir.unchanged_plan(g);
+    assert!(!k.values.is_empty());
+    for &v in &k.values {
+        assert_eq!(gup.inputs.get(v).copied(), Some(1), "only slot 0");
+    }
+    let named_in = |g: mapal_ir::FuncId, n: &str| {
+        ir.objects()
+            .find(|(o, x)| ir.try_owner(*o) == Some(g) && x.name.as_deref() == Some(n))
+            .map(|(o, _)| o)
+    };
+    let wt = named_in(g, "wt").expect("wt");
+    let y = named_in(g, "y").expect("y");
+    assert!(k.values.contains(&wt) && !k.values.contains(&y));
+    // The callee's nested site (`scale`, outside every loop of `layer`)
+    // keeps nothing of its own; its value composes into `layer`'s masks.
+    let inner = ir.call_keep(g);
+    assert!(inner.iter().all(|(_, k)| k.kept == 0 && k.loops.is_empty()));
+    assert!(!interp(&ir).is_empty());
+}

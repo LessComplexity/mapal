@@ -204,6 +204,26 @@ fn split_rule_by_rate_bound_and_face() {
         let e = emission(&ir, "rtx-5080", d(), &["split-tile"], &[], 0);
         assert!(mma_plans(&e).is_empty(), "{fmt}: OFF arm");
     }
+    // integration: two fp8 operands under `{f32}` are exact products too,
+    // but their warp product is m16n8k32 — no split kernel issues it: the
+    // FMA tile, by rule and under the ON arm, on parts listing fp8 products.
+    for store in [4, 5] {
+        let p = testgen::SplitProg {
+            dims: [0, 0, 0],
+            store,
+            law: 0,
+            bt: false,
+            post: false,
+            seed: [3, 5],
+        };
+        let ir = lower(&testgen::split_src_at(&p, 256, 256, 2048).0);
+        for t in ["rtx-5080", "h100"] {
+            for on in [&[][..], &["split-tile"][..]] {
+                let e = emission(&ir, t, d(), &[], on, 0);
+                assert_eq!(split_of(&e), None, "{t} fp8 store {store} {on:?}");
+            }
+        }
+    }
     // f32 × bf16 (bf16x3n: no emitted form) keeps the FMA tile, ON arm too.
     let p = testgen::SplitProg {
         dims: [0, 0, 0],

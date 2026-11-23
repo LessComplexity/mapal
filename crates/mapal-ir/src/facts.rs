@@ -52,6 +52,7 @@ pub(crate) struct FuncFacts {
     pub(crate) bounds_proof: OnceLock<BoundsProof>,
     pub(crate) write_delta: OnceLock<SecondaryMap<ObjectId, Delta>>,
     pub(crate) unchanged_plan: OnceLock<crate::algo::UnchangedPlan>,
+    pub(crate) call_keep: OnceLock<SecondaryMap<MorphismId, crate::algo::CallKeep>>,
     pub(crate) guard_plan: OnceLock<Vec<GuardSite>>,
     pub(crate) guard_structure: OnceLock<Vec<GuardSite>>,
     pub(crate) trip_split: OnceLock<Vec<TripSplit>>,

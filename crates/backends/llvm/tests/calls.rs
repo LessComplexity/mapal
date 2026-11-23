@@ -546,6 +546,79 @@ impl Cover {
 }
 
 /// One generated program's checks ([`calls_on_generated_programs`]).
+/// calls-issue (`func/calls.rs` `chain_ns`): over generated programs and the
+/// rule's own prices (no forcing), the chains formed are non-decreasing in
+/// the host's issue time (`--cost=issue_ns=…` over the rtx-5080's 1690:
+/// 0, 1690, 4000, 8000, 30000 ns) — a slower host forms every chain a
+/// faster one forms; at 0 the decisions are the `calls-issue` OFF arm's
+/// (the emission before it, byte for byte); a formed chain is the path the
+/// forced arm checks in every emulator mode (`calls_on_generated_programs`).
+/// Counters: chains the issue term newly forms, chains refused at every
+/// issue time.
+#[test]
+fn calls_issue_is_monotone_on_generated_programs() {
+    let mut runner = TestRunner::deterministic();
+    let strat = testgen::calls_prog_strategy();
+    let progs: Vec<testgen::HzProg> = (0..48)
+        .map(|_| strat.new_tree(&mut runner).unwrap().current())
+        .collect();
+    let formed_at = |ir: &CategoryIr, issue: Option<u64>| -> (usize, String, String) {
+        let mut gpu = GpuArms::default();
+        for r in ["place", "async", "pdl", "streams", "pinned"] {
+            *gpu.off.rung(r).unwrap() = true;
+        }
+        let mut opts = EmitOpts {
+            host: "generic",
+            target: "rtx-5080",
+            gpu,
+            ..EmitOpts::default()
+        };
+        match issue {
+            Some(i) => mapal_backend_llvm::flags::apply(&mut opts, &format!("--cost=issue_ns={i}"))
+                .map(|_| ())
+                .expect("a cost override"),
+            None => *opts.gpu.off.rung("calls-issue").unwrap() = true,
+        }
+        let em = emit_detailed(ir, &opts).expect("emits");
+        let line = host_line(&em);
+        let formed = field(&line, "formed").parse().unwrap_or(0);
+        (formed, em.text, em.device.unwrap_or_default())
+    };
+    let (mut newly, mut refused_all, mut chains) = (0, 0, 0);
+    let covers = testgen::par_check(&progs, |z, p| {
+        let src = testgen::hz_src(p);
+        let ir = lower(&src);
+        // The OFF arm at the profile's own issue time: every chain it forms
+        // the ON arm forms, and where the term moved no decision the two
+        // emissions are one text.
+        let (off, off_text, off_dev) = formed_at(&ir, None);
+        let (on, on_text, on_dev) = formed_at(&ir, Some(1690));
+        assert!(on >= off, "#{z}: on {on} < off {off}\n{src}");
+        if on == off {
+            assert!(on_text == off_text && on_dev == off_dev, "#{z} text\n{src}");
+        }
+        let mut last = on;
+        for i in [4000u64, 8000, 30_000] {
+            let (f, ..) = formed_at(&ir, Some(i));
+            assert!(f >= last, "#{z} issue {i}: {f} < {last}\n{src}");
+            last = f;
+        }
+        let ch: usize = field(&host_line(&emulated(&ir, true)), "chains")
+            .parse()
+            .unwrap_or(0);
+        (ch, off, last)
+    });
+    for (ch, lo, hi) in covers {
+        chains += ch;
+        newly += hi - lo;
+        refused_all += ch.saturating_sub(hi);
+    }
+    eprintln!(
+        "calls-issue generated: chains={chains} newly_formed={newly} refused_at_every_issue={refused_all}"
+    );
+    assert!(newly > 0 && refused_all > 0, "{newly} {refused_all}");
+}
+
 fn one_program(clang: &str, z: usize, p: &testgen::HzProg) -> Cover {
     let mut cv = Cover::default();
     let src = testgen::hz_src(p);
