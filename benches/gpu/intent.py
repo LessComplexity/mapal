@@ -342,6 +342,13 @@ INTENT = {
         ('the windows land by cp.async (LDGSTS)', 'sass.ldgsts > 0'),
         ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')],
         applies_off="plan.kind == 'flow' and flow.stream == 1", off=[('the FFMA stream: no HMMA', 'sass.hmma == 0')]),
+    # sweep-attention-2 `kmajor-b` (func/gpu.rs `kvec_b`): a register-staged tile whose `b` is unit-stride along `k`
+    # and not along its lanes (a decode step's keys) copies its panel along those rows — a vector of `k` a copy, each
+    # key's row coalesced, scattered into the `[k][n]` panel (`kvb=1`). `.off-kmajor-b`: one element a copy.
+    'kmajor-b': dict(applies="plan.kind == 'tile' and 'kvb' in plan", on=[
+        ('the k-major b copied in vectors along k: a vector global load in PTX', 'ptx.ld_global_vec > 0'),
+        ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')],
+        applies_off="plan.kind == 'tile'", off=[('no vector copies of a k-major b', "'kvb' not in plan")]),
     # sweep-attention `unit-uniform` (a fact arm): a stream unit whose tile reads an operand a captured number moves
     # (a head-group loop's counter) takes it as a pointer the launch moves (`moved=`); the kernel is the unmoved
     # group's stream. `.off-unit-uniform`: no unit holds such a tile (the split realization, each site alone).

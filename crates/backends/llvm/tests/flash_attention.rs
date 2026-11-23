@@ -730,3 +730,93 @@ fn stream_mma_on_generated_attention() {
         "{off:?}"
     );
 }
+
+/// One generated decode-step program's checks and coverage counts
+/// (`kmajor-b`): the tiles whose k-major `b` is copied along its rows
+/// (`kvb=1`), the OFF arm's none; values through the emulator against the
+/// interpreter (exact: every sum is exact in any order).
+fn check_kdec(clang: &str, p: &testgen::KdecProg) -> Vec<(&'static str, u64)> {
+    let src = testgen::kdec_src(p);
+    let ir = lower(&src);
+    let rr = run(&ir, 2_000_000_000);
+    if !matches!(rr.outcome, Outcome::Done(_)) {
+        return Vec::new();
+    }
+    let kvb = |em: &Emission| {
+        em.device
+            .as_deref()
+            .unwrap_or("")
+            .lines()
+            .filter(|l| l.starts_with("; mapal.plan ") && l.contains(" kvb=1"))
+            .count() as u64
+    };
+    let on = emission(&ir, None, &[]);
+    let off = emission(&ir, None, &["kmajor-b"]);
+    let (n_on, n_off) = (kvb(&on), kvb(&off));
+    assert_eq!(n_off, 0, "kmajor-b off: no vector copies\n{src}");
+    let mut out = vec![
+        ("programs", 1),
+        ("kvb tiles", n_on),
+        ("kvb programs", u64::from(n_on > 0)),
+        ("kvb narrow", u64::from(n_on > 0 && p.narrow)),
+        ("kvb f32", u64::from(n_on > 0 && !p.narrow)),
+        ("kvb group>1", u64::from(n_on > 0 && p.g > 1)),
+        ("kvb d128", u64::from(n_on > 0 && p.d == 128)),
+    ];
+    for (arm, em) in [("on", &on), ("kmajor-b off", &off)] {
+        let ex = emu::build_emulated(clang, &em.text, em.device.as_deref().unwrap_or(""));
+        let modes: &[[(&str, &str); 2]] = match arm {
+            "on" if n_on > 0 => &MODES,
+            _ => &MODES[..1],
+        };
+        for (mode, (got, _)) in modes.iter().zip(ex.run_each(modes)) {
+            assert!(
+                within(&got, &rr.output),
+                "{arm} {mode:?}: {got:?} vs {:?}\n{src}",
+                rr.output
+            );
+            out.push(("runs", 1));
+        }
+    }
+    out
+}
+
+/// sweep-attention-2 `kmajor-b`: generated decode-step scores
+/// (`testgen::kdec_strategy`: 1–4 sequences, 4–8 query heads in groups of
+/// 1–4, 64–512 keys of 16–128 elements, an `f32` or `bf16` cache, a run-time
+/// position) — the register-staged tile copying its k-major `b` along its
+/// rows, its OFF arm, values in every emulator mode. Every coverage counter
+/// is non-zero.
+#[test]
+fn kmajor_b_on_generated_decode() {
+    let Some(clang) = emu::clang() else {
+        return;
+    };
+    let mut runner = TestRunner::deterministic();
+    let progs: Vec<testgen::KdecProg> = std::iter::repeat_with(|| {
+        testgen::kdec_strategy()
+            .new_tree(&mut runner)
+            .unwrap()
+            .current()
+    })
+    .take(40)
+    .collect();
+    let results = testgen::par_check(&progs, |_, p| check_kdec(&clang, p));
+    let mut c = std::collections::BTreeMap::<&str, u64>::new();
+    for r in results.into_iter().flatten() {
+        *c.entry(r.0).or_default() += r.1;
+    }
+    eprintln!("kmajor-b generated: {c:?}");
+    for key in [
+        "programs",
+        "kvb tiles",
+        "kvb programs",
+        "kvb narrow",
+        "kvb f32",
+        "kvb group>1",
+        "kvb d128",
+        "runs",
+    ] {
+        assert!(c.get(key).copied().unwrap_or(0) > 0, "{key}: {c:?}");
+    }
+}

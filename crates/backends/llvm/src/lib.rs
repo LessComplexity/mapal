@@ -907,6 +907,14 @@ pub struct GpuRungs {
     /// its `a` fragments — where the plan model prices it below the FFMA
     /// stream. Off (`--gpu-off=stream-mma`): the FFMA stream.
     pub stream_mma: bool,
+    /// sweep-attention-2 `kmajor-b`: a register-staged tile whose `b` is
+    /// unit-stride along `k` and not along its lanes (a decode step's keys,
+    /// `K[key][u]`) copies its panel along those rows — a vector of `k` a
+    /// copy, a key's row coalesced, scattered into the `[k][n]` panel the
+    /// fragments read — instead of one element a copy down a column (each
+    /// thread a different key's row). Off (`--gpu-off=kmajor-b`): the
+    /// element copies.
+    pub kmajor_b: bool,
     /// flash-attention F5 (a fact arm, `mapal_ir::FactArms::guard_box`): a
     /// stream group's masked producer has its mask's form, and a wholly
     /// masked window is skipped where F6 allows. Off (`--gpu-off=guard-box`,
@@ -1082,6 +1090,7 @@ impl GpuRungs {
         stream_fact: true,
         split_kv: true,
         stream_mma: true,
+        kmajor_b: true,
         guard_box: true,
         finite: true,
         unit_uniform: true,
@@ -1093,7 +1102,7 @@ impl GpuRungs {
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 131] = [
+    pub const NAMES: [&'static str; 132] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1225,6 +1234,7 @@ impl GpuRungs {
         "unit-uniform",
         "round-store",
         "stream-mma",
+        "kmajor-b",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -1354,6 +1364,7 @@ impl GpuRungs {
             "stream-fact" => &mut self.stream_fact,
             "split-kv" => &mut self.split_kv,
             "stream-mma" => &mut self.stream_mma,
+            "kmajor-b" => &mut self.kmajor_b,
             "guard-box" => &mut self.guard_box,
             "finite" => &mut self.finite,
             "unit-uniform" => &mut self.unit_uniform,

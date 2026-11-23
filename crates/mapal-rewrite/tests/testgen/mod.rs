@@ -5972,6 +5972,79 @@ pub fn flash_half_strategy() -> impl Strategy<Value = FlashProg> {
         })
 }
 
+/// sweep-attention-2 `kmajor-b`: a decode step's masked scores — `B`
+/// sequences of `H` query heads in groups of `G` sharing a KV head, each
+/// row's `L` keys from a cache `K[b][r][H ÷ G][D]` (k-major: a key's `D`
+/// elements contiguous), stored `f32` or `bf16`, the keys past a position
+/// read at run time masked to `−1e9`, the dot scaled by `½`. Data are
+/// small multiples of `¼`: every sum is exact in any order.
+#[derive(Clone, Debug)]
+pub struct KdecProg {
+    pub b: u64,
+    pub h: u64,
+    pub g: u64,
+    pub l: u64,
+    pub d: u64,
+    pub narrow: bool,
+    /// The position: keys `r ≤ p` are read.
+    pub p: u64,
+}
+
+pub fn kdec_strategy() -> impl Strategy<Value = KdecProg> {
+    (
+        prop::sample::select(vec![1u64, 2, 4]),
+        prop::sample::select(vec![4u64, 8]),
+        prop::sample::select(vec![1u64, 2, 4]),
+        prop::sample::select(vec![64u64, 128, 256, 512]),
+        prop::sample::select(vec![16u64, 32, 64, 128]),
+        prop::bool::weighted(0.6),
+        0u64..1000,
+    )
+        .prop_map(|(b, h, g, l, d, narrow, p)| KdecProg {
+            b,
+            h,
+            g: g.min(h),
+            l,
+            d,
+            narrow,
+            p: p % l,
+        })
+}
+
+/// [`KdecProg`]'s source text: the scores and eight of them printed.
+pub fn kdec_src(p: &KdecProg) -> String {
+    let (b, h, g, l, d) = (p.b, p.h, p.g, p.l, p.d);
+    let kvh = h / g;
+    let (nb, w) = match p.narrow {
+        true => (" -> to_bf16", " -> widen_f32"),
+        false => ("", ""),
+    };
+    let mut s = String::from("fn main() {\n");
+    s += &format!(
+        "    {} -> iota -> i_kc;\n    i_kc -> map {{\n        t -> (t * 5 + 3) % 9 - 4 -> widen_f32 -> v;\n        v / 4.0{nb}\n    }} -> kc;\n",
+        b * l * kvh * d
+    );
+    s += &format!(
+        "    {} -> iota -> i_q;\n    i_q -> map {{\n        t -> (t * 7 + 13) % 11 - 5 -> widen_f32 -> v;\n        v / 4.0\n    }} -> q;\n",
+        b * h * d
+    );
+    s += &format!(
+        "    {d} -> iota -> rdh;\n    {} -> iota -> rBHL;\n    1 -> iota -> i_p;\n    i_p -> map {{\n        t -> t + {}\n    }} -> pos;\n    pos[0] -> p;\n",
+        b * h * l,
+        p.p
+    );
+    s += &format!(
+        "    rBHL -> map {{\n        e -> e / {} -> b;\n        e / {l} % {h} -> h;\n        e % {l} -> r;\n        (r <= p) -> {{\n            -true-> {{\n                (0.0, rdh) -> fold {{\n                    acc, i -> kc[((b * {l} + r) * {kvh} + h / {g}) * {d} + i]{w} -> kv;\n                    acc + q[b * {} + h * {d} + i] * kv\n                }} -> dt;\n                dt / 2.0\n            }}\n            -false-> -1000000000.0;\n        }}\n    }} -> s;\n",
+        h * l,
+        h * d
+    );
+    let n = b * h * l;
+    for j in 1..=8u64 {
+        s += &format!("    s[{}] -> println;\n", (j * n / 9 + j * 7) % n);
+    }
+    s + "}\n"
+}
+
 /// [`FlashProg::half`]'s fold annotation (`: bf16 | f32`), else none.
 fn flash_member(p: &FlashProg) -> &'static str {
     if p.half { ": bf16 | f32" } else { "" }
