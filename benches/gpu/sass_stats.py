@@ -72,7 +72,8 @@ def family(op):
     if b in ('LDG', 'LDGSTS', 'LDS', 'LDSM', 'STS', 'STG', 'LDL', 'STL', 'LDC', 'ULDC', 'LD', 'ST', 'RED', 'ATOM', 'ATOMG',
              'REDG', 'UBLKCP', 'UTMALDG', 'LDGDEPBAR', 'DEPBAR', 'BAR', 'SHFL', 'BRA', 'EXIT', 'ISETP', 'PLOP3', 'BSSY',
              'BSYNC', 'WARPSYNC', 'NOP', 'S2R', 'S2UR', 'CS2R', 'MOV', 'UMOV', 'IMAD', 'IADD3', 'LEA', 'LOP3', 'SHF', 'SEL',
-             'HMMA', 'IMMA', 'DMMA', 'HGMMA', 'MEMBAR', 'ERRBAR', 'CCTL', 'SYNCS', 'ELECT', 'R2UR', 'VOTE', 'P2R', 'R2P'):
+             'HMMA', 'IMMA', 'DMMA', 'HGMMA', 'MEMBAR', 'ERRBAR', 'CCTL', 'SYNCS', 'ELECT', 'R2UR', 'VOTE', 'P2R', 'R2P',
+             'USETMAXREG', 'WARPGROUP'):
         return b
     if b.startswith('U'):
         return 'UNIFORM'

@@ -146,6 +146,13 @@ fn ws_kernel_text_on_sm_90a() {
         assert!(dev.contains(needle), "{needle}");
     }
     assert!(!dev.contains("call void @llvm.nvvm.cp.async.cg.shared.global"));
+    // `tma-digits`: the `b` panel as one 3-d box (2 copies a stage); OFF:
+    // one 2-d box per 32-word slab.
+    assert!(dev.contains("cp.async.bulk.tensor.3d") && ws[0].contains(" boxes=2 "));
+    let (_, slabs) = emission(&ir, "h100", 4, &["tma-digits"]);
+    let sl = ws_lines(&slabs);
+    assert!(sl.len() == 1 && !slabs.contains("cp.async.bulk.tensor.3d"));
+    assert_eq!(field(sl[0], "boxes"), 1 + field(sl[0], "groups") * 2);
     assert!(!dev.contains("wgmma.wait_group.sync.aligned 1;"));
     assert!(!dev.contains("cvt.rna.tf32"), "every wgmma operand RNE");
     // OFF: the kernel the site had (here the S53 derivation refuses it at
@@ -243,6 +250,7 @@ fn ptxas_check(dev: &str, plan: &str) {
 struct Cover {
     programs: u64,
     ws: u64,
+    slabs: u64,
     vs_s53: u64,
     bound_only: u64,
     two_consumers: u64,
@@ -288,6 +296,13 @@ fn generated_ws_kernels_equal_the_s53_kernel() {
         c.ws = 1;
         c.two_consumers = u64::from(field(ws[0], "groups") == 2);
         c.wraps = u64::from(k / field(ws[0], "bk") > 2 * field(ws[0], "stages"));
+        // Every other program also runs the per-slab boxes (`tma-digits` off):
+        // the same bytes in the same layout, the same values.
+        let slabs = (i % 2 == 0).then(|| {
+            let (h, d) = emission(&ir, "h100", n_sms, &["tma-digits"]);
+            emu::build_emulated(&clang, &h, &d)
+        });
+        c.slabs = u64::from(slabs.is_some());
         let (host_off, dev_off) = emission(&ir, "h100", n_sms, &["wgmma-ws"]);
         let s53 = plan_lines(&dev_off)
             .iter()
@@ -298,6 +313,9 @@ fn generated_ws_kernels_equal_the_s53_kernel() {
         let coef = 2.0 * (bound_coef(k, true) + bound_coef(k, false));
         for mode in MODES {
             let (a, _) = on.run(&mode);
+            if let Some(sl) = &slabs {
+                assert_eq!(a, sl.run(&mode).0, "3-d vs 2-d boxes {mode:?}\n{src}");
+            }
             if let Some(off) = &off {
                 let (b, _) = off.run(&mode);
                 assert_eq!(a, b, "ws vs S53 {mode:?}\n{src}");
@@ -319,6 +337,7 @@ fn generated_ws_kernels_equal_the_s53_kernel() {
     for k in covers {
         c.programs += k.programs;
         c.ws += k.ws;
+        c.slabs += k.slabs;
         c.vs_s53 += k.vs_s53;
         c.bound_only += k.bound_only;
         c.two_consumers += k.two_consumers;
@@ -329,6 +348,7 @@ fn generated_ws_kernels_equal_the_s53_kernel() {
     eprintln!("wgmma-ws generated: {c:?}");
     assert!(
         c.ws > 0
+            && c.slabs > 0
             && c.vs_s53 > 0
             && c.two_consumers > 0
             && c.wraps > 0
@@ -392,4 +412,49 @@ fn protocol_mutations_fail() {
     );
     let early = early.replacen("  add i64 0, 0\n", "", 1);
     assert!(fails(&early), "an early release must fail");
+}
+
+/// R1's priced depth: with the H100's measured `tma_copy_ns` (kept with
+/// `place` on: `place` off drops an uncalibrated part's rates, and the price
+/// with them), the 256³ site at four SMs stages 64 words of `k` — the `aᵀ`
+/// box's k digits as one 3-d copy, the descriptor walking two atom columns —
+/// and computes the same bits as the one-row stages of `--gpu-off=tma-digits`
+/// (k-steps of 8 in the same order), in every emulator mode.
+#[test]
+fn deep_stages_equal_one_row_stages() {
+    let ir = lower(MM);
+    let emit = |off: &[&str]| {
+        let mut gpu = GpuArms::default();
+        for r in ["pdl", "horizontal", "calls"].iter().chain(off) {
+            *gpu.off.rung(r).expect("rung") = true;
+        }
+        gpu.site_cands = 1;
+        let e = emit_detailed(
+            &ir,
+            &EmitOpts {
+                host: "generic",
+                target: "h100",
+                gpu,
+                cost: sms(4),
+                ..EmitOpts::default()
+            },
+        )
+        .expect("emits");
+        (e.text, e.device.unwrap_or_default())
+    };
+    let (host, dev) = emit(&[]);
+    let ws = ws_lines(&dev);
+    assert_eq!(ws.len(), 1, "{}", plan_lines(&dev).join("\n"));
+    assert_eq!(field(ws[0], "bk"), 64, "{}", ws[0]);
+    assert_eq!(dev.matches("cp.async.bulk.tensor.3d").count(), 2);
+    let (host1, dev1) = emit(&["tma-digits"]);
+    assert_eq!(field(ws_lines(&dev1)[0], "bk"), 32);
+    let Some(clang) = emu::clang() else {
+        return;
+    };
+    let deep = emu::build_emulated(&clang, &host, &dev);
+    let row = emu::build_emulated(&clang, &host1, &dev1);
+    for mode in MODES {
+        assert_eq!(deep.run(&mode).0, row.run(&mode).0, "{mode:?}");
+    }
 }

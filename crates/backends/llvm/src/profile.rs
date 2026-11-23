@@ -446,6 +446,10 @@ pub struct MatrixOp {
     /// instruction, `benches/local/mma_calib.cu`). ADR-0043 D4: a set whose
     /// bound assumes `u_a` takes the instruction only where `acc_u` meets it.
     pub acc_u: i32,
+    /// hopper-wgmma-tma: the dense flops one SM's tensor cores complete per
+    /// clock in this format (the datasheet's per-SM rate where nothing
+    /// measured it; 0 = not stated: the FFMA rate stands in, the lower one).
+    pub flops_per_clk: u64,
 }
 
 impl MatrixOp {
@@ -522,6 +526,7 @@ const fn op(shape: MmaShape, fmt: MmaFmt, a: Home, b: Home, acc: Home) -> Matrix
         b,
         acc,
         acc_u: MMA_ACC_U,
+        flops_per_clk: 0,
     }
 }
 
@@ -547,7 +552,17 @@ pub const MATRIX_WARP_F8: [MatrixOp; 5] = [
 ];
 
 const fn group(shape: MmaShape, fmt: MmaFmt) -> MatrixOp {
-    op(shape, fmt, Home::Smem, Home::Smem, Home::Regs)
+    // The H100 datasheet's dense rate per SM and clock: TF32 494.7 Tflop/s,
+    // 16-bit twice, 8-bit four times that, at 1.83 GHz over 132 SMs = 2048.
+    let flops_per_clk = match fmt {
+        MmaFmt::Tf32 => 2048,
+        MmaFmt::Bf16 | MmaFmt::F16 => 4096,
+        _ => 8192,
+    };
+    MatrixOp {
+        flops_per_clk,
+        ..op(shape, fmt, Home::Smem, Home::Smem, Home::Regs)
+    }
 }
 
 /// [`MATRIX_WARP_F8`] and the warpgroup products: `a` and `b` from
@@ -1403,8 +1418,19 @@ impl Gpu {
     /// (`blocks` resident blocks sharing it): the time a stage's copies must
     /// issue within. The FFMA rate stands in where no matrix rate is given
     /// (it is the lower one: the price errs toward the copies).
-    pub fn stage_consume_ns(&self, flops: u64, blocks: u64) -> u64 {
-        let per_sm = self.ffma_flops_per_ns() / self.sms.max(1);
+    pub fn stage_consume_ns(&self, flops: u64, blocks: u64, fmt: MmaFmt) -> u64 {
+        let matrix = self
+            .caps
+            .matrix
+            .iter()
+            .filter(|o| o.fmt == fmt)
+            .map(|o| o.flops_per_clk * self.clock_khz / 1_000_000)
+            .max()
+            .unwrap_or(0);
+        let per_sm = match matrix {
+            0 => self.ffma_flops_per_ns() / self.sms.max(1),
+            m => m,
+        };
         flops * blocks.max(1) / per_sm.max(1)
     }
 
@@ -3351,68 +3377,103 @@ impl TargetProfile {
         c: u64,
         k: u64,
         realloc: bool,
+        digits: bool,
     ) -> Option<GpuWgmmaTile> {
         let g = self.gpu()?;
         if !g.has_wgmma() || g.caps.bulk.is_none() {
             return None;
         }
-        let bk = WGMMA_SWIZZLE_BYTES / 4;
-        if !k.is_multiple_of(bk) {
+        let row = WGMMA_SWIZZLE_BYTES / 4;
+        if !k.is_multiple_of(row) {
             return None;
         }
+        // R1's price: a stage's 2 copies (`tma-digits`) issue within the time
+        // its tensor cores take to consume it — the shallowest such depth (a
+        // whole number of swizzle rows, at most 4: the `aᵀ` box's k digits);
+        // none: the deepest. Without digits a stage is one swizzle row deep.
+        let depths: Vec<u64> = match digits {
+            true => (1..=4)
+                .map(|d| d * row)
+                .filter(|bk| k.is_multiple_of(*bk))
+                .collect(),
+            false => vec![row],
+        };
         let wg = WARPGROUP_WARPS * g.warp;
         let rr = g.caps.reg_realloc.filter(|_| realloc);
-        let frag = 4 * (bk / WGMMA_K) + WGMMA_WS_ADDR_REGS;
         let mut cands = Vec::new();
-        for groups in [2u64, 1] {
-            let threads = (groups + 1) * wg;
-            if threads > g.max_threads_per_block {
-                continue;
-            }
-            let (cap, regs) = match rr {
-                Some(r) => {
-                    let p = WGMMA_WS_PRODUCER_REGS.max(r.min);
-                    let cap =
-                        (g.regs_per_sm.saturating_sub(wg * p) / (wg * groups)) / r.step * r.step;
-                    let cap = cap.min(r.max);
-                    (cap, Some((p, cap)))
-                }
-                None => (
-                    (g.regs_per_sm / threads).min(g.regs_per_thread) / 8 * 8,
-                    None,
-                ),
-            };
-            if cap <= frag {
-                continue;
-            }
-            let bn = groups * WGMMA_M;
-            if !c.is_multiple_of(bn) {
-                continue;
-            }
-            let n_max = (2 * (cap - frag)).min(WGMMA_N_MAX);
-            for n in (1..=n_max / WGMMA_N_STEP).rev().map(|i| i * WGMMA_N_STEP) {
-                if !rows.is_multiple_of(n) {
+        for &bk in &depths {
+            let frag = 4 * (bk / WGMMA_K) + WGMMA_WS_ADDR_REGS;
+            for groups in [2u64, 1] {
+                let threads = (groups + 1) * wg;
+                if threads > g.max_threads_per_block {
                     continue;
                 }
-                let geom = GpuWgmmaTile {
-                    n,
-                    groups,
-                    bk,
-                    stages: 2,
-                    pad_b: 0,
-                    blocks_per_sm: 1,
-                    ws: true,
-                    realloc: regs,
+                let (cap, regs) = match rr {
+                    Some(r) => {
+                        let p = WGMMA_WS_PRODUCER_REGS.max(r.min);
+                        let cap = (g.regs_per_sm.saturating_sub(wg * p) / (wg * groups)) / r.step
+                            * r.step;
+                        let cap = cap.min(r.max);
+                        (cap, Some((p, cap)))
+                    }
+                    None => (
+                        (g.regs_per_sm / threads).min(g.regs_per_thread) / 8 * 8,
+                        None,
+                    ),
                 };
-                let per = geom.ws_stage_bytes() + 24;
-                let stages = (g.smem_per_block / per).min(k / bk);
-                if stages < 2 {
+                if cap <= frag {
                     continue;
                 }
-                cands.push(GpuWgmmaTile { stages, ..geom });
+                let bn = groups * WGMMA_M;
+                if !c.is_multiple_of(bn) {
+                    continue;
+                }
+                let n_max = (2 * (cap - frag)).min(WGMMA_N_MAX);
+                for n in (1..=n_max / WGMMA_N_STEP).rev().map(|i| i * WGMMA_N_STEP) {
+                    if !rows.is_multiple_of(n) {
+                        continue;
+                    }
+                    let geom = GpuWgmmaTile {
+                        n,
+                        groups,
+                        bk,
+                        stages: 2,
+                        pad_b: 0,
+                        blocks_per_sm: 1,
+                        ws: true,
+                        realloc: regs,
+                    };
+                    let per = geom.ws_stage_bytes() + 24;
+                    let stages = (g.smem_per_block / per).min(k / bk);
+                    if stages < 2 {
+                        continue;
+                    }
+                    cands.push(GpuWgmmaTile { stages, ..geom });
+                }
             }
         }
         let tiles = |w: &GpuWgmmaTile| (rows / w.n) * (c / w.bn());
+        let copies = if digits { 2 } else { 0 };
+        let priced = |w: &GpuWgmmaTile| {
+            let flops = 2 * w.n * w.bn() * w.bk;
+            copies * g.tma_copy_ns() <= g.stage_consume_ns(flops, 1, MmaFmt::Tf32)
+        };
+        // Per (groups, n): the shallowest priced depth, else the deepest.
+        let pick = |w: &GpuWgmmaTile| {
+            let same: Vec<&GpuWgmmaTile> = cands
+                .iter()
+                .filter(|x| x.n == w.n && x.groups == w.groups)
+                .collect();
+            let best = same
+                .iter()
+                .filter(|x| priced(x) && x.stages >= 3)
+                .min_by_key(|x| x.bk)
+                .or_else(|| same.iter().filter(|x| priced(x)).min_by_key(|x| x.bk))
+                .or_else(|| same.iter().max_by_key(|x| x.bk))
+                .copied();
+            best.is_some_and(|b| b.bk == w.bk)
+        };
+        let cands: Vec<GpuWgmmaTile> = cands.iter().filter(|w| pick(w)).copied().collect();
         let intensity = |w: &GpuWgmmaTile| w.bn() * w.n * 1000 / (w.bn() + w.n);
         cands
             .iter()
@@ -4546,6 +4607,10 @@ pub const H100: TargetProfile = TargetProfile {
             // 3177 GB/s DRAM peak first at 32 KiB in flight an SM (16 KiB:
             // 80 %); the loaded latency there 632 ns.
             fly_bytes_per_sm: 32768,
+            // hopper-wgmma-tma: `tma_calib.cu` on a rented H100 SXM (h100-s1): 159 ns a
+            // copy at 128 B - 16 KiB for any ring depth >= 4 (186-302 ns alone); 32 KiB
+            // boxes 352-475 ns (13.5 TB/s over the part at 16 KiB: 102 B/ns an SM).
+            tma_copy_ns: 159,
             bar_ns: 0,
             // kernel-merging `calls`: `coop_body_cycles` not measured here —
             // derived, the rtx-5080's 4390 cycles at 1.807 GHz = 2429 ns a
@@ -4792,7 +4857,11 @@ pub const RTX_5080: TargetProfile = TargetProfile {
             // 899 GB/s DRAM peak first at 8 KiB in flight an SM (84 SMs x 8
             // warps x 2 loads of 16 B: 890 GB/s; 4 KiB: 594-606).
             fly_bytes_per_sm: 8192,
-            tma_copy_ns: 0,
+            // hopper-wgmma-tma: `tma_calib.cu`, one elected thread an SM, every SM,
+            // L2-resident: 197 ns a copy at 128 B - 4 KiB boxes for any ring
+            // depth >= 2 (234 ns alone: the latency); 16 / 32 KiB boxes 289 / 654 ns
+            // (the SM's 50-57 B/ns, 4.2-4.8 TB/s over the part).
+            tma_copy_ns: 197,
             // flash-attention P1: `calib.cu bar`, 256 threads (16.9 ns).
             bar_ns: 17,
         }),
@@ -7296,31 +7365,39 @@ mod tests {
     /// - 2048³ (the TF32 MLP's site, which the S53 derivation refuses): two
     ///   consumers at n 256 give 128 tiles < 132; the filling geometry of
     ///   most flops per staged byte is n 128 with two consumers (256 tiles).
+    /// - The depth (R1's price, `tma_copy_ns` 159 measured): a stage's 2
+    ///   copies (318 ns) within its consume time at 2048 TF32 flop/clk/SM
+    ///   (1.807 GHz): n 256 × bn 128 × bk 32 takes 567 ns — 32; n 128 takes
+    ///   283 ns at 32 — 64 (566 ns), three 64 KiB stages.
     /// - 128 × 4096 × 4096: no geometry fills 132 SMs at these rows without a
     ///   split; the largest grid — n 32, one consumer (256 tiles).
     /// - `ws-regs` off: every thread keeps 65 536 / 384 → 168 registers, so
-    ///   n ≤ 2·(168 − 56) = 224 — 128 at 2048 rows, 32 KiB a stage: 7.
+    ///   n ≤ 2·(168 − 56) = 224 — 128 at 2048 rows (bk 64 by the price).
     /// - No warpgroup product (the 5080, the 4090): `None`.
     #[test]
     fn wgmma_ws_tile_is_derived_from_hopper_properties() {
         let t = |r, c, k, rr| {
-            let w = H100.gpu_wgmma_ws_tile(r, c, k, rr).expect("sm_90a");
+            let w = H100.gpu_wgmma_ws_tile(r, c, k, rr, true).expect("sm_90a");
             assert!(w.ws && w.ws_stage_bytes() % 1024 == 0);
             assert!(w.smem_bytes() <= H100.gpu().unwrap().smem_per_block);
             (w.n, w.groups, w.bk, w.stages, w.realloc)
         };
         assert_eq!(t(2048, 4096, 4096, true), (256, 2, 32, 4, Some((40, 232))));
         assert_eq!(H100.gpu_wgmma_tile(2048, 2048, 2048).map(|w| w.ws), None);
-        assert_eq!(t(2048, 2048, 2048, true).0, 128);
-        assert_eq!(t(2048, 2048, 2048, true).1, 2);
+        assert_eq!(t(2048, 2048, 2048, true), (128, 2, 64, 3, Some((40, 232))));
         assert_eq!(t(128, 4096, 4096, true).0, 32);
         assert_eq!(t(128, 4096, 4096, true).1, 1);
-        assert_eq!(t(2048, 4096, 4096, false), (128, 2, 32, 7, None));
+        assert_eq!(t(2048, 4096, 4096, false), (128, 2, 64, 3, None));
+        // Without `tma-digits` a stage is one swizzle row deep.
+        let w = H100
+            .gpu_wgmma_ws_tile(2048, 2048, 2048, true, false)
+            .unwrap();
+        assert_eq!((w.n, w.bk, w.stages), (128, 32, 7));
         // k not a whole swizzle row: no box of the descriptor's layout.
-        assert_eq!(H100.gpu_wgmma_ws_tile(2048, 4096, 4100, true), None);
+        assert_eq!(H100.gpu_wgmma_ws_tile(2048, 4096, 4100, true, true), None);
         for p in [&RTX_5080, &RTX_4090, &GENERIC] {
             assert_eq!(
-                p.gpu_wgmma_ws_tile(2048, 4096, 4096, true),
+                p.gpu_wgmma_ws_tile(2048, 4096, 4096, true, true),
                 None,
                 "{}",
                 p.name
@@ -7333,8 +7410,10 @@ mod tests {
     #[test]
     fn tma_copy_ns_is_measured_or_derived() {
         let g = *H100.gpu().unwrap();
-        let lat = g.cost.unwrap().lat_ns;
-        assert_eq!(g.tma_copy_ns(), lat / TMA_COPIES_IN_FLIGHT);
+        assert_eq!(g.tma_copy_ns(), 159);
+        assert_eq!(RTX_5080.gpu().unwrap().tma_copy_ns(), 197);
+        let lat = RTX_5080.gpu().unwrap().cost.unwrap().lat_ns;
+        assert!(lat > 0);
         let mut over: CostOver = [None; DeviceCost::NAMES.len()];
         let i = DeviceCost::NAMES
             .iter()
@@ -7342,6 +7421,9 @@ mod tests {
             .unwrap();
         over[i] = Some(77);
         assert_eq!(g.with_cost(&over).tma_copy_ns(), 77);
+        over[i] = Some(0);
+        let derived = RTX_5080.gpu().unwrap().with_cost(&over).tma_copy_ns();
+        assert_eq!(derived, lat / TMA_COPIES_IN_FLIGHT);
     }
 
     /// The matrix descriptor's constant fields for the S52 bench geometries:

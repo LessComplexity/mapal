@@ -315,7 +315,7 @@ cp "$ROOT/crates/mapal-rt/gpu/mapal_gpu.c" "$ROOT/crates/mapal-rt/gpu/mapal_choi
     "$ROOT/benches/gpu/mlp_bench.cu" "$ROOT/benches/gpu/gemm_lib.cu" "$ROOT/benches/gpu/value_gate.py" \
     "$ROOT/benches/gpu/box_run.sh" "$ROOT/benches/gpu/box_profile.sh" "$OUT/"
 # cross-arch: the device calibration box_run.sh runs before the timed sections (the native-gpu profile's properties).
-cp "$ROOT/benches/gpu/calib.cu" "$ROOT/benches/local/exp_calib.cu" "$OUT/"
+cp "$ROOT/benches/gpu/calib.cu" "$ROOT/benches/local/exp_calib.cu" "$ROOT/benches/local/tma_calib.cu" "$ROOT/benches/local/ktrace.cpp" "$OUT/"
 # S64: the checker and its inputs, for the box's `exec` / `jit` checks; the torch legs.
 cp "$ROOT/benches/gpu/"{evidence.py,intent.py,sass_stats.py,occ.py,ptx_static.py,cudatool.sh,torch_bench.py,comp_bench.py,triton_kernels.py,comp_build.sh} "$OUT/"
 cp "$ROOT/benches/gpu/capture_images/capture.cpp" "$OUT/"

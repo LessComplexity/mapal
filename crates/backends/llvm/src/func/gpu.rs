@@ -953,10 +953,16 @@ pub(crate) fn launch_split(
                     rungs
                         .wgmma_ws
                         .then(|| {
-                            profile.gpu_wgmma_ws_tile(site.rows, site.c, site.k, rungs.ws_regs)
+                            profile.gpu_wgmma_ws_tile(
+                                site.rows,
+                                site.c,
+                                site.k,
+                                rungs.ws_regs,
+                                rungs.tma_digits,
+                            )
                         })
                         .flatten()
-                        .filter(|w| ws_tensors(site, w, gpu).is_some())
+                        .filter(|w| ws_tensors(site, w, gpu, rungs.tma_digits).is_some())
                         .or_else(|| profile.gpu_wgmma_tile(site.rows, site.c, site.k))
                 })
                 .flatten();
@@ -1342,7 +1348,12 @@ fn plan_line(
         // hopper-wgmma-tma (intent.py `wgmma-ws`): the producer warpgroup,
         // the tensor boxes a stage, the registers each side keeps.
         if w.ws {
-            f += &format!(" ws=1 stage=tma boxes={}", 1 + w.ws_b_boxes());
+            let b = if l.rungs.tma_digits {
+                1
+            } else {
+                w.ws_b_boxes()
+            };
+            f += &format!(" ws=1 stage=tma boxes={}", 1 + b);
             if let Some((p, c)) = w.realloc {
                 f += &format!(" regs={p}/{c}");
             }
@@ -1432,7 +1443,7 @@ fn plan_line(
 }
 
 /// The rungs a kernel's text reads ([`plan_line`]); the rest are host rungs.
-const KERNEL_RUNGS: [&str; 44] = [
+const KERNEL_RUNGS: [&str; 45] = [
     "arch-rungs",
     "interleave",
     "unroll",
@@ -1477,6 +1488,7 @@ const KERNEL_RUNGS: [&str; 44] = [
     "bulk-stage",
     "wgmma-ws",
     "ws-regs",
+    "tma-digits",
 ];
 
 /// [`launch`] with the fold's realization chosen under `order` (ADR-0040 D4).
@@ -2235,6 +2247,8 @@ fn launch_key(l: &Launch) -> String {
         .replace(", wgmma_ws: false", "")
         .replace(", ws_regs: true", "")
         .replace(", ws_regs: false", "")
+        .replace(", tma_digits: true", "")
+        .replace(", tma_digits: false", "")
         .replace(", ws: false, realloc: None", "")
         .replace(", cells: 1 }", " }")
 }
@@ -2727,13 +2741,20 @@ pub(crate) fn bulk_stage(
 /// [`mapal_ir::TileRead::tensor_form`] proves (the `aᵀ` box: `bk` words of
 /// `n` rows, the 128-byte swizzle the descriptor reads), `b` as the dense
 /// `c × k` tensor (`bk` rows of one 32-word swizzle span, `bn / 32` boxes a
-/// stage) — every box within the engine's geometry
+/// stage; under `digits` one 3-d box: the lane axis split into its digits
+/// `32·q + r`, `q` outermost at 32 words, which lands those slabs in the same
+/// bytes) — every box within the engine's geometry
 /// ([`crate::profile::BulkCopy::tensor_box_fits`]). The recipe the runtime
 /// encodes each map from (`mapal_gpu.c` `tmap_args`): `[arg, elem bytes,
 /// rank, swizzle, base bytes, dims[5], byte strides[4], box[5], 0]` per map.
 /// `None`: plain f32 reads only (a narrow, strided-lane, digit or window
 /// operand keeps the S53 kernel).
-pub(crate) fn ws_tensors(site: &TileSite, w: &GpuWgmmaTile, gpu: &Gpu) -> Option<[[u64; 20]; 2]> {
+pub(crate) fn ws_tensors(
+    site: &TileSite,
+    w: &GpuWgmmaTile,
+    gpu: &Gpu,
+    digits: bool,
+) -> Option<[[u64; 20]; 2]> {
     use mapal_ir::TensorAxis as X;
     let bc = gpu.caps.bulk?;
     if site.radix.is_some() || site.a.narrow.is_some() || site.b.narrow.is_some() {
@@ -2746,7 +2767,30 @@ pub(crate) fn ws_tensors(site: &TileSite, w: &GpuWgmmaTile, gpu: &Gpu) -> Option
     if a.axes() != [X::K, X::I] || b.axes() != [X::Lane, X::K] {
         return None;
     }
-    let (asides, aexact) = a.box_of(|x| if x == X::K { w.bk } else { w.n });
+    // The `aᵀ` box `bk` deep: deeper than one swizzle row, its k axis as the
+    // digits `k = 32·q + p` (`q` outermost, 32 words apart), which lands the
+    // descriptor's atom columns `n·128` bytes apart.
+    let r = span / e;
+    let (a, asides, aexact) = if w.bk > r {
+        let (kd, id) = (a.dims[0], a.dims[1]);
+        let split = mapal_ir::TensorForm {
+            base: a.base,
+            dims: vec![
+                mapal_ir::TensorDim { extent: r, ..kd },
+                id,
+                mapal_ir::TensorDim {
+                    extent: kd.extent / r,
+                    stride: r,
+                    ..kd
+                },
+            ],
+        };
+        let exact = kd.extent.is_multiple_of(w.bk) && id.extent.is_multiple_of(w.n);
+        (split, vec![r, w.n, w.bk / r], exact)
+    } else {
+        let (sides, exact) = a.box_of(|x| if x == X::K { w.bk } else { w.n });
+        (a, sides, exact)
+    };
     let (bsides, bexact) = b.box_of(|x| if x == X::Lane { span / e } else { w.bk });
     let dims = |f: &mapal_ir::TensorForm| {
         f.dims
@@ -2762,6 +2806,34 @@ pub(crate) fn ws_tensors(site: &TileSite, w: &GpuWgmmaTile, gpu: &Gpu) -> Option
     if !ok {
         return None;
     }
+    // `tma-digits`: the lane axis `c = (span/e) · (c·e/span)` as its two
+    // digits, the outer one last (`span` bytes apart): one box of all the
+    // stage's slabs.
+    let b = match digits {
+        true => {
+            let (lane, kd) = (b.dims[0], b.dims[1]);
+            let r = span / e;
+            let split = mapal_ir::TensorForm {
+                base: b.base,
+                dims: vec![
+                    mapal_ir::TensorDim { extent: r, ..lane },
+                    kd,
+                    mapal_ir::TensorDim {
+                        extent: lane.extent / r,
+                        stride: r,
+                        ..lane
+                    },
+                ],
+            };
+            let sides = [r, w.bk, w.bn() / r];
+            if !bc.tensor_box_fits(&dims(&split), &sides, split.base, e, Some(span)) {
+                return None;
+            }
+            (split, sides.to_vec())
+        }
+        false => (b, bsides),
+    };
+    let (b, bsides) = b;
     let rec = |arg: u64, f: &mapal_ir::TensorForm, sides: &[u64]| {
         let mut r = [0u64; 20];
         r[0] = arg;
@@ -6257,7 +6329,9 @@ impl Kernel<'_> {
         let box_b = span * bk;
         let nk = s.k / bk;
         let lead = st - 1;
-        let maps = ws_tensors(s, &g, &self.profile_gpu).expect("the derivation checked the boxes");
+        let digits = self.rungs.tma_digits;
+        let maps =
+            ws_tensors(s, &g, &self.profile_gpu, digits).expect("the derivation checked the boxes");
         self.tmap = maps.to_vec();
         self.header(name, threads, GPU_VEC_BYTES, 1);
 
@@ -6413,18 +6487,55 @@ impl Kernel<'_> {
         let base = self.op("mul", &x, sb);
         let ad = self.smem_at(&base);
         let copy = "cp.async.bulk.tensor.2d.shared::cluster.global.tile.mbarrier::complete_tx::bytes [$0], [$1, {$2, $3}], [$4];";
-        self.asm_args(
-            copy,
-            "r,l,r,r,r",
-            &[
-                format!("i32 {ad}"),
-                format!("i64 {}", tms[0]),
-                format!("i32 {k32}"),
-                format!("i32 {r32}"),
-                format!("i32 {fb}"),
-            ],
-        );
-        for q in 0..g.ws_b_boxes() {
+        if bk > span / 4 {
+            // The k digits: coordinates (0, row0, k0 / 32).
+            let kq = self.op("udiv", &k0, span / 4);
+            let kq = self.i32_of(&kq);
+            self.asm_args(
+                "cp.async.bulk.tensor.3d.shared::cluster.global.tile.mbarrier::complete_tx::bytes [$0], [$1, {$2, $3, $4}], [$5];",
+                "r,l,r,r,r,r",
+                &[
+                    format!("i32 {ad}"),
+                    format!("i64 {}", tms[0]),
+                    "i32 0".into(),
+                    format!("i32 {r32}"),
+                    format!("i32 {kq}"),
+                    format!("i32 {fb}"),
+                ],
+            );
+        } else {
+            self.asm_args(
+                copy,
+                "r,l,r,r,r",
+                &[
+                    format!("i32 {ad}"),
+                    format!("i64 {}", tms[0]),
+                    format!("i32 {k32}"),
+                    format!("i32 {r32}"),
+                    format!("i32 {fb}"),
+                ],
+            );
+        }
+        if digits {
+            // One box of every slab: coordinates (0, k0, col0 / 32).
+            let o = self.op("add", &base, ab);
+            let bd = self.smem_at(&o);
+            let c = self.op("udiv", &col0, span / 4);
+            let c32 = self.i32_of(&c);
+            self.asm_args(
+                "cp.async.bulk.tensor.3d.shared::cluster.global.tile.mbarrier::complete_tx::bytes [$0], [$1, {$2, $3, $4}], [$5];",
+                "r,l,r,r,r,r",
+                &[
+                    format!("i32 {bd}"),
+                    format!("i64 {}", tms[1]),
+                    "i32 0".into(),
+                    format!("i32 {k32}"),
+                    format!("i32 {c32}"),
+                    format!("i32 {fb}"),
+                ],
+            );
+        }
+        for q in 0..if digits { 0 } else { g.ws_b_boxes() } {
             let o = self.op("add", &base, ab + q * box_b);
             let bd = self.smem_at(&o);
             let c = self.op("add", &col0, q * span / 4);
@@ -6567,8 +6678,11 @@ impl Kernel<'_> {
         cons.extend((0..accs).map(|i| i.to_string()));
         let cons = cons.join(",");
         for (kk, f) in frags.iter().enumerate() {
-            // k-step `kk` starts `kk·32` bytes into the 128-byte rows.
-            let desc = self.op("add", &desc0, (kk as u64 * WGMMA_K * 4) >> 4);
+            // k-step `kk` starts `kk·32` bytes into the k digits: atom column
+            // `kk·32 / 128` (`n·128` bytes apart), `kk·32 % 128` into its rows.
+            let kb = kk as u64 * WGMMA_K * 4;
+            let off = kb / span * (n * span) + kb % span;
+            let desc = self.op("add", &desc0, off >> 4);
             let mut args = format!(
                 "i32 {}, i32 {}, i32 {}, i32 {}, i64 {desc}",
                 f[0], f[1], f[2], f[3]
