@@ -607,6 +607,42 @@ static void body_run(int cc) {
            sus_khz);
     CK(cudaFree(buf)); CK(cudaFree(ctr)); CK(cudaFree(t)); CK(cudaFree(ck)); CK(cudaFree(ends));
 }
+// flash-attention `stream` (P1, `DeviceCost::bar_ns`): one block barrier of `thr` threads with a dependent
+// shared-memory round trip before it — each thread stores a word, the block meets, each reads its neighbour's and
+// the next store depends on it (the chain a streamed unit's window pays per barrier on its critical path). One block
+// per SM at once, every SM busy; the per-barrier time is the slope over the iterations, in ns at the clock it ran.
+__global__ void bar_k(unsigned* out, long long* cyc, int iters) {
+    extern __shared__ unsigned sm[];
+    unsigned v = threadIdx.x;
+    __syncthreads();
+    long long t0 = clock64();
+    for (int i = 0; i < iters; i++) {
+        sm[threadIdx.x] = v;
+        __syncthreads();
+        v = sm[(threadIdx.x + 33) % blockDim.x] + 1;
+        __syncthreads();
+    }
+    long long t1 = clock64();
+    if (threadIdx.x == 0) cyc[blockIdx.x] = t1 - t0;
+    if (v == 0x12345678) out[0] = v;
+}
+static void bar_run() {
+    unsigned* o; long long* c; CK(cudaMalloc(&o, 4)); CK(cudaMalloc(&c, 4096 * 8));
+    for (int thr : {128, 256, 512}) {
+        double per[2];
+        for (int k = 0; k < 2; k++) {
+            int iters = k == 0 ? 2000 : 12000;
+            bar_k<<<sms, thr, 4096>>>(o, c, iters); CK(cudaDeviceSynchronize());
+            bar_k<<<sms, thr, 4096>>>(o, c, iters); CK(cudaDeviceSynchronize());
+            std::vector<long long> h(sms); CK(cudaMemcpy(h.data(), c, sms * 8, cudaMemcpyDeviceToHost));
+            double cy = 0; for (auto x : h) cy += x; per[k] = cy / sms;
+        }
+        // Two barriers an iteration: the slope's half is one barrier and its round trip.
+        double cyc = (per[1] - per[0]) / 10000.0 / 2.0;
+        printf("bar thr=%d cycles=%.1f bar_ns=%.1f (at clock_khz=%d)\n", thr, cyc, cyc / (clk_khz * 1e-6), clk_khz);
+    }
+    CK(cudaFree(o)); CK(cudaFree(c));
+}
 int main(int argc, char** argv) {
     cudaDeviceProp p; CK(cudaGetDeviceProperties(&p, 0)); sms = p.multiProcessorCount;
     CK(cudaDeviceGetAttribute(&clk_khz, cudaDevAttrClockRate, 0));
@@ -630,5 +666,6 @@ int main(int argc, char** argv) {
     if (on("ffma")) ffma_run(p.major * 10 + p.minor);
     if (on("head")) head_run();
     if (on("body")) body_run(p.major * 10 + p.minor);
+    if (on("bar")) bar_run();
     return 0;
 }

@@ -5611,3 +5611,244 @@ pub fn gemv_src(p: &GemvProg) -> String {
     s += "    0.0 -> zero: f32;\n    (zero, y) -> fold { acc, v -> acc + v } -> sum;\n    sum -> println;\n}\n";
     s
 }
+
+// ---------------------------------------------------------------------------
+// flash-attention `stream`: attention written idiomatically, every form the
+// stream fact admits or refuses.
+// ---------------------------------------------------------------------------
+
+/// **flash-attention generated programs** (`crates/backends/llvm/tests/
+/// flash_attention.rs`): `n` query rows of width `d` against `w` keys —
+/// the scores `q·Kᵀ` (a tile site), their row extreme (a running max, or a
+/// min with the exponent turned around: the rescale down), `exp` of the
+/// shifted (scaled) score, its row sum, the probabilities (`÷ den`, a
+/// quotient factor) and `P·V` over `c` value columns (a tile site folding the
+/// keys). Key counts include ones no window divides (tails); head widths odd
+/// ones; the extreme's seed far below the scores, inside them (the seed wins
+/// a row: the final rescale), or the identity's neighbour; the sum's seed `0`
+/// or `1`. Forms the fact refuses: the `÷ den` after `P·V` (a per-row cell
+/// after the windows), a stored probability (`escape`: its final shift), an
+/// exponent the extreme does not shift (`phase`).
+#[derive(Clone, Debug)]
+pub struct FlashProg {
+    pub n: u64,
+    pub w: u64,
+    pub d: u64,
+    pub c: u64,
+    /// 0 `(s − m) ÷ 2`, 1 `s − m`, 2 `(s − m) × 0.5`.
+    pub scale: u8,
+    /// The extreme's seed: 0 `−1e9`, 1 `0.0` (inside the scores), 2 `−1e20`.
+    pub seed: u8,
+    /// A running min and `exp((m − s) ÷ 2)` (the rescale down).
+    pub down: bool,
+    /// The sum's seed is `1.0` (else `0.0`).
+    pub den_one: bool,
+    /// 0 `P·V` over `p = ex ÷ den`; 1 `P·V` over `ex`, then `÷ den` a cell
+    /// (refused: per-row work after the windows); 2 `p` also printed
+    /// (refused: `escape`); 3 `exp(s · m)` (refused: `phase`).
+    pub form: u8,
+    /// The scores, the extreme and the sum also printed (stored members).
+    pub stored: bool,
+    /// The model-scale form ([`flash_mh_src`]): `n` tokens, `heads` query
+    /// heads of width `d` in groups of `group` sharing a KV head; `0`: the
+    /// single-head form above.
+    pub heads: u64,
+    pub group: u64,
+    /// Model-scale: the scores masked causally (`r ≤ i`) to `mask`.
+    pub causal: bool,
+    /// The mask's value: 0 `−1e9`, 1 `−8` (inside the scores' reach of
+    /// `exp`: a masked window adds a term no stand-in absorbs).
+    pub mask: u8,
+}
+
+pub fn flash_strategy() -> impl Strategy<Value = FlashProg> {
+    (
+        (
+            prop::sample::select(vec![1u64, 2, 3, 4, 8, 16, 32, 64]),
+            prop::sample::select(vec![4u64, 16, 24, 64, 100, 128, 256]),
+            prop::sample::select(vec![3u64, 4, 8, 16]),
+            prop::sample::select(vec![3u64, 4, 8, 16]),
+        ),
+        (0u8..3, 0u8..3, any::<bool>(), any::<bool>()),
+        (
+            prop::sample::select(vec![0u8, 0, 0, 0, 1, 2, 3]),
+            any::<bool>(),
+        ),
+        (
+            prop::sample::select(vec![0u64, 0, 2, 4, 8]),
+            prop::sample::select(vec![1u64, 2, 4]),
+            any::<bool>(),
+            0u8..2,
+        ),
+    )
+        .prop_map(
+            |(
+                (n, w, d, c),
+                (scale, seed, down, den_one),
+                (form, stored),
+                (heads, group, causal, mask),
+            )| FlashProg {
+                // The model-scale form at sizes its sites run on the device.
+                n: if heads > 0 { n.clamp(16, 64) } else { n },
+                w,
+                d: if heads > 0 { d.max(8) } else { d },
+                c,
+                scale,
+                seed,
+                down,
+                den_one,
+                form,
+                stored,
+                heads,
+                group: group.min(heads.max(1)),
+                causal,
+                mask,
+            },
+        )
+}
+
+/// [`FlashProg`]'s model-scale source (`heads > 0`): `T = n` tokens, the
+/// scores `[head][token][token]` (head-major rows), their row max, `exp` of
+/// the shifted scaled score, its row sum, and `P·V` written token-major
+/// (`[token][head·d + u]`, the digit permutation of the scores' rows) with
+/// the `÷ den` after it — attention as a transformer layer writes it.
+pub fn flash_mh_src(p: &FlashProg) -> String {
+    let (t, h, g, d) = (p.n, p.heads, p.group, p.d);
+    let kvh = h / g;
+    let data = |name: &str, len: u64, a: u64, b: u64, m: u64| {
+        format!(
+            "    {len} -> iota -> i_{name};\n    i_{name} -> map {{\n        t -> (t * {a} + {b}) % {m} - {} -> widen_f32 -> v;\n        v / 4.0\n    }} -> {name};\n",
+            m / 2
+        )
+    };
+    let mut s = String::from("fn main() {\n");
+    s += &data("q", t * h * d, 7, 13, 11);
+    s += &data("kr", t * kvh * d, 5, 3, 9);
+    s += &data("vv", t * kvh * d, 3, 1, 13);
+    s += &format!(
+        "    {d} -> iota -> rdh;\n    {t} -> iota -> rT;\n    {} -> iota -> rHT;\n    {} -> iota -> rHTT;\n    {} -> iota -> rRD;\n",
+        h * t,
+        h * t * t,
+        t * h * d
+    );
+    let fold = format!(
+        "(0.0, rdh) -> fold {{\n                acc, u -> acc + q[i * {} + hh * {d} + u] * kr[r * {} + (hh / {g}) * {d} + u]\n            }}",
+        h * d,
+        kvh * d
+    );
+    let mask = ["-1000000000.0", "-8.0"][p.mask as usize];
+    let body = match p.causal {
+        true => format!(
+            "(r <= i) -> {{\n            -true-> {{\n                {fold} -> dt;\n                dt / 2.0\n            }}\n            -false-> {mask};\n        }}"
+        ),
+        false => format!("{fold} -> dt;\n        dt / 2.0"),
+    };
+    s += &format!(
+        "    rHTT -> map {{\n        e -> e / {} -> hh;\n        e / {t} % {t} -> i;\n        e % {t} -> r;\n        {body}\n    }} -> s;\n",
+        t * t
+    );
+    s += &format!(
+        "    rHT -> map {{\n        hi -> (-1000000000.0, rT) -> fold {{\n            acc, r -> s[hi * {t} + r] -> se;\n            (se > acc) -> {{\n                -true-> se;\n                -false-> acc;\n            }}\n        }}\n    }} -> mx;\n"
+    );
+    s += &format!("    rHTT -> map {{\n        e -> s[e] - mx[e / {t}] -> exp\n    }} -> pe;\n");
+    s += &format!(
+        "    rHT -> map {{\n        hi -> (0.0, rT) -> fold {{\n            acc, r -> acc + pe[hi * {t} + r]\n        }}\n    }} -> den;\n"
+    );
+    s += &format!(
+        "    rRD -> map {{\n        e -> e / {} -> i;\n        e % {} -> c;\n        c / {d} -> hh;\n        c % {d} -> u;\n        (0.0, rT) -> fold {{\n            acc, r -> acc + pe[(hh * {t} + i) * {t} + r] * vv[r * {} + (hh / {g}) * {d} + u]\n        }} -> av;\n        av / den[hh * {t} + i]\n    }} -> attf;\n",
+        h * d,
+        h * d,
+        kvh * d
+    );
+    s += &format!(
+        "    attf[0] -> println;\n    attf[{}] -> println;\n    0.0 -> zero: f32;\n    (zero, attf) -> fold {{\n        acc, v -> acc + v\n    }} -> so;\n    so -> println;\n",
+        t * h * d - 1
+    );
+    if p.stored {
+        s += &format!("    den[{}] -> println;\n", h * t - 1);
+    }
+    s + "}\n"
+}
+
+/// [`FlashProg`]'s source text. Data are small integers over 4, the scores
+/// a few units wide, so `exp` stays well inside `f32`.
+pub fn flash_src(p: &FlashProg) -> String {
+    if p.heads > 0 {
+        return flash_mh_src(p);
+    }
+    let (n, w, d, c) = (p.n, p.w, p.d, p.c);
+    let data = |name: &str, len: u64, a: u64, b: u64, m: u64| {
+        format!(
+            "    {len} -> iota -> i_{name};\n    i_{name} -> map {{\n        t -> (t * {a} + {b}) % {m} - {} -> widen_f32 -> v;\n        v / 4.0\n    }} -> {name};\n",
+            m / 2
+        )
+    };
+    let mut s = String::from("fn main() {\n");
+    s += &data("q", n * d, 7, 13, 11);
+    s += &data("kk", w * d, 5, 3, 9);
+    s += &data("vv", w * c, 3, 1, 13);
+    s += &format!(
+        "    {} -> iota -> o_s;\n    {d} -> iota -> k_d;\n    {w} -> iota -> k_t;\n    {n} -> iota -> k_n;\n    {} -> iota -> o_o;\n",
+        n * w,
+        n * c
+    );
+    s += &format!(
+        "    o_s -> map {{\n        e -> e / {w} -> i;\n        e % {w} -> j;\n        (0.0, k_d) -> fold {{\n            acc, k -> acc + q[i * {d} + k] * kk[j * {d} + k]\n        }}\n    }} -> s;\n"
+    );
+    let seed = ["-1000000000.0", "0.0", "-100000000000000000000.0"][p.seed as usize];
+    let cmp = if p.down { "<" } else { ">" };
+    s += &format!(
+        "    k_n -> map {{\n        i -> ({seed}, k_t) -> fold {{\n            acc, j -> s[i * {w} + j] -> e;\n            (e {cmp} acc) -> {{\n                -true-> e;\n                -false-> acc;\n            }}\n        }}\n    }} -> mx;\n"
+    );
+    let diff = if p.down {
+        format!("mx[t / {w}] - s[t]")
+    } else {
+        format!("s[t] - mx[t / {w}]")
+    };
+    let arg = match (p.form, p.scale) {
+        (3, _) => format!("s[t] * mx[t / {w}] / 64.0"),
+        (_, 0) => format!("({diff}) / 2.0"),
+        (_, 1) => diff,
+        _ => format!("({diff}) * 0.5"),
+    };
+    s += &format!("    o_s -> map {{\n        t -> {arg} -> exp\n    }} -> ex;\n");
+    let dseed = if p.den_one { "1.0" } else { "0.0" };
+    s += &format!(
+        "    k_n -> map {{\n        i -> ({dseed}, k_t) -> fold {{\n            acc, j -> acc + ex[i * {w} + j]\n        }}\n    }} -> den;\n"
+    );
+    let pv = |src: &str| {
+        format!(
+            "(0.0, k_t) -> fold {{\n            acc, u -> acc + {src}[i * {w} + u] * vv[u * {c} + j]\n        }}"
+        )
+    };
+    match p.form {
+        1 => {
+            s += &format!(
+                "    o_o -> map {{\n        e -> e / {c} -> i;\n        e % {c} -> j;\n        {}\n    }} -> av;\n    o_o -> map {{\n        e -> av[e] / den[e / {c}]\n    }} -> o;\n",
+                pv("ex")
+            );
+        }
+        _ => {
+            s += &format!("    o_s -> map {{\n        t -> ex[t] / den[t / {w}]\n    }} -> p;\n");
+            s += &format!(
+                "    o_o -> map {{\n        e -> e / {c} -> i;\n        e % {c} -> j;\n        {}\n    }} -> o;\n",
+                pv("p")
+            );
+        }
+    }
+    s += &format!(
+        "    o[0] -> println;\n    o[{}] -> println;\n    0.0 -> zero: f32;\n    (zero, o) -> fold {{\n        acc, v -> acc + v\n    }} -> so;\n    so -> println;\n",
+        n * c - 1
+    );
+    if p.stored {
+        s += &format!(
+            "    s[{}] -> println;\n    mx[{}] -> println;\n    den[0] -> println;\n",
+            (n * w) / 2,
+            n - 1
+        );
+    }
+    if p.form == 2 {
+        s += &format!("    p[{}] -> println;\n", n * w - 1);
+    }
+    s + "}\n"
+}

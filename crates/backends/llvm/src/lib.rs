@@ -837,6 +837,33 @@ pub struct GpuRungs {
     /// `cp.async` groups. Off (`--gpu-off=bulk-stage`): every thread's 16-byte
     /// `cp.async` copies.
     pub bulk_stage: bool,
+    /// flash-attention `stream`: a row-block group `stream_plan` proves one
+    /// pass over windows of its axis (attention's `q·Kᵀ → softmax → P·V`)
+    /// runs as one kernel walking the axis window by window — each fold's
+    /// state carried by its law, the axis-wide values never stored, each
+    /// operand window read once a block — where the plan model prices it
+    /// below the split launches (`func/stream.rs`). Off
+    /// (`--gpu-off=stream`): the split realization, the emission before it.
+    pub stream: bool,
+    /// flash-attention `stream` (a fact arm, `mapal_ir::FactArms::stream`):
+    /// `stream_plan` forms its groups. Off (`--gpu-off=stream-fact`,
+    /// `--no-stream`): no stream group.
+    pub stream_fact: bool,
+    /// flash-attention `split-kv` (R3): a stream unit whose row blocks leave
+    /// the part's SMs idle splits each row block's windows over `s` blocks;
+    /// the row block's last block to finish combines the partial states by
+    /// their laws (a ticket: a fence and one atomic, no second launch). Off
+    /// (`--gpu-off=split-kv`): one block a row block.
+    pub split_kv: bool,
+    /// flash-attention F5 (a fact arm, `mapal_ir::FactArms::guard_box`): a
+    /// stream group's masked producer has its mask's form, and a wholly
+    /// masked window is skipped where F6 allows. Off (`--gpu-off=guard-box`,
+    /// `--no-guard-box`): every window computed.
+    pub guard_box: bool,
+    /// flash-attention F7 (a fact arm, `mapal_ir::FactArms::finite`):
+    /// `finite_plan` proves values finite. Off (`--gpu-off=finite`,
+    /// `--no-finite`): nothing is, so no masked window is skipped.
+    pub finite: bool,
 }
 
 impl GpuRungs {
@@ -956,11 +983,16 @@ impl GpuRungs {
         vec_cells: true,
         stream_fly: true,
         bulk_stage: true,
+        stream: true,
+        stream_fact: true,
+        split_kv: true,
+        guard_box: true,
+        finite: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 114] = [
+    pub const NAMES: [&'static str; 119] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1075,6 +1107,11 @@ impl GpuRungs {
         "vec-cells",
         "stream-fly",
         "bulk-stage",
+        "stream",
+        "stream-fact",
+        "split-kv",
+        "guard-box",
+        "finite",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -1194,6 +1231,11 @@ impl GpuRungs {
             "vec-cells" => &mut self.vec_cells,
             "stream-fly" => &mut self.stream_fly,
             "bulk-stage" => &mut self.bulk_stage,
+            "stream" => &mut self.stream,
+            "stream-fact" => &mut self.stream_fact,
+            "split-kv" => &mut self.split_kv,
+            "guard-box" => &mut self.guard_box,
+            "finite" => &mut self.finite,
             _ => return None,
         })
     }
@@ -1278,6 +1320,11 @@ pub struct GpuArms {
     /// precedent): a flow unit the slicing admits takes `s` blocks a row,
     /// the prices aside. 0 = derive; 1 = one block a row.
     pub row_slices_s: u64,
+    /// Measurement override (`--stream=<b>x<kb>[x<rt>[x<s>]]`, the
+    /// `--row-block` precedent): a stream group takes `b` rows a block,
+    /// windows of `kb` keys (and `rt` rows a thread, `s` blocks a row block;
+    /// 0 = any) where they fit, the price aside. `None` = derive.
+    pub stream_force: Option<(u64, u64, u64, u64)>,
 }
 
 /// [`GpuArms::site_cands`]'s default (design B1).
@@ -1301,6 +1348,7 @@ impl Default for GpuArms {
             hz_force: false,
             calls_force: false,
             row_slices_s: 0,
+            stream_force: None,
         }
     }
 }
@@ -1542,6 +1590,9 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
         uniform_base: !opts.gpu.off.uniform_base,
         unchanged: !opts.gpu.off.unchanged,
         narrow_radix: !opts.gpu.off.narrow_radix,
+        stream: !opts.gpu.off.stream_fact,
+        finite: !opts.gpu.off.finite,
+        guard_box: !opts.gpu.off.guard_box,
     };
     if arms != ir.fact_arms() {
         return emit_detailed(&ir.refacted(arms), opts);

@@ -56,6 +56,8 @@ pub(crate) struct FuncFacts {
     pub(crate) guard_structure: OnceLock<Vec<GuardSite>>,
     pub(crate) trip_split: OnceLock<Vec<TripSplit>>,
     pub(crate) unit_plan: OnceLock<crate::unit::UnitPlan>,
+    pub(crate) stream_plan: OnceLock<crate::algo::StreamPlan>,
+    pub(crate) finite_plan: OnceLock<crate::algo::FinitePlan>,
     pub(crate) access_plan: OnceLock<crate::access::AccessPlan>,
     pub(crate) residence_plan: OnceLock<crate::residence::ResidencePlan>,
 }
@@ -106,6 +108,20 @@ pub struct FactArms {
     /// ([`crate::CategoryIr::tile_plan_radix`], [`crate::TileRead::narrow`]).
     /// Off: such a read has no form (the map is a per-cell kernel).
     pub narrow_radix: bool,
+    /// flash-attention `stream`: [`crate::CategoryIr::stream_plan`] proves
+    /// a row-block group one pass over windows of its axis (each fold's
+    /// state combined by its law). Off (`--gpu-off=stream-fact`): no stream
+    /// group.
+    pub stream: bool,
+    /// flash-attention F7: [`crate::CategoryIr::finite_plan`] proves values
+    /// finite by interval transfer. Off (`--gpu-off=finite`, `--no-finite`):
+    /// nothing is proven finite.
+    pub finite: bool,
+    /// flash-attention F5: `stream_plan`'s guarded producer has its mask as
+    /// a [`crate::GuardBox`] (masked windows skipped where F6 allows).
+    /// Off (`--gpu-off=guard-box`, `--no-guard-box`): no mask form, every
+    /// window computed.
+    pub guard_box: bool,
 }
 
 impl Default for FactArms {
@@ -119,6 +135,9 @@ impl Default for FactArms {
             uniform_base: true,
             unchanged: true,
             narrow_radix: true,
+            stream: true,
+            finite: true,
+            guard_box: true,
         }
     }
 }

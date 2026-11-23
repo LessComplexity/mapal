@@ -310,6 +310,21 @@ INTENT = {
         ('every intermediate on chip: the launch smem is the plan\'s, none static', 'ptxas.static_smem == 0 and flow.smem > 0'),
         ('rows and tiles synchronize the block', 'sass.bar > 0'),
         ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')]),
+    # flash-attention `stream` (`stream_plan`, func/stream.rs): a row-block group whose tile folds over an in-group
+    # row runs as one pass over windows of that axis — the producer's window and the consumer's into registers, the
+    # rows' extremes a warp butterfly (SHFL), each fold's state rescaled through `exp` when the extreme moves, every
+    # operand window by `cp.async` (LDGSTS) once a block; nothing axis-wide is stored. OFF (`--gpu-off=stream`):
+    # the split realization (its tiles and the softmax flow unit, the scores and probabilities in memory).
+    'stream': dict(applies="plan.kind == 'flow' and flow.stream == 1", on=[
+        ('the products fold in registers: FFMA where the face contracts', 'not contract or sass.ffma > 0'),
+        ('only stored members leave the kernel: st.global iff a stored member', '(ptx.st_global > 0) == (flow.n_store > 0)'),
+        ('an axis-wide member dissolved (the scores never stored)', 'flow.n_dissolved > 0'),
+        ('the windows land by cp.async (sm_80+: LDGSTS)', 'sass.ldgsts > 0'),
+        ('the rescale through exp: an exp in the kernel', 'mod.exp32 > 0'),
+        ('the rows synchronize the block', 'sass.bar > 0'),
+        ('every member body inlined: no call left in PTX', 'ptx.call == 0'),
+        ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')],
+        applies_off="plan.kind == 'flow'", off=[('no streamed unit', 'flow.stream == 0')]),
     # long-rows `row-slices` (func/flow.rs): a flow unit's few long rows over several blocks — `slices=` blocks a
     # row, each fold's slice partials combined by `fold_combine`'s law from a workspace, the phases the laws leave
     # (`phases=`) separated by grid barriers of one cooperative launch. OFF (`--gpu-off=row-slices`): one block a row.

@@ -365,6 +365,30 @@ impl FoldCombinePlan {
     }
 }
 
+/// flash-attention F1: a mixed-radix row operand that reads whole rows of
+/// `k` cells — `a = Σ_i coef·digit(i) + kk`, `kk < k`, no lane digit, every
+/// row digit's coefficient a multiple of `k` — under a digit permutation of
+/// the rows: the row it reads, `ρ(i) = Σ (coef ÷ k)·digit(i)` (`base ÷ k`
+/// added), as digits of `i`.
+pub fn whole_rows(a: &crate::RadixAddr, k: u64) -> Option<(u64, Vec<crate::AxisDigit>)> {
+    let contiguous = matches!(a.k[..], [d] if d.stride == 1 && d.radix == k && d.coef == 1);
+    if !contiguous || !a.lane.is_empty() || k == 0 || !a.base.is_multiple_of(k) {
+        return None;
+    }
+    let mut out = Vec::new();
+    for d in &a.i {
+        if !d.coef.is_multiple_of(k) {
+            return None;
+        }
+        out.push(crate::AxisDigit {
+            stride: d.stride,
+            radix: d.radix,
+            coef: d.coef / k,
+        });
+    }
+    Some((a.base / k, out))
+}
+
 /// Cells followed through same-cell reads when collecting a term's deps.
 const COMBINE_DEPTH: u32 = 4;
 
@@ -383,7 +407,37 @@ impl CategoryIr {
         };
         let folds = self.row_fold(f);
         let whole = self.whole_fold(f);
-        let tiles = self.tile_plan_strided(f);
+        // flash-attention F3: every tile plan — the strided sites, the
+        // epilogue sites (`tile-post`: the epilogue runs after the fold, on
+        // its combined value), the narrow ones (an exact widening: the term's
+        // laws are the element's) and the mixed-radix ones (a row operand
+        // read whole rows at a time under a digit permutation of the rows:
+        // the row's constant values are its row's, `a` read as `ci = k`).
+        let mut tiles = self.tile_plan_strided(f);
+        for (m, s) in self.tile_plan_post(f).sites.iter() {
+            tiles.sites.insert(m, s.clone());
+        }
+        for (m, s) in self.tile_plan_narrow(f).sites.iter() {
+            tiles.sites.insert(m, s.clone());
+        }
+        for (m, s) in self.tile_plan_radix(f).iter() {
+            let mut s = s.clone();
+            match s.radix.as_ref().and_then(|r| r.a.as_ref()) {
+                Some(a) if whole_rows(a, s.k).is_some() => {
+                    s.a = TileRead {
+                        base: 0,
+                        ci: s.k,
+                        ck: 1,
+                        clane: 0,
+                        ksplit: None,
+                        ..s.a.clone()
+                    };
+                }
+                Some(_) => continue,
+                None => {}
+            }
+            tiles.sites.insert(m, s);
+        }
         for &m in &fd.morphisms {
             let Some(morph) = self.morphisms.get(m) else {
                 continue;

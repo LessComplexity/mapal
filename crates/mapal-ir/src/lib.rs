@@ -40,13 +40,15 @@ mod validate;
 
 pub use access::{AccessPlan, Hazard};
 pub use algo::{
-    Affine, AxisDigit, BoundsProof, CellRead, CellSite, Checkpoint, Delta, DepLaw, Digit, Edge,
-    ElemPlan, ElemSrc, EmissionClass, EmissionPlan, FmaPair, FoldCombine, FoldCombinePlan,
-    Footprint, FootprintPlan, GuardArm, GuardSite, LastUsePlan, LinearSite, LoopPlan, LoopScc,
-    MovePlan, MoveSite, Outside, PathPlan, PrecisionPlan, RadixAddr, RadixForm, RadixTile, Reach,
-    Regroup, RescaleArg, RowDep, RowFoldOp, RowFoldSite, StepAlgebra, StepFlags, Tap, Task, TaskId,
-    TaskKind, TileKSplit, TilePlan, TilePost, TileRead, TileSite, TripPhase, TripSplit,
-    UnchangedPlan, WaitEntry, bound_coef, bound_coef_unit, gamma, uniform_at,
+    Affine, AxisDigit, BoundsProof, BoxClass, CellRead, CellSite, Checkpoint, Delta, DepLaw, Digit,
+    Edge, ElemPlan, ElemSrc, EmissionClass, EmissionPlan, FinitePlan, FmaPair, FoldCombine,
+    FoldCombinePlan, Footprint, FootprintPlan, GuardArm, GuardBox, GuardSide, GuardSite,
+    LastUsePlan, LinearSite, LoopPlan, LoopScc, MovePlan, MoveSite, Outside, PathPlan,
+    PrecisionPlan, RadixAddr, RadixForm, RadixTile, Reach, Regroup, RescaleArg, RowDep, RowFoldOp,
+    RowFoldSite, StepAlgebra, StepFlags, StreamGroup, StreamGuard, StreamLaw, StreamPlan,
+    StreamRole, Tap, Task, TaskId, TaskKind, TileKSplit, TilePlan, TilePost, TileRead, TileSite,
+    TripPhase, TripSplit, UnchangedPlan, WaitEntry, bound_coef, bound_coef_unit, extreme_up, gamma,
+    uniform_at,
 };
 pub use builder::{Dest, FnBuilder, IrBuilder, IrError, LoopHandle};
 pub use facts::FactArms;
@@ -58,5 +60,5 @@ pub use loc::SourceLoc;
 pub use mermaid::lint_mermaid;
 pub use residence::{Residence, ResidencePlan};
 pub use ty::{MAX_TY_DEPTH, NarrowFloat, Ty, Value, ty_contains_token, ty_label};
-pub use unit::{UnitGroup, UnitKind, UnitMember, UnitPlan};
+pub use unit::{RowMap, UnitGroup, UnitKind, UnitMember, UnitPlan};
 pub use validate::{IrViolation, validate};

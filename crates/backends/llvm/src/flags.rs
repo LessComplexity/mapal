@@ -28,6 +28,22 @@ pub fn apply(opts: &mut EmitOpts, a: &str) -> Result<bool, String> {
         // no rescale law in `fold_combine` (a fact arm).
         "--no-exp-hw" => opts.gpu.off.exp_hw = true,
         "--no-exp-rescale" => opts.gpu.off.exp_rescale = true,
+        // flash-attention: the stream fact arm.
+        "--no-stream" => opts.gpu.off.stream_fact = true,
+        "--no-guard-box" => opts.gpu.off.guard_box = true,
+        "--no-finite" => opts.gpu.off.finite = true,
+        // Measurement only: a stream group's rows a block and window keys.
+        _ if a.starts_with("--stream=") => {
+            let v = &a["--stream=".len()..];
+            let parts: Vec<Option<u64>> = v.split('x').map(|x| x.parse::<u64>().ok()).collect();
+            let f = match parts[..] {
+                [Some(b), Some(k)] => (b, k, 0, 0),
+                [Some(b), Some(k), Some(r)] => (b, k, r, 0),
+                [Some(b), Some(k), Some(r), Some(s)] => (b, k, r, s),
+                _ => return Err(format!("--stream expects <b>x<kb>[x<rt>[x<s>]], got `{a}`")),
+            };
+            opts.gpu.stream_force = Some(f);
+        }
         // Measurement only: a row-block unit's rows (0 = derive), the rung
         // table and the cost test aside. `--gpu-on=row-block` runs the rule
         // (cost-gated) where the part's table keeps it off.

@@ -34,7 +34,7 @@ use mapal_ir::{RowFoldOp, RowFoldSite};
 
 /// Bytes one shared-memory wavefront serves: 32 banks × 4 B. An ISA rule on
 /// every NVIDIA part since Kepler.
-const GPU_WAVEFRONT_BYTES: u64 = 128;
+pub(crate) const GPU_WAVEFRONT_BYTES: u64 = 128;
 /// The lanes of one warp instruction the bank model ([`panel_excess`]) reads:
 /// 32 on every NVIDIA part, as are the 32 banks of [`bank_degree`].
 const WARP: u64 = 32;

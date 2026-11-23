@@ -18,15 +18,22 @@ mod bounds;
 mod linear;
 mod precision;
 mod radix;
+mod range;
+mod stream;
 mod unchanged;
 pub use algebra::{
     DepLaw, FmaPair, FoldCombine, FoldCombinePlan, Regroup, RescaleArg, RowDep, StepAlgebra,
-    StepFlags,
+    StepFlags, whole_rows,
 };
 pub use bounds::BoundsProof;
 pub use linear::LinearSite;
 pub use precision::{PrecisionPlan, bound_coef, bound_coef_unit, gamma};
 pub use radix::{AxisDigit, Digit, RadixAddr, RadixForm, RadixTile, uniform_at};
+pub use range::FinitePlan;
+pub use stream::{
+    BoxClass, GuardBox, GuardSide, StreamGroup, StreamGuard, StreamLaw, StreamPlan, StreamRole,
+    extreme_up,
+};
 pub use unchanged::UnchangedPlan;
 
 /// A non-trivial loop SCC and its merge objects (DESIGN §7; the backend
@@ -3588,7 +3595,11 @@ impl CategoryIr {
         }
     }
 
-    fn tile_definer(&self, object: ObjectId, op: Operation) -> Option<&crate::graph::Morphism> {
+    pub(crate) fn tile_definer(
+        &self,
+        object: ObjectId,
+        op: Operation,
+    ) -> Option<&crate::graph::Morphism> {
         let [m] = self.in_edges(object) else {
             return None;
         };
@@ -3596,7 +3607,7 @@ impl CategoryIr {
         (morph.op == op).then_some(morph)
     }
 
-    fn tile_input_proj_index(&self, object: ObjectId, input: ObjectId) -> Option<u32> {
+    pub(crate) fn tile_input_proj_index(&self, object: ObjectId, input: ObjectId) -> Option<u32> {
         let [m] = self.in_edges(object) else {
             return None;
         };

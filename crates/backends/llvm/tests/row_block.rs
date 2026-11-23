@@ -400,6 +400,9 @@ fn shipped(ir: &CategoryIr, target: &'static str, rung: bool, b: u64) -> Emissio
     gpu.row_block_b = b;
     // A unit's own launch (`calls` would take it into a persistent chain).
     *gpu.off.rung("calls").expect("rung") = true;
+    // The row-block rule itself: flash-attention's `stream` (one pass over
+    // the scores' windows, `flash_attention.rs`) would take these groups first.
+    *gpu.off.rung("stream").expect("rung") = true;
     let opts = EmitOpts {
         target,
         host: "generic",
@@ -513,11 +516,13 @@ fn attn_1024_on_rtx_5080_keeps_the_boundary_by_cost() {
     assert!(smem > 83968 && smem <= 101376, "{smem}");
     let dev = forced.device.as_deref().unwrap();
     assert!(dev.contains("call void @llvm.nvvm.cp.async.cg.shared.global.16"));
-    // The OFF arm: the unit as it was (operands straight from memory).
+    // The OFF arm: the unit as it was (operands straight from memory; the
+    // `stream` realization off, as in `shipped`).
     let gpu = GpuArms {
         row_block_b: 16,
         off: mapal_backend_llvm::GpuRungs {
             row_stage: true,
+            stream: true,
             ..Default::default()
         },
         ..Default::default()
@@ -599,7 +604,8 @@ fn row_block_ships_its_rule_and_refuses_unpriced() {
 /// its boundary by cost (the rtx-5080's measured order: fused 33.3 us > split
 /// 31.7); before, the 4090 / 5090 priced those rows at the DRAM placement
 /// rate `bytes_per_ns` and formed the unit. The launch-bound
-/// `px_attn_64_16` forms on all three.
+/// `px_attn_64_16` forms one unit on all three (a row block, or the streamed
+/// pass where the model prices it lower).
 #[test]
 fn attention_pricing_is_one_rule_across_parts() {
     for part in ["rtx-4090", "rtx-5090", "rtx-5080"] {
@@ -626,8 +632,21 @@ fn attention_pricing_is_one_rule_across_parts() {
             let (f, s): (u64, u64) = (f.parse().unwrap(), s.parse().unwrap());
             assert!(f > s && s > 0, "{name} {part}: fused {f} split {s}");
         }
+        // One unit: the row block, or (flash-attention `stream`) one pass
+        // over windows of the scores' axis where the model prices it lower.
         let small = shipped(&bench("px_attn_64_16"), part, true, 0);
-        assert_eq!(block_lines(&small).len(), 1, "px_attn_64_16 {part}");
+        let streamed = small
+            .device
+            .as_deref()
+            .unwrap_or("")
+            .lines()
+            .filter(|l| l.starts_with("; mapal.flow kernel=") && l.contains(" stream="))
+            .count();
+        assert_eq!(
+            block_lines(&small).len() + streamed,
+            1,
+            "px_attn_64_16 {part}"
+        );
     }
 }
 

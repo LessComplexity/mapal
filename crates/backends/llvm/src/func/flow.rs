@@ -28,6 +28,9 @@
 
 use super::resident::{Cell, ResidentPlan, array_len};
 use super::*;
+
+#[path = "stream.rs"]
+pub(crate) mod stream;
 use mapal_ir::{DepLaw, Reach, RowFoldOp, RowFoldSite, TileSite, UnitGroup, UnitKind};
 
 /// Where one input of a unit member comes from.
@@ -97,6 +100,9 @@ pub(crate) struct Unit {
     /// long-rows `row-slices`: each row over `s` blocks. `None`: one block
     /// (or thread) a row.
     pub slices: Option<Slices>,
+    /// flash-attention `stream`: one pass over windows of the group's axis
+    /// ([`stream::Stream`]). `None`: every other realization.
+    pub stream: Option<stream::Stream>,
 }
 
 /// long-rows `row-slices`: a unit whose rows each run over `s` blocks
@@ -383,6 +389,9 @@ pub(crate) fn unit_geo(
     bytes: impl Fn(&UMember) -> u64,
 ) -> Geo {
     let g = profile.gpu().expect("a unit has a GPU profile");
+    if let Some(st) = &u.stream {
+        return stream::stream_geo(u, st);
+    }
     if let Some(blk) = &u.block {
         return block_geo(u, blk, g, free, bytes);
     }
@@ -747,6 +756,8 @@ impl<'a> FnEmit<'a> {
         let mut absorbed = 0;
         // compile-time-graph A: each row-block group's refusal (its launch).
         let mut block_refused: Vec<(MorphismId, String)> = Vec::new();
+        // flash-attention `stream`: each stream group's refusal.
+        let mut stream_refused: Vec<(MorphismId, String)> = Vec::new();
         if rungs.flow && plan.chain.is_empty() {
             let mut cand: SecondaryMap<MorphismId, Cand> = SecondaryMap::new();
             for (m, r) in plan.rowfold.iter() {
@@ -789,8 +800,22 @@ impl<'a> FnEmit<'a> {
                                 .and_then(|p| p.sites.get(mb.m))
                                 .cloned()
                                 .unwrap_or_else(|| t.clone());
-                            let ok = self.device.contains_key(mb.m)
-                                && !self.groups.contains_key(mb.m)
+                            // flash-attention F2: an extended group's
+                            // epilogue site is its own group, its post alone.
+                            let epi = match grp.extended {
+                                true => self
+                                    .groups
+                                    .get(mb.m)
+                                    .is_none_or(|e| e.chain.is_empty() && e.terms.is_empty()),
+                                false => !self.groups.contains_key(mb.m),
+                            };
+                            // An extended group's tile may run as a device
+                            // cell kernel today (a narrow `P·V`): the unit
+                            // takes it as its site.
+                            let on_device = self.device.contains_key(mb.m)
+                                || (grp.extended && plan.cells.contains_key(mb.m));
+                            let ok = on_device
+                                && epi
                                 && !self.retain.contains_key(mb.out)
                                 && !gpu::uniform_site(&site);
                             if ok {
@@ -804,7 +829,17 @@ impl<'a> FnEmit<'a> {
                         block_refused.push((ms[0], "placed".into()));
                         continue;
                     }
-                    match self.unit_of(&ms, &bc, &fp, &region, plan, Some(&grp)) {
+                    let res = self.unit_of(&ms, &bc, &fp, &region, plan, Some(&grp));
+                    if let Some(why) = self.stream_why.take() {
+                        stream_refused.push((
+                            ms[0],
+                            match (why, self.stream_priced.take()) {
+                                ("cost", Some((s, p))) => format!("cost:{s}/{p}"),
+                                _ => why.into(),
+                            },
+                        ));
+                    }
+                    match res {
                         Ok(u) => {
                             for &m in &ms {
                                 taken.insert(m, ());
@@ -941,6 +976,11 @@ impl<'a> FnEmit<'a> {
         let block: String = block_refused
             .iter()
             .map(|(m, why)| format!(" row_block={}:{why}", name(*m)))
+            .chain(
+                stream_refused
+                    .iter()
+                    .map(|(m, why)| format!(" stream={}:{why}", name(*m))),
+            )
             .collect();
         if !plan.units.is_empty() || !refused.is_empty() || !block.is_empty() {
             plan.flow_line = format!(
@@ -1112,7 +1152,17 @@ impl<'a> FnEmit<'a> {
                     // `a` is the unit's own rows (a row-wide member read in
                     // its row, row-aligned) or complete in `Gmem`; `b` is read
                     // by every row: never a member.
+                    // flash-attention F1: a row operand `unit_plan` proved
+                    // a whole row under a digit permutation of the rows.
+                    let digit = grp
+                        .and_then(|g| g.members.iter().find(|x| x.m == m))
+                        .is_some_and(|x| x.row_of.is_some());
                     let a_src = match member(a, &members) {
+                        Some(k) if digit => USrc::Member {
+                            k,
+                            reach: SAME,
+                            row: true,
+                        },
                         Some(k) => {
                             let p = &members[k];
                             if p.per_row()
@@ -1139,13 +1189,30 @@ impl<'a> FnEmit<'a> {
                         None if complete(b) => USrc::Gmem(push(b, &mut gmem)),
                         None => return Err("phase"),
                     };
+                    let mut srcs = vec![a_src, b_src];
+                    // `tile-post` (an extended group's): each array its
+                    // epilogue reads, after `a` and `b` in its slots' order —
+                    // memory, or a per-row member at the row it ends in.
+                    for &slot in site.post.iter().flat_map(|p| &p.reads) {
+                        let arr = self.pair_source(morph.source, slot).ok_or("footprint")?;
+                        srcs.push(match member(arr, &members) {
+                            Some(k) if members[k].per_row() => USrc::Member {
+                                k,
+                                reach: SAME,
+                                row: true,
+                            },
+                            Some(_) => return Err("footprint"),
+                            None if complete(arr) => USrc::Gmem(push(arr, &mut gmem)),
+                            None => return Err("phase"),
+                        });
+                    }
                     UMember {
                         m,
                         out: morph.target,
                         kind: UKind::Tile { site: site.clone() },
                         w,
                         store: false,
-                        srcs: vec![a_src, b_src],
+                        srcs,
                     }
                 }
                 Cand::Cell(c) => {
@@ -1205,6 +1272,36 @@ impl<'a> FnEmit<'a> {
             return Err("pointers");
         }
         if let Some(grp) = grp {
+            // flash-attention `stream`: the group as one pass over windows
+            // of its axis, where the fact proves it and the rule prices it.
+            self.stream_why.set(None);
+            match self.stream_choice(&members, rows, &gmem, grp) {
+                Ok(Some(st)) => {
+                    let key = format!(
+                        "unit|{members:?}|{rows}|{}|stream{}",
+                        self.profile.name,
+                        st.label()
+                    );
+                    let id = key.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| {
+                        (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
+                    });
+                    return Ok(Unit {
+                        id,
+                        rows,
+                        members,
+                        gmem,
+                        block: None,
+                        slices: None,
+                        stream: Some(st),
+                    });
+                }
+                Ok(None) => {}
+                Err(why) => self.stream_why.set(Some(why)),
+            }
+            // The row-block units realize plain groups only.
+            if grp.extended {
+                return Err("extended");
+            }
             let blk = self.block_choice(&members, rows, &gmem, grp)?;
             let key = format!(
                 "unit|{members:?}|{rows}|{}|block{}",
@@ -1220,6 +1317,7 @@ impl<'a> FnEmit<'a> {
                 gmem,
                 block: Some(blk),
                 slices: None,
+                stream: None,
             });
         }
         let elem =
@@ -1278,6 +1376,7 @@ impl<'a> FnEmit<'a> {
             gmem,
             block: None,
             slices,
+            stream: None,
         })
     }
 
@@ -1396,6 +1495,7 @@ impl<'a> FnEmit<'a> {
                 gmem: gmem.to_vec(),
                 block: None,
                 slices: None,
+                stream: None,
             },
             self.profile,
             true,
@@ -1512,28 +1612,12 @@ impl<'a> FnEmit<'a> {
         // slices of the same row) whose step keeps the extreme that bounds
         // every term by 1 — its partial over a slice is that slice's shift.
         let rescale_ok = |k: usize, v: usize, arg: &mapal_ir::RescaleArg| {
-            let (UKind::Fold { site: sk, .. }, UKind::Fold { site: sv, .. }) =
-                (&members[k].kind, &members[v].kind)
-            else {
-                return false;
-            };
-            let extreme = match sv.op {
-                RowFoldOp::Select {
-                    cmp,
-                    acc_lhs,
-                    acc_if_true,
-                } => {
-                    let gt = matches!(cmp, Operation::Gt | Operation::Ge);
-                    Some(gt == (acc_lhs == acc_if_true))
-                }
-                RowFoldOp::Arith { .. } => None,
-            };
             v < k
-                && extreme == Some(arg.up)
-                && arg.against.is_some()
-                && fc.sites.get(members[v].m).map(|c| Some(c.term)) == Some(arg.against)
-                && sv.k == sk.k
-                && (sv.a.ci, sv.a.ck, sv.a.base) == (sk.a.ci, sk.a.ck, sk.a.base)
+                && matches!(members[k].kind, UKind::Fold { .. })
+                && matches!(members[v].kind, UKind::Fold { .. })
+                && self
+                    .ir
+                    .rescale_shift_ok(self.f, members[k].m, members[v].m, arg)
         };
         let src_phase = |srcs: &[USrc], skip: &[usize], avail: &[u32]| {
             srcs.iter()
@@ -1727,6 +1811,7 @@ impl<'a> FnEmit<'a> {
                     gmem: gmem.to_vec(),
                     block: Some(blk.clone()),
                     slices: None,
+                    stream: None,
                 };
                 let geo = self.geo(&probe);
                 let acc = members
@@ -2230,6 +2315,36 @@ impl<'a> FnEmit<'a> {
         (format!("{}{}", self.fnames[f], fe.cell_suffix), fe.emit())
     }
 
+    /// `tile-post`: map body `f`'s epilogue variant (its fold `fold`'s value
+    /// an argument), the capture `slots` as one-cell buffers
+    /// (`<name>[_u<slots>]_post`).
+    fn unit_post_body(&self, f: FuncId, fold: MorphismId, slots: &[u32]) -> (String, String) {
+        let mut fe = FnEmit::new(
+            self.ir,
+            f,
+            self.fnames,
+            self.strings,
+            self.attrs,
+            self.tile_plan.is_some(),
+            self.packing,
+            self.contract,
+            self.order,
+            self.kc_nest,
+            self.move_panel,
+            self.profile,
+        );
+        fe.set_gpu_arms(self.gpu_arms);
+        fe.set_post_fold(Some(fold));
+        let mut name = self.fnames[f].clone();
+        if !slots.is_empty() {
+            let suffix: Vec<String> = slots.iter().map(u32::to_string).collect();
+            fe.cell_suffix = format!("_u{}", suffix.join("_"));
+            fe.set_cell_slots(slots.to_vec());
+            name = format!("{name}{}", fe.cell_suffix);
+        }
+        (gpu::post_variant(&name), fe.emit())
+    }
+
     /// The unit's kernel: the bodies it calls, and its text (with its
     /// `; mapal.flow` and `; mapal.plan` intent lines).
     fn unit_kernel(&self, u: &Unit) -> (Vec<(String, String)>, String) {
@@ -2264,6 +2379,7 @@ impl<'a> FnEmit<'a> {
             fma: self.contract && self.gpu_arms.pairs,
             name: name.clone(),
             subst: Vec::new(),
+            alphas: Vec::new(),
             parts: vec![None; u.members.len()],
         };
         // Each member's callee, argument type, result type and buffer types.
@@ -2273,6 +2389,48 @@ impl<'a> FnEmit<'a> {
                 y += 1;
                 y - 1
             }));
+            // flash-attention `stream`: a tile's epilogue body, called with
+            // its fold's value (a per-row member through a one-cell buffer).
+            if let (UKind::Tile { site }, Some(_)) = (&mb.kind, &u.stream)
+                && let Some(post) = &site.post
+            {
+                let morph = self.ir.morphism(mb.m).expect("member");
+                let Operation::Map { body, captures } = morph.op else {
+                    unreachable!("a tile site is a map")
+                };
+                let slots: Vec<u32> = post
+                    .reads
+                    .iter()
+                    .zip(&mb.srcs[2..])
+                    .filter(|(_, x)| matches!(x, USrc::Member { .. }))
+                    .map(|(&s, _)| s)
+                    .collect();
+                let (callee, text) = self.unit_post_body(body, post.fold, &slots);
+                if !fns.iter().any(|(n, _)| *n == callee) {
+                    fns.push((callee.clone(), text));
+                }
+                for f in super::resident::nested_bodies(self.ir, body) {
+                    let (ln, lt) = self.unit_body(f, &[]);
+                    if !fns.iter().any(|(n, _)| *n == ln) {
+                        fns.push((ln, lt));
+                    }
+                }
+                let in_ty = self.obj_ty(self.ir.func(body).expect("body").input);
+                let arg = lower_body_input_ty(&in_ty, captures).expect("a site's input lowers");
+                let field_ty: Vec<String> = (0..=captures)
+                    .map(|s| lt(self.pair_source(morph.source, s).expect("slot")))
+                    .collect();
+                g.calls.push(Some(CallInfo {
+                    callee,
+                    arg,
+                    ret: lt(mb.out),
+                    field_ty,
+                    captures,
+                    slots,
+                    laws: Vec::new(),
+                }));
+                continue;
+            }
             let UKind::Cell { body, captures } = mb.kind else {
                 g.calls.push(None);
                 continue;
@@ -2375,6 +2533,9 @@ impl<'a> FnEmit<'a> {
         // The phases: one row (or one thread's row) as before; a row-block
         // unit's tiles over all its rows, the members between them row by row.
         match &u.block {
+            None if u.stream.is_some() => {
+                g.stream_body(u.stream.as_ref().expect("streamed"));
+            }
             None if u.slices.is_some() => {
                 g.sliced(u.slices.as_ref().expect("sliced"));
             }
@@ -2457,6 +2618,29 @@ impl<'a> FnEmit<'a> {
             .unwrap_or(&u.members[0]);
         let w = u.members.iter().map(|mb| mb.w).max().unwrap_or(1);
         let block = match &u.block {
+            None if u.stream.is_some() => {
+                let st = u.stream.as_ref().expect("streamed");
+                format!(
+                    " stream={} axis={} windows={} skip={} dissolved={} state={} ns_stream={} ns_split={}",
+                    st.label(),
+                    st.group.axis,
+                    st.nb(),
+                    match &st.group.guard {
+                        None => "none",
+                        Some(g) if g.skip => "on",
+                        Some(g) => g.why,
+                    },
+                    st.group
+                        .dissolved
+                        .iter()
+                        .map(|&k| label(u.members[k].out))
+                        .collect::<Vec<_>>()
+                        .join(","),
+                    st.group.state_bytes,
+                    st.ns.0,
+                    st.ns.1
+                )
+            }
             None => match &u.slices {
                 None => String::new(),
                 Some(sl) => format!(
@@ -2524,7 +2708,9 @@ impl<'a> FnEmit<'a> {
             "; mapal.plan kernel={name} kind=flow rows={} gx={blocks} block={threads} members={} rungs_on=flow{}\n",
             u.rows,
             u.members.len(),
-            if u.block.is_some() {
+            if u.stream.is_some() {
+                ",row-block,stream"
+            } else if u.block.is_some() {
                 ",row-block"
             } else if u.slices.is_some() {
                 ",row-slices"
@@ -2532,6 +2718,26 @@ impl<'a> FnEmit<'a> {
                 ""
             }
         );
+        // flash-attention `split-kv`: each fold's and consumer's slice
+        // partials, and the row blocks' tickets.
+        if let Some(st) = u.stream.as_ref().filter(|st| st.s > 1) {
+            for (k, mb) in u.members.iter().enumerate() {
+                let n = match (&st.group.roles[k], &mb.kind) {
+                    (mapal_ir::StreamRole::Fold { .. }, _) => u.rows * st.s,
+                    (mapal_ir::StreamRole::Consume { .. }, UKind::Tile { site }) => {
+                        u.rows * st.s * site.c
+                    }
+                    _ => continue,
+                };
+                text += &format!(
+                    "@{name}.ws{k} = internal addrspace(1) global [{n} x float] zeroinitializer, align 16\n"
+                );
+            }
+            text += &format!(
+                "@{name}.cnt = internal addrspace(1) global [{} x i32] zeroinitializer, align 4\n",
+                u.rows / st.b
+            );
+        }
         // long-rows `row-slices`: each fold's partials (a row's `s`) and the
         // grid barrier's counter.
         if let Some(sl) = &u.slices {
@@ -2569,6 +2775,24 @@ impl<'a> FnEmit<'a> {
             // row-block unit's first row.
             if let Some(blk) = &u.block {
                 format!("  %i = mul i64 %b64, {}\n  %l = add i64 %t64, 0\n", blk.b)
+            } else if let Some(st) = &u.stream {
+                match st.skip() {
+                    // R5: a masked unit's blocks in reverse row order — a
+                    // causal mask's heaviest row blocks (the last rows of
+                    // each batch) launch first, the lightest fill the tail.
+                    Some(_) => format!(
+                        "  %bre = sub i64 {}, %b64\n  %i = mul i64 %bre, {}\n  %l = add i64 %t64, 0\n",
+                        u.rows / st.b - 1,
+                        st.b
+                    ),
+                    // R3: block `b64` is slice `%bz` of row block `%bq`.
+                    None if st.s > 1 => format!(
+                        "  %bq = udiv i64 %b64, {s}\n  %bz = urem i64 %b64, {s}\n  %i = mul i64 %bq, {}\n  %l = add i64 %t64, 0\n",
+                        st.b,
+                        s = st.s
+                    ),
+                    None => format!("  %i = mul i64 %b64, {}\n  %l = add i64 %t64, 0\n", st.b),
+                }
             } else if u.slices.is_some() {
                 // Every block reaches every grid barrier: the items loop
                 // decides what a block does.
@@ -2643,6 +2867,9 @@ struct UnitGen<'u> {
     /// partials take as its law's identity.
     name: String,
     subst: Vec<(usize, u32, String)>,
+    /// flash-attention `stream`: each window's rescale factors computed so
+    /// far, by `(old, new, exponent)` — every law sharing one reads it once.
+    alphas: Vec<(String, String)>,
     /// `row-slices`: each fold member's partial over this item's slice (a
     /// rescale law's shift for a later fold of the same item).
     parts: Vec<Option<String>>,
@@ -2798,7 +3025,10 @@ impl UnitGen<'_> {
                 self.line(format!("store {} {v}, ptr %b{k}_{s}", field_ty[s]));
                 fields.push(("ptr".into(), format!("%b{k}_{s}")));
             } else {
-                let v = self.read(src, t, &[]);
+                let v = match &sub {
+                    Some(x) => x.clone(),
+                    None => self.read(src, t, &[]),
+                };
                 let ty = if matches!(src, USrc::Index) {
                     "i32".to_string()
                 } else {

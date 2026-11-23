@@ -79,6 +79,8 @@ impl<'a> FnEmit<'a> {
             algebra: None,
             fma_stash: SecondaryMap::new(),
             block_priced: std::cell::Cell::new(None),
+            stream_why: std::cell::Cell::new(None),
+            stream_priced: std::cell::Cell::new(None),
             block: 0,
             resident: None,
             dslots: SecondaryMap::new(),

@@ -22,7 +22,7 @@
 
 use slotmap::SecondaryMap;
 
-use crate::algo::{Reach, RowFoldSite, TileSite};
+use crate::algo::{AxisDigit, Reach, RowFoldSite, TileSite};
 use crate::graph::{CategoryIr, FuncId, MorphismId, ObjectId, Operation};
 use crate::ty::Ty;
 
@@ -54,6 +54,65 @@ pub struct UnitMember {
     pub stored: bool,
     /// Its rows stay on chip for a later member: the buffer it takes.
     pub color: Option<usize>,
+    /// flash-attention F1: its rows a digit permutation of the group's
+    /// (`None`: the group's own rows).
+    pub row_of: Option<RowMap>,
+}
+
+/// flash-attention F1: **a member's rows as a digit permutation of the
+/// group's** — attention's `P·V` row `(token, head)` reading the scores' row
+/// `head·T + token`. Both directions are digit sums, checked against each
+/// other on every row.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RowMap {
+    /// The group row of member row `r`: `Σ coef·((r ÷ stride) % radix)`.
+    pub to_group: Vec<AxisDigit>,
+    /// The member row of group row `g` (the inverse).
+    pub from_group: Vec<AxisDigit>,
+}
+
+fn digit_sum(ds: &[AxisDigit], x: u64) -> u64 {
+    ds.iter().map(|d| d.coef * ((x / d.stride) % d.radix)).sum()
+}
+
+impl RowMap {
+    pub fn group_row(&self, r: u64) -> u64 {
+        digit_sum(&self.to_group, r)
+    }
+
+    pub fn member_row(&self, g: u64) -> u64 {
+        digit_sum(&self.from_group, g)
+    }
+
+    /// The map of a row operand reading whole rows under the digit
+    /// permutation `to_group` ([`crate::whole_rows`]), when it is one of
+    /// `rows` rows: its inverse is the digits with stride and coefficient
+    /// exchanged, checked on every row (at most 2²² of them).
+    pub fn of(to_group: Vec<AxisDigit>, rows: u64) -> Option<RowMap> {
+        if rows == 0 || rows > 1 << 22 || to_group.iter().any(|d| d.radix == 0 || d.stride == 0) {
+            return None;
+        }
+        let from_group: Vec<AxisDigit> = to_group
+            .iter()
+            .map(|d| AxisDigit {
+                stride: d.coef,
+                radix: d.radix,
+                coef: d.stride,
+            })
+            .collect();
+        if from_group.iter().any(|d| d.stride == 0) {
+            return None;
+        }
+        let m = RowMap {
+            to_group,
+            from_group,
+        };
+        let ok = (0..rows).all(|r| {
+            let g = m.group_row(r);
+            g < rows && m.member_row(g) == r
+        });
+        ok.then_some(m)
+    }
 }
 
 /// One row-block group.
@@ -68,6 +127,15 @@ pub struct UnitGroup {
     /// Operand bytes a unit reads whole whatever its rows: the tile members'
     /// column operands.
     pub shared_bytes: u64,
+    /// flash-attention F2: the group holds a member the row-block units do
+    /// not (a mixed-radix or epilogue tile site, or rows under a digit
+    /// permutation) — formed after every plain group, from what they left.
+    pub extended: bool,
+    /// flash-attention F2: the panel batch — the most group rows (a power of
+    /// two dividing `rows`) over which every tile member's column operand
+    /// address does not move: a block of that many rows reads one `b` panel
+    /// (a KV head's rows for its query heads).
+    pub panel: u64,
 }
 
 /// Every row-block group of one function.
@@ -134,6 +202,26 @@ enum Cand {
     Cell(u64),
 }
 
+impl Cand {
+    /// A tile the row-block units realize (`tile_plan_strided`'s plain
+    /// form): every other tile is an extended group's.
+    fn plain(&self) -> bool {
+        match self {
+            Cand::Tile(s) => {
+                s.radix.is_none()
+                    && s.post.is_none()
+                    && s.a.narrow.is_none()
+                    && s.b.narrow.is_none()
+                    && s.a.ksplit.is_none()
+                    && s.b.ksplit.is_none()
+                    && s.a.clane == 0
+                    && s.b.ci == 0
+            }
+            _ => true,
+        }
+    }
+}
+
 impl CategoryIr {
     /// **The row-block groups of `f`** (module doc): stored on the graph,
     /// built from `tile_plan_strided`, `row_fold`, `cell_plan`,
@@ -150,8 +238,6 @@ impl CategoryIr {
         let tiles = self.tile_plan_strided(f);
         let folds = self.row_fold(f);
         let cells = self.cell_plan(f);
-        let fp = self.footprint_plan(f);
-        let lup = self.last_use_plan(f);
         let mut cand: SecondaryMap<MorphismId, Cand> = SecondaryMap::new();
         for (m, s) in tiles.sites.iter() {
             let plain = s.radix.is_none()
@@ -177,6 +263,45 @@ impl CategoryIr {
                 cand.insert(m, Cand::Cell(c.extent));
             }
         }
+        let mut taken: SecondaryMap<MorphismId, ()> = SecondaryMap::new();
+        self.unit_pass(f, &cand, &mut taken, false, &mut plan);
+        // flash-attention F2: the groups of every other tile plan — epilogue
+        // sites (`tile_plan_post`), mixed-radix ones (`tile_plan_radix`) —
+        // from the members the plain groups left, each seeded by such a tile.
+        if self.fact_arms().stream {
+            let mut ext = cand.clone();
+            let post = self.tile_plan_post(f);
+            let radix = self.tile_plan_radix(f);
+            for (m, s) in post.sites.iter().chain(radix.iter()) {
+                let ok = s.rows > 0
+                    && s.c > 0
+                    && s.k > 0
+                    && s.a.ksplit.is_none()
+                    && s.b.ksplit.is_none()
+                    && s.radix.as_ref().is_none_or(|r| !r.uniform());
+                if ok && !ext.contains_key(m) {
+                    ext.insert(m, Cand::Tile(s.clone()));
+                }
+            }
+            self.unit_pass(f, &ext, &mut taken, true, &mut plan);
+        }
+        plan
+    }
+
+    /// One grouping pass over the candidates `cand` (module doc): each group
+    /// seeded by a tile no group holds — in the `extended` pass only a tile
+    /// the row-block units do not realize, whose reads may then be a whole
+    /// row under a digit permutation ([`RowMap`]).
+    fn unit_pass(
+        &self,
+        f: FuncId,
+        cand: &SecondaryMap<MorphismId, Cand>,
+        taken: &mut SecondaryMap<MorphismId, ()>,
+        extended: bool,
+        plan: &mut UnitPlan,
+    ) {
+        let fp = self.footprint_plan(f);
+        let lup = self.last_use_plan(f);
         let pos = |m: MorphismId| lup.position(m).unwrap_or(u32::MAX);
         let target = |m: MorphismId| self.morphisms[m].target;
         let elem = |o: ObjectId| match self.object(o).map(|x| &x.ty) {
@@ -207,20 +332,21 @@ impl CategoryIr {
         };
         let mut order: Vec<MorphismId> = cand.keys().collect();
         order.sort_by_key(|&m| (pos(m), format!("{m:?}")));
-        let mut taken: SecondaryMap<MorphismId, ()> = SecondaryMap::new();
         for &seed in &order {
             let Cand::Tile(s) = &cand[seed] else {
                 continue;
             };
-            if taken.contains_key(seed) {
+            if taken.contains_key(seed) || (extended && cand[seed].plain()) {
                 continue;
             }
             let rows = s.rows;
-            let mut g: Vec<(MorphismId, u64, Vec<(u32, usize)>)> = vec![(seed, s.c, Vec::new())];
+            // (member, cells a row, reads, its rows' map)
+            let mut g: Vec<(MorphismId, u64, Vec<(u32, usize)>, Option<RowMap>)> =
+                vec![(seed, s.c, Vec::new(), None)];
             // The seed's own operands: made before it, read whole by the
             // tile (neither may be a member: there is none yet).
             loop {
-                let outs: Vec<ObjectId> = g.iter().map(|&(m, _, _)| target(m)).collect();
+                let outs: Vec<ObjectId> = g.iter().map(|x| target(x.0)).collect();
                 let launch = pos(g[0].0);
                 let mut next: Vec<MorphismId> = order
                     .iter()
@@ -237,19 +363,50 @@ impl CategoryIr {
                         Cand::Cell(ext) if ext % rows == 0 => ext / rows,
                         _ => continue,
                     };
+                    // flash-attention F1: a tile reading a whole in-group row
+                    // through a digit permutation of its rows.
+                    let digit = match (&cand[r], extended) {
+                        (Cand::Tile(t), true) => self.digit_rows(r, t, &g, &outs, rows),
+                        _ => None,
+                    };
                     let mut reads = Vec::new();
                     let closed = fp.of(r).iter().all(|e| {
                         let member = outs.iter().position(|&o| o == e.producer);
                         match member {
                             Some(k) => {
+                                // A member read under a permutation of the
+                                // rows: the digit form's own check.
+                                if let Some((map, slots)) = &digit
+                                    && slots.contains(&e.slot)
+                                {
+                                    let _ = map;
+                                    if !reads.contains(&(e.slot, k)) {
+                                        reads.push((e.slot, k));
+                                    }
+                                    return true;
+                                }
+                                // A member read by a member whose rows are a
+                                // permutation: only in the permuted rows.
+                                if g[k].3.is_some() {
+                                    return false;
+                                }
                                 let pw = g[k].1;
                                 let a_slot = match &cand[r] {
                                     Cand::Tile(t) => Some(t.a.slot),
                                     _ => None,
                                 };
                                 let row_operand = a_slot.is_none_or(|a| a == e.slot);
+                                // An epilogue's read of a per-row member at
+                                // its own row (a `÷ den` after `P·V`).
+                                let post_row = match &cand[r] {
+                                    Cand::Tile(t) => {
+                                        t.post.as_ref().is_some_and(|p| p.reads.contains(&e.slot))
+                                            && pw == 1
+                                    }
+                                    _ => false,
+                                };
                                 let ok = e.law.is_none()
-                                    && row_operand
+                                    && (row_operand || post_row)
                                     && e.reach.within_rows(w, pw, rows);
                                 if ok && !reads.contains(&(e.slot, k)) {
                                     reads.push((e.slot, k));
@@ -264,7 +421,7 @@ impl CategoryIr {
                         }
                     });
                     if closed && !reads.is_empty() {
-                        admitted = Some((r, w, reads));
+                        admitted = Some((r, w, reads, digit.map(|d| d.0)));
                         break;
                     }
                 }
@@ -276,20 +433,112 @@ impl CategoryIr {
             if g.len() < 2 {
                 continue;
             }
-            for &(m, _, _) in &g {
-                taken.insert(m, ());
+            for x in &g {
+                taken.insert(x.0, ());
             }
-            plan.groups
-                .push(self.unit_group(rows, &g, &cand, &lup, elem, len, readers));
+            let mut grp = self.unit_group(rows, &g, cand, &lup, elem, len, readers);
+            grp.extended = extended;
+            plan.groups.push(grp);
         }
-        plan
+    }
+
+    /// flash-attention F1: tile `r`'s reads of the group `g`'s members under
+    /// a digit permutation of its rows — its row operand a whole row of an
+    /// in-group member read through its mixed-radix rows
+    /// ([`crate::whole_rows`]), each epilogue read of a per-row member at the
+    /// same permuted row (checked on every row and both end lanes) — as the
+    /// rows' map and the slots it covers.
+    fn digit_rows(
+        &self,
+        r: MorphismId,
+        t: &TileSite,
+        g: &[(MorphismId, u64, Vec<(u32, usize)>, Option<RowMap>)],
+        outs: &[ObjectId],
+        rows: u64,
+    ) -> Option<(RowMap, Vec<u32>)> {
+        let ra = t.radix.as_ref()?.a.as_ref()?;
+        let map = self.morphisms.get(r)?;
+        let a = self.pair_slot_source(map.source, t.a.slot)?;
+        let k = outs.iter().position(|&o| o == a)?;
+        if g[k].1 != t.k || g[k].3.is_some() {
+            return None;
+        }
+        let (base, digits) = crate::algo::whole_rows(ra, t.k)?;
+        if base != 0 {
+            return None;
+        }
+        let rm = RowMap::of(digits, rows)?;
+        let mut slots = vec![t.a.slot];
+        // The epilogue's reads of the group's per-row members.
+        if let Some(post) = &t.post {
+            let Operation::Map { body, captures } = map.op else {
+                return None;
+            };
+            let forms = self.radix_plan(body);
+            let input = self.func(body)?.input;
+            let out = t.radix.as_ref().and_then(|x| x.out.clone());
+            for &slot in &post.reads {
+                let src = self.pair_slot_source(map.source, slot)?;
+                let Some(p) = outs.iter().position(|&o| o == src) else {
+                    continue;
+                };
+                if g[p].1 != 1 || g[p].3.is_some() {
+                    return None;
+                }
+                // Every read of the slot in the body: its index's digits.
+                let mut any = false;
+                for &m in &self.func(body)?.morphisms {
+                    let mo = &self.morphisms[m];
+                    if mo.op != Operation::Index {
+                        continue;
+                    }
+                    let arr = self.pair_slot_source(mo.source, 0)?;
+                    if self.tile_input_proj_index(arr, input) != Some(slot) {
+                        continue;
+                    }
+                    let at = self.pair_slot_source(mo.source, 1)?;
+                    let form = forms.get(at)?;
+                    if form.digits.iter().any(|d| d.slot != captures) {
+                        return None;
+                    }
+                    let index = |e: u64| -> u64 {
+                        form.base
+                            + form
+                                .digits
+                                .iter()
+                                .map(|d| {
+                                    let q = e / d.stride;
+                                    d.coef * if d.radix == 0 { q } else { q % d.radix }
+                                })
+                                .sum::<u64>()
+                    };
+                    let cell = |i: u64, lane: u64| match &out {
+                        Some(o) => o.at(i, lane, 0),
+                        None => i * t.c + lane,
+                    };
+                    let ok = (0..rows).all(|i| {
+                        let want = rm.group_row(i);
+                        index(cell(i, 0)) == want && index(cell(i, t.c - 1)) == want
+                    });
+                    if !ok {
+                        return None;
+                    }
+                    any = true;
+                }
+                if !any {
+                    return None;
+                }
+                slots.push(slot);
+            }
+        }
+        Some((rm, slots))
     }
 
     #[allow(clippy::too_many_arguments)]
     fn unit_group(
         &self,
         rows: u64,
-        g: &[(MorphismId, u64, Vec<(u32, usize)>)],
+        g: &[(MorphismId, u64, Vec<(u32, usize)>, Option<RowMap>)],
         cand: &SecondaryMap<MorphismId, Cand>,
         lup: &crate::algo::LastUsePlan,
         elem: impl Fn(ObjectId) -> u64,
@@ -299,7 +548,7 @@ impl CategoryIr {
         let fp = self.footprint_plan(lup_owner(self, g[0].0));
         let mut members: Vec<UnitMember> = g
             .iter()
-            .map(|(m, w, reads)| {
+            .map(|(m, w, reads, row_of)| {
                 let out = self.morphisms[*m].target;
                 let kind = match &cand[*m] {
                     Cand::Tile(t) => UnitKind::Tile(t.clone()),
@@ -318,6 +567,7 @@ impl CategoryIr {
                     reads: reads.clone(),
                     stored: lup.escapes(out) || outside,
                     color: None,
+                    row_of: row_of.clone(),
                 }
             })
             .collect();
@@ -380,12 +630,59 @@ impl CategoryIr {
                 _ => None,
             })
             .sum();
+        let panel = self.panel_rows(rows, &members);
         UnitGroup {
             rows,
             members,
             row_bytes,
             shared_bytes,
+            extended: false,
+            panel,
         }
+    }
+}
+
+impl CategoryIr {
+    /// flash-attention F2: the most group rows — a power of two dividing
+    /// `rows` — over which no tile member's column operand address moves
+    /// (its mixed-radix row digits, at each member's own rows; a plain
+    /// column operand reads no row).
+    fn panel_rows(&self, rows: u64, members: &[UnitMember]) -> u64 {
+        let mut step = 0u64;
+        for mb in members {
+            let UnitKind::Tile(t) = &mb.kind else {
+                continue;
+            };
+            let Some(b) = t.radix.as_ref().and_then(|r| r.b.as_ref()) else {
+                continue;
+            };
+            if b.i.is_empty() {
+                continue;
+            }
+            let at = |gr: u64| {
+                let r = mb.row_of.as_ref().map_or(gr, |m| m.member_row(gr));
+                digit_sum(&b.i, r)
+            };
+            let mut prev = at(0);
+            for gr in 1..rows.min(1 << 22) {
+                let x = at(gr);
+                if x != prev {
+                    step = gcd(step, gr);
+                    prev = x;
+                }
+            }
+        }
+        match step {
+            0 => rows.max(1),
+            s => 1u64 << s.trailing_zeros().min(rows.trailing_zeros()),
+        }
+    }
+}
+
+fn gcd(a: u64, b: u64) -> u64 {
+    match b {
+        0 => a,
+        _ => gcd(b, a % b),
     }
 }
 

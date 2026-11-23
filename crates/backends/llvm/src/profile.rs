@@ -718,6 +718,12 @@ pub struct DeviceCost {
     /// flight waits on the latency, not the DRAM. 0 = not measured: derived
     /// ([`Gpu::stream_fly_per_sm`]).
     pub fly_bytes_per_sm: u64,
+    /// flash-attention `stream` (P1): one block barrier of 256 threads
+    /// with a dependent shared-memory round trip before it — what each window
+    /// of a streamed unit pays per barrier on its block's critical path
+    /// (`calib.cu bar`), in ns. 0 = not measured: derived
+    /// ([`BAR_CYCLES_RTX_5080`] at this part's clock, [`Gpu::bar_ns`]).
+    pub bar_ns: u64,
 }
 
 /// kernel-merging `calls`: the measured member-body change of a persistent
@@ -744,6 +750,13 @@ pub const CHAIN_CYCLES_RTX_5080: [u64; 4] = [1355, 1593, 1191, 5008];
 /// `coop_first_ns` 38 000 ns (host time, not scaled): what a part without
 /// its own measurement prices a row's slices on ([`Gpu::slice_cost`]).
 pub const SLICE_RTX_5080: [u64; 3] = [213, 1404, 38_000];
+
+/// flash-attention `stream` (P1): the rtx-5080's measured block barrier
+/// with a dependent shared-memory round trip at 256 threads — 16.9 ns
+/// (`calib.cu bar`: 44.6 cycles at 2.64 GHz, `local-rtx-5080/flash-attention.md`)
+/// — in cycles of its 2.45 GHz profile clock: what a part without its own
+/// measurement prices a window's barriers on ([`Gpu::bar_ns`]).
+pub const BAR_CYCLES_RTX_5080: u64 = 41;
 
 /// A [`DeviceCost`] without the plan-cost rates: the parts that keep the
 /// rules' plans (D8). `..NO_PLAN` fills them.
@@ -775,6 +788,7 @@ pub const NO_PLAN: DeviceCost = DeviceCost {
     sm_bytes_per_ns: 0,
     coop_body_cycles: 0,
     fly_bytes_per_sm: 0,
+    bar_ns: 0,
 };
 
 impl DeviceCost {
@@ -783,7 +797,7 @@ impl DeviceCost {
     /// overrides by name ([`Gpu::fp32_lanes`], [`Gpu::clock_khz`], and the
     /// hardware-properties the rung rules read: SMs, L2, shared memory,
     /// threads, registers and blocks per SM, the DRAM interface).
-    pub const NAMES: [&'static str; 37] = [
+    pub const NAMES: [&'static str; 38] = [
         "flops_per_ns",
         "bytes_per_ns",
         "launch_ns",
@@ -811,6 +825,7 @@ impl DeviceCost {
         "sm_bytes_per_ns",
         "coop_body_cycles",
         "fly_bytes_per_sm",
+        "bar_ns",
         "fp32_lanes",
         "clock_khz",
         "sms",
@@ -868,7 +883,7 @@ pub type CostOver = [Option<u64>; DeviceCost::NAMES.len()];
 impl Gpu {
     /// [`DeviceCost::NAMES`] that name a [`DeviceCost`] field (those before
     /// `fp32_lanes`).
-    const NAMES_COST: usize = 27;
+    const NAMES_COST: usize = 28;
 
     /// This part with the overrides in `over` applied (a part without a
     /// [`DeviceCost`] takes one from [`NO_PLAN`]).
@@ -904,6 +919,7 @@ impl Gpu {
                 "sm_bytes_per_ns" => &mut d.sm_bytes_per_ns,
                 "coop_body_cycles" => &mut d.coop_body_cycles,
                 "fly_bytes_per_sm" => &mut d.fly_bytes_per_sm,
+                "bar_ns" => &mut d.bar_ns,
                 "fp32_lanes" => &mut self.fp32_lanes,
                 "clock_khz" => &mut self.clock_khz,
                 "sms" => &mut self.sms,
@@ -954,6 +970,7 @@ impl Gpu {
             "sm_bytes_per_ns" => d.sm_bytes_per_ns,
             "coop_body_cycles" => d.coop_body_cycles,
             "fly_bytes_per_sm" => d.fly_bytes_per_sm,
+            "bar_ns" => d.bar_ns,
             "fp32_lanes" => self.fp32_lanes,
             "clock_khz" => self.clock_khz,
             "sms" => self.sms,
@@ -1241,6 +1258,16 @@ impl Gpu {
             d.coop_first_ns = first;
         }
         d
+    }
+
+    /// flash-attention `stream` (P1): one block barrier on a block's
+    /// critical path, ns — measured ([`DeviceCost::bar_ns`]), else the
+    /// rtx-5080's cycles at this part's clock.
+    pub fn bar_ns(&self) -> u64 {
+        match self.cost.map_or(0, |d| d.bar_ns) {
+            0 => BAR_CYCLES_RTX_5080 * 1_000_000 / self.clock_khz.max(1),
+            x => x,
+        }
     }
 
     /// [`Self::coop_body_cycles`] in ns at this part's clock
@@ -4206,6 +4233,7 @@ pub const RTX_4090: TargetProfile = TargetProfile {
             // stream-fly: `calib.cu bw` on the cross-arch box (60f0f8ce): 90 % of
             // its 958 GB/s DRAM peak first at 4 KiB in flight an SM.
             fly_bytes_per_sm: 4096,
+            bar_ns: 0,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_89), 2.52 GHz under load. The
         // cross-arch box (power limit 250 W of the part's 450) sustained
@@ -4254,6 +4282,7 @@ pub const H100: TargetProfile = TargetProfile {
             // 3177 GB/s DRAM peak first at 32 KiB in flight an SM (16 KiB:
             // 80 %); the loaded latency there 632 ns.
             fly_bytes_per_sm: 32768,
+            bar_ns: 0,
             // kernel-merging `calls`: `coop_body_cycles` not measured here —
             // derived, the rtx-5080's 4390 cycles at 1.807 GHz = 2429 ns a
             // chain: smlp / firew_rowsum's chains (1.55 / 2.3x slower when
@@ -4377,6 +4406,7 @@ pub const RTX_5090: TargetProfile = TargetProfile {
             // stream-fly: `calib.cu bw` (plan-cost v2 `B-bw-rtx-5090.tsv`): 90 %
             // of its 1701 GB/s DRAM peak first at 8 KiB in flight an SM.
             fly_bytes_per_sm: 8192,
+            bar_ns: 0,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_120), 2.41 GHz under load.
         fp32_lanes: 128,
@@ -4497,6 +4527,8 @@ pub const RTX_5080: TargetProfile = TargetProfile {
             // 899 GB/s DRAM peak first at 8 KiB in flight an SM (84 SMs x 8
             // warps x 2 loads of 16 B: 890 GB/s; 4 KiB: 594-606).
             fly_bytes_per_sm: 8192,
+            // flash-attention P1: `calib.cu bar`, 256 threads (16.9 ns).
+            bar_ns: 17,
         }),
         // 128 FP32 lanes per SM (sm_120); E1 peak FFMA median 52.7 Tflop/s
         // [50.3–57.6] / (84 SMs · 128 · 2) = 2.45 GHz under load.
@@ -4542,6 +4574,7 @@ pub const RTX_3090: TargetProfile = TargetProfile {
             // stream-fly: `calib.cu bw` (cross-arch 60f0f8ce): 90 % of the
             // 892 GB/s DRAM peak first at 8 KiB in flight an SM.
             fly_bytes_per_sm: 8192,
+            bar_ns: 0,
             // kernel-merging `calls`: `coop_body_cycles` not measured here —
             // derived, the rtx-5080's 4390 cycles at 1.561 GHz = 2812 ns.
             ..NO_PLAN
@@ -4590,6 +4623,7 @@ pub const A100: TargetProfile = TargetProfile {
             // stream-fly: `calib.cu bw` (cross-arch 60f0f8ce): 90 % of the
             // 1483 GB/s DRAM peak first at 16 KiB in flight an SM.
             fly_bytes_per_sm: 16384,
+            bar_ns: 0,
             // kernel-merging `calls`: `coop_body_cycles` not measured here —
             // derived, the rtx-5080's 4390 cycles at 1.41 GHz = 3113 ns.
             ..NO_PLAN
@@ -7324,6 +7358,7 @@ mod tests {
         let mut little = *RTX_5080.gpu().unwrap();
         little.cost = little.cost.map(|d| DeviceCost {
             fly_bytes_per_sm: 0,
+            bar_ns: 0,
             ..d
         });
         assert_eq!(little.stream_fly_per_sm(), 960 * 573 / 84);

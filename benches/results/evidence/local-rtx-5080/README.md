@@ -225,3 +225,13 @@ walk / latency on every part (the rented parts' lsm rows now slice). Intents: fa
 module's programmatic flag (H100 89 / 89), `calls-kernel` by the IR's barrier count. Open: `min-blocks`, `warp-fill`,
 `grid-share`, the tune trial, the A100's one-round phases; no timed 5080 program changes code (A/B null by
 construction).
+
+**flash-attention** (`flash-attention.md`): attention as one pass over key windows from facts — `stream_plan` (roles,
+each fold's `fold_combine` law, a rescale's shift the running extreme; `row-slices` reads the same shift test),
+`unit_plan`'s extended groups over epilogue and mixed-radix sites (P·V's rows a digit permutation of the scores',
+`RowMap`; the KV head's query heads one panel), `fold_combine` over every tile plan, a causal mask's box classes
+(`GuardBox`) with the absorb vote and `finite_plan`. The 2048-token prefill's attention: 3 kernels / 3.79 ms → one
+streamed kernel / 1.91 ms (scores never stored, masked windows skipped); the layer 8.60 → 6.62 ms ABBA, **0.91× torch SDPA
+efficient** (was 1.17); `_tf32` 1.62 → 1.20, block prefill 1.01 → 0.94. Split-KV by a last-block ticket, P1 `bar_ns` 16.9 ns
+(`calib.cu bar`). Open: the split's price on L2-resident attention (attn rows stay split by cost; forced `s = 8` is
+15 % faster on `attn_1024_64`), decode (narrow cache + captured position), tensor cores, F8.

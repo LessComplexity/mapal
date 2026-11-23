@@ -370,6 +370,10 @@ pub(crate) struct FnEmit<'a> {
     /// compile-time-graph A: the cheapest `(b, fused, split)` the plan model
     /// priced for the last row-block group, for its refusal's intent text.
     block_priced: std::cell::Cell<Option<(u64, u64, u64)>>,
+    /// flash-attention `stream`: why the last row-block group's stream
+    /// group stayed split, and the model's `(streamed, split)` ns.
+    stream_why: std::cell::Cell<Option<&'static str>>,
+    stream_priced: std::cell::Cell<Option<(u64, u64)>>,
     /// Basic blocks started so far ([`FnEmit::label_line`]).
     block: u64,
     /// The `k` fold's order (ADR-0040 D1): the device chooser's input
