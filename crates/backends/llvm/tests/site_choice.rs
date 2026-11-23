@@ -1143,3 +1143,45 @@ fn a_looped_site_decides_once() {
         assert_eq!((trials, launches), (0, trips), "{err}");
     }
 }
+
+/// tune-context: a site's table carries `MAPAL_SITE_COLD` (bit 3) exactly
+/// where one of its operands lives in DRAM in the program — `residence_plan`
+/// against the part's L2 — so its trial evicts the L2 before each timed run
+/// (`mapal_gpu.c` `site_timed`): a 4096-wide GEMV over a 64 MiB weight and a
+/// 256 MiB one on the RTX 5080 (64 MiB L2) against the same sites on the
+/// RTX 5090's 96 MiB and a 1 MiB weight.
+#[test]
+fn cold_flag_follows_residence() {
+    let src = |k: u64| {
+        format!(
+            "fn main() {{
+    {k} -> iota -> ia;
+    ia -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> a;
+    {kn} -> iota -> ib;
+    ib -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 }} -> b;
+    4096 -> iota -> oc;
+    {k} -> iota -> kc;
+    oc -> map {{ j -> (0.0, kc) -> fold {{ acc, q -> acc + a[q] * b[q * 4096 + j] }} }} -> c;
+    c[0] -> println;
+    c[4095] -> println;
+}}
+",
+            kn = k * 4096
+        )
+    };
+    for (k, target, cold) in [
+        (16384u64, "rtx-5080", true),
+        (4096, "rtx-5080", true),
+        (4096, "rtx-5090", false),
+        (64, "rtx-5080", false),
+    ] {
+        let s = src(k);
+        let ir = lower(&s);
+        let em = emission(&ir, target, EmitOpts::default(), 8, &[], &[]);
+        let ts = tables(&em.text);
+        assert!(!ts.is_empty() || k == 64, "k {k} {target}: a table");
+        for t in &ts {
+            assert_eq!(t.flags & 8 != 0, cold, "k {k} {target}: flags {}", t.flags);
+        }
+    }
+}

@@ -972,6 +972,8 @@ struct site_env {
   int zeroed;  /* MAPAL_SITE_ZEROED: an earlier kernel zeroed the output */
   int trialed; /* a trial ran in this call: the output holds its sums */
   int coop;    /* MAPAL_SITE_COOP: persistent kernels, launched cooperatively */
+  int cold;    /* MAPAL_SITE_COLD: an operand lives in DRAM in the program */
+  int nozero;  /* this run's zero pass was made outside its timed region */
 };
 
 static void site_run(void *e, uint32_t i) {
@@ -984,7 +986,7 @@ static void site_run(void *e, uint32_t i) {
     d[p] = x->ptrs[p];
     args[p] = &d[p];
   }
-  if (c->zero && (!x->zeroed || x->trialed))
+  if (c->zero && (!x->zeroed || x->trialed) && !x->nozero)
     mapal_gpu_zero(x->ptrs[x->out], c->zero);
   if (c->ws)
     d[x->out] = mapal_gpu_alloc(x->ws_slot, x->ws_max);
@@ -1016,14 +1018,82 @@ static uint64_t now_ns(void) {
   return (uint64_t)t.tv_sec * 1000000000ull + (uint64_t)t.tv_nsec;
 }
 
+/* tune-context: how a trial times a candidate (`MAPAL_GPU_TRIAL`, a runtime
+ * measurement flag). Unset: what the program runs, where it runs it — the
+ * device time between two events on the site's stream around the recipe (no
+ * host synchronization inside it: a two-launch recipe pays its second launch
+ * as the program does, not a wall-clock sync), a ZEROED site's zero pass made
+ * before the timed region (the program runs the candidate without it), and a
+ * COLD site's L2 evicted before each run (an untimed streaming write of twice
+ * the L2's bytes): its operand lives in DRAM in the program (`residence_plan`),
+ * and a back-to-back trial would read it from L2 — the RTX 5080's f8e4m3 FFN
+ * GEMVs trialled 21 µs warm against ~75 µs in the program, the 4090's block
+ * decode picked a candidate 1.27x slower in context. `isolated`: the wall time
+ * around `cuCtxSynchronize` (before); `nocold`: without the eviction. */
+static int trial_mode = -1; /* 0 isolated, 1 events + eviction, 2 events */
+static int trial_get(void) {
+  if (trial_mode < 0) {
+    const char *t = getenv("MAPAL_GPU_TRIAL");
+    if (!t || !*t)
+      trial_mode = 1;
+    else if (!strcmp(t, "isolated"))
+      trial_mode = 0;
+    else if (!strcmp(t, "nocold"))
+      trial_mode = 2;
+    else {
+      fprintf(stderr, "mapal: MAPAL_GPU_TRIAL=%s: expected isolated or nocold\n", t);
+      exit(2);
+    }
+  }
+  return trial_mode;
+}
+static CUdeviceptr evict_buf;
+static size_t evict_bytes;
+static CUevent trial_ev[2];
+
 /* A trial run: the recipe to completion (the device was idle before it). */
 static uint64_t site_timed(void *e, uint32_t i) {
-  ((struct site_env *)e)->trialed = 1;
+  struct site_env *x = e;
+  x->trialed = 1;
+  int mode = trial_get();
+  if (mode == 0) {
+    CK(cuCtxSynchronize());
+    uint64_t t0 = now_ns();
+    site_run(e, i);
+    CK(cuCtxSynchronize());
+    return now_ns() - t0;
+  }
+  const struct mapal_cand *c = &x->c[i];
+  unsigned k = slot_of(x->stream);
   CK(cuCtxSynchronize());
-  uint64_t t0 = now_ns();
+  if (c->zero && x->zeroed) {
+    mapal_gpu_zero(x->ptrs[x->out], c->zero);
+    x->nozero = 1;
+  }
+  if (x->cold && mode == 1) {
+    if (!evict_buf) {
+      CUdevice dev;
+      int l2 = 0;
+      CK(cuCtxGetDevice(&dev));
+      CK(cuDeviceGetAttribute(&l2, CU_DEVICE_ATTRIBUTE_L2_CACHE_SIZE, dev));
+      evict_bytes = 2 * (size_t)(l2 > 0 ? l2 : 1 << 20);
+      CK(cuMemAlloc(&evict_buf, evict_bytes));
+    }
+    CK(cuMemsetD8Async(evict_buf, 0, evict_bytes, streams[0]));
+  }
+  if (!trial_ev[0]) {
+    CK(cuEventCreate(&trial_ev[0], CU_EVENT_DEFAULT));
+    CK(cuEventCreate(&trial_ev[1], CU_EVENT_DEFAULT));
+  }
+  CK(cuCtxSynchronize());
+  CK(cuEventRecord(trial_ev[0], streams[k]));
   site_run(e, i);
-  CK(cuCtxSynchronize());
-  return now_ns() - t0;
+  CK(cuEventRecord(trial_ev[1], streams[k]));
+  CK(cuEventSynchronize(trial_ev[1]));
+  x->nozero = 0;
+  float ms = 0;
+  CK(cuEventElapsedTime(&ms, trial_ev[0], trial_ev[1]));
+  return (uint64_t)((double)ms * 1e6);
 }
 
 /* Before a trial: the workspace any candidate takes, so none is timed with
@@ -1045,7 +1115,7 @@ void mapal_gpu_site(uint64_t site, uint32_t flags, uint32_t stream, uint32_t n,
   }
   choice_ready_dev();
   struct site_env x = {cands, stream, nptr, out, ptrs, ws_slot, 0, 0, 0,
-                       (flags & MAPAL_SITE_COOP) != 0};
+                       (flags & MAPAL_SITE_COOP) != 0, (flags & MAPAL_SITE_COLD) != 0, 0};
   for (uint32_t i = 0; i < n; i++)
     if (cands[i].ws > x.ws_max)
       x.ws_max = cands[i].ws;

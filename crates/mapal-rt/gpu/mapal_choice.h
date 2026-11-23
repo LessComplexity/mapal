@@ -58,6 +58,10 @@ _Static_assert(sizeof(struct mapal_cand) == 56, "the host's %mapal_cand");
  * kernel (its bodies stride over their blocks, grid barriers between its
  * levels), launched cooperatively at most its `gx` blocks. */
 #define MAPAL_SITE_COOP 4u
+/* `flags` bit 3 (tune-context): an operand of the site lives in DRAM in the
+ * program (`residence_plan`: its working set while it waits exceeds the L2),
+ * so a trial evicts the L2 before each timed run (`MAPAL_GPU_TRIAL`). */
+#define MAPAL_SITE_COLD 8u
 
 /* How the decision runs a candidate: `run` enqueues its recipe, `timed` runs
  * it to completion and returns its nanoseconds, `warm` makes what any

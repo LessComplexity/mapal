@@ -427,6 +427,10 @@ pub(crate) struct Batch {
 /// addressed exactly as its own allocation would be.
 pub(crate) const ARENA_ALIGN: u64 = 256;
 
+/// `mapal_gpu_site` flags bit 3 (tune-context, `mapal_choice.h`
+/// `MAPAL_SITE_COLD`): an operand of the site lives in DRAM in the program.
+pub(crate) const SITE_COLD: u32 = 8;
+
 /// One function's device arena (S54 R6), a pure function of the plan.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Arena {
@@ -4016,6 +4020,19 @@ impl<'a> FnEmit<'a> {
                 // kernel-merging `zero-fold`: an earlier kernel zeroed it.
                 if plan.zeroed.contains_key(m) {
                     t.flags |= super::zero::SITE_ZEROED;
+                }
+                // tune-context: an operand that lives in DRAM in the program
+                // (`residence_plan` against the part's L2) — its trial runs
+                // cold (`MAPAL_SITE_COLD`, `mapal_gpu.c` `site_timed`).
+                if let Some(gpu) = self.profile.gpu() {
+                    let res = self.ir.residence_plan(self.f);
+                    let cold = slots.iter().any(|&s| {
+                        self.pair_source(source, s)
+                            .is_some_and(|o| res.at(o, gpu.l2_bytes) == mapal_ir::Residence::Dram)
+                    });
+                    if cold {
+                        t.flags |= SITE_COLD;
+                    }
                 }
                 let ptrs =
                     ptrs.unwrap_or_else(|| vec![ops[0].clone(), ops[1].clone(), dout.clone()]);
