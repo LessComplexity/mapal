@@ -12,12 +12,12 @@ its output in `<logs>/<binary>.log`. The environment passes through (RUST_TEST_T
 MAPAL_TEST_JOBS, MAPAL_PAR, ...): the binaries check exactly what `cargo test` runs them to check; only
 their order in time differs. Doc tests run as one more job (`--no-doc`: not).
 
-Thermal guard: above TEST_HOT C (default 85; `sensors` Tctl) every running binary's process group is
-stopped until TEST_COOL C (default 78); paused seconds are reported. Exit status 1 when any binary fails.
+Thermal guard: above TEST_HOT C (default 85; `sensors` Tctl) no binary starts until TEST_COOL C (default 78);
+the seconds workers waited are reported. A running binary is never stopped (its tests time their children by the
+wall clock). Exit status 1 when any binary fails.
 """
 import json
 import os
-import signal
 import subprocess
 import sys
 import threading
@@ -69,13 +69,6 @@ def tctl():
     return None
 
 
-def signal_group(p, sig):
-    try:
-        os.killpg(p.pid, sig)
-    except ProcessLookupError:
-        pass
-
-
 def main():
     nbins, logs, doc, sel = args()
     logs.mkdir(parents=True, exist_ok=True)
@@ -93,22 +86,20 @@ def main():
     running, results, lock = {}, [], threading.Lock()
     paused, done = [0.0], threading.Event()
 
+    cool_ok = threading.Event()
+    cool_ok.set()
+
     def guard():
+        # Hot: no binary starts until Tctl is back under TEST_COOL. A running binary is never stopped: its tests
+        # time their children by the wall clock (15 s native runs, 120 s emulated ones), so a stopped process
+        # group fails them when it resumes.
         while not done.wait(5):
             t = tctl()
-            if t is None or t <= hot:
-                continue
-            t0 = time.time()
-            with lock:
-                for p in running.values():
-                    signal_group(p, signal.SIGSTOP)
-            print(f"test_par: Tctl {t:.0f} C > {hot:.0f}: paused", flush=True)
-            while not done.is_set() and (tctl() or 0) > cool:
-                time.sleep(5)
-            with lock:
-                for p in running.values():
-                    signal_group(p, signal.SIGCONT)
-            paused[0] += time.time() - t0
+            if t is not None and t > hot and cool_ok.is_set():
+                cool_ok.clear()
+                print(f"test_par: Tctl {t:.0f} C > {hot:.0f}: no new binary until {cool:.0f}", flush=True)
+            elif not cool_ok.is_set() and (t is None or t < cool):
+                cool_ok.set()
 
     threading.Thread(target=guard, daemon=True).start()
     queue, start = list(jobs), time.time()
@@ -132,7 +123,10 @@ def main():
 
     def worker():
         while True:
+            t0 = time.time()
+            cool_ok.wait()
             with lock:
+                paused[0] += time.time() - t0
                 if not queue:
                     return
                 job = queue.pop(0)
@@ -152,7 +146,7 @@ def main():
     failed = [r for r in results if r[1] != 0]
     passed = sum(r[3] for r in results)
     print(f"test_par: {len(results)} binaries, {passed} tests passed, {len(failed)} binaries failed, "
-          f"wall {wall:.0f} s ({paused[0]:.0f} s paused), {nbins} at once; logs {logs}")
+          f"wall {wall:.0f} s (workers waited {paused[0]:.0f} s for Tctl), {nbins} at once; logs {logs}")
     for name, rc, _, _, line in failed:
         print(f"FAILED {name} rc={rc}: {line}  ({logs / (name + '.log')})")
     sys.exit(1 if failed else 0)
