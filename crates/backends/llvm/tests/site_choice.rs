@@ -465,7 +465,12 @@ fn candidate_zero_is_the_pre_sprint_emission() {
         // boundaries alone). gemv-stream's rungs (`vec-cells`,
         // `stream-fly`, `bulk-stage`) change the one-row sites' and the TF32
         // tile's kernels by design: with their OFF arms the emission is the
-        // one before them.
+        // one before them. calls-issue prices the separate form as the host
+        // issues it (the profile's `issue_ns`): on the rtx-5090 (2370 ns) and
+        // rtx-4090 (2850 ns), px_mlp2_64_f64's two chains of 64–147 ns members
+        // form, and decode_1024_256's 5-unit chain on the rtx-5090 (members
+        // 1.9, 1.9, 0.001, 0.6, 0.6 µs at the part's peaks) — regolded; the
+        // rtx-5080's rows are unchanged (`--gpu-off=calls-issue`: the one before).
         for f in [
             target.as_str(),
             "--host=x86-64-v3",

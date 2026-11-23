@@ -7861,7 +7861,9 @@ impl<'a> FnEmit<'a> {
         one: &TileSite,
         epi: Option<&EpiKernel>,
     ) -> Option<SiteTable> {
-        let split_post = epi.is_some_and(|e| e.post.is_some())
+        // (`--cands=1`, the OFF arm of tables, keeps the emission before them.)
+        let split_post = self.gpu_arms.site_cands > 1
+            && epi.is_some_and(|e| e.post.is_some())
             && cands
                 .first()
                 .is_some_and(|c| c.launch.combine != Combine::None);
