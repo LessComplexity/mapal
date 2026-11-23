@@ -173,6 +173,21 @@ impl Stream {
         r
     }
 
+    /// The blocks an SM holds at this geometry — its threads, shared memory
+    /// and the registers the model counts ([`Self::regs`]): the residency
+    /// [`FnEmit::stream_ns`] prices, and the kernel's `.minnctapersm`
+    /// (sweep-attention: without it ptxas, not knowing the launch's dynamic
+    /// shared memory, capped a 76 KB block at 128 registers for a second
+    /// block that never fits — 8 bytes spilled; declared, 168 and none).
+    pub fn per_sm(&self, gpu: &crate::profile::Gpu, members: &[UMember], smem: u64) -> u64 {
+        let regs = self.regs(members).max(32);
+        (gpu.max_threads_per_sm / self.threads)
+            .min(gpu.smem_per_sm / smem.max(1))
+            .min(gpu.regs_per_sm / (self.threads * regs))
+            .min(gpu.max_blocks_per_sm)
+            .max(1)
+    }
+
     /// The intent fields: `stream=b<b>xkb<kb>:rt<rt>g<g>t<threads>[:cp]`.
     pub fn label(&self) -> String {
         format!(
@@ -509,12 +524,7 @@ impl<'a> FnEmit<'a> {
         // R3: each block walks its slice's windows.
         let nb = st.nb() / st.s;
         let blocks = rows / st.b * st.s;
-        let regs = st.regs(members).max(32);
-        let per_sm = (gpu.max_threads_per_sm / st.threads)
-            .min(gpu.smem_per_sm / smem.max(1))
-            .min(gpu.regs_per_sm / (st.threads * regs))
-            .min(gpu.max_blocks_per_sm)
-            .max(1);
+        let per_sm = st.per_sm(gpu, members, smem);
         // Latency hiding: an SM whose resident warps leave a scheduler fewer
         // than two to switch between stalls on every load and barrier — such
         // a geometry is not priced (2 warps an SM ran the 2048-token prefill

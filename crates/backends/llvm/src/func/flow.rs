@@ -2817,7 +2817,7 @@ impl<'a> FnEmit<'a> {
             text.insert_str(text.len() - 1, &format!(" moved={}", moved.join(";")));
         }
         text += &format!(
-            "; mapal.plan kernel={name} kind=flow rows={} gx={blocks} block={threads} members={} rungs_on=flow{}\n",
+            "; mapal.plan kernel={name} kind=flow rows={} gx={blocks} block={threads} members={} rungs_on=flow{}{}\n",
             u.rows,
             u.members.len(),
             if u.stream.is_some() {
@@ -2826,6 +2826,12 @@ impl<'a> FnEmit<'a> {
                 ",row-block"
             } else if u.slices.is_some() {
                 ",row-slices"
+            } else {
+                ""
+            },
+            // sweep-attention: a unit whose launch moves an operand.
+            if u.gmove.iter().any(Option::is_some) {
+                ",unit-uniform"
             } else {
                 ""
             }
@@ -2866,8 +2872,19 @@ impl<'a> FnEmit<'a> {
                 text += &format!("@{name}.gsync = internal addrspace(1) global i32 0, align 4\n");
             }
         }
+        // sweep-attention: a streamed unit's kernel holds ptxas to the
+        // blocks an SM its geometry assumed (`min-blocks`, as a tile's).
+        let min_blocks = match (&u.stream, self.profile.gpu()) {
+            (Some(st), Some(gpu))
+                if gpu::host_rungs(self.profile, self.contract, self.gpu_arms).min_blocks =>
+            {
+                let n = st.per_sm(gpu, &u.members, st.layout(&u.members).total);
+                format!(" \"nvvm.minctasm\"=\"{n}\"")
+            }
+            _ => String::new(),
+        };
         text += &format!(
-            "define ptx_kernel void @{name}({}) \"nvvm.maxntid\"=\"{threads}\" {{\n\
+            "define ptx_kernel void @{name}({}) \"nvvm.maxntid\"=\"{threads}\"{min_blocks} {{\n\
              entry:\n{}\
              \x20 %tid = call i32 @llvm.nvvm.read.ptx.sreg.tid.x()\n\
              \x20 %bid = call i32 @llvm.nvvm.read.ptx.sreg.ctaid.x()\n\
