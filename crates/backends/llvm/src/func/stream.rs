@@ -19,6 +19,17 @@
 //! `x·oc + q` (contiguous, 16-byte loads) or `x + g·q`. A window's row
 //! extreme is a butterfly over the group's lanes; every other fold keeps a
 //! lane's partial, combined once after the last window.
+//!
+//! sweep-attention-2 `stream-mma`: where every product of the pass admits a
+//! 16-bit member the part folds on a warp matrix product (`m16n8k16`), the
+//! threads take that instruction's accumulator layout instead — `rt = 2`,
+//! `g = 4`, `b ÷ 16` warps: lane `l` of warp `w` holds rows `16w + l%32÷4`
+//! and `+ 8`, the window columns `8·(z÷2) + 2·(l%4) + z%2` and the consumer
+//! columns likewise. The producer's row operand is loaded once into its `a`
+//! fragments (registers, no panel), each window's `b` fragments from the
+//! window (two values rounded once into a register); the producer's cells,
+//! in that layout, are the consumer's `a` fragments as they stand — no
+//! window of the row operand in shared memory.
 
 use super::*;
 use mapal_ir::{DepLaw, StreamGroup, StreamRole};
@@ -46,6 +57,61 @@ pub(crate) struct Stream {
     /// flash-attention F1: per member, its rows as a digit permutation of
     /// the group's (`unit_plan`'s [`mapal_ir::RowMap`]).
     pub rows_of: Vec<Option<mapal_ir::RowMap>>,
+    /// sweep-attention-2 `stream-mma`: the products on this warp matrix
+    /// product's format (`m16n8k16`, the accumulator's fragment layout);
+    /// `None`: FFMA.
+    pub mma: Option<crate::profile::MmaFmt>,
+}
+
+/// `m16n8k16`'s `m` / `n` / `k`: the fragment geometry `stream-mma` lays the
+/// threads out by ([`crate::profile::MMA_SYNC_16`]).
+const MMA_M: u64 = 16;
+const MMA_N: u64 = 8;
+const MMA_K: u64 = 16;
+
+/// **sweep-attention-2 `stream-mma`: the warp matrix product a stream pass's
+/// products fold on** — the 16-bit member every producer and consumer
+/// product admits ([`mapal_ir::TileSite::half`], one format), where the part
+/// lists a warp product of it whose geometry is `m16n8k16` and whose
+/// accumulator meets the member's `u_a = 2⁻²³` ([`profile::MatrixOp::acc_meets`]),
+/// at a rate the part states. The operands are f32 rounded once to the
+/// member as each fragment is formed: `bf16` (an `f16` member rounds no f32
+/// operand without a range fact, `half_operands`' rule). A producer's `d`
+/// whole `k`-steps, a consumer's `c` whole `n` tiles. `None`: FFMA.
+pub(crate) fn mma_fmt(
+    members: &[UMember],
+    roles: &[StreamRole],
+    gpu: &crate::profile::Gpu,
+) -> Option<crate::profile::MmaFmt> {
+    use crate::profile::{Home, MMA_SYNC_16, MmaFmt};
+    let f32t = mapal_ir::Ty::f32();
+    let mut fmt: Option<MmaFmt> = None;
+    for (k, mb) in members.iter().enumerate() {
+        let UKind::Tile { site } = &mb.kind else {
+            continue;
+        };
+        let whole = match roles[k] {
+            StreamRole::Produce => site.k.is_multiple_of(MMA_K),
+            StreamRole::Consume { .. } => site.c.is_multiple_of(MMA_N),
+            _ => continue,
+        };
+        let f = MmaFmt::of_narrow(site.half?);
+        let op = gpu.caps.matrix_op(f, Home::Regs)?;
+        if !whole
+            || f != MmaFmt::Bf16
+            || site.elem != f32t
+            || site.a.narrow.is_some()
+            || site.b.narrow.is_some()
+            || op.shape != MMA_SYNC_16
+            || !op.acc_meets(-23)
+            || gpu.matrix_flops_per_clk(&op) == 0
+            || fmt.is_some_and(|x| x != f)
+        {
+            return None;
+        }
+        fmt = Some(f);
+    }
+    fmt
 }
 
 /// A streamed unit's shared memory: per member `(offset, row stride)` in
@@ -134,17 +200,31 @@ impl Stream {
             let UKind::Tile { site } = &mb.kind else {
                 continue;
             };
-            match self.group.roles[k] {
-                StreamRole::Produce => {
+            match (&self.group.roles[k], self.mma.is_some()) {
+                (StreamRole::Produce, false) => {
                     let dp = site.k.next_multiple_of(4) + 4;
                     lay.q[k] = Some((take(self.b * dp), dp));
                     lay.k[k] = Some((take(self.kb * dp), dp));
                 }
-                StreamRole::Consume { .. } => {
+                (StreamRole::Consume { .. }, false) => {
                     let cp = site.c.next_multiple_of(4);
                     lay.v[k] = Some((take(self.kb * cp), cp));
                     let ap = self.kb + 4;
                     lay.a[k] = Some((take(self.b * ap), ap));
+                }
+                // `stream-mma`: the row operand's fragments live in registers
+                // (no panel, no row window). A window row `≡ 8 (mod 16)`
+                // words apart: a half-warp's 8-byte `b` fragment loads (rows
+                // `l%32÷4`, words `2·(l%4)`) on distinct banks; the
+                // consumer's rows `≡ 4 (mod 8)` apart: its 4-byte loads (rows
+                // `2·(l%4)`, column `l%32÷4`) likewise.
+                (StreamRole::Produce, true) => {
+                    let dp = site.k + 8;
+                    lay.k[k] = Some((take(self.kb * dp), dp));
+                }
+                (StreamRole::Consume { .. }, true) => {
+                    let cp = site.c + 4;
+                    lay.v[k] = Some((take(self.kb * cp), cp));
                 }
                 _ => {}
             }
@@ -163,6 +243,11 @@ impl Stream {
         let mut r = 4 * (self.rt + ct) + crate::profile::FMA_ADDR_REGS;
         for (k, mb) in members.iter().enumerate() {
             r += match (&self.group.roles[k], &mb.kind) {
+                // `stream-mma`: and the row operand's `a` fragments, four
+                // registers a `k`-step.
+                (StreamRole::Produce, UKind::Tile { site }) if self.mma.is_some() => {
+                    self.rt * ct + 4 * site.k / MMA_K
+                }
                 (StreamRole::Produce, _) => self.rt * ct,
                 (StreamRole::Cell { .. }, _) => self.rt * ct / 2,
                 (StreamRole::Consume { .. }, UKind::Tile { site }) => self.rt * self.oc(site.c).0,
@@ -188,15 +273,17 @@ impl Stream {
             .max(1)
     }
 
-    /// The intent fields: `stream=b<b>xkb<kb>:rt<rt>g<g>t<threads>[:cp]`.
+    /// The intent fields:
+    /// `stream=b<b>xkb<kb>:rt<rt>g<g>t<threads>[:mma][:cp][:s<s>]`.
     pub fn label(&self) -> String {
         format!(
-            "b{}xkb{}:rt{}g{}t{}{}{}",
+            "b{}xkb{}:rt{}g{}t{}{}{}{}",
             self.b,
             self.kb,
             self.rt,
             self.g,
             self.threads,
+            if self.mma.is_some() { ":mma" } else { "" },
             if self.cp { ":cp" } else { "" },
             match self.s {
                 1 => String::new(),
@@ -396,7 +483,16 @@ impl<'a> FnEmit<'a> {
         let cp = gpu.has_mma_sync() && !self.gpu_arms.off.cp_async;
         let forced = self.gpu_arms.stream_force;
         let axis = sg.axis;
+        // sweep-attention-2 `stream-mma`: the warp matrix product every
+        // product of the pass admits (`None`: FFMA only).
+        let mma = match rungs.stream_mma {
+            true => mma_fmt(members, &sg.roles, gpu),
+            false => None,
+        };
         let mut best: Option<(Stream, f64)> = None;
+        // A forced geometry takes the matrix product where it admits one
+        // (the measurement arm of the instruction; `stream-mma` off: FFMA).
+        let mut forced_mma: Option<Stream> = None;
         let mut why = "budget";
         for threads in [256u64, 128, 64, 32] {
             for b in [128u64, 64, 32, 16, 8, 4, 2, 1] {
@@ -449,37 +545,56 @@ impl<'a> FnEmit<'a> {
                             {
                                 continue;
                             }
-                            let st = Stream {
-                                group: sg.clone(),
-                                b,
-                                kb,
-                                rt,
-                                g,
-                                threads,
-                                cp,
-                                ns: (0, 0),
-                                s: sp,
-                                rows_of: grp.members.iter().map(|m| m.row_of.clone()).collect(),
+                            // `stream-mma`: the instruction's layout — two
+                            // rows and a quad's columns a thread, a warp's
+                            // 16 rows, whole 16-key `k`-steps a window.
+                            let frag = rt == 2
+                                && g == 4
+                                && b.is_multiple_of(MMA_M)
+                                && kb.is_multiple_of(MMA_K);
+                            let fmts: &[Option<crate::profile::MmaFmt>] = match (mma, frag) {
+                                (Some(f), true) => &[Some(f), None][..],
+                                _ => &[None][..],
                             };
-                            let lay = st.layout(members);
-                            if lay.total > gpu.smem_per_block
-                                || st.regs(members) > gpu.regs_per_thread.min(232)
-                            {
-                                continue;
-                            }
-                            let ns = match forced {
-                                Some(_) => 0.0,
-                                None => match self.stream_ns(&st, members, rows, gmem, lay.total) {
-                                    Some(x) => x,
+                            for &fmt in fmts {
+                                let st = Stream {
+                                    group: sg.clone(),
+                                    b,
+                                    kb,
+                                    rt,
+                                    g,
+                                    threads,
+                                    cp,
+                                    ns: (0, 0),
+                                    s: sp,
+                                    rows_of: grp.members.iter().map(|m| m.row_of.clone()).collect(),
+                                    mma: fmt,
+                                };
+                                let lay = st.layout(members);
+                                if lay.total > gpu.smem_per_block
+                                    || st.regs(members) > gpu.regs_per_thread.min(232)
+                                {
+                                    continue;
+                                }
+                                let ns = match forced {
+                                    Some(_) => 0.0,
                                     None => {
-                                        why = "unpriced";
-                                        continue;
+                                        match self.stream_ns(&st, members, rows, gmem, lay.total) {
+                                            Some(x) => x,
+                                            None => {
+                                                why = "unpriced";
+                                                continue;
+                                            }
+                                        }
                                     }
-                                },
-                            };
-                            why = "cost";
-                            if best.as_ref().is_none_or(|x| ns < x.1) {
-                                best = Some((st, ns));
+                                };
+                                why = "cost";
+                                if forced.is_some() && fmt.is_some() && forced_mma.is_none() {
+                                    forced_mma = Some(st.clone());
+                                }
+                                if best.as_ref().is_none_or(|x| ns < x.1) {
+                                    best = Some((st, ns));
+                                }
                             }
                         }
                     }
@@ -488,7 +603,7 @@ impl<'a> FnEmit<'a> {
         }
         let (mut st, ns) = best.ok_or(why)?;
         if forced.is_some() {
-            return Ok(Some(st));
+            return Ok(Some(forced_mma.unwrap_or(st)));
         }
         let split = self.split_ns(members, rows, gmem).ok_or("unpriced")?;
         st.ns = (ns.round() as u64, split.round() as u64);
@@ -557,7 +672,19 @@ impl<'a> FnEmit<'a> {
         let win_bytes = (win_bytes as f64 * seen) as u64;
         // The waves: a partial last wave runs at its busiest SM's pace.
         let fill = (waves * slots) as f64 / blocks as f64;
-        let fma_ns = flops as f64 / d.flops_per_ns as f64 * fill;
+        // `stream-mma`: the products at the matrix product's peak, at the
+        // shipped FFMA tile's fraction of its own peak.
+        let rate = match st
+            .mma
+            .and_then(|f| gpu.caps.matrix_op(f, crate::profile::Home::Regs))
+        {
+            Some(op) => {
+                let frac = d.flops_per_ns as f64 / gpu.ffma_flops_per_ns().max(1) as f64;
+                (gpu.matrix_flops_per_ns(&op) as f64 * frac).max(d.flops_per_ns as f64)
+            }
+            None => d.flops_per_ns as f64,
+        };
+        let fma_ns = flops as f64 / rate * fill;
         // The products' issue on one SM: each window's warp FFMA at the
         // part's FP32 lanes (at the shipped tile's fraction of peak) against
         // its shared-memory wavefronts (one 128-byte wavefront a clock, the
@@ -570,8 +697,34 @@ impl<'a> FnEmit<'a> {
         // measured LSU issue rate (`lsu_ipc_pm`): the 2048-token prefill's
         // geometries rank by it (`flash-attention.md`).
         let (mut ffma, mut lds, mut lsu) = (0u64, 0u64, 0u64);
+        // sweep-attention-2 `stream-mma`: the products' flops a window on the
+        // matrix product, and the register packs (`cvt`) of their operands.
+        let mma_op = st
+            .mma
+            .and_then(|f| gpu.caps.matrix_op(f, crate::profile::Home::Regs));
+        let (mut mma_flops, mut packs) = (0u64, 0u64);
         for (k, mb) in members.iter().enumerate() {
             match (&st.group.roles[k], &mb.kind) {
+                // A warp's `b` fragments a window: two 8-byte loads an `n`
+                // tile and `k`-step (two wavefronts each), packed in pairs;
+                // its `a` fragments are the registers loaded once.
+                (StreamRole::Produce, UKind::Tile { site }) if mma_op.is_some() => {
+                    mma_flops += 2 * st.b * st.kb * site.k;
+                    let loads = warps * (site.k / MMA_K) * (st.kb / MMA_N) * 2;
+                    lds += 2 * loads;
+                    lsu += loads;
+                    packs += loads * gpu.warp;
+                }
+                // Its `b` fragments: four 4-byte loads an `n` tile and
+                // `k`-step (one wavefront each); its `a` fragments are the
+                // producer's cells, packed.
+                (StreamRole::Consume { .. }, UKind::Tile { site }) if mma_op.is_some() => {
+                    mma_flops += 2 * st.b * st.kb * site.c;
+                    let loads = warps * (st.kb / MMA_K) * (site.c / MMA_N) * 4;
+                    lds += loads;
+                    lsu += loads;
+                    packs += (loads / 2 + warps * (st.kb / MMA_K) * 4) * gpu.warp;
+                }
                 (StreamRole::Produce, UKind::Tile { site }) => {
                     ffma += st.b * st.kb * site.k / gpu.warp.max(1);
                     lds += warps * site.k.div_ceil(4) * (st.rt + st.ct() * wf(st.g));
@@ -610,6 +763,7 @@ impl<'a> FnEmit<'a> {
         }
         let steps = u64::from(st.g.max(2).ilog2());
         let thr = ffma * gpu.warp
+            + packs
             + st.b * st.kb * cells_w * STREAM_CELL_INSTR
             + st.threads
                 * (st.rt * (4 * steps + STREAM_ROW_INSTR * rescales.min(1)) + STREAM_ROW_INSTR);
@@ -617,7 +771,18 @@ impl<'a> FnEmit<'a> {
         // A window's four barriers stall its block; the other resident
         // blocks' issue hides them in part.
         let bar_cycles = 4.0 * gpu.bar_ns() as f64 * gpu.clock_khz as f64 / 1e6 / per_sm as f64;
-        let cycles = issue.max(lds as f64).max(lsu as f64 / lsu_ipc) / eff + bar_cycles;
+        // `stream-mma`: the products' issue on the SM's matrix pipe at the
+        // part's rate for the instruction (`calib.cu matrix`).
+        let mma_cycles = match &mma_op {
+            Some(op) => mma_flops as f64 / gpu.matrix_flops_per_clk(op).max(1) as f64,
+            None => 0.0,
+        };
+        let cycles = issue
+            .max(lds as f64)
+            .max(lsu as f64 / lsu_ipc)
+            .max(mma_cycles)
+            / eff
+            + bar_cycles;
         // Every resident block of an SM shares its pipes: a wave of `per_sm`.
         let windows = (blocks as f64 / gpu.sms as f64).ceil() * nb as f64 * seen;
         let pipe_ns = cycles * windows * 1e6 / gpu.clock_khz.max(1) as f64;
@@ -798,9 +963,27 @@ impl UnitGen<'_> {
         let cp = st.cp;
         // The thread's lane in its row group, and its rows.
         let x = self.op("urem", "%l", g);
-        let rg = self.op("udiv", "%l", g);
-        let rl0 = self.op("mul", &rg, rt);
-        let rloc: Vec<String> = (0..rt).map(|y| self.op("add", &rl0, y)).collect();
+        // `stream-mma`: the accumulator's layout — warp `w`'s rows `16w +
+        // l%32÷4` and `+ 8`, the quad's lane `x` (`gq` the fragment's `n`).
+        let (rloc, gq): (Vec<String>, String) = match st.mma {
+            Some(_) => {
+                let w = self.op("udiv", "%l", 32);
+                let lw = self.op("urem", "%l", 32);
+                let gq = self.op("udiv", &lw, 4);
+                let r0 = self.op("mul", &w, MMA_M);
+                let r0 = self.op("add", &r0, &gq);
+                let r1 = self.op("add", &r0, 8);
+                (vec![r0, r1], gq)
+            }
+            None => {
+                let rg = self.op("udiv", "%l", g);
+                let rl0 = self.op("mul", &rg, rt);
+                (
+                    (0..rt).map(|y| self.op("add", &rl0, y)).collect(),
+                    String::new(),
+                )
+            }
+        };
         let grow: Vec<String> = rloc.iter().map(|r| self.op("add", "%i", r)).collect();
         // Which folds a cell reads as a rescale's shift: their window
         // extreme is combined across the row group every window.
@@ -873,10 +1056,15 @@ impl UnitGen<'_> {
         }
         self.line(format!("%j00 = mul i64 %tlo, {kb}"));
         // The prologue: the producers' row panels and first windows, then
-        // the consumers' first windows.
+        // the consumers' first windows. `stream-mma`: each producer's row
+        // operand into its `a` fragments, once.
+        let mut afrag: Vec<Vec<[String; 4]>> = vec![Vec::new(); n];
         for k in 0..n {
             if roles[k] == StreamRole::Produce {
-                self.stage_panel(st, &lay, k);
+                match st.mma {
+                    Some(_) => afrag[k] = self.mma_rows(st, k, &grow, &x),
+                    None => self.stage_panel(st, &lay, k),
+                }
                 self.stage_window(st, &lay, k, "%j00", true);
             }
         }
@@ -920,8 +1108,17 @@ impl UnitGen<'_> {
         }
         self.wait(cp, 1);
         self.barrier();
-        // Each cell's column and validity.
-        let jl: Vec<String> = (0..ct).map(|z| self.op("add", &x, g * z)).collect();
+        // Each cell's column and validity (`stream-mma`: the accumulator's,
+        // `8·(z÷2) + 2x + z%2`).
+        let jl: Vec<String> = match st.mma {
+            Some(_) => {
+                let x2 = self.op("mul", &x, 2);
+                (0..ct)
+                    .map(|z| self.op("add", &x2, MMA_N * (z / 2) + z % 2))
+                    .collect()
+            }
+            None => (0..ct).map(|z| self.op("add", &x, g * z)).collect(),
+        };
         let jg: Vec<String> = jl.iter().map(|j| self.op("add", "%j0", j)).collect();
         let valid: Vec<Option<String>> = jg
             .iter()
@@ -953,7 +1150,10 @@ impl UnitGen<'_> {
             if roles[k] != StreamRole::Produce {
                 continue;
             }
-            vals[k] = self.produce(st, &lay, k, &rloc, &jl);
+            vals[k] = match st.mma {
+                Some(_) => self.produce_mma(st, &lay, k, &afrag[k], &x, &gq),
+                None => self.produce(st, &lay, k, &rloc, &jl),
+            };
             // `tile-post`: each cell through the site's body after its fold
             // (a scale, a mask), at its own cell index.
             let UKind::Tile { site } = &u.members[k].kind else {
@@ -1106,10 +1306,12 @@ impl UnitGen<'_> {
                     let USrc::Member { k: p, .. } = mb.srcs[0] else {
                         unreachable!("a consumer reads its row operand from a member")
                     };
-                    let (aoff, ap) = lay.a[k].expect("a consumer's row window");
-                    // Its row operand's window into shared memory.
+                    // Its row operand's window into shared memory
+                    // (`stream-mma`: the cells as they stand, its `a`
+                    // fragments).
+                    let mut pv: Vec<String> = Vec::new();
                     for y in 0..rt as usize {
-                        let ra = self.op("mul", &rloc[y], ap);
+                        let ra = lay.a[k].map(|(aoff, ap)| (aoff, self.op("mul", &rloc[y], ap)));
                         for z in 0..ct as usize {
                             let mut v = vals[p][y * ct as usize + z].clone();
                             if let Some(c) = &valid[z] {
@@ -1117,9 +1319,14 @@ impl UnitGen<'_> {
                                 self.line(format!("{s} = select i1 {c}, float {v}, float 0.0"));
                                 v = s;
                             }
-                            let at = self.op("add", &ra, &jl[z]);
-                            let q = self.smem(aoff, "float", &at);
-                            self.line(format!("store float {v}, ptr addrspace(3) {q}"));
+                            match &ra {
+                                Some((aoff, ra)) => {
+                                    let at = self.op("add", ra, &jl[z]);
+                                    let q = self.smem(*aoff, "float", &at);
+                                    self.line(format!("store float {v}, ptr addrspace(3) {q}"));
+                                }
+                                None => pv.push(v),
+                            }
                         }
                     }
                     if first_consume {
@@ -1163,7 +1370,10 @@ impl UnitGen<'_> {
                             }
                         }
                     }
-                    self.consume(st, &lay, k, &site, &rloc, &x);
+                    match st.mma {
+                        Some(_) => self.consume_mma(st, &lay, k, &site, &pv, &x, &gq),
+                        None => self.consume(st, &lay, k, &site, &rloc, &x),
+                    }
                     if Some(k) == last_consume {
                         self.barrier();
                         if cp && nb > 1 {
@@ -1237,12 +1447,16 @@ impl UnitGen<'_> {
                             let v = self.laws_after(&laws, &fin, y, &o, k);
                             let res = self.tmp();
                             self.step(&op, "float", &seed, &v, &res);
-                            let col = match contig {
-                                true => {
+                            let col = match (st.mma, contig) {
+                                (Some(_), _) => {
+                                    let x2 = self.op("mul", &x, 2);
+                                    self.op("add", &x2, MMA_N * (q / 2) + q % 2)
+                                }
+                                (None, true) => {
                                     let c0 = self.op("mul", &x, oc);
                                     self.op("add", &c0, q)
                                 }
-                                false => self.op("add", &x, g * q),
+                                (None, false) => self.op("add", &x, g * q),
                             };
                             // Its own row's output cell; the epilogue there.
                             let row = self.member_row(st, k, &grow[y]);
@@ -1265,7 +1479,7 @@ impl UnitGen<'_> {
                                 }
                                 None => res,
                             };
-                            if contig || site.c.is_multiple_of(g) {
+                            if contig || site.c.is_multiple_of(g) || st.mma.is_some() {
                                 self.store(k, &res, &at);
                             } else {
                                 let c = self.tmp();
@@ -1345,7 +1559,13 @@ impl UnitGen<'_> {
                         let rz = self.op("add", &r, "%bz");
                         let base = self.op("mul", &rz, site.c);
                         for q in 0..oc {
-                            let col = self.split_col(x, q, oc, contig, g, site.c);
+                            let col = match st.mma {
+                                Some(_) => {
+                                    let x2 = self.op("mul", x, 2);
+                                    self.op("add", &x2, MMA_N * (q / 2) + q % 2)
+                                }
+                                None => self.split_col(x, q, oc, contig, g, site.c),
+                            };
                             let at = self.op("add", &base, &col);
                             let v = self.tmp();
                             self.line(format!("{v} = load float, ptr %O{k}_{}", y as u64 * oc + q));
@@ -1467,7 +1687,13 @@ impl UnitGen<'_> {
                     for y in 0..rt {
                         let r = self.op("mul", &grow[y], sp);
                         for q in 0..oc {
-                            let col = self.split_col(x, q, oc, contig, g, site.c);
+                            let col = match st.mma {
+                                Some(_) => {
+                                    let x2 = self.op("mul", x, 2);
+                                    self.op("add", &x2, MMA_N * (q / 2) + q % 2)
+                                }
+                                None => self.split_col(x, q, oc, contig, g, site.c),
+                            };
                             let mut acc = "-0.0".to_string();
                             for z in 0..sp as usize {
                                 let rz = self.op("add", &r, z as u64);
@@ -2134,6 +2360,195 @@ impl UnitGen<'_> {
             "{r} = call {ret} @{callee}({arg} {agg}, float {acc})"
         ));
         r
+    }
+
+    /// `stream-mma`: two f32 values rounded once into one register of the
+    /// format, the lower `k` in the low half (the tile kernel's `pack`).
+    fn mma_pack(&mut self, fmt: crate::profile::MmaFmt, lo: &str, hi: &str) -> String {
+        let r = self.tmp();
+        self.line(format!(
+            "{r} = call i32 asm \"cvt.rn.{f}x2.f32 $0, $1, $2;\", \"=r,f,f\"(float {hi}, float {lo})",
+            f = fmt.ptx()
+        ));
+        r
+    }
+
+    /// `stream-mma`: one `m16n8k16` product into the accumulators `c` (the
+    /// PTX ISA's fragment layouts: `a` = (g, 2t), (g+8, 2t), (g, 2t+8),
+    /// (g+8, 2t+8); `b` = (k 2t, n g), (k 2t+8, n g); `c` = (g, 2t..2t+1),
+    /// (g+8, 2t..2t+1)).
+    fn mma_step(
+        &mut self,
+        fmt: crate::profile::MmaFmt,
+        a: &[String; 4],
+        b: &[String; 2],
+        c: &[String; 4],
+    ) -> [String; 4] {
+        let r = self.tmp();
+        let f = fmt.ptx();
+        self.line(format!(
+            "{r} = call {{ float, float, float, float }} asm \"mma.sync.aligned.m16n8k16.row.col.f32.{f}.{f}.f32 {{$0,$1,$2,$3}}, {{$4,$5,$6,$7}}, {{$8,$9}}, {{$10,$11,$12,$13}};\", \"=f,=f,=f,=f,r,r,r,r,r,r,0,1,2,3\"(i32 {}, i32 {}, i32 {}, i32 {}, i32 {}, i32 {}, float {}, float {}, float {}, float {})",
+            a[0], a[1], a[2], a[3], b[0], b[1], c[0], c[1], c[2], c[3]
+        ));
+        std::array::from_fn(|q| {
+            let v = self.tmp();
+            self.line(format!(
+                "{v} = extractvalue {{ float, float, float, float }} {r}, {q}"
+            ));
+            v
+        })
+    }
+
+    /// `stream-mma`: producer `k`'s row operand as `a` fragments, each
+    /// `k`-step's four registers — the thread's rows `grow` (`g`, `g+8`),
+    /// elements `16s + 2x (+8)` and the next, from memory once a block.
+    fn mma_rows(&mut self, st: &Stream, k: usize, grow: &[String], x: &str) -> Vec<[String; 4]> {
+        let mb = &self.u.members[k];
+        let UKind::Tile { site } = &mb.kind else {
+            unreachable!("a producer is a tile")
+        };
+        let USrc::Gmem(gi) = mb.srcs[0] else {
+            unreachable!("a producer's row operand is memory")
+        };
+        let site = site.clone();
+        let fmt = st.mma.expect("stream-mma");
+        let a = Addr::of(&site, Operand::A);
+        let x2 = self.op("mul", x, 2);
+        let mut out = Vec::new();
+        for s in 0..site.k / MMA_K {
+            let mut q: Vec<String> = Vec::new();
+            for (yy, kc) in [(0usize, 0u64), (1, 0), (0, 8), (1, 8)] {
+                let mut v: Vec<String> = Vec::new();
+                for e in 0..2 {
+                    let kk = self.op("add", &x2, s * MMA_K + kc + e);
+                    let i = self.addr_at(&a, &grow[yy], "0", &kk);
+                    let ptr = self.tmp();
+                    self.line(format!(
+                        "{ptr} = getelementptr inbounds float, ptr addrspace(1) %x{gi}, i64 {i}"
+                    ));
+                    let l = self.tmp();
+                    self.line(format!("{l} = load float, ptr addrspace(1) {ptr}, align 4"));
+                    v.push(l);
+                }
+                q.push(self.mma_pack(fmt, &v[0], &v[1]));
+            }
+            out.push([q[0].clone(), q[1].clone(), q[2].clone(), q[3].clone()]);
+        }
+        out
+    }
+
+    /// `stream-mma`: producer `k`'s window — its `kb ÷ 8` accumulator tiles
+    /// from the site's seed, folded over `d` by `k`-steps against the
+    /// window's `b` fragments (key `8t + gq`'s elements `16s + 2x (+8)`, two
+    /// values a load) — returned as the cells `(y, z)`: tile `t`'s `c0 c1`
+    /// row 0 columns `2t`, `2t+1`, `c2 c3` row 1.
+    fn produce_mma(
+        &mut self,
+        st: &Stream,
+        lay: &Layout,
+        k: usize,
+        af: &[[String; 4]],
+        x: &str,
+        gq: &str,
+    ) -> Vals {
+        let UKind::Tile { site } = &self.u.members[k].kind else {
+            unreachable!("a producer is a tile")
+        };
+        let site = site.clone();
+        let fmt = st.mma.expect("stream-mma");
+        let (koff, dp) = lay.k[k].expect("window");
+        let seed = const_literal(&site.seed);
+        let nt = (st.kb / MMA_N) as usize;
+        let x2 = self.op("mul", x, 2);
+        let gr = self.op("mul", gq, dp);
+        let base = self.op("add", &gr, &x2);
+        let mut c: Vec<[String; 4]> = vec![std::array::from_fn(|_| seed.clone()); nt];
+        for (s, a) in af.iter().enumerate() {
+            for (t, ct) in c.iter_mut().enumerate() {
+                let mut b: Vec<String> = Vec::new();
+                for kc in [0u64, 8] {
+                    let i = self.op("add", &base, t as u64 * MMA_N * dp + s as u64 * MMA_K + kc);
+                    let p = self.smem(koff, "float", &i);
+                    let v = self.tmp();
+                    self.line(format!(
+                        "{v} = load <2 x float>, ptr addrspace(3) {p}, align 8"
+                    ));
+                    let (e0, e1) = (self.tmp(), self.tmp());
+                    self.line(format!("{e0} = extractelement <2 x float> {v}, i64 0"));
+                    self.line(format!("{e1} = extractelement <2 x float> {v}, i64 1"));
+                    b.push(self.mma_pack(fmt, &e0, &e1));
+                }
+                *ct = self.mma_step(fmt, a, &[b[0].clone(), b[1].clone()], ct);
+            }
+        }
+        let ctn = st.ct() as usize;
+        let mut out = vec![String::new(); 2 * ctn];
+        for (t, ct) in c.iter().enumerate() {
+            out[2 * t] = ct[0].clone();
+            out[2 * t + 1] = ct[1].clone();
+            out[ctn + 2 * t] = ct[2].clone();
+            out[ctn + 2 * t + 1] = ct[3].clone();
+        }
+        out
+    }
+
+    /// `stream-mma`: consumer `k`'s window — the producer's cells `pv` (the
+    /// accumulator layout is the `a` fragment's: `k`-step `s` packs columns
+    /// `4s`, `4s+1` / `4s+2`, `4s+3` of rows 0 and 1) against the window's
+    /// `b` fragments (keys `16s + 2x (+1, +8, +9)` of column `8t + gq`),
+    /// into its accumulators `O(y, 2t + e)`.
+    #[allow(clippy::too_many_arguments)]
+    fn consume_mma(
+        &mut self,
+        st: &Stream,
+        lay: &Layout,
+        k: usize,
+        site: &mapal_ir::TileSite,
+        pv: &[String],
+        x: &str,
+        gq: &str,
+    ) {
+        let fmt = st.mma.expect("stream-mma");
+        let (voff, cpd) = lay.v[k].expect("window");
+        let (oc, _) = st.oc(site.c);
+        let ct = st.ct() as usize;
+        let x2 = self.op("mul", x, 2);
+        let xr = self.op("mul", &x2, cpd);
+        let base = self.op("add", &xr, gq);
+        for s in 0..(st.kb / MMA_K) as usize {
+            let z = 4 * s;
+            let a = [
+                self.mma_pack(fmt, &pv[z], &pv[z + 1]),
+                self.mma_pack(fmt, &pv[ct + z], &pv[ct + z + 1]),
+                self.mma_pack(fmt, &pv[z + 2], &pv[z + 3]),
+                self.mma_pack(fmt, &pv[ct + z + 2], &pv[ct + z + 3]),
+            ];
+            for t in 0..site.c / MMA_N {
+                let mut b: Vec<String> = Vec::new();
+                for kc in [0u64, 8] {
+                    let mut v: Vec<String> = Vec::new();
+                    for e in 0..2 {
+                        let off = (s as u64 * MMA_K + kc + e) * cpd + t * MMA_N;
+                        let i = self.op("add", &base, off);
+                        let p = self.smem(voff, "float", &i);
+                        let l = self.tmp();
+                        self.line(format!("{l} = load float, ptr addrspace(3) {p}, align 4"));
+                        v.push(l);
+                    }
+                    b.push(self.mma_pack(fmt, &v[0], &v[1]));
+                }
+                let slots = [2 * t, 2 * t + 1, oc + 2 * t, oc + 2 * t + 1];
+                let cur: [String; 4] = std::array::from_fn(|q| {
+                    let v = self.tmp();
+                    self.line(format!("{v} = load float, ptr %O{k}_{}", slots[q]));
+                    v
+                });
+                let r = self.mma_step(fmt, &a, &[b[0].clone(), b[1].clone()], &cur);
+                for (q, v) in r.iter().enumerate() {
+                    self.line(format!("store float {v}, ptr %O{k}_{}", slots[q]));
+                }
+            }
+        }
     }
 
     /// Producer `k`'s window: each of the thread's `rt × ct` cells — rows

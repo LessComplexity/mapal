@@ -490,6 +490,8 @@ fn candidate_zero_is_the_pre_sprint_emission() {
             "--gpu-off=vec-cells,stream-fly,bulk-stage",
             "--gpu-off=mma-combine,split-tile",
             "--gpu-off=wgmma-ws",
+            // sweep-attention-2: the k-major `b` copies (decode scores).
+            "--gpu-off=kmajor-b",
         ]
         .iter()
         .chain(face_flags)

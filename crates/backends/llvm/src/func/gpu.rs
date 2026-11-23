@@ -1395,6 +1395,11 @@ fn plan_line(
                 a.max(st)
             }
         );
+        // sweep-attention-2 `kmajor-b` (intent.py): `b`'s copies along its
+        // k-major rows.
+        if l.rungs.kmajor_b && kvec_b(site, &g) {
+            f += " kvb=1";
+        }
     }
     if let Some(m) = l.mma {
         f += &format!(
@@ -1527,7 +1532,7 @@ fn plan_line(
 }
 
 /// The rungs a kernel's text reads ([`plan_line`]); the rest are host rungs.
-const KERNEL_RUNGS: [&str; 45] = [
+const KERNEL_RUNGS: [&str; 46] = [
     "arch-rungs",
     "interleave",
     "unroll",
@@ -1573,6 +1578,7 @@ const KERNEL_RUNGS: [&str; 45] = [
     "wgmma-ws",
     "ws-regs",
     "tma-digits",
+    "kmajor-b",
 ];
 
 /// [`launch`] with the fold's realization chosen under `order` (ADR-0040 D4).
@@ -2343,6 +2349,13 @@ fn launch_key(l: &Launch) -> String {
         // sweep-attention: `unit-uniform` decides which units exist (no
         // kernel text of a tile site's).
         .replace(", unit_uniform: false", "")
+        // sweep-attention-2: `stream-mma` decides a stream unit's kernel (no
+        // tile site's text); `kmajor-b` changes how a candidate copies `b`,
+        // not which candidate it is: its id is the arms' one (as candidate
+        // 0's is), every launch keys as before.
+        .replace(", stream_mma: false", "")
+        .replace(", kmajor_b: true", "")
+        .replace(", kmajor_b: false", "")
         .replace(", cells: 1 }", " }")
 }
 
@@ -2879,6 +2892,32 @@ fn vector_a(site: &TileSite) -> bool {
 /// `b`'s panel rows are contiguous along the lane and vector-aligned.
 fn vector_b(site: &TileSite) -> bool {
     site.b.clane == 1 && aligned(site, site.b.ck) && aligned(site, site.b.base)
+}
+
+/// **sweep-attention-2 `kmajor-b`: a register-staged tile's `b` panel copied
+/// along its k-major rows** — a vector of `k` a copy (16 bytes of f32, 8 of
+/// a 16-bit format), each key's row read coalesced, scattered into the
+/// `[k][n]` panel the fragments read — where `b` is unit-stride along `k`
+/// and not along its lanes ([`b_k_major`]), every other term of its address
+/// a whole vector (a mixed-radix `b`: one unit `k` digit whose radix the
+/// vector divides, its row and lane digits whole vectors), and `bk` whole
+/// vectors. Otherwise ([`vector_b`] aside) the copies walk a column one
+/// element each: every thread of a warp a different row, a request a row.
+fn kvec_b(s: &TileSite, g: &GpuTile) -> bool {
+    let lanes = GPU_VEC_BYTES / elem_bytes_of(&s.elem);
+    if g.stages >= 2 || vector_b(s) || !g.bk.is_multiple_of(lanes) || !b_k_major(s) {
+        return false;
+    }
+    match s.radix.as_deref().and_then(|r| r.b.as_ref()) {
+        Some(b) => {
+            matches!(b.k[..], [d] if d.stride == 1 && d.coef == 1 && d.radix.is_multiple_of(lanes))
+                && aligned(s, b.base)
+                && b.lane.iter().chain(&b.i).all(|d| aligned(s, d.coef))
+        }
+        None => {
+            s.b.ck == 1 && aligned(s, s.b.clane) && aligned(s, s.b.base) && s.b.ksplit.is_none()
+        }
+    }
 }
 
 /// gemv-stream: the site's flops per operand byte fall below the part's
@@ -4930,7 +4969,7 @@ fn affine_delta(map: LaneMap, threads: u64, p: u64) -> Option<(u64, u64)> {
 /// cannot do): `lanes` lanes along `k` within one row, then rows — four lanes
 /// read one 16-byte global run, a warp covers 8 rows, and `pad_a` keeps those
 /// 32 writes on 32 banks. Register staging under `pad`: `a_row_lanes` per row.
-fn lane_maps(s: &TileSite, g: &GpuTile, kmajor: bool) -> [(LaneMap, u64); 2] {
+fn lane_maps(s: &TileSite, g: &GpuTile, kmajor: bool, kvb: bool) -> [(LaneMap, u64); 2] {
     let e = elem_bytes_of(&s.elem);
     let lanes = GPU_VEC_BYTES / e;
     let (bm, bn, bk, threads) = (g.bm(), g.bn(), g.bk, g.threads());
@@ -4973,6 +5012,13 @@ fn lane_maps(s: &TileSite, g: &GpuTile, kmajor: bool) -> [(LaneMap, u64); 2] {
             unit: lanes,
         };
         (map, bk * nv / threads)
+    } else if kvb {
+        // `kmajor-b`: the copies walk each key's row (`(n, k)` coordinates).
+        let map = LaneMap::RowMajor {
+            per_row: kv,
+            unit: lanes,
+        };
+        (map, bn * kv / threads)
     } else {
         let map = LaneMap::RowMajor {
             per_row: bn,
@@ -4993,7 +5039,10 @@ fn lane_maps(s: &TileSite, g: &GpuTile, kmajor: bool) -> [(LaneMap, u64); 2] {
 pub(crate) fn lsu_per_panel(s: &TileSite, g: &GpuTile, rungs: &crate::GpuRungs, col: bool) -> u64 {
     let lanes = GPU_VEC_BYTES / elem_bytes_of(&s.elem);
     let kmaj = g.kmajor && !col;
-    let [(_, a), (_, b)] = lane_maps(s, g, kmaj);
+    let kvb = rungs.kmajor_b && kvec_b(s, g);
+    let [(_, a), (_, b)] = lane_maps(s, g, kmaj, kvb);
+    // `kmajor-b`: each `b` copy scatters `lanes` stores.
+    let bw = if kvb { lanes } else { 1 };
     // per-site-choice D1: the excess weights are `bank-plan`'s; off (and the
     // plan line's `lsu_issue`), every class counts its instructions once.
     let [xa, xb, sa, sb] = match rungs.bank_plan {
@@ -5007,8 +5056,8 @@ pub(crate) fn lsu_per_panel(s: &TileSite, g: &GpuTile, rungs: &crate::GpuRungs, 
     let lds_b = g.bk * g.tn / g.tn.min(lanes);
     let copies = match g.stages >= 2 {
         true => a * sa + b * sb,
-        false if vector_a(s) && !kmaj => a + b + a * lanes * sa + b * sb,
-        false => a + b + a * sa + b * sb,
+        false if vector_a(s) && !kmaj => a + b + a * lanes * sa + b * bw * sb,
+        false => a + b + a * sa + b * bw * sb,
     };
     lds_a * xa + lds_b * xb + copies
 }
@@ -5186,7 +5235,8 @@ pub(crate) fn panel_excess(
     let lds_b = worst(g.tn / w, &|t, v| {
         (at[t as usize].1 * f.b_step + v * f.b_chunk, w)
     });
-    let [(am, an), (bm, bn)] = lane_maps(s, g, kmaj);
+    let kvb = rungs.kmajor_b && kvec_b(s, g);
+    let [(am, an), (bm, bn)] = lane_maps(s, g, kmaj, kvb);
     let rc = |m: LaneMap, t: u64, p: u64| m.coords(&mut Num, &(t + p * threads));
     let st_a = match (kmaj, g.stages < 2 && vector_a(s)) {
         (true, _) => worst(an, &|t, p| {
@@ -5205,10 +5255,17 @@ pub(crate) fn panel_excess(
         }),
     };
     let bw = if vector_b(s) { lanes } else { 1 };
-    let st_b = worst(bn, &|t, p| {
-        let (kr, nc) = rc(bm, t, p);
-        (kr * g.bn() + nc, bw)
-    });
+    let st_b = match kvb {
+        // `kmajor-b`: a vector along `k` scatters to `lanes` panel rows.
+        true => worst(bn * lanes, &|t, p| {
+            let (nc, kc) = rc(bm, t, p / lanes);
+            ((kc + p % lanes) * g.bn() + nc, 1)
+        }),
+        false => worst(bn, &|t, p| {
+            let (kr, nc) = rc(bm, t, p);
+            (kr * g.bn() + nc, bw)
+        }),
+    };
     [lds_a, lds_b, st_a, st_b]
 }
 
@@ -8366,7 +8423,9 @@ impl Kernel<'_> {
         // Loop-invariant load coordinates, one set per load this thread issues:
         // `(global index at k0 = 0, + constant, shared index, + constant)`.
         let (a_vec, b_vec) = (vector_a(s), vector_b(s));
-        let [(a_map, a_loads), (b_map, b_loads)] = lane_maps(s, &g, kmaj);
+        // sweep-attention-2 `kmajor-b`: `b`'s copies along its k-major rows.
+        let kvb = rungs.kmajor_b && kvec_b(s, &g);
+        let [(a_map, a_loads), (b_map, b_loads)] = lane_maps(s, &g, kmaj, kvb);
         // recurrence-precision `radix-tile`: a mixed-radix operand's copy holds
         // its row (lane) digits at `k = 0` and its own `k` offset `kc`; each
         // panel adds the `k` digits of `k0 + kc` (not affine: no constant
@@ -8415,7 +8474,8 @@ impl Kernel<'_> {
             threads,
             &tid,
             rb.is_none(),
-            |k, kr, nc| {
+            |k, r, c| {
+                let (kr, nc) = if kvb { (c, r) } else { (r, c) };
                 if let Some(m) = rb {
                     b_kc.borrow_mut().push(kr.to_string());
                     let gc = k.op("add", &col0, nc);
@@ -8434,7 +8494,10 @@ impl Kernel<'_> {
                 let sn = k.op("add", &sk, nc);
                 (gsrc, k.op("add", &sn, bs_off))
             },
-            |dk, dn| (dk * s.b.ck + dn * s.b.clane, dk * bn + dn),
+            |d0, d1| {
+                let (dk, dn) = if kvb { (d1, d0) } else { (d0, d1) };
+                (dk * s.b.ck + dn * s.b.clane, dk * bn + dn)
+            },
         );
         let Frag {
             aw,
@@ -8449,9 +8512,9 @@ impl Kernel<'_> {
 
         // --- panel staging: global → (registers) → shared memory
         let a_ty = if a_vec { vt.clone() } else { t.clone() };
-        let b_ty = if b_vec { vt.clone() } else { t.clone() };
+        let b_ty = if b_vec || kvb { vt.clone() } else { t.clone() };
         let a_al = if a_vec { GPU_VEC_BYTES } else { e };
-        let b_al = if b_vec { GPU_VEC_BYTES } else { e };
+        let b_al = if b_vec || kvb { GPU_VEC_BYTES } else { e };
         let (a_kc, b_kc) = (a_kc.into_inner(), b_kc.into_inner());
         // Copy `p`'s global index for panel `k0` (`kd` = `k0·ck` on a plain operand).
         let gidx = |k: &mut Self,
@@ -8521,7 +8584,7 @@ impl Kernel<'_> {
             }
             for (p, (gsrc, goff, _, _)) in b_src.iter().enumerate() {
                 let gi = gidx(k, rb, &b_kc, p, gsrc, *goff, k0, &kb);
-                vals.push(load_op(k, "%b", &gi, b_vec, &b_ty, b_al, &s.b));
+                vals.push(load_op(k, "%b", &gi, b_vec || kvb, &b_ty, b_al, &s.b));
             }
             vals
         };
@@ -8552,6 +8615,18 @@ impl Kernel<'_> {
                 }
             }
             for ((_, _, sdst, soff), v) in b_src.iter().zip(&vals[a_src.len()..]) {
+                if kvb {
+                    // `kmajor-b`: one vector along `k` scatters to `lanes`
+                    // panel rows.
+                    for j in 0..lanes {
+                        let x = k.tmp();
+                        k.line(format!("{x} = extractelement {vt} {v}, i64 {j}"));
+                        let si = k.op("add", sdst, soff + j * bn);
+                        let sp = k.gep(3, smem, &si);
+                        k.line(format!("store {t} {x}, ptr addrspace(3) {sp}, align {e}"));
+                    }
+                    continue;
+                }
                 let si = k.plus(sdst.clone(), *soff);
                 let sp = k.gep(3, smem, &si);
                 k.line(format!(
@@ -10508,7 +10583,7 @@ mod tests {
                                         continue;
                                     };
                                     for (i, (map, loads)) in
-                                        lane_maps(&s, &g, g.kmajor).into_iter().enumerate()
+                                        lane_maps(&s, &g, g.kmajor, false).into_iter().enumerate()
                                     {
                                         let vec = if i == 0 {
                                             vector_a(&s) && (g.stages < 2 || g.kmajor)
@@ -11303,7 +11378,7 @@ mod tests {
                     let Some(g) = launch(&s, p, false, force(r), None).tiled else {
                         continue;
                     };
-                    for (map, n) in lane_maps(&s, &g, g.kmajor) {
+                    for (map, n) in lane_maps(&s, &g, g.kmajor, false) {
                         for c in 0..n {
                             let d = affine_delta(map, g.threads(), c);
                             assert!(d.is_some(), "{} {s:?} {map:?} copy {c}", p.name);
@@ -11344,7 +11419,7 @@ mod tests {
     #[test]
     fn sync_a_store_is_conflict_free_under_pad() {
         let worst_way = |s: &TileSite, g: &GpuTile| {
-            let [(map, n), _] = lane_maps(s, g, g.kmajor);
+            let [(map, n), _] = lane_maps(s, g, g.kmajor, false);
             let lanes = GPU_VEC_BYTES / 4;
             let mut worst = 0;
             for warp in 0..g.threads() / 32 {
