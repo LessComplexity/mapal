@@ -9435,8 +9435,12 @@ impl<'a> FnEmit<'a> {
             }
             // The ordered kernel (an epilogue group, a column-major store, a
             // function on streams, or no cut): the unsplit launch — `launch_in`
-            // re-sizes the tile for a split (`fill-wave`) this kernel does not take.
-            let l = if l.combine.splits() > 1 {
+            // re-sizes the tile for a split (`fill-wave`) or a stream-K walk
+            // (`k-fill`'s full tile) this kernel does not take. (A stream-K
+            // combine counts one split: an ordered group kernel at a `k-fill`
+            // site launched the full tile's grid and block over its shrunk
+            // kernel — sweep-runtime-2's generated groups, `--cands=1`.)
+            let l = if l.combine != Combine::None {
                 launch(site, self.profile, self.contract, self.gpu_arms)
             } else {
                 l
