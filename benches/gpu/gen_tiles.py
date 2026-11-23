@@ -1670,16 +1670,16 @@ for stem, (src, k) in llm_progs.items():
 
 # --- the formatter owns the layout of generated source too (CLAUDE.md "Source formatting"): every program this
 # run wrote goes through `mapal fmt`, so benches/algorithms and the bundles hold formatted text. The CLI is $MAPAL,
-# else `mapal` on PATH, else `cargo run -p mapal-cli`. Formatting never changes the parsed program (emission is
-# byte-identical), and a program the formatter rejects is a generator bug, so a failure stops the run.
+# else this checkout's own (`cargo run -p mapal-cli`): a `mapal` on PATH may be an older install that rejects the
+# syntax the generator writes (a Nov 20 install failed every bundle). Formatting never changes the parsed program
+# (emission is byte-identical), and a program the formatter rejects is a generator bug, so a failure stops the run.
 def format_written(paths):
     import os
-    import shutil
     import subprocess
 
     if not paths:
         return
-    cli = os.environ.get("MAPAL") or shutil.which("mapal")
+    cli = os.environ.get("MAPAL")
     root = Path(__file__).resolve().parents[2]
     cmd = [cli] if cli else ["cargo", "run", "-q", "--release", "-p", "mapal-cli", "--"]
     for i in range(0, len(paths), 200):

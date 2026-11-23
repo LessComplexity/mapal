@@ -451,6 +451,64 @@ pub fn run_emulated_totals(clang: &str, host: &str, dev: &str) -> (String, [u64;
     (out, totals(&err))
 }
 
+/// The emulator compiled once — per clang (its `--version`) and the text of
+/// `mapal_gpu_emu.c` + `mapal_choice.h` — into the tests' target tmpdir;
+/// every emulated program links that object. Compiling the emulator inside
+/// each program's link was ~0.25 s of every build: about two thirds of a
+/// generated-program test's clang time (generic_fusion: 1082 clang runs,
+/// 197 s). The object is the same code the link compiled (`-O1`, no other
+/// flag), so every program is the binary it was.
+fn emu_obj(clang: &str) -> std::path::PathBuf {
+    static OBJS: Mutex<Vec<(String, std::path::PathBuf)>> = Mutex::new(Vec::new());
+    let mut objs = OBJS.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some((_, o)) = objs.iter().find(|(c, _)| c == clang) {
+        return o.clone();
+    }
+    let dir = format!("{}/../../mapal-rt/gpu", env!("CARGO_MANIFEST_DIR"));
+    let version = Command::new(clang)
+        .arg("--version")
+        .output()
+        .expect("clang --version")
+        .stdout;
+    let mut key: u64 = 0xcbf2_9ce4_8422_2325;
+    for f in ["mapal_gpu_emu.c", "mapal_choice.h"] {
+        let text = std::fs::read(format!("{dir}/{f}")).expect("emulator source");
+        for b in clang.bytes().chain(version.iter().copied()).chain(text) {
+            key = (key ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+    let obj = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("emu-{key:016x}.o"));
+    if !obj.exists() {
+        // Another test binary may be compiling it too: each writes its own
+        // file, the rename is atomic.
+        let tmp = obj.with_extension(format!("{}.o", std::process::id()));
+        let _slot = slot();
+        let ok = Command::new(clang)
+            .args(["-O1", "-c"])
+            .arg(format!("{dir}/mapal_gpu_emu.c"))
+            .arg("-o")
+            .arg(&tmp)
+            .status()
+            .is_ok_and(|s| s.success());
+        assert!(ok, "the emulator does not compile");
+        std::fs::rename(&tmp, &obj).expect("emulator object");
+    }
+    objs.push((clang.to_string(), obj.clone()));
+    obj
+}
+
+/// `ld.lld` is on the path (`MAPAL_EMU_LLD=0`: the default linker).
+fn lld() -> bool {
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| {
+        std::env::var("MAPAL_EMU_LLD").map_or(true, |v| v != "0")
+            && Command::new("ld.lld")
+                .arg("--version")
+                .output()
+                .is_ok_and(|o| o.status.success())
+    })
+}
+
 /// A program built against the emulated device, run as often as a test
 /// needs (per-site-choice: once per candidate index).
 #[allow(dead_code)]
@@ -465,10 +523,7 @@ pub fn build_emulated(clang: &str, host: &str, dev: &str) -> Emulated {
     let p = |n: &str| dir.path().join(n);
     std::fs::write(p("h.ll"), host).unwrap();
     std::fs::write(p("d.ll"), host_device(dev)).unwrap();
-    let emu = format!(
-        "{}/../../mapal-rt/gpu/mapal_gpu_emu.c",
-        env!("CARGO_MANIFEST_DIR")
-    );
+    let emu = emu_obj(clang);
     let _slot = slot();
     let ok = Command::new(clang)
         .args(["-O1", "-Wno-override-module", "-c"])
@@ -490,6 +545,11 @@ pub fn build_emulated(clang: &str, host: &str, dev: &str) -> Emulated {
     if cfg!(target_os = "linux") {
         // The emulator finds kernels by name with `dlsym`.
         link.args(["-rdynamic", "-ldl", "-lm"]);
+        // lld where installed: the same program, linked in half the time
+        // (the debug runtime archive: 54 -> 26 ms a link).
+        if lld() {
+            link.arg("-fuse-ld=lld");
+        }
     }
     assert!(link.status().unwrap().success(), "link failed");
     Emulated { dir }

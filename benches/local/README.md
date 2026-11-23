@@ -56,6 +56,13 @@ thread; one shared broadcast used to wake the whole block per hand-off) — the 
 
 Typical: `RUST_TEST_THREADS=16 MAPAL_PAR=4 taskset -c 16-31,48-63 cargo test --release -p mapal-backend-llvm --test <t>`.
 
+The whole workspace: `benches/local/test_par.py [--bins N] [--logs DIR] [cargo selection...]` (default `--workspace`).
+`cargo test` runs its binaries one after another; this builds them once and runs N at a time (default CPUs / 8),
+longest first by the last run's times (`target/test-par-times.tsv`), each in its package directory, doc tests as one
+more job — the same binaries and environment. Above `TEST_HOT` C (85) no binary starts until `TEST_COOL` (78); a
+running one is never stopped (its tests time their children by the wall clock). Emulated programs link the emulator
+compiled once (`target/tmp/emu-<key>.o`) with `ld.lld` where installed (`MAPAL_EMU_LLD=0`: the default linker).
+
 ## Other scripts
 
 `comp_run.sh` (re-time competitor legs only — torch_bench / comp_bench — in a timed run's bundle, same protocol),

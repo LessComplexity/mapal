@@ -80,10 +80,12 @@ fn fill_wave_and_row_split_counted_and_valued_on_unseen_programs() {
     let strat = testgen::geom_prog_strategy();
     let clang = emu::clang();
     let targets = ["rtx-4090", "h100-pcie", "rtx-5090", "rtx-3090"];
-    let (mut filled, mut short, mut rows, mut same, mut valued) = (0, 0, 0, 0, 0);
-    for z in 0..40 {
-        let p = strat.new_tree(&mut runner).unwrap().current();
-        let (src, (m, ..)) = testgen::geom_src(&p);
+    let progs: Vec<_> = (0..40)
+        .map(|_| strat.new_tree(&mut runner).unwrap().current())
+        .collect();
+    let [filled, short, rows, same, valued] = testgen::par_count(&progs, |z, p| {
+        let (mut filled, mut short, mut rows, mut same, mut valued) = (0, 0, 0, 0, 0);
+        let (src, (m, ..)) = testgen::geom_src(p);
         let ir = lower(&src);
         let target = targets[z % targets.len()];
         let fill = resolve_profile(target)
@@ -157,7 +159,8 @@ fn fill_wave_and_row_split_counted_and_valued_on_unseen_programs() {
             assert_eq!(x, y, "#{z} {target} values\n{src}");
             valued += 1;
         }
-    }
+        [filled, short, rows, same, valued]
+    });
     eprintln!(
         "site-geometry: {filled} filled splits, {short} short, {rows} row splits, {same} unchanged, {valued} valued"
     );
@@ -302,9 +305,8 @@ fn fit_first_counted_and_valued_on_unseen_programs() {
     );
     let clang = emu::clang();
     let targets = ["rtx-4090", "h100-pcie", "rtx-5090", "rtx-3090"];
-    let (mut moved, mut same, mut valued) = (0, 0, 0);
-    for z in 0..40 {
-        let src = match z % 2 {
+    let srcs: Vec<String> = (0..40)
+        .map(|z| match z % 2 {
             0 => testgen::radix_src(&radix.new_tree(&mut runner).unwrap().current()).0,
             // (A few rows over many lanes: the shape the rule moves.)
             _ => {
@@ -316,8 +318,11 @@ fn fit_first_counted_and_valued_on_unseen_programs() {
                 })
                 .0
             }
-        };
-        let ir = lower(&src);
+        })
+        .collect();
+    let [moved, same, valued] = testgen::par_count(&srcs, |z, src| {
+        let (mut moved, mut same, mut valued) = (0, 0, 0);
+        let ir = lower(src);
         let target = targets[z / 2 % targets.len()];
         let sms = resolve_profile(target)
             .and_then(|t| t.gpu())
@@ -348,7 +353,7 @@ fn fit_first_counted_and_valued_on_unseen_programs() {
         let (on, off) = (at(true), at(false));
         if on.device == off.device {
             same += 1;
-            continue;
+            return [moved, same, valued];
         }
         moved += 1;
         let offs = tiles(off.device.as_deref());
@@ -383,7 +388,8 @@ fn fit_first_counted_and_valued_on_unseen_programs() {
             assert_eq!(x, y, "#{z} {target} values\n{src}");
             valued += 1;
         }
-    }
+        [moved, same, valued]
+    });
     eprintln!("fit-first: {moved} moved, {same} unchanged, {valued} valued");
     assert!(moved >= 4, "the generator reaches fit-first ({moved})");
 }
@@ -428,9 +434,11 @@ fn knob_candidates_value_invariant_on_unseen_programs() {
     let strat = testgen::geom_prog_strategy();
     let clang = emu::clang();
     let targets = ["rtx-4090", "h100-pcie", "rtx-5090", "rtx-3090"];
-    let (mut moved, mut valued) = (0, 0);
-    for z in 0..48usize {
-        let p = strat.new_tree(&mut runner).unwrap().current();
+    let progs: Vec<_> = (0..48)
+        .map(|_| strat.new_tree(&mut runner).unwrap().current())
+        .collect();
+    let [moved, valued] = testgen::par_count(&progs, |z, p| {
+        let (mut moved, mut valued) = (0, 0);
         let src = testgen::geom_src(&testgen::GeomProg {
             wide: false,
             ..p.clone()
@@ -442,7 +450,7 @@ fn knob_candidates_value_invariant_on_unseen_programs() {
         let cands = candidates(target, knob);
         let Some(&v) = cands.get(1 + usize::from(p.law[0]) % cands.len().saturating_sub(1).max(1))
         else {
-            continue;
+            return [moved, valued];
         };
         let at = |forced: bool| {
             let mut opts = EmitOpts {
@@ -463,7 +471,7 @@ fn knob_candidates_value_invariant_on_unseen_programs() {
         };
         let (on, off) = (at(true), at(false));
         if on.device == off.device {
-            continue;
+            return [moved, valued];
         }
         moved += 1;
         let dev = |e: &mapal_backend_llvm::Emission| e.device.clone().unwrap_or_default();
@@ -475,7 +483,8 @@ fn knob_candidates_value_invariant_on_unseen_programs() {
             assert_eq!(x, y, "#{z} {target} --geom={knob}={v}\n{src}");
             valued += 1;
         }
-    }
+        [moved, valued]
+    });
     eprintln!("knobs: {moved} candidates moved a kernel, {valued} valued");
     assert!(moved >= 8, "the candidates reach the kernels ({moved})");
 }
@@ -667,16 +676,29 @@ fn kmajor_a_counted_and_valued_on_unseen_programs() {
             .and_then(|v| v.parse().ok())
             .unwrap_or(0)
     };
-    let (mut ruled, mut pads, mut forced_conflicted) = (0, 0, 0);
     let mut runner = TestRunner::deterministic();
     let strat = testgen::order_prog_strategy();
     let clang = emu::clang();
     let targets = ["rtx-4090", "h100-pcie", "rtx-5090", "rtx-3090"];
-    let (mut streamed, mut staged, mut valued) = (0, 0, 0);
-    let (mut wide64, mut exact_kmajor, mut ci, mut k8) = (0, 0, 0, 0);
-    for z in 0..48 {
-        let p = strat.new_tree(&mut runner).unwrap().current();
-        let (src, _) = testgen::geom_src(&p);
+    let progs: Vec<_> = (0..48)
+        .map(|_| strat.new_tree(&mut runner).unwrap().current())
+        .collect();
+    let [
+        ruled,
+        pads,
+        forced_conflicted,
+        streamed,
+        staged,
+        valued,
+        wide64,
+        exact_kmajor,
+        ci,
+        k8,
+    ] = testgen::par_count(&progs, |z, p| {
+        let (mut ruled, mut pads, mut forced_conflicted) = (0, 0, 0);
+        let (mut streamed, mut staged, mut valued) = (0, 0, 0);
+        let (mut wide64, mut exact_kmajor, mut ci, mut k8) = (0, 0, 0, 0);
+        let (src, _) = testgen::geom_src(p);
         let ir = lower(&src);
         let target = targets[z % targets.len()];
         let arms = [
@@ -788,7 +810,19 @@ fn kmajor_a_counted_and_valued_on_unseen_programs() {
             ci += usize::from(p.ci);
             k8 += usize::from(p.k8);
         }
-    }
+        [
+            ruled,
+            pads,
+            forced_conflicted,
+            streamed,
+            staged,
+            valued,
+            wide64,
+            exact_kmajor,
+            ci,
+            k8,
+        ]
+    });
     eprintln!(
         "kmajor-a: {streamed} streamed, {staged} staged, {wide64} f64, {exact_kmajor} exact-face \
          k-major kernels ({forced_conflicted} conflicted, no pad fits); {pads} ruled k-major, adeg=1; {valued} valued ({ci} ci, {k8} k8); {ruled} ruled \
@@ -825,10 +859,12 @@ fn full_tile_counted_and_valued_on_unseen_programs() {
             .map(|(l, _)| (field(l, "tm=") * field(l, "tn="), field(l, "block=")))
             .collect()
     };
-    let (mut full, mut valued) = (0, 0);
-    for z in 0..24 {
-        let p = strat.new_tree(&mut runner).unwrap().current();
-        let (src, _) = testgen::mid_src(&p);
+    let progs: Vec<_> = (0..24)
+        .map(|_| strat.new_tree(&mut runner).unwrap().current())
+        .collect();
+    let [full, valued] = testgen::par_count(&progs, |z, p| {
+        let (mut full, mut valued) = (0, 0);
+        let (src, _) = testgen::mid_src(p);
         let ir = lower(&src);
         let target = targets[z % targets.len()];
         // An LSU-bound rate (`lsu_ipc_pm` 20, not the part's 500) makes the
@@ -874,7 +910,8 @@ fn full_tile_counted_and_valued_on_unseen_programs() {
             assert_eq!(x, y, "#{z} {target} values\n{src}");
             valued += 1;
         }
-    }
+        [full, valued]
+    });
     eprintln!("full-tile: {full} full-tile split kernels, {valued} valued");
     assert!(full >= 4, "the generator reaches full-tile ({full})");
 }

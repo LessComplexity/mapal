@@ -491,7 +491,8 @@ def move_facts(ll, trips=()):
     for fn in re.split(r'\n(?=define )', ll):
         if not fn.startswith('define'):
             continue
-        arena += '@mapal_gpu_arena(' in fn
+        # A function that makes an arena calls it (a `declare` between two functions is not one).
+        arena += 'call i64 @mapal_gpu_arena(' in fn
         bbs = block_list(fn)
         # `entry-arena`: a slot the entry block seeds from the arena never allocates (its
         # `mapal_gpu_alloc` finds the buffer): those call sites move nothing.

@@ -74,6 +74,21 @@ impl Drop for Checking {
     }
 }
 
+/// [`par_check`] for checks that return a fixed set of counters: their sums,
+/// in the order the check returns them.
+#[allow(dead_code)]
+pub fn par_count<T: Sync, const N: usize>(
+    items: &[T],
+    check: impl Fn(usize, &T) -> [usize; N] + Sync,
+) -> [usize; N] {
+    par_check(items, check).iter().fold([0; N], |mut s, c| {
+        for (a, b) in s.iter_mut().zip(c) {
+            *a += b;
+        }
+        s
+    })
+}
+
 /// `check(i, &items[i])` for every item, at most [`jobs`] programs at once in
 /// the whole test binary, each worker taking the next index not yet started
 /// (a slow program holds no others behind it). The items are drawn before the
