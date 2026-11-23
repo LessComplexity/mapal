@@ -173,6 +173,21 @@ impl Stream {
         r
     }
 
+    /// The blocks an SM holds at this geometry — its threads, shared memory
+    /// and the registers the model counts ([`Self::regs`]): the residency
+    /// [`FnEmit::stream_ns`] prices, and the kernel's `.minnctapersm`
+    /// (sweep-attention: without it ptxas, not knowing the launch's dynamic
+    /// shared memory, capped a 76 KB block at 128 registers for a second
+    /// block that never fits — 8 bytes spilled; declared, 168 and none).
+    pub fn per_sm(&self, gpu: &crate::profile::Gpu, members: &[UMember], smem: u64) -> u64 {
+        let regs = self.regs(members).max(32);
+        (gpu.max_threads_per_sm / self.threads)
+            .min(gpu.smem_per_sm / smem.max(1))
+            .min(gpu.regs_per_sm / (self.threads * regs))
+            .min(gpu.max_blocks_per_sm)
+            .max(1)
+    }
+
     /// The intent fields: `stream=b<b>xkb<kb>:rt<rt>g<g>t<threads>[:cp]`.
     pub fn label(&self) -> String {
         format!(
@@ -266,6 +281,14 @@ impl Addr {
     }
 }
 
+/// sweep-attention `unit-uniform`: no number an epilogue site's body
+/// captures is read after its fold (`TilePost::after`: a loop counter only
+/// moves the fold's operands) — the epilogue, evaluated in the kernel
+/// without it, is the body's.
+fn post_numbers_ok(p: &mapal_ir::TilePost) -> bool {
+    p.after.is_empty()
+}
+
 /// A streamed unit's launch geometry.
 pub(crate) fn stream_geo(u: &Unit, st: &Stream) -> Geo {
     let n = u.members.len();
@@ -314,6 +337,11 @@ impl<'a> FnEmit<'a> {
         let Some(sg) = sp.of(gi) else {
             return Ok(None);
         };
+        // The members the pass covers (`StreamGroup::roles`): a unit of the
+        // whole group where trailing members follow is no stream unit.
+        if members.len() != sg.roles.len() {
+            return Ok(None);
+        }
         let gpu = self.profile.gpu().ok_or("unpriced")?;
         // What this realization emits: f32 values, plain tile sites whose
         // operands are memory, no per-row work outside the windows.
@@ -328,12 +356,13 @@ impl<'a> FnEmit<'a> {
                 (StreamRole::Row { .. }, _) => return Err("row"),
                 (StreamRole::Produce, UKind::Tile { site }) => {
                     // Plain, epilogue or mixed-radix addresses over memory
-                    // operands; no captured number, no narrow element yet.
-                    let ok = site.radix.as_ref().is_none_or(|r| !r.uniform())
-                        && site
-                            .post
-                            .as_ref()
-                            .is_none_or(|p| p.uniform.is_empty() && p.reads.is_empty())
+                    // operands — a captured number moving one (`unit-uniform`:
+                    // the launch moves its pointer) where the epilogue never
+                    // reads that number; no narrow element yet.
+                    let ok = site
+                        .post
+                        .as_ref()
+                        .is_none_or(|p| post_numbers_ok(p) && p.reads.is_empty())
                         && site.a.narrow.is_none()
                         && site.b.narrow.is_none()
                         && site.a.ksplit.is_none()
@@ -344,8 +373,10 @@ impl<'a> FnEmit<'a> {
                     }
                 }
                 (StreamRole::Consume { .. }, UKind::Tile { site }) => {
-                    let ok = site.radix.as_ref().is_none_or(|r| !r.uniform())
-                        && site.post.as_ref().is_none_or(|p| p.uniform.is_empty())
+                    // Its row operand the group's own rows: only its column
+                    // operand may be moved.
+                    let ok = site.radix.as_ref().is_none_or(|r| r.ua.is_empty())
+                        && site.post.as_ref().is_none_or(post_numbers_ok)
                         && site.b.narrow.is_none()
                         && site.b.ksplit.is_none()
                         && site.elem == f32t;
@@ -493,12 +524,7 @@ impl<'a> FnEmit<'a> {
         // R3: each block walks its slice's windows.
         let nb = st.nb() / st.s;
         let blocks = rows / st.b * st.s;
-        let regs = st.regs(members).max(32);
-        let per_sm = (gpu.max_threads_per_sm / st.threads)
-            .min(gpu.smem_per_sm / smem.max(1))
-            .min(gpu.regs_per_sm / (st.threads * regs))
-            .min(gpu.max_blocks_per_sm)
-            .max(1);
+        let per_sm = st.per_sm(gpu, members, smem);
         // Latency hiding: an SM whose resident warps leave a scheduler fewer
         // than two to switch between stalls on every load and barrier — such
         // a geometry is not priced (2 warps an SM ran the 2048-token prefill
@@ -2086,6 +2112,16 @@ impl UnitGen<'_> {
                         }
                         _ => unreachable!("an epilogue reads memory or a per-row member"),
                     },
+                    // An array only the fold reads; a number only the
+                    // fold's operands take (`unit-uniform`): unread.
+                    None if post.uniform.contains(&s) => {
+                        let ty = field_ty[s as usize].clone();
+                        let v = match ty.as_str() {
+                            "float" | "double" | "half" | "bfloat" => "0.0",
+                            _ => "0",
+                        };
+                        (ty, v.to_string())
+                    }
                     None => ("ptr".to_string(), "null".to_string()),
                 }
             };

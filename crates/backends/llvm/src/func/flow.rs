@@ -94,6 +94,10 @@ pub(crate) struct Unit {
     pub members: Vec<UMember>,
     /// Operand pointers, in first-use order.
     pub gmem: Vec<ObjectId>,
+    /// sweep-attention `unit-uniform`: per `gmem` entry, the captured
+    /// numbers' terms its launch moves the pointer by (`None`: the array's
+    /// start; a missing entry likewise).
+    pub gmove: Vec<Option<GMove>>,
     /// compile-time-graph A: a row-block unit (a tile member): `b` rows a
     /// block. `None`: one row a block or thread, as before.
     pub block: Option<Block>,
@@ -103,6 +107,21 @@ pub(crate) struct Unit {
     /// flash-attention `stream`: one pass over windows of the group's axis
     /// ([`stream::Stream`]). `None`: every other realization.
     pub stream: Option<stream::Stream>,
+}
+
+/// sweep-attention `unit-uniform`: a unit's memory operand read at an
+/// address a captured number moves ([`mapal_ir::RadixTile::ua`] / `ub`: a
+/// loop counter slicing a KV head group) — one value a launch, so the launch
+/// passes the pointer moved by [`mapal_ir::uniform_at`] of the terms, and
+/// the kernel reads the site's own form from it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct GMove {
+    /// The member map's source: the product whose capture slots the terms
+    /// read.
+    pub source: ObjectId,
+    pub terms: Vec<mapal_ir::Digit>,
+    /// The operand's element bytes in memory.
+    pub elem: u64,
 }
 
 /// long-rows `row-slices`: a unit whose rows each run over `s` blocks
@@ -787,10 +806,18 @@ impl<'a> FnEmit<'a> {
             // The part's rung table decides where the rule runs (a forced
             // `b` measures it anywhere).
             if self.gpu_arms.row_block && (rungs.row_block || self.gpu_arms.row_block_b > 0) {
-                for grp in self.ir.unit_plan(self.f).groups {
-                    let ms: Vec<MorphismId> = grp.members.iter().map(|mb| mb.m).collect();
+                let streams = self.ir.stream_plan(self.f);
+                for (gi, grp) in self.ir.unit_plan(self.f).groups.into_iter().enumerate() {
+                    // sweep-attention: an extended group's stream covers its
+                    // members up to its last consumer; the ones after it
+                    // (reading only its value) launch on their own after it.
+                    let n = match streams.of(gi) {
+                        Some(sg) if grp.extended && rungs.stream => sg.roles.len(),
+                        _ => grp.members.len(),
+                    };
+                    let ms: Vec<MorphismId> = grp.members[..n].iter().map(|mb| mb.m).collect();
                     let mut bc = cand.clone();
-                    let placed = grp.members.iter().all(|mb| match &mb.kind {
+                    let placed = grp.members[..n].iter().all(|mb| match &mb.kind {
                         UnitKind::Tile(t) => {
                             // The site as the device plan holds it, outside
                             // an epilogue group and a retained row.
@@ -814,10 +841,13 @@ impl<'a> FnEmit<'a> {
                             // takes it as its site.
                             let on_device = self.device.contains_key(mb.m)
                                 || (grp.extended && plan.cells.contains_key(mb.m));
+                            // sweep-attention `unit-uniform`: an extended
+                            // group's launch moves a captured number's
+                            // operand (`GMove`); a row-block unit's does not.
                             let ok = on_device
                                 && epi
                                 && !self.retain.contains_key(mb.out)
-                                && !gpu::uniform_site(&site);
+                                && (grp.extended || !gpu::uniform_site(&site));
                             if ok {
                                 bc.insert(mb.m, Cand::Tile(site));
                             }
@@ -1084,12 +1114,23 @@ impl<'a> FnEmit<'a> {
         };
         let mut members: Vec<UMember> = Vec::new();
         let mut gmem: Vec<ObjectId> = Vec::new();
-        let push = |o: ObjectId, gmem: &mut Vec<ObjectId>| match gmem.iter().position(|&x| x == o) {
-            Some(g) => g,
-            None => {
-                gmem.push(o);
-                gmem.len() - 1
+        let mut gmove: Vec<Option<GMove>> = Vec::new();
+        // An operand entry a pointer: one per array and move.
+        let push_moved = |o: ObjectId,
+                          mv: Option<GMove>,
+                          gmem: &mut Vec<ObjectId>,
+                          gmove: &mut Vec<Option<GMove>>| {
+            match (0..gmem.len()).find(|&g| gmem[g] == o && gmove[g] == mv) {
+                Some(g) => g,
+                None => {
+                    gmem.push(o);
+                    gmove.push(mv);
+                    gmem.len() - 1
+                }
             }
+        };
+        let push = |o: ObjectId, gmem: &mut Vec<ObjectId>, gmove: &mut Vec<Option<GMove>>| {
+            push_moved(o, None, gmem, gmove)
         };
         // May a reader with `cw` cells per row read member `p` at `reach`?
         let readable = |p: &UMember, reach: &Reach, cw: u64| -> Result<bool, &'static str> {
@@ -1132,7 +1173,7 @@ impl<'a> FnEmit<'a> {
                             let row = readable(&members[k], &reach, 1)?;
                             USrc::Member { k, reach, row }
                         }
-                        None if complete(a) => USrc::Gmem(push(a, &mut gmem)),
+                        None if complete(a) => USrc::Gmem(push(a, &mut gmem, &mut gmove)),
                         None => return Err("phase"),
                     };
                     UMember {
@@ -1154,14 +1195,36 @@ impl<'a> FnEmit<'a> {
                     let b = self
                         .pair_source(morph.source, site.b.slot)
                         .ok_or("footprint")?;
+                    // sweep-attention `unit-uniform`: an operand a captured
+                    // number moves is its own pointer, moved at the launch.
+                    let moved = |a: bool| {
+                        let r = site.radix.as_deref()?;
+                        let (ds, read) = if a {
+                            (&r.ua, &site.a)
+                        } else {
+                            (&r.ub, &site.b)
+                        };
+                        (!ds.is_empty()).then(|| GMove {
+                            source: morph.source,
+                            terms: ds.clone(),
+                            elem: read.elem_bytes(&site.elem),
+                        })
+                    };
                     // `a` is the unit's own rows (a row-wide member read in
                     // its row, row-aligned) or complete in `Gmem`; `b` is read
                     // by every row: never a member.
                     // flash-attention F1: a row operand `unit_plan` proved
                     // a whole row under a digit permutation of the rows.
-                    let digit = grp
-                        .and_then(|g| g.members.iter().find(|x| x.m == m))
-                        .is_some_and(|x| x.row_of.is_some());
+                    // sweep-attention: an extended group's row operand the
+                    // fact proved row-closed where `Reach` cannot (a one-head
+                    // trip's head digit; `unit_plan`'s own-read check) —
+                    // the stream reads it window by window, never by reach.
+                    let digit = grp.is_some_and(|g| {
+                        g.members.iter().find(|x| x.m == m).is_some_and(|x| {
+                            x.row_of.is_some()
+                                || (g.extended && x.reads.iter().any(|&(s, _)| s == site.a.slot))
+                        })
+                    });
                     let a_src = match member(a, &members) {
                         Some(k) if digit => USrc::Member {
                             k,
@@ -1186,12 +1249,20 @@ impl<'a> FnEmit<'a> {
                                 row: true,
                             }
                         }
-                        None if complete(a) => USrc::Gmem(push(a, &mut gmem)),
+                        None if complete(a) => {
+                            USrc::Gmem(push_moved(a, moved(true), &mut gmem, &mut gmove))
+                        }
                         None => return Err("phase"),
                     };
+                    // A member row operand is the unit's own: no pointer moves.
+                    if matches!(a_src, USrc::Member { .. }) && moved(true).is_some() {
+                        return Err("footprint");
+                    }
                     let b_src = match member(b, &members) {
                         Some(_) => return Err("footprint"),
-                        None if complete(b) => USrc::Gmem(push(b, &mut gmem)),
+                        None if complete(b) => {
+                            USrc::Gmem(push_moved(b, moved(false), &mut gmem, &mut gmove))
+                        }
                         None => return Err("phase"),
                     };
                     let mut srcs = vec![a_src, b_src];
@@ -1207,7 +1278,7 @@ impl<'a> FnEmit<'a> {
                                 row: true,
                             },
                             Some(_) => return Err("footprint"),
-                            None if complete(arr) => USrc::Gmem(push(arr, &mut gmem)),
+                            None if complete(arr) => USrc::Gmem(push(arr, &mut gmem, &mut gmove)),
                             None => return Err("phase"),
                         });
                     }
@@ -1246,7 +1317,7 @@ impl<'a> FnEmit<'a> {
                             let row = readable(&members[k], &reach, w)?;
                             USrc::Member { k, reach, row }
                         } else if complete(arr) {
-                            USrc::Gmem(push(arr, &mut gmem))
+                            USrc::Gmem(push(arr, &mut gmem, &mut gmove))
                         } else {
                             return Err("phase");
                         };
@@ -1295,6 +1366,7 @@ impl<'a> FnEmit<'a> {
                         rows,
                         members,
                         gmem,
+                        gmove,
                         block: None,
                         slices: None,
                         stream: Some(st),
@@ -1320,6 +1392,7 @@ impl<'a> FnEmit<'a> {
                 rows,
                 members,
                 gmem,
+                gmove,
                 block: Some(blk),
                 slices: None,
                 stream: None,
@@ -1379,6 +1452,7 @@ impl<'a> FnEmit<'a> {
             rows,
             members,
             gmem,
+            gmove,
             block: None,
             slices,
             stream: None,
@@ -1498,6 +1572,7 @@ impl<'a> FnEmit<'a> {
                 rows,
                 members: members.to_vec(),
                 gmem: gmem.to_vec(),
+                gmove: Vec::new(),
                 block: None,
                 slices: None,
                 stream: None,
@@ -1814,6 +1889,7 @@ impl<'a> FnEmit<'a> {
                     rows,
                     members: members.to_vec(),
                     gmem: gmem.to_vec(),
+                    gmove: Vec::new(),
                     block: Some(blk.clone()),
                     slices: None,
                     stream: None,
@@ -2177,26 +2253,37 @@ impl<'a> FnEmit<'a> {
         let Geo {
             gx, block, smem, ..
         } = self.geo(u);
-        for &o in &u.gmem {
+        for (gi, &o) in u.gmem.iter().enumerate() {
             let at = self.resident.as_ref().map_or(o, |p| p.alias(o));
-            if self.dvalid.contains_key(at) {
-                ptrs.push(self.dload(o));
-                continue;
+            let d = if self.dvalid.contains_key(at) {
+                self.dload(o)
+            } else {
+                let ob = self.array_bytes(&self.obj_ty(o));
+                let h = self.array_operand_ptr(o, None).expect("unit operand ptr");
+                let s = format!("%d{}", self.fresh());
+                self.allocas
+                    .push_str(&format!("  {s} = alloca i64\n  store i64 0, ptr {s}\n"));
+                let d = self.tmp();
+                self.line(format!(
+                    "{d} = call i64 @mapal_gpu_alloc(ptr {s}, i64 {ob})"
+                ));
+                self.line(format!(
+                    "call void @mapal_gpu_h2d(i64 {d}, ptr {h}, i64 {ob})"
+                ));
+                temps.push(s);
+                d
+            };
+            // sweep-attention `unit-uniform`: the pointer moved by its
+            // captured numbers' terms (in bounds: the fact's capture range).
+            let mv = u.gmove.get(gi).cloned().flatten();
+            match mv.and_then(|mv| self.uniform_bytes(mv.source, &mv.terms, mv.elem)) {
+                Some(off) => {
+                    let q = self.tmp();
+                    self.line(format!("{q} = add i64 {d}, {off}"));
+                    ptrs.push(q);
+                }
+                None => ptrs.push(d),
             }
-            let ob = self.array_bytes(&self.obj_ty(o));
-            let h = self.array_operand_ptr(o, None).expect("unit operand ptr");
-            let s = format!("%d{}", self.fresh());
-            self.allocas
-                .push_str(&format!("  {s} = alloca i64\n  store i64 0, ptr {s}\n"));
-            let d = self.tmp();
-            self.line(format!(
-                "{d} = call i64 @mapal_gpu_alloc(ptr {s}, i64 {ob})"
-            ));
-            self.line(format!(
-                "call void @mapal_gpu_h2d(i64 {d}, ptr {h}, i64 {ob})"
-            ));
-            temps.push(s);
-            ptrs.push(d);
         }
         // kernel-merging `zero-fold`: later sites' zero passes as its tail.
         self.zero_args(u.members[0].m, &gx.to_string(), block, &mut ptrs);
@@ -2422,8 +2509,16 @@ impl<'a> FnEmit<'a> {
                 }
                 let in_ty = self.obj_ty(self.ir.func(body).expect("body").input);
                 let arg = lower_body_input_ty(&in_ty, captures).expect("a site's input lowers");
+                // An array's element type; a captured number's own
+                // (`unit-uniform`: a loop counter the fold's operands take).
                 let field_ty: Vec<String> = (0..=captures)
-                    .map(|s| lt(self.pair_source(morph.source, s).expect("slot")))
+                    .map(|s| {
+                        let o = self.pair_source(morph.source, s).expect("slot");
+                        match self.obj_ty(o) {
+                            Ty::Array { .. } => lt(o),
+                            t => lower_ty(&t).expect("a captured number lowers"),
+                        }
+                    })
                     .collect();
                 g.calls.push(Some(CallInfo {
                     callee,
@@ -2709,8 +2804,20 @@ impl<'a> FnEmit<'a> {
             geo.tree.iter().flatten().count(),
             geo.kept.iter().flatten().count(),
         );
+        // sweep-attention `unit-uniform`: the operands the launch moves by a
+        // captured number (intent.py `unit-uniform`); absent where none is.
+        let moved: Vec<String> = u
+            .gmem
+            .iter()
+            .zip(&u.gmove)
+            .filter(|(_, mv)| mv.is_some())
+            .map(|(&o, _)| label(o))
+            .collect();
+        if !moved.is_empty() {
+            text.insert_str(text.len() - 1, &format!(" moved={}", moved.join(";")));
+        }
         text += &format!(
-            "; mapal.plan kernel={name} kind=flow rows={} gx={blocks} block={threads} members={} rungs_on=flow{}\n",
+            "; mapal.plan kernel={name} kind=flow rows={} gx={blocks} block={threads} members={} rungs_on=flow{}{}\n",
             u.rows,
             u.members.len(),
             if u.stream.is_some() {
@@ -2719,6 +2826,12 @@ impl<'a> FnEmit<'a> {
                 ",row-block"
             } else if u.slices.is_some() {
                 ",row-slices"
+            } else {
+                ""
+            },
+            // sweep-attention: a unit whose launch moves an operand.
+            if u.gmove.iter().any(Option::is_some) {
+                ",unit-uniform"
             } else {
                 ""
             }
@@ -2759,8 +2872,19 @@ impl<'a> FnEmit<'a> {
                 text += &format!("@{name}.gsync = internal addrspace(1) global i32 0, align 4\n");
             }
         }
+        // sweep-attention: a streamed unit's kernel holds ptxas to the
+        // blocks an SM its geometry assumed (`min-blocks`, as a tile's).
+        let min_blocks = match (&u.stream, self.profile.gpu()) {
+            (Some(st), Some(gpu))
+                if gpu::host_rungs(self.profile, self.contract, self.gpu_arms).min_blocks =>
+            {
+                let n = st.per_sm(gpu, &u.members, st.layout(&u.members).total);
+                format!(" \"nvvm.minctasm\"=\"{n}\"")
+            }
+            _ => String::new(),
+        };
         text += &format!(
-            "define ptx_kernel void @{name}({}) \"nvvm.maxntid\"=\"{threads}\" {{\n\
+            "define ptx_kernel void @{name}({}) \"nvvm.maxntid\"=\"{threads}\"{min_blocks} {{\n\
              entry:\n{}\
              \x20 %tid = call i32 @llvm.nvvm.read.ptx.sreg.tid.x()\n\
              \x20 %bid = call i32 @llvm.nvvm.read.ptx.sreg.ctaid.x()\n\

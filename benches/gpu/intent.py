@@ -330,6 +330,14 @@ INTENT = {
         ('every member body inlined: no call left in PTX', 'ptx.call == 0'),
         ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')],
         applies_off="plan.kind == 'flow'", off=[('no streamed unit', 'flow.stream == 0')]),
+    # sweep-attention `unit-uniform` (a fact arm): a stream unit whose tile reads an operand a captured number moves
+    # (a head-group loop's counter) takes it as a pointer the launch moves (`moved=`); the kernel is the unmoved
+    # group's stream. `.off-unit-uniform`: no unit holds such a tile (the split realization, each site alone).
+    'unit-uniform': dict(applies="plan.kind == 'flow' and flow.n_moved > 0", on=[
+        ('a moved operand is a streamed unit\'s', 'flow.stream == 1'),
+        ('its windows land by cp.async (the moved pointer keeps 16-byte chunks)', 'sass.ldgsts > 0'),
+        ('the axis-wide members dissolved', 'flow.n_dissolved > 0')],
+        applies_off="plan.kind == 'flow'", off=[('no moved operand in a unit', 'flow.n_moved == 0')]),
     # long-rows `row-slices` (func/flow.rs): a flow unit's few long rows over several blocks — `slices=` blocks a
     # row, each fold's slice partials combined by `fold_combine`'s law from a workspace, the phases the laws leave
     # (`phases=`) separated by grid barriers of one cooperative launch. OFF (`--gpu-off=row-slices`): one block a row.

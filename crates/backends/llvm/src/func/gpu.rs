@@ -2340,6 +2340,9 @@ fn launch_key(l: &Launch) -> String {
         .replace(", tma_digits: true", "")
         .replace(", tma_digits: false", "")
         .replace(", ws: false, realloc: None", "")
+        // sweep-attention: `unit-uniform` decides which units exist (no
+        // kernel text of a tile site's).
+        .replace(", unit_uniform: false", "")
         .replace(", cells: 1 }", " }")
 }
 

@@ -821,6 +821,8 @@ def flow_facts(f, dev):
                 stream=1 if f.get('stream') else 0, windows=f.get('windows', 0) or 0,
                 skip=1 if str(f.get('skip', '')) == 'on' else 0,
                 n_dissolved=len([x for x in str(f.get('dissolved', '')).split(',') if x]),
+                # sweep-attention `unit-uniform`: the operands the unit's launch moves by a captured number.
+                n_moved=len([x for x in str(f.get('moved', '')).split(';') if x]),
                 members=str(f.get('members', '')),
                 keep=[x.split(':')[0] for x in str(f.get('keep', '')).split(';') if x],
                 store=[x for x in str(f.get('store', '')).split(';') if x])

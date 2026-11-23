@@ -71,7 +71,10 @@ pub struct StreamGroup {
     /// The axis: cells per row of the axis-wide members, `k` of the folds
     /// and consumers.
     pub axis: u64,
-    /// Per member of the group, in its order.
+    /// Per member of the group, in its order — the first `roles.len()`
+    /// members (sweep-attention: the members after the last consumer that
+    /// read only its value, a carried sum of a head loop's outputs, run after
+    /// the stream as their own launches, reading its stored rows).
     pub roles: Vec<StreamRole>,
     /// Axis-wide members never stored, and their bytes over every row.
     pub dissolved: Vec<usize>,
@@ -299,7 +302,6 @@ impl CategoryIr {
         fp: &FootprintPlan,
     ) -> Result<StreamGroup, &'static str> {
         let ms = &g.members;
-        let n = ms.len();
         // The axis: a tile folding over an in-group row of its own `k`.
         let axis = ms
             .iter()
@@ -312,6 +314,28 @@ impl CategoryIr {
                 _ => None,
             })
             .ok_or("no-axis")?;
+        // sweep-attention: the members after the last consumer (a tile
+        // folding the axis over an in-group axis-wide row) that read only it
+        // or each other are no part of the pass: they follow it, reading its
+        // stored rows (a head loop's carried sum `y + attg`, its width the
+        // axis's where `d = T`).
+        let consumer = ms.iter().rposition(|mb| match &mb.kind {
+            UnitKind::Tile(t) => {
+                t.k == axis
+                    && mb
+                        .reads
+                        .iter()
+                        .any(|&(s, p)| s == t.a.slot && ms[p].w == axis)
+            }
+            _ => false,
+        });
+        let ms = match consumer {
+            Some(c) if (c + 1..ms.len()).all(|k| ms[k].reads.iter().all(|&(_, p)| p >= c)) => {
+                &ms[..=c]
+            }
+            _ => &ms[..],
+        };
+        let n = ms.len();
         let wide = |k: usize| ms[k].w == axis;
         // Does `mb` read its source `p`'s row `i` at cell `j` for step `j`?
         let along = |ci: u64, ck: u64, base: u64, clane: u64| {
@@ -327,8 +351,13 @@ impl CategoryIr {
                         | StreamRole::Row { after: true }
                 )
             });
+            // A tile folding the axis over an in-group row is its consumer
+            // even where its own width is the axis's too (`d = T`).
+            let consumes = |t: &crate::TileSite| {
+                t.k == axis && mb.reads.iter().any(|&(s, p)| s == t.a.slot && wide(p))
+            };
             let role = match &mb.kind {
-                UnitKind::Tile(t) if mb.w == axis && t.c == axis => {
+                UnitKind::Tile(t) if mb.w == axis && t.c == axis && !consumes(t) => {
                     // Its operands are memory (complete before the launch).
                     if !mb.reads.is_empty() {
                         return Err("producer");
@@ -575,7 +604,8 @@ impl CategoryIr {
         if !self.fact_arms().guard_box {
             return None;
         }
-        let ms = &g.members;
+        // The members the pass covers (`StreamGroup::roles`).
+        let ms = &g.members[..roles.len()];
         let producers: Vec<usize> = (0..ms.len())
             .filter(|&k| roles[k] == StreamRole::Produce)
             .collect();
