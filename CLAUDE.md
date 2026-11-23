@@ -87,9 +87,16 @@ only a fact that is not there yet is computed (from its stored inputs). Never re
 
 - Optimizations derive from Mapal dataflow facts (tile_plan, elem_plan, loop_plan, last_use_plan, path_plan,
   bounds_proof, use counts, death points) + TargetProfile hardware facts, emitted so LLVM can derive the schedule.
-  No workload-named special cases, and no parallel module that re-derives what an IR fact or existing allocator
+  No workload-named special cases (the only exception: a recorded tailored fix, below), and no parallel module that re-derives what an IR fact or existing allocator
   already models (e.g. a loop-only lifetime allocator next to `LastUsePlan` coloring) — extend the existing
   machinery so the case falls out. Reuse the plans/facts at hand; add a new fact only when none carries it.
+- **Open problems are attacked, not just recorded** (Sapir, 2026-11-23). When work finds an open problem — a loss
+  against a competitor, a mixed rule, a missing fact or property, a bug — attempt to solve or optimize it in the same
+  piece of work where feasible; report only what was tried and why it did not close. Solve it generically: a fact,
+  property or rule change that makes the specific case fall out and helps every program with the same structure.
+  Only when no abstraction exists is a tailored fix allowed; it is recorded in `docs/tailored-fixes.md` (the case,
+  where it lives, why no generic form exists yet, the generic direction) and revisited until a generic optimization
+  replaces it.
 - **A mixed result is a missing fact** (Sapir, 2026-10-26). An optimization that wins on some programs and loses on
   others beyond null means its condition lumps different situations together (over-abstraction). Find what separates
   winners from losers in the SASS/usage evidence (layout, extent vs SMs, reuse, occupancy, …), add it as an IR or
