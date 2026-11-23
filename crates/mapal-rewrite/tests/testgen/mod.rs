@@ -5852,3 +5852,207 @@ pub fn flash_src(p: &FlashProg) -> String {
     }
     s + "}\n"
 }
+
+// --- f32-tensor-cores: split realizations of `{f32}` products ------------------
+
+/// A sum of products under the default face's `{f32}` (no member set) whose
+/// operands a split form may realize on a matrix instruction
+/// (`mapal_ir::split`): both `f32` (tf32x3), both one narrow format
+/// (narrow1), or `f32 × bf16` (no form: the FMA tile). `k` straddles every
+/// form's `K_min` (8 … 512); a residual epilogue; `b` row-major or read
+/// transposed; value laws a split meets at its edges — small rationals,
+/// magnitudes spread over 2^±40, cancelling pairs (`|Σ| ≪ M`), small integers
+/// (TF32-exact: `lo = 0`), an infinity and a NaN (the guard), the largest
+/// finite value (the `hi` overflow select), operands near the least normal
+/// value (parts below it: the absolute term).
+#[derive(Clone, Debug)]
+pub struct SplitProg {
+    pub dims: [u8; 3],
+    /// 0: f32 × f32, 1: bf16 × bf16, 2: f16 × f16, 3: f32 × bf16.
+    pub store: u8,
+    /// 0 rationals, 1 wide, 2 cancelling, 3 integers, 4 inf / NaN, 5 the
+    /// largest finite, 6 tiny.
+    pub law: u8,
+    pub bt: bool,
+    pub post: bool,
+    pub seed: [u8; 2],
+}
+
+pub fn split_prog_strategy() -> impl Strategy<Value = SplitProg> {
+    (
+        (any::<u8>(), any::<u8>(), any::<u8>()),
+        prop::sample::select(vec![0u8, 0, 1, 1, 2, 3]),
+        0u8..7,
+        prop::bool::weighted(0.3),
+        prop::bool::weighted(0.3),
+        (any::<u8>(), any::<u8>()),
+    )
+        .prop_map(|(d, store, law, bt, post, (s0, s1))| SplitProg {
+            dims: [d.0, d.1, d.2],
+            store,
+            law,
+            bt,
+            post,
+            seed: [s0, s1],
+        })
+}
+
+/// [`SplitProg`]'s source and `(cells, m, k)`: each checked cell prints its
+/// value, its `M = Σ|a·b|` and `Σ(|a| + |b|)` (the absolute term's operand
+/// mass), in that order.
+pub fn split_src(p: &SplitProg) -> (String, (usize, u64, u64)) {
+    let pick = |d: u8, v: &[u64]| v[usize::from(d) % v.len()];
+    // Narrow operands: half the draws at sites whose flops per operand byte
+    // reach a part's FFMA balance (`m`, `n` 256, `k` 512: 85 flop / B), where
+    // the rule (not only its ON arm) takes the split.
+    let (m, n, k) = match p.store {
+        1 | 2 => (
+            pick(p.dims[0], &[32, 128, 256, 256]),
+            pick(p.dims[1], &[16, 128, 256, 256]),
+            pick(p.dims[2], &[16, 48, 128, 512, 512]),
+        ),
+        _ => (
+            pick(p.dims[0], &[16, 32, 64, 128, 256]),
+            pick(p.dims[1], &[8, 16, 32, 64, 128, 256]),
+            pick(p.dims[2], &[8, 16, 24, 32, 48, 64, 96, 128, 256, 512]),
+        ),
+    };
+    split_src_at(p, m, n, k)
+}
+
+/// [`split_src`] at the given extents.
+pub fn split_src_at(p: &SplitProg, m: u64, n: u64, k: u64) -> (String, (usize, u64, u64)) {
+    let (a1, a2) = (
+        u64::from(p.seed[0] % 13) * 2 + 3,
+        u64::from(p.seed[1] % 11) * 2 + 5,
+    );
+    let (fa, fb) = match p.store {
+        1 => (Some("bf16"), Some("bf16")),
+        2 => (Some("f16"), Some("f16")),
+        3 => (None, Some("bf16")),
+        _ => (None, None),
+    };
+    // The narrow formats' range: the wide / tiny / largest laws keep their
+    // spread inside it (f16: 2^±14 of headroom).
+    let narrow = fa.is_some() || fb.is_some();
+    let big = if narrow { "64.0" } else { "1000000000000.0" };
+    let small = if narrow { "64.0" } else { "1000000000.0" };
+    let p0 = u64::from(p.seed[0]) * 37 % (m * k);
+    let p1 = u64::from(p.seed[1]) * 41 % (k * n);
+    // `a` along `k` (row-major), `b` along `k` at stride `n` (or 1 when `bt`).
+    let law_a = match p.law {
+        1 => format!(
+            "(t * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 -> x; (t % 3 == 0) -> {{ -true-> x * {big}; -false-> x / {small}; }} -> r; r"
+        ),
+        2 => format!(
+            "((t / 2) * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 -> x; (t % 2 == 0) -> {{ -true-> x; -false-> 0.0 - x; }} -> r; r"
+        ),
+        3 => format!("(t * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v"),
+        4 => format!(
+            "(t * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 -> x; (t == {p0}) -> {{ -true-> 1.0 / 0.0; -false-> x; }} -> r; r"
+        ),
+        5 if !narrow => format!(
+            "(t * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 -> x; (t == {p0}) -> {{ -true-> 340282346638528859811704183484516925440.0; -false-> x; }} -> r; r"
+        ),
+        6 if !narrow => format!(
+            "(t * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 -> x; x / 1000000000000000000000000000000000000.0"
+        ),
+        _ => format!("(t * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0"),
+    };
+    // Cancelling pairs: `b` equal on the two `k` of a pair (whose `a` cancel)
+    // but for a relative 2⁻¹⁰ step.
+    let pair = if p.bt {
+        "t / 2".to_string()
+    } else {
+        format!("t / {} * {n} + t % {n}", 2 * n)
+    };
+    let odd = if p.bt {
+        "t % 2".to_string()
+    } else {
+        format!("t / {n} % 2")
+    };
+    let law_b = match p.law {
+        2 => format!(
+            "(({pair}) * {a2} + 57) % 103 - 51 -> widen_f32 -> v; {odd} -> widen_f32 -> s; v / 9.0 + v / 9.0 * s / 1024.0"
+        ),
+        3 => format!("(t * {a2} + 57) % 103 - 51 -> widen_f32 -> v; v"),
+        4 => format!(
+            "(t * {a2} + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 -> x; (t == {p1}) -> {{ -true-> 0.0 / 0.0; -false-> x; }} -> r; r"
+        ),
+        5 if !narrow => format!(
+            "(t * {a2} + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 / 1000000000000000000000000000000.0"
+        ),
+        6 if !narrow => format!(
+            "(t * {a2} + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 * 100000000000000000000.0"
+        ),
+        _ => format!("(t * {a2} + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0"),
+    };
+    let store = |f: Option<&str>| f.map_or(String::new(), |n| format!(" -> to_{n}"));
+    let read = |f: Option<&str>, x: &str| match f {
+        Some(_) => format!("{x} -> widen_f32"),
+        None => x.to_string(),
+    };
+    let bi = if p.bt {
+        format!("b[j * {k} + q]")
+    } else {
+        format!("b[q * {n} + j]")
+    };
+    let (ar, br) = (read(fa, &format!("a[i * {k} + q]")), read(fb, &bi));
+    let post = if p.post {
+        format!(
+            " -> u; {} -> r; u * 0.5 + r",
+            read(fa, &format!("a[i * {k}]"))
+        )
+    } else {
+        String::new()
+    };
+    let abs =
+        |x: &str, o: &str| format!("({x} > 0.0) -> {{ -true-> {x}; -false-> 0.0 - {x}; }} -> {o}");
+    let cells = [
+        u64::from(p.seed[0]) * 7 % (m * n),
+        m * n / 2 + 1,
+        m * n - 1 - u64::from(p.seed[1]) % n,
+    ];
+    // An integer literal, a negative one as a difference.
+    let int = |v: i64| match v < 0 {
+        true => format!("(0 - {})", -v),
+        false => v.to_string(),
+    };
+    let mut src = format!(
+        "fn main() {{
+    {mk} -> iota -> ia;
+    ia -> map {{ t -> {law_a} }} -> a0;
+    a0 -> map {{ x -> x{sa} }} -> a;
+    {kn} -> iota -> ib;
+    ib -> map {{ t -> {law_b} }} -> b0;
+    b0 -> map {{ x -> x{sb} }} -> b;
+    {mn} -> iota -> ic;
+    {k} -> iota -> kr;
+    ic -> map {{ t -> t / {n} -> i; t % {n} -> j; (0.0, kr) -> fold {{ acc, q -> {ar} -> x; {br} -> y; acc + x * y }}{post} }} -> y;
+    3 -> iota -> ck;
+    ck -> map: f32 {{ s -> {c0} + s * {d1} + s * (s - 1) / 2 * {d2} -> t; t / {n} -> i; t % {n} -> j; (0.0, kr) -> fold {{ acc, q -> {ar} -> x; {br} -> y; x * y -> pv; {pabs}; acc + av }} }} -> mag;
+    ck -> map: f32 {{ s -> {c0} + s * {d1} + s * (s - 1) / 2 * {d2} -> t; t / {n} -> i; t % {n} -> j; (0.0, kr) -> fold {{ acc, q -> {ar} -> x; {br} -> y; {xabs}; {yabs}; acc + ax + ay }} }} -> sab;
+",
+        mk = m * k,
+        kn = k * n,
+        mn = m * n,
+        sa = store(fa),
+        sb = store(fb),
+        pabs = abs("pv", "av"),
+        xabs = abs("x", "ax"),
+        yabs = abs("y", "ay"),
+        // The three checked cells as `c0 + s·d1 + s(s−1)/2·d2`, `s` = 0, 1, 2:
+        // `M` and `Σ(|a| + |b|)` of those cells only (the interpreter's
+        // budget at 256 × 256 × 512).
+        c0 = cells[0],
+        d1 = int(cells[1] as i64 - cells[0] as i64),
+        d2 = int(cells[2] as i64 - 2 * cells[1] as i64 + cells[0] as i64),
+    );
+    for (s, c) in cells.iter().enumerate() {
+        src += &format!(
+            "    y[{c}] -> println;\n    mag[{s}] -> println;\n    sab[{s}] -> println;\n"
+        );
+    }
+    src += "}\n";
+    (src, (cells.len(), m, k))
+}

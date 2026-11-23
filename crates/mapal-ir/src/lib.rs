@@ -34,6 +34,7 @@ mod loc;
 mod mermaid;
 pub mod narrow;
 mod residence;
+pub mod split;
 mod ty;
 mod unit;
 mod validate;

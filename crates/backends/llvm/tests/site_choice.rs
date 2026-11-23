@@ -465,7 +465,9 @@ fn candidate_zero_is_the_pre_sprint_emission() {
         // boundaries alone). gemv-stream's rungs (`vec-cells`,
         // `stream-fly`, `bulk-stage`) change the one-row sites' and the TF32
         // tile's kernels by design: with their OFF arms the emission is the
-        // one before them.
+        // one before them. f32-tensor-cores too (`mma-combine` cuts the
+        // rtx-3090's mlp_2048_tf32 tile, `split-tile` takes the A100's `{f32}`
+        // products): their OFF arms keep the emission before them.
         for f in [
             target.as_str(),
             "--host=x86-64-v3",
@@ -477,6 +479,7 @@ fn candidate_zero_is_the_pre_sprint_emission() {
             "--gpu-off=horizontal",
             "--gpu-off=k-fill,streamk-fill",
             "--gpu-off=vec-cells,stream-fly,bulk-stage",
+            "--gpu-off=mma-combine,split-tile",
         ]
         .iter()
         .chain(face_flags)

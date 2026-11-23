@@ -183,6 +183,20 @@ pub struct Gpu {
     /// Warp schedulers per SM, each issuing one warp per clock (four on every
     /// profiled SM): the fill rule's unit ([`Self::fill_warps`]).
     pub schedulers: u64,
+    /// f32-tensor-cores P1: **flops one SM issues a clock through the warp
+    /// TF32 product** (`mma.sync.m16n8k8`, operands in registers): `calib.cu
+    /// matrix` (32 warps an SM, independent register chains, clock64 spans
+    /// — the RTX 5080's 256, equal to its FFMA's), else the datasheet's dense
+    /// TF32 rate over `sms · clock`. The split rule weighs it against the
+    /// FFMA rate ([`Self::matrix_flops_per_ns`]).
+    pub mma_tf32_per_clk: u64,
+    /// f32-tensor-cores P1: the same for the warp 16-bit products with f32
+    /// accumulators (`mma.sync.m16n8k16` bf16 / f16: the RTX 5080's 512).
+    pub mma_half_per_clk: u64,
+    /// f32-tensor-cores P1: the same for the warpgroup TF32 product
+    /// (`wgmma.m64nNk8`, `a` from a shared-memory descriptor); 0 where the
+    /// part has none.
+    pub wgmma_tf32_per_clk: u64,
     /// What the SM executes, as properties ([`Caps`]): no rule compares a
     /// version.
     pub caps: Caps,
@@ -382,6 +396,13 @@ pub struct MatrixOp {
     /// instruction, `benches/local/mma_calib.cu`). ADR-0043 D4: a set whose
     /// bound assumes `u_a` takes the instruction only where `acc_u` meets it.
     pub acc_u: i32,
+    /// f32-tensor-cores P2: **the accumulator's alignment guard bits** — an
+    /// addend below `2^(e_max − 23 − g)` is dropped before the sum
+    /// (`mma_calib.cu`'s `g_j` / `g0_j` / `gneg_j` probes: `c = 1` plus `k`
+    /// addends of `2^−(23+j)` kept for `j ≤ g`). The split realization's
+    /// chain term reads it ([`mapal_ir::split::AccModel`]); `g ≥ 1` is what
+    /// keeps ADR-0041 D3's member bound sound ([`mapal_ir::split::AccModel::member_sound`]).
+    pub acc_g: u32,
 }
 
 impl MatrixOp {
@@ -389,7 +410,18 @@ impl MatrixOp {
     pub fn acc_meets(&self, u: i32) -> bool {
         self.acc_u <= u
     }
+
+    /// The accumulator datapath the split realization's bound reads.
+    pub fn acc_model(&self) -> mapal_ir::split::AccModel {
+        mapal_ir::split::AccModel { g: self.acc_g }
+    }
 }
+
+/// [`MatrixOp::acc_g`] measured on the RTX 5080 (sm_120) for every warp
+/// format — TF32 m16n8k8, bf16 / f16 m16n8k16, e4m3 / e5m2 m16n8k32: two
+/// guard bits (`mma_calib.cu`, `f32-tensor-cores.md` §S0), as [`MMA_ACC_U`]
+/// the same datapath on every profiled part until a part measures its own.
+pub const MMA_ACC_G: u32 = 2;
 
 /// [`MatrixOp::acc_u`] measured on the RTX 5080 (sm_120) for every warp
 /// `mma` format (`mma_calib.cu`: truncation): the unit is the same
@@ -458,6 +490,7 @@ const fn op(shape: MmaShape, fmt: MmaFmt, a: Home, b: Home, acc: Home) -> Matrix
         b,
         acc,
         acc_u: MMA_ACC_U,
+        acc_g: MMA_ACC_G,
     }
 }
 
@@ -797,7 +830,7 @@ impl DeviceCost {
     /// overrides by name ([`Gpu::fp32_lanes`], [`Gpu::clock_khz`], and the
     /// hardware-properties the rung rules read: SMs, L2, shared memory,
     /// threads, registers and blocks per SM, the DRAM interface).
-    pub const NAMES: [&'static str; 38] = [
+    pub const NAMES: [&'static str; 41] = [
         "flops_per_ns",
         "bytes_per_ns",
         "launch_ns",
@@ -836,6 +869,9 @@ impl DeviceCost {
         "max_blocks_per_sm",
         "mem_clock_khz",
         "mem_bus_bits",
+        "mma_tf32_per_clk",
+        "mma_half_per_clk",
+        "wgmma_tf32_per_clk",
     ];
 
     /// kernel-merging `calls`: one grid barrier of `blocks` co-resident
@@ -929,6 +965,9 @@ impl Gpu {
                 "regs_per_sm" => &mut self.regs_per_sm,
                 "max_blocks_per_sm" => &mut self.max_blocks_per_sm,
                 "mem_clock_khz" => &mut self.mem_clock_khz,
+                "mma_tf32_per_clk" => &mut self.mma_tf32_per_clk,
+                "mma_half_per_clk" => &mut self.mma_half_per_clk,
+                "wgmma_tf32_per_clk" => &mut self.wgmma_tf32_per_clk,
                 _ => &mut self.mem_bus_bits,
             } = v;
         }
@@ -981,6 +1020,9 @@ impl Gpu {
             "max_blocks_per_sm" => self.max_blocks_per_sm,
             "mem_clock_khz" => self.mem_clock_khz,
             "mem_bus_bits" => self.mem_bus_bits,
+            "mma_tf32_per_clk" => self.mma_tf32_per_clk,
+            "mma_half_per_clk" => self.mma_half_per_clk,
+            "wgmma_tf32_per_clk" => self.wgmma_tf32_per_clk,
             _ => 0,
         }
     }
@@ -1281,6 +1323,25 @@ impl Gpu {
     /// 2 · clock`); 0 when a factor is not given.
     pub fn ffma_flops_per_ns(&self) -> u64 {
         self.sms * self.fp32_lanes * 2 * self.clock_khz / 1_000_000
+    }
+
+    /// f32-tensor-cores P1: flops one SM issues a clock through `op`
+    /// ([`Self::mma_tf32_per_clk`] and its siblings, by the operand format
+    /// and where `a` lives); 0 for a product the part has no rate for.
+    pub fn matrix_flops_per_clk(&self, op: &MatrixOp) -> u64 {
+        match (op.fmt, op.a) {
+            (MmaFmt::Tf32, Home::Regs) => self.mma_tf32_per_clk,
+            (MmaFmt::Bf16 | MmaFmt::F16, Home::Regs) => self.mma_half_per_clk,
+            (MmaFmt::Tf32, Home::Smem) => self.wgmma_tf32_per_clk,
+            _ => 0,
+        }
+    }
+
+    /// f32-tensor-cores P1: `op`'s peak, flops per ns (`sms ·` that `·
+    /// clock`) — the tensor rate the split rule weighs against
+    /// [`Self::ffma_flops_per_ns`].
+    pub fn matrix_flops_per_ns(&self, op: &MatrixOp) -> u64 {
+        self.sms * self.matrix_flops_per_clk(op) * self.clock_khz / 1_000_000
     }
 
     /// hardware-properties: the DRAM peak, bytes per ns (double data rate over
@@ -1586,6 +1647,12 @@ pub struct GpuMmaTile {
     /// + q]`, attention's `K`, a `[out][in]` weight) — the `col` operand
     /// `ldmatrix` reads without `.trans`; else `k × n`.
     pub bt: bool,
+    /// f32-tensor-cores R-F `split-tile`: a `{f32}` product realized on this
+    /// tile by a split form ([`mapal_ir::split::SplitKind`]: `Tf32x3` on the
+    /// TF32 kernel, `Narrow1` on the 16-bit one) — each k-step's part
+    /// products summed from a zeroed accumulator, then one round-to-nearest
+    /// add into the f32 accumulator; `None`: the member's realization.
+    pub split: Option<mapal_ir::split::SplitKind>,
 }
 
 /// Registers a tensor-core thread spends on addresses and loop state, beyond
@@ -2921,7 +2988,54 @@ impl TargetProfile {
         if !g.has_mma_sync() {
             return None;
         }
-        self.gpu_mma_geom(rows, c, k, wide, fill, MmaFmt::Tf32, 4, 4, false)
+        self.gpu_mma_geom(rows, c, k, wide, fill, MmaFmt::Tf32, 4, 4, false, false)
+    }
+
+    /// **f32-tensor-cores `split-tile` (tf32x3): the TF32 tile of a split
+    /// `{f32}` site** — [`Self::gpu_mma_tile`]'s rules with each fragment
+    /// held twice (its `hi` and `lo` parts) in the register count: the
+    /// whole-file tile at 255 registers is `4 × 4`, not `4 × 8`.
+    pub fn gpu_mma_split_tile(
+        &self,
+        rows: u64,
+        c: u64,
+        k: u64,
+        wide: bool,
+        fill: bool,
+        depth: bool,
+    ) -> Option<GpuMmaTile> {
+        let g = self.gpu()?;
+        if !g.has_mma_sync() {
+            return None;
+        }
+        self.gpu_mma_geom_parts(
+            rows,
+            c,
+            k,
+            wide,
+            fill,
+            (MmaFmt::Tf32, 4, 4, false),
+            depth,
+            (2, true),
+        )
+    }
+
+    /// [`Self::gpu_mma_tile`] with the panel depth of f32-tensor-cores
+    /// `mma-depth` where `depth` ([`mma_depth_pick`]).
+    pub fn gpu_mma_tile_at(
+        &self,
+        rows: u64,
+        c: u64,
+        k: u64,
+        wide: bool,
+        fill: bool,
+        depth: bool,
+    ) -> Option<GpuMmaTile> {
+        let g = self.gpu()?;
+        if !g.has_mma_sync() {
+            return None;
+        }
+        self.gpu_mma_geom(rows, c, k, wide, fill, MmaFmt::Tf32, 4, 4, false, depth)
     }
 
     /// **The 16-bit tensor-core geometry** (tensor-cores, ADR-0043 D6): the
@@ -2947,6 +3061,8 @@ impl TargetProfile {
         ea: u64,
         eb: u64,
         bt: bool,
+        depth: bool,
+        split: bool,
     ) -> Option<GpuMmaTile> {
         let g = self.gpu()?;
         let op = g.caps.matrix_op(fmt, Home::Regs)?;
@@ -2955,7 +3071,7 @@ impl TargetProfile {
         {
             return None;
         }
-        self.gpu_mma_geom(rows, c, k, wide, fill, fmt, ea, eb, bt)
+        self.gpu_mma_geom_parts(rows, c, k, wide, fill, (fmt, ea, eb, bt), depth, (1, split))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2970,6 +3086,28 @@ impl TargetProfile {
         ea: u64,
         eb: u64,
         bt: bool,
+        depth: bool,
+    ) -> Option<GpuMmaTile> {
+        self.gpu_mma_geom_parts(rows, c, k, wide, fill, (fmt, ea, eb, bt), depth, (1, false))
+    }
+
+    /// [`Self::gpu_mma_geom`] with each operand fragment held `parts` times
+    /// (a split form's parts, f32-tensor-cores) and, under a split form
+    /// (`split`), each tile's chain result beside its accumulator: ptxas
+    /// issues a k-step's products before their adds, so a thread holds a
+    /// temporary accumulator a tile (the rtx-5080's narrow1 `4 × 8` tile at
+    /// 254 registers spilled 64 B of `cp.async` addresses in the loop).
+    #[allow(clippy::too_many_arguments)]
+    fn gpu_mma_geom_parts(
+        &self,
+        rows: u64,
+        c: u64,
+        k: u64,
+        wide: bool,
+        fill: bool,
+        (fmt, ea, eb, bt): (MmaFmt, u64, u64, bool),
+        depth: bool,
+        (parts, split): (u64, bool),
     ) -> Option<GpuMmaTile> {
         let g = self.gpu()?;
         let acc_per_tile = MMA_M * MMA_N / g.warp; // 4
@@ -2977,7 +3115,9 @@ impl TargetProfile {
             // nt = 2·mt keeps the warp tile square (16·mt = 8·nt).
             let held = |mt: u64| {
                 let nt = 2 * mt;
-                acc_per_tile * mt * nt + 2 * (4 * mt + 2 * nt) + MMA_ADDR_REGS
+                acc_per_tile * mt * nt * (1 + u64::from(split))
+                    + 2 * parts * (4 * mt + 2 * nt)
+                    + MMA_ADDR_REGS
             };
             let mut mt = 1;
             while held(2 * mt) <= g.regs_per_thread {
@@ -3017,6 +3157,10 @@ impl TargetProfile {
         }
         let resident_threads = g.regs_per_sm / regs_est;
         let warps = (resident_threads / g.geom.resident / g.warp).max(1);
+        // f32-tensor-cores: a split tile's block takes a power of two of
+        // warps (its temporaries' estimate, 160 registers, leaves 6: the
+        // block would not tile the site's power-of-two extents).
+        let warps = if split { 1 << warps.ilog2() } else { warps };
         // Square-most block tile: warps_y·wm ≈ warps_x·wn.
         let (wm, wn) = (mt * MMA_M, nt * MMA_N);
         let aspect = |wy: u64| {
@@ -3056,6 +3200,7 @@ impl TargetProfile {
                 blocks_per_sm,
                 threads,
                 (fmt, ea, eb, bt),
+                depth,
             )
         })
     }
@@ -3070,6 +3215,7 @@ impl TargetProfile {
         blocks_per_sm: u64,
         threads: u64,
         (fmt, ea, eb, bt): (MmaFmt, u64, u64, bool),
+        depth: bool,
     ) -> Option<GpuMmaTile> {
         let g = self.gpu()?;
         let mma_k = 32 / fmt.bytes();
@@ -3089,7 +3235,7 @@ impl TargetProfile {
             (_, 4) => conflict_free_pad(bn, |l| (2 * (l % 4), l / 4)),
             _ => Some(ldmatrix_pad(bn)),
         };
-        let mut best = None;
+        let mut cands: Vec<GpuMmaTile> = Vec::new();
         let mut bk = mma_k;
         while bk <= k {
             let pad_a = match (fmt, ea) {
@@ -3116,6 +3262,7 @@ impl TargetProfile {
                 ea,
                 eb,
                 bt,
+                split: None,
             };
             // Whole 16-byte copies per thread, each panel row 16-byte aligned.
             let (la, lb) = (GPU_VEC_BYTES / ea, GPU_VEC_BYTES / eb);
@@ -3127,12 +3274,24 @@ impl TargetProfile {
                 break;
             }
             if k.is_multiple_of(bk) && whole {
-                best = Some(geom);
+                let stages = (share / geom.stage_bytes()).min(k / bk).max(2);
+                cands.push(GpuMmaTile { stages, ..geom });
             }
             bk *= 2;
         }
-        let geom = best?;
-        let stages = (share / geom.stage_bytes()).min(k / geom.bk).max(2);
+        // The panel depth: a forced `--geom=bk=` where the site takes it;
+        // f32-tensor-cores `mma-depth` ([`mma_depth_pick`]); else the deepest
+        // panel two stages fit (S52), as many stages as the share holds.
+        let forced = cands.iter().find(|c| g.geom.bk > 0 && c.bk == g.geom.bk);
+        let geom = *match (forced, depth) {
+            (Some(c), _) => c,
+            (None, true) => mma_depth_pick(&cands)?,
+            (None, false) => cands.last()?,
+        };
+        let stages = match g.geom.stages {
+            0 => geom.stages,
+            s => s.min(geom.stages).max(2),
+        };
         Some(GpuMmaTile { stages, ..geom })
     }
 
@@ -4164,6 +4323,16 @@ const ADA_SM: Gpu = Gpu {
     mem_clock_khz: 10_501_000,
     mem_bus_bits: 192,
     schedulers: 4,
+    // f32-tensor-cores P1: the warp products' flops an SM a clock. Every
+    // GeForce SM since `sm_86` issues TF32 at its FFMA rate and the 16-bit
+    // products with f32 accumulators at twice it: the RTX 5080 measured
+    // 256 / 512 (`calib.cu matrix`, f32-tensor-cores.md); the 3090 / 4090 /
+    // 5090 datasheets' dense TF32 / FP16-with-FP32-accumulate rates (35.6 /
+    // 71, 82.6 / 165.2, 104.8 / 209.5 Tflop/s) over `sms · boost` give the
+    // same 256 / 512.
+    mma_tf32_per_clk: 256,
+    mma_half_per_clk: 512,
+    wgmma_tf32_per_clk: 0,
     caps: CAPS_WARP_MMA_F8,
 };
 
@@ -4295,6 +4464,15 @@ pub const H100: TargetProfile = TargetProfile {
         clock_khz: 1_807_000,
         mem_clock_khz: 2_619_000,
         mem_bus_bits: 5120,
+        // f32-tensor-cores P1: `wgmma` TF32 — the datasheet's dense 494.7
+        // Tflop/s over 132 SMs at 1.83 GHz (2048); `mma.sync` measured as
+        // Mapal realized it (cross-arch: mlp_2048_tf32's HMMA tile, 2 · 2·2048³
+        // flops in 0.2701 ms = 127 Tflop/s, 532 an SM a clock here — a lower
+        // bound until `calib.cu matrix` runs on the box); the 16-bit warp
+        // products at twice it, the ratio every measured SM shows.
+        mma_tf32_per_clk: 532,
+        mma_half_per_clk: 1064,
+        wgmma_tf32_per_clk: 2048,
         caps: CAPS_WARPGROUP_MMA,
         ..ADA_SM
     }),
@@ -4335,6 +4513,10 @@ pub const H100_PCIE: TargetProfile = TargetProfile {
         clock_khz: 1_755_000,
         mem_clock_khz: 1_593_000,
         mem_bus_bits: 5120,
+        // f32-tensor-cores P1: the Hopper SM's rates ([`H100`]).
+        mma_tf32_per_clk: 532,
+        mma_half_per_clk: 1064,
+        wgmma_tf32_per_clk: 2048,
         caps: CAPS_WARPGROUP_MMA,
         ..ADA_SM
     }),
@@ -4635,11 +4817,32 @@ pub const A100: TargetProfile = TargetProfile {
         clock_khz: 1_410_000,
         mem_clock_khz: 1_215_000,
         mem_bus_bits: 5120,
+        // f32-tensor-cores P1: the datasheet's dense TF32 156 and bf16 312
+        // Tflop/s over 108 SMs at 1.41 GHz — eight times the FFMA rate an SM
+        // a clock (64 lanes); Mapal's own TF32 tile realized 81.4, the best
+        // TF32 leg 127.5 (matrix.md, pj_m2048_n28672_k4096).
+        mma_tf32_per_clk: 1024,
+        mma_half_per_clk: 2048,
         caps: CAPS_WARP_MMA,
         ..ADA_SM
     }),
     ..GENERIC
 };
+
+/// **f32-tensor-cores R-T2 `mma-depth`: the panel depth that keeps the most
+/// operand bytes in flight a block** — among the tensor tile's panel
+/// candidates at its residency (each `bk` whose two stages fit the block's
+/// shared-memory share, with as many stages as the share holds), the one
+/// whose `stages − 1` panels in flight hold the most bytes (Little's law: a
+/// skinny site's panels stream from DRAM, and a deeper pipeline covers more of
+/// the load latency than a deeper panel); a tie keeps the deeper panel (fewer
+/// barriers a `k`). The RTX 5080's 128 × 4096 × 4096 TF32 site: `bk` 32 × 2
+/// stages (18 KiB in flight) against `bk` 16 × 5 (37 KiB).
+pub fn mma_depth_pick(cands: &[GpuMmaTile]) -> Option<&GpuMmaTile> {
+    cands
+        .iter()
+        .max_by_key(|c| ((c.stages - 1) * c.stage_bytes(), c.bk))
+}
 
 /// How many blocks the thread budget is split across on one SM: two, so one
 /// computes while the other waits at the panel barrier. Policy, like
@@ -5003,6 +5206,23 @@ pub const fn fp32_lanes_of_cc(cc: u64) -> u64 {
     }
 }
 
+/// f32-tensor-cores P1: the warp TF32, warp 16-bit (f32 accumulate) and
+/// warpgroup TF32 products' flops an SM a clock, the SM designs' table by
+/// compute capability — the fallback when the calibration file does not give
+/// `mma_tf32_per_clk` / `mma_half_per_clk` / `wgmma_tf32_per_clk` (`calib.cu
+/// matrix`), as [`fp32_lanes_of_cc`] for the FFMA lanes: the datacenter
+/// `sm_80` SM 1024 / 2048; the Hopper SM's `mma.sync` as Mapal realized it
+/// (532, [`H100`]) and its `wgmma` 2048; every other SM since `sm_86` 256 /
+/// 512 (the RTX 5080 measured). No tensor core below `sm_80`.
+pub const fn mma_rates_of_cc(cc: u64) -> [u64; 3] {
+    match cc {
+        0..80 => [0, 0, 0],
+        80 => [1024, 2048, 0],
+        90 => [532, 1064, 2048],
+        _ => [256, 512, 0],
+    }
+}
+
 impl DeviceQuery {
     /// Device `ordinal`'s facts through the driver API (`libcuda.so.1`,
     /// opened at run time); `None` without a driver or that device.
@@ -5069,6 +5289,13 @@ impl DeviceQuery {
             mem_clock_khz: self.mem_clock_khz,
             mem_bus_bits: self.mem_bus_bits,
             schedulers: 4,
+            mma_tf32_per_clk: mma_rates_of_cc(self.cc)[0],
+            mma_half_per_clk: mma_rates_of_cc(self.cc)[1],
+            wgmma_tf32_per_clk: if arch_specific {
+                mma_rates_of_cc(self.cc)[2]
+            } else {
+                0
+            },
             caps: caps_of_cc(self.cc, arch_specific),
         };
         let over = calib.and_then(|t| calib_line(t, &self.calib_key()));

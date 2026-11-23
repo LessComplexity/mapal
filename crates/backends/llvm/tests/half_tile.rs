@@ -191,9 +191,12 @@ fn realization_per_arm() {
 }
 
 /// `{f32}` over two operands of one narrow format: exact products, so the
-/// tensor core is admitted only where its accumulator meets `u_a = 2⁻²⁴`
-/// (`MatrixOp::acc_meets`); every profiled part truncates (`mma_calib.cu`):
-/// no 16-bit `mma` under the default face's set.
+/// member's realization (the products chained on the truncating
+/// accumulator) is not admitted — every profiled part truncates
+/// (`mma_calib.cu`): no `half-tile` kernel under the default face's set.
+/// f32-tensor-cores: the split form `narrow1` takes it instead (each k-step
+/// from a zeroed accumulator, one round-to-nearest add: D2 at the site's
+/// `K`, `split_tile.rs`), its own rung `split-tile`.
 #[test]
 fn exact_products_need_the_round_to_nearest_accumulator() {
     let src = GEMV
@@ -208,7 +211,49 @@ fn exact_products_need_the_round_to_nearest_accumulator() {
     let site = s.sites.values().next().expect("site");
     assert!(site.a.narrow.is_some() && site.b.narrow.is_some() && site.half.is_none());
     let e = emission(&ir, "rtx-5080", EmitOpts::default(), &["half-fill"]);
-    assert!(half_lines(e.device.as_deref().unwrap_or("")).is_empty());
+    let dev = e.device.as_deref().unwrap_or("");
+    assert!(half_lines(dev).is_empty());
+    // This GEMV is DRAM-bound and its grid small: `split_pays` keeps the FMA
+    // tile; the ON arm (the bound alone) takes narrow1.
+    let mut arms = GpuArms::default();
+    *arms.on.rung("split-tile").expect("rung") = true;
+    for r in [
+        "place",
+        "async",
+        "pdl",
+        "streams",
+        "pinned",
+        "horizontal",
+        "calls",
+    ] {
+        *arms.off.rung(r).expect("rung") = true;
+    }
+    let forced = emit_detailed(
+        &ir,
+        &EmitOpts {
+            host: "generic",
+            target: "rtx-5080",
+            gpu: arms,
+            ..EmitOpts::default()
+        },
+    )
+    .expect("emits");
+    assert!(
+        forced
+            .device
+            .as_deref()
+            .unwrap_or("")
+            .lines()
+            .any(|l| l.starts_with("; mapal.plan ") && l.contains(" split=narrow1")),
+        "the split form narrow1"
+    );
+    let e = emission(
+        &ir,
+        "rtx-5080",
+        EmitOpts::default(),
+        &["half-fill", "split-tile"],
+    );
+    assert!(!e.device.as_deref().unwrap_or("").contains("mma.sync"));
     // Under the program's `: bf16 | f32` the same operands take it.
     let ir = lower(&src.replace("-> fold {", "-> fold: bf16 | f32 {"));
     let e = emission(&ir, "rtx-5080", EmitOpts::default(), &["half-fill"]);

@@ -42,7 +42,9 @@
 //           run first when not selected); run_khz the SM clock during the chains (clock64 over globaltimer, block 0).
 //           The `coop_body_cycles` line is the 4-round chain's: the grid-stride form, the bodies' largest change here.
 // The `calib device=` line carries the device query's physical facts the rung rules read (`DeviceQuery`).
-// usage: calib [chase|bw|loaded|lds|gsync|copy|ffma|head|body ...]   (all when none).  Output: `<kind> k=v ...` lines, one per point.
+//   matrix  f32-tensor-cores P1: the warp products' flops an SM clock (`MatrixOp::sm_flops_per_clk`) and a ns, and the
+//           TF32 split realization's issue pattern against them (`matrix_run`)
+// usage: calib [chase|bw|loaded|lds|gsync|copy|ffma|head|body|bar|matrix ...]   (all when none).  Output: `<kind> k=v ...` lines, one per point.
 // build: nvcc -O3 -arch=sm_<cc> -std=c++17 -rdc=true calib.cu -o calib -lcudadevrt   (rdc for the tail launch)
 #include <chrono>
 #include <cmath>
@@ -426,6 +428,94 @@ static void ffma_run(int cc) {
            sus / (2.0 * sms * lanes) * 1e6, settle * 100, win.size(), win[0]);
     CK(cudaFree(out));
 }
+// matrix (f32-tensor-cores P1, `MatrixOp::sm_flops_per_clk`): the warp products' issue rate. One block of 1024
+// threads an SM (32 warps), each warp 8 independent accumulator chains of `mma.sync` from registers (operands opaque
+// from the host); per SM the products' flops over its clock64 span — flops a SM clock, clock-independent — and the
+// rate under load in flops a ns (best of 5, then sustained over 3 s as `ffma`). `split3`: the TF32 split
+// realization's issue pattern (f32-tensor-cores design §2.3) — per tile three products into a zeroed temp and four
+// FADDs onto the f32 accumulator — its products a clock against the plain chains' (the realized split efficiency).
+template <int F> __device__ __forceinline__ void mma_one(float (&d)[4], const unsigned (&a)[4], const unsigned (&b)[2]) {
+    if (F == 1)
+        asm volatile("mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 {%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};"
+                     : "+f"(d[0]), "+f"(d[1]), "+f"(d[2]), "+f"(d[3]) : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b[0]), "r"(b[1]));
+    else if (F == 2)
+        asm volatile("mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32 {%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};"
+                     : "+f"(d[0]), "+f"(d[1]), "+f"(d[2]), "+f"(d[3]) : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b[0]), "r"(b[1]));
+    else
+        asm volatile("mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32 {%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};"
+                     : "+f"(d[0]), "+f"(d[1]), "+f"(d[2]), "+f"(d[3]) : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b[0]), "r"(b[1]));
+}
+// F: 0 tf32, 1 bf16, 2 f16 (plain chains); 3 tf32 split3.
+template <int F> __global__ void __launch_bounds__(1024, 1) matrix_k(float* out, int iters, unsigned x, long long* cyc) {
+    float d[8][4];
+    for (int j = 0; j < 8; j++) for (int q = 0; q < 4; q++) d[j][q] = 0.f;
+    const unsigned a[4] = {x, x + 8192, x + 16384, x + 24576}, b[2] = {x + 40960, x + 49152};
+    __syncthreads();
+    long long t0 = clock64();
+    for (int i = 0; i < iters; i++) {
+#pragma unroll
+        for (int j = 0; j < 8; j++) {
+            if (F == 3) {
+                // `b` varies by trip: a zeroed chain of invariant operands is hoisted out of the loop by ptxas.
+                // Each tile its own `a` (else the eight zeroed chains are one value to ptxas).
+                const unsigned bi[2] = {b[0] + (unsigned)i, b[1]}, aj[4] = {a[0] + 2u * j, a[1], a[2], a[3]};
+                float t[4] = {0.f, 0.f, 0.f, 0.f};
+                mma_one<0>(t, aj, bi); mma_one<0>(t, aj, bi); mma_one<0>(t, aj, bi);
+                for (int q = 0; q < 4; q++) d[j][q] += t[q];
+            } else {
+                mma_one<F>(d[j], a, b);
+            }
+        }
+    }
+    __syncthreads();
+    long long t1 = clock64();
+    float acc = 0.f;
+    for (int j = 0; j < 8; j++) for (int q = 0; q < 4; q++) acc += d[j][q];
+    if (threadIdx.x == 0) { cyc[blockIdx.x] = t1 - t0; }
+    if (acc == 1234.5f) out[blockIdx.x * blockDim.x + threadIdx.x] = acc;
+}
+template <int F> static void matrix_one(const char* name, double flops_instr) {
+    const int block = 1024, grid = sms, iters = 1 << 14;
+    const unsigned x = 0x35800000u;  // 2^-20 (TF32) / tiny 16-bit pairs: sums stay finite
+    float* out; long long* cyc;
+    CK(cudaMalloc(&out, (size_t)grid * block * sizeof(float))); CK(cudaMalloc(&cyc, (size_t)grid * 8));
+    cudaEvent_t e0, e1; CK(cudaEventCreate(&e0)); CK(cudaEventCreate(&e1));
+    matrix_k<F><<<grid, block>>>(out, iters / 16, x, cyc); CK(cudaDeviceSynchronize());
+    const double instr = (F == 3 ? 3.0 : 1.0) * 8 * iters;            // products a warp
+    const double flops = flops_instr * instr * (block / 32) * (double)grid;
+    double best = 0, per_clk = 0;
+    for (int rep = 0; rep < 5; rep++) {
+        CK(cudaEventRecord(e0)); matrix_k<F><<<grid, block>>>(out, iters, x, cyc); CK(cudaEventRecord(e1));
+        CK(cudaEventSynchronize(e1)); float ms; CK(cudaEventElapsedTime(&ms, e0, e1));
+        best = std::max(best, flops / (ms * 1e6));
+        std::vector<long long> h(grid); CK(cudaMemcpy(h.data(), cyc, grid * 8, cudaMemcpyDeviceToHost));
+        std::sort(h.begin(), h.end());
+        per_clk = std::max(per_clk, flops_instr * instr * (block / 32) / (double)h[h.size() / 2]);
+    }
+    std::vector<double> win;
+    for (double total = 0; total < 3000;) {
+        float ms = 0; int n = 0;
+        CK(cudaEventRecord(e0));
+        for (; ms < 100; n++) {
+            matrix_k<F><<<grid, block>>>(out, iters, x, cyc);
+            if (n % 4 == 3) { CK(cudaEventRecord(e1)); CK(cudaEventSynchronize(e1)); CK(cudaEventElapsedTime(&ms, e0, e1)); }
+        }
+        CK(cudaEventRecord(e1)); CK(cudaEventSynchronize(e1)); CK(cudaEventElapsedTime(&ms, e0, e1));
+        win.push_back(flops * n / (ms * 1e6)); total += ms;
+    }
+    std::vector<double> last(win.end() - std::min<size_t>(10, win.size()), win.end());
+    std::sort(last.begin(), last.end());
+    const double sus = last[last.size() / 2];
+    printf("matrix op=%s sm_flops_per_clk=%.0f flops_per_ns=%.0f sustained_flops_per_ns=%.0f implied_clock_khz=%.0f\n", name,
+           per_clk, best, sus, sus / (per_clk * sms) * 1e6);
+    CK(cudaFree(out)); CK(cudaFree(cyc));
+}
+static void matrix_run() {
+    matrix_one<0>("mma.m16n8k8.tf32", 2.0 * 16 * 8 * 8);
+    matrix_one<1>("mma.m16n8k16.bf16", 2.0 * 16 * 8 * 16);
+    matrix_one<2>("mma.m16n8k16.f16", 2.0 * 16 * 8 * 16);
+    matrix_one<3>("split3.m16n8k8.tf32", 2.0 * 16 * 8 * 8);
+}
 // head: a tiny kernel, then n kernels of sms x 256 threads, right after a synchronize; host wall to the next synchronize
 __global__ void tiny_k(float* o) { if (threadIdx.x == 0) o[blockIdx.x] += 1.f; }
 __global__ void work_k(float* o, int pdl) {
@@ -667,5 +757,6 @@ int main(int argc, char** argv) {
     if (on("head")) head_run();
     if (on("body")) body_run(p.major * 10 + p.minor);
     if (on("bar")) bar_run();
+    if (on("matrix")) matrix_run();
     return 0;
 }

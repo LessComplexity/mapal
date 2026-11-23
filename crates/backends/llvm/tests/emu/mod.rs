@@ -261,6 +261,14 @@ pub fn host_device(dev: &str) -> String {
                 l = format!("{}call {ret} @{func}({})", &l[..i], args.join(", "));
             }
         }
+        // f32-tensor-cores `split-tile`: the guard's `vote.sync.any` as the
+        // emulator's warp meet.
+        if let Some(i) =
+            l.find("asm sideeffect \"{ .reg .pred p, q; setp.ne.u32 p, $1, 0; vote.sync.any.pred")
+            && let Some((_, arg)) = l.rsplit_once("\"(")
+        {
+            l = format!("{}@emu_vote_any({arg}", &l[..i]);
+        }
         // ADR-0042: the hardware `exp` form's `ex2.approx` is the host's `exp2f`.
         l = l.replace("@llvm.nvvm.ex2.approx.ftz.f(", "@emu_ex2(");
         l = l
@@ -320,7 +328,7 @@ pub fn host_device(dev: &str) -> String {
            declare void @emu_ldsm(ptr, i32, i32)\ndeclare i32 @emu_frag(i32)\ndeclare float @emu_fragf(i32)\n\
            declare i32 @emu_cvt_bf16x2(float, float)\ndeclare i32 @emu_cvt_f16x2(float, float)\n\
            declare void @emu_mma16(i32, i32, i32, i32, i32, i32, i32, float, float, float, float)\n\
-           declare i32 @emu_cvt_tf32(i32)\ndeclare i32 @emu_cvt_tf32f(float)\n\
+           declare i32 @emu_cvt_tf32(i32)\ndeclare i32 @emu_cvt_tf32f(float)\ndeclare i32 @emu_vote_any(i32)\n\
            declare void @emu_mbar_init(ptr, i32, i32)\ndeclare void @emu_mbar_expect(ptr, i32, i32)\n\
            declare void @emu_bulk(ptr, ptr, i32, ptr, i32)\ndeclare i32 @emu_mbar_try(ptr, i32)\n"
 }

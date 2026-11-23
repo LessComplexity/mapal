@@ -30,6 +30,7 @@ use crate::profile::{
     WGMMA_ATOM_ROWS, WGMMA_K, WGMMA_M, WGMMA_SWIZZLE_BYTES, bank_degree, fma_held_regs,
 };
 use crate::{Order, Reduced};
+use mapal_ir::split::{SplitForm, SplitKind};
 use mapal_ir::{RowFoldOp, RowFoldSite};
 
 /// Bytes one shared-memory wavefront serves: 32 banks × 4 B. An ISA rule on
@@ -708,6 +709,10 @@ pub(crate) enum Arithmetic {
     Tf32Wgmma,
     /// tensor-cores: `mma.sync.m16n8k16` over a 16-bit member (ADR-0043 D4).
     HalfMma,
+    /// f32-tensor-cores `split-tile`: a `{f32}` product on a matrix
+    /// instruction by a split form (`mapal_ir::split`), the default face's
+    /// bound (ADR-0040 D2).
+    SplitMma,
 }
 
 impl Arithmetic {
@@ -737,7 +742,7 @@ impl Arithmetic {
         match self {
             Self::SeparateMulAdd => Face::Exact,
             Self::OrderedFma => Face::Contract,
-            Self::Tf32Mma | Self::Tf32Wgmma | Self::HalfMma => Face::Tf32,
+            Self::Tf32Mma | Self::Tf32Wgmma | Self::HalfMma | Self::SplitMma => Face::Tf32,
         }
     }
 }
@@ -896,7 +901,17 @@ pub(crate) fn launch_split(
         let tile = (rungs.mma && rungs.half_tile)
             .then(|| {
                 profile.gpu_mma16_tile(
-                    grows, site.c, site.k, rungs.wide, rungs.fill, fmt, ea, eb, bt,
+                    grows,
+                    site.c,
+                    site.k,
+                    rungs.wide,
+                    rungs.fill,
+                    fmt,
+                    ea,
+                    eb,
+                    bt,
+                    rungs.mma_depth,
+                    false,
                 )
             })
             .flatten();
@@ -965,7 +980,14 @@ pub(crate) fn launch_split(
                     cells: 1,
                 };
             }
-            let mma = profile.gpu_mma_tile(grows, site.c, site.k, rungs.wide, rungs.fill);
+            let mma = profile.gpu_mma_tile_at(
+                grows,
+                site.c,
+                site.k,
+                rungs.wide,
+                rungs.fill,
+                rungs.mma_depth,
+            );
             if let Some(m) = mma {
                 return Launch {
                     arithmetic: Arithmetic::Tf32Mma,
@@ -988,6 +1010,63 @@ pub(crate) fn launch_split(
                     cells: 1,
                 };
             }
+        }
+    }
+    // f32-tensor-cores R-F `split-tile`: a `{f32}` product on the part's
+    // matrix instruction by a split form, where the bound admits it and the
+    // rate rule prices it ([`split_operands`], [`split_pays`]).
+    if let Some((kind, fmt, ea, eb)) = split_operands(site, gpu)
+        && shaped
+        && rx.is_none()
+    {
+        let rungs = site_rungs(profile, wps, Face::Tf32, arms, site);
+        let bt = site.b.clane != 1;
+        let tile = (rungs.mma && rungs.split_tile)
+            .then(|| match kind {
+                SplitKind::Tf32x3 => profile.gpu_mma_split_tile(
+                    grows,
+                    site.c,
+                    site.k,
+                    rungs.wide,
+                    rungs.fill,
+                    rungs.mma_depth,
+                ),
+                _ => profile.gpu_mma16_tile(
+                    grows,
+                    site.c,
+                    site.k,
+                    rungs.wide,
+                    rungs.fill,
+                    fmt,
+                    ea,
+                    eb,
+                    bt,
+                    rungs.mma_depth,
+                    true,
+                ),
+            })
+            .flatten()
+            .filter(|m| !bulk_stage(site, m, gpu, &rungs))
+            .filter(|m| split_pays(site, gpu, kind, m, arms.on.split_tile))
+            .map(|m| GpuMmaTile {
+                split: Some(kind),
+                ..m
+            });
+        if let Some(m) = tile {
+            return Launch {
+                arithmetic: Arithmetic::SplitMma,
+                tiled: None,
+                mma: Some(m),
+                wgmma: None,
+                gx: site.c / m.bn(),
+                gy: site.rows / m.bm(),
+                block: m.threads(gpu.warp),
+                smem: m.smem_bytes(),
+                raster: raster(rungs, m.bm(), m.bn(), m.blocks_per_sm),
+                rungs,
+                combine: Combine::None,
+                cells: 1,
+            };
         }
     }
     let arithmetic = Arithmetic::scalar(site, contract, arms.free, arms.pairs);
@@ -1321,6 +1400,10 @@ fn plan_line(
         // TMA `bulk-stage` (intent.py): the panels the bulk-copy engine stages.
         if bulk_stage(site, &m, gpu, &l.rungs) {
             f += " stage=bulk";
+        }
+        // f32-tensor-cores `split-tile` (intent.py): the split form.
+        if let Some(k) = m.split {
+            f += &format!(" split={}", split_name(k));
         }
     }
     if let Some(w) = l.wgmma {
@@ -2433,6 +2516,132 @@ fn concat_kernel_text(
 /// exclusive by derivation (a grid is grouped only above one wave, split only
 /// below), stream-K walks tiles in the raster order instead. A forced
 /// `--splitk=S` replaces the derived count where `S` divides the panels.
+/// **f32-tensor-cores R-T1 `mma-combine`: a tensor-core tile's `k` cut into
+/// pieces** (ADR-0040 D4 on the `mma.sync` kernels, [`Kernel::mma`] /
+/// [`Kernel::mma16`]): the partials of `S` pieces add into the zeroed output
+/// (`splitk-atomic`) or a workspace (`splitk`). A forced count (`--splitk=S`,
+/// the part's `Geom::split`) where it cuts the panels whole; else the rule
+/// [`mma_pieces`]. Free order only (the tensor tiles exist only there); not
+/// a mixed-radix site (its digit-affine copies take no piece offset) nor a
+/// bulk-staged one (its box copies none either).
+fn mma_combine(
+    l: &Launch,
+    m: &GpuMmaTile,
+    site: &TileSite,
+    profile: &TargetProfile,
+    order: Order,
+    arms: crate::GpuArms,
+) -> Combine {
+    let Some(gpu) = profile.gpu() else {
+        return Combine::None;
+    };
+    let rungs = l.rungs;
+    if !rungs.mma_combine
+        || order != Order::Free
+        || site.radix.is_some()
+        || l.raster != 1
+        || bulk_stage(site, m, gpu, &rungs)
+    {
+        return Combine::None;
+    }
+    let panels = site.k / m.bk;
+    let forced = if arms.splitk > 0 {
+        arms.splitk
+    } else {
+        gpu.geom.split
+    };
+    let s = match forced {
+        0 => mma_pieces(l, m, site, gpu),
+        s if s > 1 && panels.is_multiple_of(s) => s,
+        _ => 1,
+    };
+    // A split form's bound counts the pieces' combines (`S − 1` adds).
+    let admitted = |s: u64| match (m.split, gpu.caps.matrix_op(m.fmt, Home::Regs)) {
+        (Some(kind), Some(op)) => SplitForm::of(kind)
+            .admits(site.k, s, op.shape.k, op.acc_model(), 1)
+            .is_some(),
+        _ => true,
+    };
+    let s = if admitted(s) { s } else { 1 };
+    let cells = site.rows * site.c;
+    match s {
+        1 => Combine::None,
+        s if rungs.splitk_atomic => Combine::Atomic { s },
+        s if rungs.splitk && s * cells * 4 <= gpu.l2_bytes => Combine::Workspace { s },
+        _ => Combine::None,
+    }
+}
+
+/// f32-tensor-cores `mma-combine`: the fewest panels one piece of a split
+/// tensor tile folds (the measured pieces: 16–112; none shorter was timed).
+pub(crate) const MMA_PIECE_PANELS: u64 = 8;
+
+/// f32-tensor-cores `mma-combine`: the most pieces a tensor tile is cut into
+/// (16 lost the m128 cell, 0.1488 against 0.1373 ms).
+pub(crate) const MMA_PIECES_MAX: u64 = 8;
+
+/// f32-tensor-cores `mma-combine`: the predicted time a cut must save, per
+/// mille — beyond the rtx-5080's null (2048 × 6144 × 4096: predicted 0.97,
+/// measured 1.009; 128 × 4096 × 4096 predicted 0.97, measured 0.98 / 1.08 in
+/// two sessions) and inside every measured gain (predicted ≤ 0.90).
+pub(crate) const MMA_CUT_PM: u64 = 950;
+
+/// **[`mma_combine`]'s rule: the pieces a tensor tile's grid takes** (1:
+/// none). A grid of `blocks` tiles on the `slots` the tile holds (`sms ×` its
+/// blocks an SM) runs `⌈blocks·S / slots⌉` waves of pieces of `P/S` panels
+/// each, and every piece pays a fixed cost: its pipeline's prologue (`stages −
+/// 1` panels landing before its first product) and its fixup (the tile's
+/// partials added into the output, about one panel) — `stages` panels. The
+/// cut `S` (dividing the panels, each piece at least [`MMA_PIECE_PANELS`], at
+/// most [`MMA_PIECES_MAX`]) minimizing `⌈blocks·S / slots⌉·(P/S + stages)`
+/// is taken where it saves more than [`MMA_CUT_PM`] of the uncut time. A
+/// grid of at least one wave over a site whose flops per operand byte stay
+/// below twice the part's matrix balance (its matrix rate over its DRAM
+/// rate: every SM already streams the operands from DRAM) is not cut: the
+/// cut only adds its partials' traffic.
+///
+/// rtx-5080, TF32, ABBA (`f32-tensor-cores.md`): winners 128 × 6144 × 4096
+/// (96 blocks on 168 slots, `S` = 8: 0.181 against 0.239 ms), 128 × 4096 ×
+/// 14336 (0.411 / 0.458), 2048 × 4096 × 4096 (1.335 / 1.416), 2048 × 4096 ×
+/// 14336 (4.43 / 4.90), mlp_2048 / mlp2_2048 (0.945 / 0.940); refused: 128 ×
+/// 28672 × 4096 (224 blocks, 61.8 flop / B against 59.2: every cut lost,
+/// 0.744–0.764 against 0.696 ms), 2048 × 6144 × 4096 (null), 128 × 4096 ×
+/// 4096 (16 panels a piece: mixed).
+fn mma_pieces(l: &Launch, m: &GpuMmaTile, site: &TileSite, gpu: &Gpu) -> u64 {
+    let blocks = l.gx * l.gy;
+    let slots = gpu.sms * m.blocks_per_sm.max(1);
+    let panels = site.k / m.bk;
+    let rate = gpu
+        .caps
+        .matrix_op(m.fmt, Home::Regs)
+        .map_or(0, |op| gpu.matrix_flops_per_ns(&op));
+    let dram = gpu
+        .cost
+        .map_or(0, |d| d.dram_bytes_per_ns)
+        .max(gpu.dram_peak_bytes_per_ns());
+    let bytes = site.rows * site.k * m.ea + site.k * site.c * m.eb + site.rows * site.c * 4;
+    let flops = 2 * site.rows * site.c * site.k;
+    // flops / bytes ≥ 2 · rate / dram, in integers.
+    let compute = dram > 0 && rate > 0 && flops * dram >= 2 * rate * bytes;
+    if blocks >= slots && !compute {
+        return 1;
+    }
+    // In panel times of one block.
+    let time = |s: u64| (blocks * s).div_ceil(slots) * (panels / s + m.stages);
+    let mut best = (1, time(1));
+    let mut s = 2;
+    while s <= MMA_PIECES_MAX {
+        if panels.is_multiple_of(s) && panels / s >= MMA_PIECE_PANELS && time(s) < best.1 {
+            best = (s, time(s));
+        }
+        s *= 2;
+    }
+    match best.1 * 1000 <= MMA_CUT_PM * time(1) {
+        true => best.0,
+        false => 1,
+    }
+}
+
 fn combine(
     l: &Launch,
     site: &TileSite,
@@ -2443,8 +2652,11 @@ fn combine(
 ) -> Combine {
     // A window's taps (`window`) are walked in order: its `k` is not cut.
     let window = site.a.ksplit.is_some() || site.b.ksplit.is_some() || radix_whole(site);
-    if order == Order::Sequential || l.mma.is_some() || l.wgmma.is_some() || window {
+    if order == Order::Sequential || l.wgmma.is_some() || window {
         return Combine::None;
+    }
+    if let Some(m) = l.mma {
+        return mma_combine(l, &m, site, profile, order, arms);
     }
     let gpu = profile.gpu().expect("a GPU site has a GPU profile");
     let rungs = l.rungs;
@@ -2820,6 +3032,101 @@ fn narrow_streams(site: &TileSite, rungs: &crate::GpuRungs) -> bool {
 /// Each panel's rows must be 16-byte copies: unit stride along `k` (`a`;
 /// `b` stored `n × k`, [`GpuMmaTile::bt`]) or the lane (`b` stored `k × n`),
 /// stride and base whole 16-byte chunks of its storage.
+/// f32-tensor-cores `split-tile`: the split form a `{f32}` tile site's
+/// operands take, the instruction's format and each panel's storage bytes —
+/// `Narrow1` where both are stored in one narrow format (their exact
+/// widenings: one exact product a k-step), on that format's warp product
+/// with [`half_operands`]' panel layouts; `Tf32x3` where both are f32, on
+/// the TF32 warp product with the TF32 tile's 16-byte panels. `None`: a
+/// reduced product set (its member's realization), an f32 × narrow pair
+/// (bf16x3n: not emitted), or no such instruction.
+fn split_operands(site: &TileSite, gpu: &Gpu) -> Option<(SplitKind, MmaFmt, u64, u64)> {
+    if site.elem != Ty::f32() || site.tf32 || site.half.is_some() {
+        return None;
+    }
+    match (site.a.narrow, site.b.narrow) {
+        (Some(x), Some(y)) if x == y => {
+            let fmt = MmaFmt::of_narrow(x);
+            gpu.caps.matrix_op(fmt, Home::Regs)?;
+            let (ea, eb) = mma16_layout(site, fmt)?;
+            Some((SplitKind::Narrow1, fmt, ea, eb))
+        }
+        (None, None) => {
+            gpu.caps.matrix_op(MmaFmt::Tf32, Home::Regs)?;
+            (vector_a(site) && vector_b(site)).then_some((SplitKind::Tf32x3, MmaFmt::Tf32, 4, 4))
+        }
+        _ => None,
+    }
+}
+
+/// The plan line's name of a split form.
+pub(crate) fn split_name(k: SplitKind) -> &'static str {
+    match k {
+        SplitKind::Tf32x3 => "tf32x3",
+        SplitKind::Bf16x6 => "bf16x6",
+        SplitKind::Bf16x3n => "bf16x3n",
+        SplitKind::Narrow1 => "narrow1",
+    }
+}
+
+/// **f32-tensor-cores R-F: whether a split tile `m` realizes the site.**
+/// 1. *bound* — always: the form's coefficient at the site's `K` meets D2
+///    ([`SplitForm::admits`], the accumulator's measured guard bits);
+/// 2. *part* — the matrix rate pays for the form's `P` passes against the
+///    FFMA rate ([`crate::rules::split_rate_pays`]);
+/// 3. *site* — the flops per operand byte reach the part's FFMA balance
+///    (a DRAM-bound site keeps the FFMA tile, which splits `k` to fill the
+///    part) or the tile's grid fills the warp schedulers (`half-fill`'s
+///    rule).
+///
+/// `forced` (`--gpu-on=split-tile`): the bound alone (the measurement arm).
+fn split_pays(site: &TileSite, gpu: &Gpu, kind: SplitKind, m: &GpuMmaTile, forced: bool) -> bool {
+    let Some(op) = gpu.caps.matrix_op(m.fmt, Home::Regs) else {
+        return false;
+    };
+    let form = SplitForm::of(kind);
+    if form
+        .admits(site.k, 1, op.shape.k, op.acc_model(), 1)
+        .is_none()
+    {
+        return false;
+    }
+    if forced {
+        return true;
+    }
+    if !crate::rules::split_rate_pays(gpu, &op, form.products()) {
+        return false;
+    }
+    let bytes = site.rows * site.k * m.ea + site.k * site.c * m.eb + site.rows * site.c * 4;
+    let balanced = gpu
+        .ffma_per_dram_byte_pm()
+        .is_none_or(|b| 2 * site.rows * site.c * site.k * 1000 >= b * bytes);
+    balanced || (site.rows / m.bm()) * (site.c / m.bn()) * m.warps_x * m.warps_y >= gpu.fill_warps()
+}
+
+/// The 16-bit tile's panel widths for operands of `fmt` ([`half_operands`]'
+/// layout rule): each panel's rows whole 16-byte copies.
+fn mma16_layout(site: &TileSite, fmt: MmaFmt) -> Option<(u64, u64)> {
+    let width = |r: &mapal_ir::TileRead| match r.narrow {
+        Some(n) if MmaFmt::of_narrow(n) == fmt => Some(2),
+        Some(_) => None,
+        None if fmt == MmaFmt::Bf16 => Some(4),
+        None => None,
+    };
+    let (ea, eb) = (width(&site.a)?, width(&site.b)?);
+    let lanes = |e: u64| GPU_VEC_BYTES / e;
+    let rows_a = site.a.ck == 1
+        && site.a.ci.is_multiple_of(lanes(ea))
+        && site.a.base.is_multiple_of(lanes(ea));
+    let rows_b = site.b.base.is_multiple_of(lanes(eb))
+        && match (site.b.clane, site.b.ck) {
+            (1, ck) => ck.is_multiple_of(lanes(eb)),
+            (cl, 1) => cl.is_multiple_of(lanes(eb)),
+            _ => false,
+        };
+    (rows_a && rows_b).then_some((ea, eb))
+}
+
 fn half_operands(site: &TileSite, gpu: &Gpu) -> Option<(MmaFmt, u64, u64)> {
     if site.elem != Ty::f32() {
         return None;
@@ -6131,7 +6438,10 @@ impl Kernel<'_> {
         let (bm, bn, bk, lda, ldb) = (g.bm(), g.bn(), g.bk, g.lda(), g.ldb());
         let (mt, nt) = (g.mt as usize, g.nt as usize);
         let stage_words = g.stage_words();
-        let nk = s.k / bk;
+        // f32-tensor-cores `mma-combine`: a split kernel folds its piece
+        // `z` of `S` — `k / S` from `z · k / S` ([`Kernel::at_z`]).
+        let kext = s.k / self.splitk.max(1);
+        let nk = kext / bk;
         let blocks = if self.rungs.min_blocks {
             g.blocks_per_sm
         } else {
@@ -6161,10 +6471,20 @@ impl Kernel<'_> {
             ));
             p
         };
+        let seed = self.split_seed(&seed);
         for idx in 0..accs {
             let p = acc_slot(self, idx);
             self.line(format!("store float {seed}, ptr {p}, align 4"));
         }
+        // f32-tensor-cores `split-tile` (tf32x3): whether this thread split
+        // an infinite operand (the cold path after the `k` loop).
+        let split = g.split == Some(SplitKind::Tf32x3);
+        let inf_slot = split.then(|| {
+            let f = self.tmp();
+            self.line(format!("{f} = alloca i32, align 4"));
+            self.line(format!("store i32 0, ptr {f}, align 4"));
+            f
+        });
 
         // cp.async coordinates: (global index at k0 = 0, shared word in stage 0),
         // one per 16-byte chunk this thread copies, A then B.
@@ -6218,6 +6538,7 @@ impl Kernel<'_> {
             let gr = self.op("mul", &grow, s.a.ci);
             let g0 = self.op("add", &gr, &kc);
             let gsrc = self.op("add", &g0, s.a.base);
+            let gsrc = self.at_z(gsrc, kext * s.a.ck);
             let sr = self.op("mul", &r, lda);
             let sdst = self.op("add", &sr, &kc);
             copies.push((true, gsrc, sdst));
@@ -6236,6 +6557,7 @@ impl Kernel<'_> {
             let gc = self.op("add", &col0, &nc);
             let g0 = self.op("add", &gk, &gc);
             let gsrc = self.op("add", &g0, s.b.base);
+            let gsrc = self.at_z(gsrc, kext * s.b.ck);
             let sk = self.op("mul", &kr, ldb);
             let sn = self.op("add", &sk, &nc);
             let sdst = self.op("add", &sn, bm * lda);
@@ -6386,6 +6708,110 @@ impl Kernel<'_> {
         };
         for kk in 0..bk / MMA_K {
             let k8 = kk * MMA_K;
+            if let Some(flag) = &inf_slot {
+                // f32-tensor-cores `split-tile` (`mapal_ir::split`, tf32x3):
+                // each element's `hi = rna(x)`, `lo = rna(x − hi)`; per m16n8
+                // tile `lo·hi`, `hi·lo`, `hi·hi` from a zeroed accumulator,
+                // then one round-to-nearest add into the f32 accumulator.
+                let mut infs = Vec::new();
+                let mut word = |k: &mut Self, x: String| -> [String; 2] {
+                    let (h, l, inf) = k.split_tf32(&x);
+                    infs.push(inf);
+                    [h, l]
+                };
+                let mut af = Vec::new();
+                for mi in 0..mt as u64 {
+                    let r = mi * MMA_M * lda + k8;
+                    let xs: Vec<String> = match &lm_base {
+                        Some(lb) => {
+                            let i = self.op("add", lb, r);
+                            let p = self.gep(3, smem, &i);
+                            let a32 = self.tmp();
+                            self.line(format!("{a32} = ptrtoint ptr addrspace(3) {p} to i32"));
+                            let m = self.tmp();
+                            self.line(format!(
+                                "{m} = call {{ i32, i32, i32, i32 }} asm sideeffect \"ldmatrix.sync.aligned.m8n8.x4.shared.b16 {{$0,$1,$2,$3}}, [$4];\", \"=r,=r,=r,=r,r\"(i32 {a32})"
+                            ));
+                            (0..4)
+                                .map(|j| {
+                                    let x = self.tmp();
+                                    self.line(format!(
+                                        "{x} = extractvalue {{ i32, i32, i32, i32 }} {m}, {j}"
+                                    ));
+                                    let f = self.tmp();
+                                    self.line(format!("{f} = bitcast i32 {x} to float"));
+                                    f
+                                })
+                                .collect()
+                        }
+                        None => [r, r + 8 * lda, r + 4, r + 8 * lda + 4]
+                            .iter()
+                            .map(|&o| {
+                                let i = self.op("add", &a_base, o);
+                                let p = self.gep(3, smem, &i);
+                                let x = self.tmp();
+                                self.line(format!(
+                                    "{x} = load float, ptr addrspace(3) {p}, align 4"
+                                ));
+                                x
+                            })
+                            .collect(),
+                    };
+                    let parts: Vec<[String; 2]> = xs.into_iter().map(|x| word(self, x)).collect();
+                    af.push(parts);
+                }
+                let mut bf = Vec::new();
+                for ni in 0..nt as u64 {
+                    let c = k8 * ldb + ni * MMA_N;
+                    let parts: Vec<[String; 2]> = [c, c + 4 * ldb]
+                        .iter()
+                        .map(|&o| {
+                            let i = self.op("add", &b_base, o);
+                            let p = self.gep(3, smem, &i);
+                            let x = self.tmp();
+                            self.line(format!("{x} = load float, ptr addrspace(3) {p}, align 4"));
+                            word(self, x)
+                        })
+                        .collect();
+                    bf.push(parts);
+                }
+                for mi in 0..mt {
+                    for ni in 0..nt {
+                        let a = |h: usize| -> Vec<String> {
+                            af[mi].iter().map(|w| w[h].clone()).collect()
+                        };
+                        let b = |h: usize| -> Vec<String> {
+                            bf[ni].iter().map(|w| w[h].clone()).collect()
+                        };
+                        // Smallest class first: lo·hi, hi·lo, hi·hi.
+                        let mut t = vec!["0.0".to_string(); 4];
+                        for (x, y) in [(a(1), b(0)), (a(0), b(1)), (a(0), b(0))] {
+                            t = self.mma_tf32_call(&x, &y, &t);
+                        }
+                        let base = (mi * nt + ni) * 4;
+                        for (q, tq) in t.iter().enumerate() {
+                            let p = acc_slot(self, base + q);
+                            let v = self.tmp();
+                            self.line(format!("{v} = load float, ptr {p}, align 4"));
+                            let d = self.tmp();
+                            self.line(format!("{d} = fadd float {v}, {tq}"));
+                            self.line(format!("store float {d}, ptr {p}, align 4"));
+                        }
+                    }
+                }
+                let mut any = infs[0].clone();
+                for x in &infs[1..] {
+                    let o = self.tmp();
+                    self.line(format!("{o} = or i1 {any}, {x}"));
+                    any = o;
+                }
+                let (z, f0, f1) = (self.tmp(), self.tmp(), self.tmp());
+                self.line(format!("{z} = zext i1 {any} to i32"));
+                self.line(format!("{f0} = load i32, ptr {flag}, align 4"));
+                self.line(format!("{f1} = or i32 {f0}, {z}"));
+                self.line(format!("store i32 {f1}, ptr {flag}, align 4"));
+                continue;
+            }
             let mut af = Vec::new();
             for mi in 0..mt as u64 {
                 let r = mi * MMA_M * lda + k8;
@@ -6469,6 +6895,9 @@ impl Kernel<'_> {
         let ocol = self.op("add", &ocol, &col0);
         let t2 = self.op("mul", &t4, 2);
         let ocol = self.op("add", &ocol, &t2);
+        if let Some(flag) = &inf_slot {
+            self.split_cold(flag, &orow, &ocol, &seed, kext, (mt, nt), &acc_slot);
+        }
         for mi in 0..mt {
             for half in 0..2u64 {
                 let r = self.op("add", &orow, mi as u64 * MMA_M + half * 8);
@@ -6507,6 +6936,21 @@ impl Kernel<'_> {
                         self.store_cells(&xs, &oi);
                         continue;
                     }
+                    if self.splitk > 1 {
+                        // `mma-combine`: the piece's partials into its slab
+                        // (workspace) or added into the output (atomic).
+                        let mut xs = Vec::new();
+                        for j in 0..2 {
+                            let p = acc_slot(self, base + j);
+                            let x = self.tmp();
+                            self.line(format!("{x} = load float, ptr {p}, align 4"));
+                            xs.push(x);
+                        }
+                        let oi = self.op("add", &rc, ni as u64 * MMA_N);
+                        let oi = self.slab(oi);
+                        self.store_o(&xs, &oi);
+                        continue;
+                    }
                     let mut vec = "poison".to_string();
                     for j in 0..2 {
                         let p = acc_slot(self, base + j);
@@ -6527,6 +6971,170 @@ impl Kernel<'_> {
             }
         }
         self.out.push_str("  ret void\n}\n");
+    }
+
+    /// f32-tensor-cores `split-tile` (tf32x3): an f32 element `x`'s TF32
+    /// parts as instruction operands, and whether the guard takes `x` —
+    /// infinite, or nonzero below [`SplitForm::exact_above`] (its `lo` would
+    /// round on the subnormal grid). `hi = cvt.rna.tf32.f32(x)` — the
+    /// truncation where that rounds a finite `x` to infinity (§2.5's
+    /// select); `lo = cvt.rna(x − hi)`, 0 where `x` is infinite (no `inf −
+    /// inf`). A NaN stays a NaN in both.
+    fn split_tf32(&mut self, x: &str) -> (String, String, String) {
+        let cvt = |k: &mut Self, v: &str| {
+            let r = k.tmp();
+            k.line(format!(
+                "{r} = call i32 asm \"cvt.rna.tf32.f32 $0, $1;\", \"=r,f\"(float {v})"
+            ));
+            r
+        };
+        let xb = self.tmp();
+        self.line(format!("{xb} = bitcast float {x} to i32"));
+        let ax = self.tmp();
+        self.line(format!("{ax} = and i32 {xb}, 2147483647"));
+        let inf = self.tmp();
+        self.line(format!("{inf} = icmp eq i32 {ax}, 2139095040"));
+        // `0 < |x| < exact_above`: `|x|`'s bits less one below its bits less
+        // one, unsigned.
+        let thr = SplitForm::of(SplitKind::Tf32x3).exact_above as f32;
+        let am = self.tmp();
+        self.line(format!("{am} = add i32 {ax}, -1"));
+        let tiny = self.tmp();
+        self.line(format!("{tiny} = icmp ult i32 {am}, {}", thr.to_bits() - 1));
+        let guard = self.tmp();
+        self.line(format!("{guard} = or i1 {inf}, {tiny}"));
+        let hb = cvt(self, x);
+        let hx = self.tmp();
+        self.line(format!("{hx} = and i32 {hb}, 2147483647"));
+        let hinf = self.tmp();
+        self.line(format!("{hinf} = icmp eq i32 {hx}, 2139095040"));
+        let fin = self.tmp();
+        self.line(format!("{fin} = xor i1 {inf}, true"));
+        let ovf = self.tmp();
+        self.line(format!("{ovf} = and i1 {hinf}, {fin}"));
+        let tb = self.tmp();
+        self.line(format!("{tb} = and i32 {xb}, -8192"));
+        let h = self.tmp();
+        self.line(format!("{h} = select i1 {ovf}, i32 {tb}, i32 {hb}"));
+        let hf = self.tmp();
+        self.line(format!("{hf} = bitcast i32 {h} to float"));
+        let r = self.tmp();
+        self.line(format!("{r} = fsub float {x}, {hf}"));
+        let lb = cvt(self, &r);
+        let l = self.tmp();
+        self.line(format!("{l} = select i1 {inf}, i32 0, i32 {lb}"));
+        (h, l, guard)
+    }
+
+    /// One `mma.sync.m16n8k8` TF32 product into the accumulator `c` (four
+    /// floats or literals); its four results.
+    fn mma_tf32_call(&mut self, a: &[String], b: &[String], c: &[String]) -> Vec<String> {
+        let r = self.tmp();
+        self.line(format!(
+            "{r} = call {{ float, float, float, float }} asm \"mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32 {{$0,$1,$2,$3}}, {{$4,$5,$6,$7}}, {{$8,$9}}, {{$10,$11,$12,$13}};\", \"=f,=f,=f,=f,r,r,r,r,r,r,0,1,2,3\"(i32 {}, i32 {}, i32 {}, i32 {}, i32 {}, i32 {}, float {}, float {}, float {}, float {})",
+            a[0], a[1], a[2], a[3], b[0], b[1], c[0], c[1], c[2], c[3]
+        ));
+        (0..4)
+            .map(|q| {
+                let d = self.tmp();
+                self.line(format!(
+                    "{d} = extractvalue {{ float, float, float, float }} {r}, {q}"
+                ));
+                d
+            })
+            .collect()
+    }
+
+    /// f32-tensor-cores `split-tile`: the guard's cold path (§2.5). A warp
+    /// any of whose threads split an infinite operand (`vote.sync.any`) has
+    /// its whole tile recomputed by FFMA from the operands in global memory
+    /// over this piece's `k` (`kext` from `z·kext`) — IEEE products, so `inf ·
+    /// b` keeps the oracle's value class where `hi·lo` would make `inf · 0`.
+    #[allow(clippy::too_many_arguments)]
+    fn split_cold(
+        &mut self,
+        flag: &str,
+        orow: &str,
+        ocol: &str,
+        seed: &str,
+        kext: u64,
+        (mt, nt): (usize, usize),
+        acc_slot: &dyn Fn(&mut Self, usize) -> String,
+    ) {
+        let s = self.site;
+        let f = self.tmp();
+        self.line(format!("{f} = load i32, ptr {flag}, align 4"));
+        let v = self.tmp();
+        self.line(format!(
+            "{v} = call i32 asm sideeffect \"{{ .reg .pred p, q; setp.ne.u32 p, $1, 0; vote.sync.any.pred q, p, 0xffffffff; selp.u32 $0, 1, 0, q; }}\", \"=r,r\"(i32 {f})"
+        ));
+        let c = self.tmp();
+        self.line(format!("{c} = icmp ne i32 {v}, 0"));
+        self.line(format!("br i1 {c}, label %cold, label %warm"));
+        self.out.push_str("cold:\n");
+        for idx in 0..mt * nt * 4 {
+            let p = acc_slot(self, idx);
+            self.line(format!("store float {seed}, ptr {p}, align 4"));
+        }
+        let kb = self.at_z("0".to_string(), kext);
+        let kb = self.plus(kb, 0);
+        let ke = self.op("add", &kb, kext);
+        self.line("br label %ck");
+        self.out.push_str("ck:\n");
+        let (kq, kn) = (self.tmp(), self.tmp());
+        self.line(format!("{kq} = phi i64 [{kb}, %cold], [{kn}, %ck]"));
+        let mut av = Vec::new();
+        for mi in 0..mt as u64 {
+            for half in 0..2u64 {
+                let r = self.op("add", orow, mi * MMA_M + half * 8);
+                let ri = self.op("mul", &r, s.a.ci);
+                let ki = self.op("mul", &kq, s.a.ck);
+                let i = self.op("add", &ri, &ki);
+                let i = self.op("add", &i, s.a.base);
+                let p = self.gep(1, "%a", &i);
+                let x = self.tmp();
+                self.line(format!("{x} = load float, ptr addrspace(1) {p}, align 4"));
+                av.push(x);
+            }
+        }
+        let mut bv = Vec::new();
+        for ni in 0..nt as u64 {
+            for j in 0..2u64 {
+                let c = self.op("add", ocol, ni * MMA_N + j);
+                let ci = self.op("mul", &c, s.b.clane);
+                let ki = self.op("mul", &kq, s.b.ck);
+                let i = self.op("add", &ci, &ki);
+                let i = self.op("add", &i, s.b.base);
+                let p = self.gep(1, "%b", &i);
+                let x = self.tmp();
+                self.line(format!("{x} = load float, ptr addrspace(1) {p}, align 4"));
+                bv.push(x);
+            }
+        }
+        for mi in 0..mt {
+            for ni in 0..nt {
+                for half in 0..2 {
+                    for j in 0..2 {
+                        let idx = (mi * nt + ni) * 4 + half * 2 + j;
+                        let p = acc_slot(self, idx);
+                        let a = &av[mi * 2 + half];
+                        let b = &bv[ni * 2 + j];
+                        let o = self.tmp();
+                        self.line(format!("{o} = load float, ptr {p}, align 4"));
+                        let d = self.tmp();
+                        self.line(format!(
+                            "{d} = call float @llvm.fma.f32(float {a}, float {b}, float {o})"
+                        ));
+                        self.line(format!("store float {d}, ptr {p}, align 4"));
+                    }
+                }
+            }
+        }
+        self.line(format!("{kn} = add i64 {kq}, 1"));
+        let e = self.tmp();
+        self.line(format!("{e} = icmp eq i64 {kn}, {ke}"));
+        self.line(format!("br i1 {e}, label %warm, label %ck"));
+        self.out.push_str("warm:\n");
     }
 
     /// **The 16-bit tensor-core kernel** (tensor-cores, ADR-0043 D6):
@@ -6554,7 +7162,10 @@ impl Kernel<'_> {
         let stage_bytes = g.stage_bytes();
         let ptx = g.fmt.ptx();
         let mk = g.mma_k();
-        let nk = s.k / bk;
+        // f32-tensor-cores `mma-combine`: a split kernel folds its piece
+        // `z` of `S` — `k / S` from `z · k / S` ([`Kernel::at_z`]).
+        let kext = s.k / self.splitk.max(1);
+        let nk = kext / bk;
         let blocks = if self.rungs.min_blocks {
             g.blocks_per_sm
         } else {
@@ -6585,6 +7196,7 @@ impl Kernel<'_> {
             ));
             p
         };
+        let seed = self.split_seed(&seed);
         for idx in 0..accs {
             let p = acc_slot(self, idx);
             self.line(format!("store float {seed}, ptr {p}, align 4"));
@@ -6603,6 +7215,7 @@ impl Kernel<'_> {
             let gr = self.op("mul", &grow, s.a.ci);
             let g0 = self.op("add", &gr, &kc);
             let gsrc = self.op("add", &g0, s.a.base);
+            let gsrc = self.at_z(gsrc, kext * s.a.ck);
             let sr = self.op("mul", &r, lda);
             let se = self.op("add", &sr, &kc);
             copies.push((true, gsrc, self.op("mul", &se, ea)));
@@ -6624,6 +7237,7 @@ impl Kernel<'_> {
                 self.op("add", &gk, &gc)
             };
             let gsrc = self.op("add", &g0, s.b.base);
+            let gsrc = self.at_z(gsrc, kext * s.b.ck);
             let sk = self.op("mul", &r, ldb);
             let sn = self.op("add", &sk, &cc);
             let sb = self.op("mul", &sn, eb);
@@ -6863,10 +7477,29 @@ impl Kernel<'_> {
                     }
                     let r = self.tmp();
                     let [a0, a1, a2, a3] = &af[mi];
+                    // f32-tensor-cores `split-tile` (narrow1): the exact
+                    // products summed from a zeroed accumulator, then one
+                    // round-to-nearest add (below).
+                    let c: Vec<&str> = match g.split {
+                        Some(SplitKind::Narrow1) => vec!["0.0"; 4],
+                        _ => cur.iter().map(|(_, v)| v.as_str()).collect(),
+                    };
                     self.line(format!(
                         "{r} = call {{ float, float, float, float }} asm \"mma.sync.aligned.m16n8k16.row.col.f32.{ptx}.{ptx}.f32 {{$0,$1,$2,$3}}, {{$4,$5,$6,$7}}, {{$8,$9}}, {{$10,$11,$12,$13}};\", \"=f,=f,=f,=f,r,r,r,r,r,r,0,1,2,3\"(i32 {a0}, i32 {a1}, i32 {a2}, i32 {a3}, i32 {b0}, i32 {b1}, float {}, float {}, float {}, float {})",
-                        cur[0].1, cur[1].1, cur[2].1, cur[3].1
+                        c[0], c[1], c[2], c[3]
                     ));
+                    if g.split == Some(SplitKind::Narrow1) {
+                        for (q, (p, v)) in cur.iter().enumerate() {
+                            let d = self.tmp();
+                            self.line(format!(
+                                "{d} = extractvalue {{ float, float, float, float }} {r}, {q}"
+                            ));
+                            let x = self.tmp();
+                            self.line(format!("{x} = fadd float {v}, {d}"));
+                            self.line(format!("store float {x}, ptr {p}, align 4"));
+                        }
+                        continue;
+                    }
                     for (q, (p, _)) in cur.iter().enumerate() {
                         let d = self.tmp();
                         self.line(format!(
@@ -6906,6 +7539,12 @@ impl Kernel<'_> {
                     let oi = self.op("add", &rc, ni as u64 * MMA_N);
                     if self.epi.is_some() {
                         self.store_cells(&xs, &oi);
+                        continue;
+                    }
+                    if self.splitk > 1 {
+                        // `mma-combine`: as [`Self::mma`]'s.
+                        let oi = self.slab(oi);
+                        self.store_o(&xs, &oi);
                         continue;
                     }
                     let mut vec = "poison".to_string();
@@ -9280,6 +9919,41 @@ mod tests {
     /// stream-K, the atomic split, the workspace split or nothing, and each
     /// rung's OFF arm is the next realization down. Every split stays inside
     /// one wave and cuts whole panels (M1/G6).
+    #[test]
+    fn mma_pieces_on_the_measured_cells() {
+        // f32-tensor-cores `mma-combine` on the rtx-5080's TF32 cells (ABBA,
+        // `f32-tensor-cores.md`): the measured best cut where one won, none
+        // where every cut lost; the OFF arm never cuts.
+        for (m, n, k, best) in [
+            (128, 6144, 4096, 8),
+            (128, 4096, 14336, 8),
+            (128, 4096, 4096, 1),
+            (128, 28672, 4096, 1),
+            (2048, 4096, 4096, 8),
+            (2048, 4096, 14336, 8),
+            (2048, 6144, 4096, 1),
+            (2048, 2048, 2048, 8),
+        ] {
+            let s = site(m, n, k, true, true, Ty::f32());
+            let at = |arms| {
+                launch_in(
+                    &s,
+                    &crate::profile::RTX_5080,
+                    false,
+                    arms,
+                    Some(Reduced::Tf32),
+                    Order::Free,
+                )
+                .combine
+            };
+            let on = at(crate::GpuArms::default());
+            assert_eq!(on.splits(), best, "{m}x{n}x{k}: {on:?}");
+            assert!(matches!(on, Combine::Atomic { .. } | Combine::None));
+            let off = at(off(&["mma-combine"]));
+            assert_eq!(off, Combine::None, "{m}x{n}x{k}");
+        }
+    }
+
     #[test]
     fn the_chooser_on_the_measured_cells() {
         let cells = [
