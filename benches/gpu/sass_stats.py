@@ -55,7 +55,12 @@ def split(ins):
     if ins.startswith('@'):
         pred, ins = ins.split(None, 1)
     parts = ins.split(None, 1)
-    return pred, parts[0], (parts[1] if len(parts) > 1 else '')
+    op = parts[0]
+    # sweep-gemm: sm_120's FHFMA (`.BF16`, `.F16`) is an f32 FMA whose multiplicands are 16-bit — ptxas fuses their
+    # exact widening (`widen_f32`) into the FFMA. It is counted as the FFMA it is: the products are f32.
+    if op.startswith('FHFMA'):
+        op = 'FFMA' + op[len('FHFMA'):]
+    return pred, op, (parts[1] if len(parts) > 1 else '')
 
 
 def width(op):
