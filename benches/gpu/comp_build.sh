@@ -13,6 +13,17 @@ CAP=${COMP_BUILD_MIN:-25}
 PY=${PY:-python3}
 cores=$(nproc)
 mem=$(awk '/MemAvailable/ { print int($2 / 1048576) }' /proc/meminfo)
+# A rented container sees the host's CPUs and memory in nproc / meminfo; its share is the cgroup's CPU quota and memory
+# limit (v2 cpu.max / memory.max, v1 cfs_quota / limit_in_bytes): a job count from the host's would oversubscribe the
+# quota and run nvcc out of the container's memory.
+q=$(awk '$1 != "max" { print int(($1 + $2 - 1) / $2) }' /sys/fs/cgroup/cpu.max 2>/dev/null ||
+    awk -v p="$(cat /sys/fs/cgroup/cpu/cpu.cfs_period_us 2>/dev/null)" '$1 > 0 && p > 0 { print int(($1 + p - 1) / p) }' \
+        /sys/fs/cgroup/cpu/cpu.cfs_quota_us 2>/dev/null)
+[ -n "$q" ] && [ "$q" -gt 0 ] && [ "$q" -lt "$cores" ] && cores=$q
+lim=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null)
+use=$(cat /sys/fs/cgroup/memory.current 2>/dev/null || cat /sys/fs/cgroup/memory/memory.usage_in_bytes 2>/dev/null || echo 0)
+case $lim in '' | max | *[!0-9]*) ;; *)
+    lg=$(((lim - use) / 1073741824)); [ "$lg" -lt "$mem" ] && mem=$lg ;; esac
 jobs=$((cores / 2))
 [ "$jobs" -gt $((mem / 6)) ] && jobs=$((mem / 6)) # an nvcc job of these kernels peaks near 5 GB
 [ "$jobs" -lt 1 ] && jobs=1
@@ -29,12 +40,20 @@ fi
 echo "comp build fa2 rc=$? s=$(($(date +%s) - t0)) jobs=$jobs arch=$arch tag=$TAG"
 if [ "${SM%a}" = sm_90 ]; then
     # FA3: forward kernels at head dim 128 in bf16 (the LLM layer's), with split-KV, append-KV and packed GQA (the
-    # decode path); its setup.py fetches NVIDIA's nvcc 12.8 for the sm_90a kernels when the image's CUDA differs.
+    # decode path). Its setup.py swaps a toolkit other than 12.8 for NVIDIA's nvcc 12.6 front end + ptxas 12.8 but
+    # compiles against the image's headers, and CUDA 13 moved the CCCL headers to include/cccl (`fatal error:
+    # cuda/std/utility`, cross-arch 19a8a44e): on CUDA 13 or newer the image's own nvcc builds it (FA3_SYSTEM_NVCC).
     t1=$(date +%s)
-    (cd fa-src/hopper && FLASH_ATTENTION_DISABLE_BACKWARD=TRUE FLASH_ATTENTION_DISABLE_FP8=TRUE \
+    nv=$(nvcc --version 2>/dev/null | sed -n 's/.*release \([0-9]*\)\..*/\1/p')
+    sysnv=0
+    if [ "${nv:-0}" -ge 13 ]; then
+        sed -i 's/^    if bare_metal_version != Version("12.8"):/    if os.getenv("FA3_SYSTEM_NVCC") != "1" and bare_metal_version != Version("12.8"):/' \
+            fa-src/hopper/setup.py && grep -q FA3_SYSTEM_NVCC fa-src/hopper/setup.py && sysnv=1
+    fi
+    (cd fa-src/hopper && FA3_SYSTEM_NVCC=$sysnv FLASH_ATTENTION_DISABLE_BACKWARD=TRUE FLASH_ATTENTION_DISABLE_FP8=TRUE \
         FLASH_ATTENTION_DISABLE_FP16=TRUE FLASH_ATTENTION_DISABLE_HDIM64=TRUE FLASH_ATTENTION_DISABLE_HDIM96=TRUE \
         FLASH_ATTENTION_DISABLE_HDIM192=TRUE FLASH_ATTENTION_DISABLE_HDIM256=TRUE FLASH_ATTENTION_DISABLE_SOFTCAP=TRUE \
         FLASH_ATTENTION_DISABLE_LOCAL=TRUE FLASH_ATTENTION_DISABLE_CLUSTER=TRUE FLASH_ATTENTION_DISABLE_PAGEDKV=TRUE \
         FLASH_ATTENTION_DISABLE_SM80=TRUE MAX_JOBS=$jobs timeout "${CAP}m" "$PY" setup.py install) > fa3-build.log 2>&1
-    echo "comp build fa3 rc=$? s=$(($(date +%s) - t1)) jobs=$jobs arch=sm_90a tag=$TAG"
+    echo "comp build fa3 rc=$? s=$(($(date +%s) - t1)) jobs=$jobs arch=sm_90a tag=$TAG system_nvcc=$sysnv"
 fi

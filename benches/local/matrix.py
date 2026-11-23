@@ -2,12 +2,14 @@
 """Mapal vs the fastest competitor AT THE SAME PRECISION, per GPU part and algorithm family: one matrix from the
 results files box_run.sh / gpu_run.sh / model_scale_run.sh write (gap.py's and model_scale_report.py's parsing).
 
-usage: matrix.py [--out DIR] <part>=<file>[@<commit>][,<file>[@<commit>]...] ...
+usage: matrix.py [--out DIR] [--skip REGEX] <part>=<file>[@<commit>][,<file>[@<commit>]...] ...
   One column per part, in argument order. List a part's files oldest first: a later file replaces an earlier one
   per program (Mapal's `on` / `null` samples come from the newest file that timed the program `on`), per competitor
   leg (the newest file that timed that leg for the program; legs do not depend on Mapal's commit) and per GEMM cell.
   `@<commit>` labels a file (default: an 8-hex path component, else `?`). Writes DIR/matrix.md and DIR/matrix.json
   (DIR defaults to benches/results/evidence). The command that built the committed matrix is at the end of matrix.md.
+  `--skip REGEX`: workloads (without `pt_`) matching it are not rows (e.g. the KV-cache twins `llm_kv[xn]_`, reported
+  with their own HF-cache / naive torch legs in caching-memory.md and the cross-arch README).
 
 Rules
 - Mapal = median `iter ms` of the shipped build (probe arm `on`, face `_default`); null = |median(null) / median(on)
@@ -177,6 +179,9 @@ def load_part(specs):
         for cell, d in cl.items():
             if d.get(cell):
                 cells[cell] = (d, src)
+    # a family a later pass of the same part ran (e.g. a source build retried after the run's first report) is not
+    # unavailable there
+    missing -= {cfam(leg) for d in legs.values() for leg in d}
     return progs, legs, cells, sources, missing
 
 
@@ -283,15 +288,20 @@ def gcell(rs):
 
 def main(argv):
     out_dir = Path(__file__).resolve().parents[2] / 'benches/results/evidence'
-    if argv[:1] == ['--out']:
-        out_dir, argv = Path(argv[1]), argv[2:]
+    skip = None
+    while argv[:1] in (['--out'], ['--skip']):
+        if argv[0] == '--out':
+            out_dir = Path(argv[1])
+        else:
+            skip = argv[1]
+        argv = argv[2:]
     if not argv:
         sys.exit(__doc__)
     parts, allrows, srcs, missing = [], [], {}, {}
     for a in argv:
         part, _, files = a.partition('=')
         progs, legs, cells, sources, miss = load_part(files.split(','))
-        rs = rows_for(part, progs, legs, cells)
+        rs = [r for r in rows_for(part, progs, legs, cells) if not (skip and re.search(skip, r['workload']))]
         parts.append(part)
         srcs[part] = sources
         missing[part] = miss
@@ -301,6 +311,7 @@ def main(argv):
     names = sorted({r['workload'] for r in allrows},
                    key=lambda w: (fam_order[family(w)], PRECS.index(row_prec(w)), w))
     counted = [r for r in allrows if r['ratio']]
+    old_parts = [p for p in parts if not any(is_new(l) for r in allrows if r['part'] == p for l in r['every_leg'])]
     common = [w for w in names if all(by.get((p, w), {}).get('ratio') for p in parts)]
 
     L = ['# Mapal vs the fastest competitor at the same precision', '',
@@ -321,8 +332,10 @@ def main(argv):
          'autotuned), Liger 0.8.5 (RMSNorm, RoPE, SwiGLU), FlashAttention-2 2.8.3.post2 (flash-attn; built from '
          'source), FlashAttention-3 (its hopper/ build: sm_90a boxes), FlashInfer 0.7.5.post1. '
          '**Not included:** TensorRT-LLM (1.3.0 pins torch 2.14; see local-rtx-5080/competitors.md), vLLM / SGLang '
-         'as servers. The rented parts\' columns carry their 60f0f8ce legs until a rented round runs the new legs: '
-         'their new families read `not run`.', '',
+         'as servers. ' + (f'The {", ".join(old_parts)} column(s) carry legs from before the competitors step: '
+                           'their new families read `not run`.' if old_parts else
+                           'Every part ran the competitor legs (FlashAttention-3 on sm_90a only; `unavailable` = the '
+                           'part\'s run reported the package missing or its build capped).'), '',
          '**Legs:** `torch-*` the PyTorch modes; `cublas` / `lt` (+ `-tf32`, `-fresh`: operands regenerated each '
          'repetition) gemm_lib cuBLAS / cuBLASLt; `chain-eager` cuBLAS sgemm + one CUDA kernel per step, '
          '`chain-streams` the same with independent parts on two streams, `chain-lt` / `chain-lt2` cuBLASLt with the '
@@ -351,8 +364,8 @@ def main(argv):
     L.append(f'| rows timed on every part ({len(common)}) | ' + ' | '.join(
         gcell([by[(p, w)] for w in common]) for p in parts) + ' |')
     L.append('| win / even / loss | ' + ' | '.join(wel([r for r in counted if r['part'] == p]) for p in parts) + ' |')
-    L += ['', 'Geomean cells: value (rows). Parts time different row sets (the RTX 5080 adds 5080-only rows, the rented '
-          'parts the full model-scale set); compare columns on the "every part" row.']
+    L += ['', 'Geomean cells: value (rows). ' + ('Every part times the same rows.' if len(common) == len(names) else
+          'Parts time different row sets; compare columns on the "every part" row.')]
 
     for k, title, _ in FAMILIES:
         ws = [w for w in names if family(w) == k]
@@ -461,7 +474,7 @@ def main(argv):
                     cs.append('<br>'.join(items))
                 L.append(f"| {w} | {p} | {f4(r['mapal_ms'])} | " + ' | '.join(cs) + ' |')
 
-    L += ['', '## Command', '', '```', 'python3 benches/local/matrix.py \\']
+    L += ['', '## Command', '', '```', 'python3 benches/local/matrix.py ' + (f"--skip '{skip}' " if skip else '') + '\\']
     for i, p in enumerate(parts):
         files = ','.join(f"{s['file']}@{s['commit']}" for s in srcs[p])
         L.append(f'  {p}={files}' + (' \\' if i < len(parts) - 1 else ''))

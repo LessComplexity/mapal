@@ -9,6 +9,8 @@
 # family — a confirm box with another CPU is another host).
 # MAX_DPH=<$/h> skips dearer offers (a budget: the next offer of a type can cost twice the first);
 # SKIP_GEO="<substring>..." skips hosts whose location names one (a slow route to the wheel index).
+# OFFER_Q="<field op value>..." adds terms to the offer search (e.g. "cpu_ram>=48 cpu_cores_effective>=16": a host whose
+# CPU share and memory build the source-built competitors, comp_build.sh, inside their cap).
 # Offers: verified hosts, reliability > 0.97, a driver for CUDA >= CUDA_MIN (13.0: the CUDA 13 image's
 # nvcc and the cu130 torch wheels), >= DISK GB disk (60).
 #
@@ -23,7 +25,7 @@ esac
 HERE=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "$RES"
 offers() { # <GPU_NAME>: id dph pcie_bw cpu_ghz host machine cpu_name geo, cheapest first
-    vastai search offers "gpu_name=$1 num_gpus=1 rentable=true verified=true cuda_max_good>=${CUDA_MIN:-13.0} reliability>0.97 inet_down>500 disk_space>=${DISK:-60}" \
+    vastai search offers "gpu_name=$1 num_gpus=1 rentable=true verified=true cuda_max_good>=${CUDA_MIN:-13.0} reliability>0.97 inet_down>500 disk_space>=${DISK:-60} ${OFFER_Q:-}" \
         -o 'dph+' --limit 64 --raw 2>/dev/null | CPU_NAME="${CPU_NAME:-}" MAX_DPH="${MAX_DPH:-}" SKIP_GEO="${SKIP_GEO:-}" python3 -c 'import json,os,sys
 want = os.environ["CPU_NAME"]
 cap = float(os.environ["MAX_DPH"] or "inf")
