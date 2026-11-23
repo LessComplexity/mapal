@@ -961,6 +961,23 @@ pub struct GpuRungs {
     /// fragment, half the shared memory). Default (order-free) face only.
     /// Off (`--gpu-off=round-store`): each reader rounds its copy.
     pub round_store: bool,
+    /// sweep-gemm-2 `warm-zero`: a module whose launches zero an output
+    /// (an atomic split's or stream-K's zero op, `mapal_gpu_zero`) has the
+    /// runtime run one zero of a scratch buffer on the `eager-init` thread,
+    /// before the clock: the driver initializes its memset path on the
+    /// process's first fill of 8 KiB or more (CUDA 13, rtx-5080: 13–17 µs
+    /// that call against 2–4 µs after), which a one-call program otherwise
+    /// pays inside its timed region. Off: the first zero pays it.
+    pub warm_zero: bool,
+    /// sweep-gemm-2 `streamk-price`: on a part whose rates price a stream-K
+    /// fixup (`DeviceCost`: the FMA tile rate, the `red` rate, the zero
+    /// pass), a site's stream-K is weighed against the S63 count by those
+    /// prices ([`crate::func::gpu`] `streamk_priced`: the pieces' partials and
+    /// the zero pass against the panels the walk saves) — under-filled sites
+    /// too, whose class ships `streamk` off (site-level wave quantization).
+    /// Off (`--gpu-off=streamk-price`): the panel count (`iters + 1 < split`)
+    /// in the classes that ship `streamk`.
+    pub streamk_price: bool,
 }
 
 impl GpuRungs {
@@ -1098,11 +1115,13 @@ impl GpuRungs {
         split_tile: true,
         mma_depth: true,
         round_store: true,
+        warm_zero: true,
+        streamk_price: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 132] = [
+    pub const NAMES: [&'static str; 134] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1235,6 +1254,8 @@ impl GpuRungs {
         "round-store",
         "stream-mma",
         "kmajor-b",
+        "warm-zero",
+        "streamk-price",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -1372,6 +1393,8 @@ impl GpuRungs {
             "split-tile" => &mut self.split_tile,
             "mma-depth" => &mut self.mma_depth,
             "round-store" => &mut self.round_store,
+            "warm-zero" => &mut self.warm_zero,
+            "streamk-price" => &mut self.streamk_price,
             _ => return None,
         })
     }
@@ -2189,6 +2212,7 @@ fn emit_module(
                 .skip(1)
                 .any(|t| t.split(", ").nth(1).is_some_and(|s| s != "i32 0")),
             crate::func::gpu::pdl(ir, profile, opts.contract, opts.gpu),
+            crate::func::gpu::module_zeroes(&funcs),
         )
     } else {
         String::new()

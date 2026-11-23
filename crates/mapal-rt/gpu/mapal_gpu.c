@@ -70,6 +70,7 @@ static struct {
   unsigned long long n_pin, n_event, n_pdl;
   unsigned long long n_preload, n_async, n_staged; /* cpu-gpu-boundary */
   unsigned long long n_tmap; /* hopper-wgmma-tma: tensor maps encoded */
+  double warm;               /* sweep-gemm-2 `warm-zero`: the init thread's zero */
 } tot;
 static unsigned flags;
 static double now_ms(void) {
@@ -84,12 +85,12 @@ static void total_line(void) {
           "kernel_ms=%.3f gen_ms=%.3f d2h_ms=%.3f free_ms=%.3f bytes_in=%llu "
           "bytes_out=%llu h2d=%llu d2h=%llu launches=%llu gens=%llu allocs=%llu "
           "l2_windows=%llu l2_persist=%llu pin_ms=%.3f pins=%llu events=%llu pdl=%llu "
-          "preloaded=%llu h2d_async=%llu staged=%llu tmaps=%llu\n",
+          "preloaded=%llu h2d_async=%llu staged=%llu tmaps=%llu warm_ms=%.3f\n",
           flags, tot.load, tot.lead, tot.init, tot.ctx, tot.module, tot.alloc,
           tot.h2d, tot.kernel, tot.gen, tot.d2h, tot.free, tot.in, tot.out,
           tot.n_h2d, tot.n_d2h, tot.n_launch, tot.n_gen, tot.n_alloc, tot.n_l2,
           tot.l2_persist, tot.pin, tot.n_pin, tot.n_event, tot.n_pdl,
-          tot.n_preload, tot.n_async, tot.n_staged, tot.n_tmap);
+          tot.n_preload, tot.n_async, tot.n_staged, tot.n_tmap, tot.warm);
 }
 
 #define CK(x)                                                                  \
@@ -107,7 +108,19 @@ static void total_line(void) {
  * (`mapal_gpu_init`; the bit is `GPU_INIT_EAGER` in
  * crates/backends/llvm/src/func/gpu.rs). A program without that call runs the
  * S52 path: init at the first site. */
-enum { EAGER = 1, STREAMS = 2, PDL = 4, PRELOAD = 8, STAGE = 16 };
+enum { EAGER = 1, STREAMS = 2, PDL = 4, PRELOAD = 8, STAGE = 16, WARM_ZERO = 32 };
+
+/* sweep-gemm-2 `warm-zero` (`WARM_ZERO`, set when the module's launches zero
+ * an output): the driver initializes its memset path lazily — measured on
+ * CUDA 13 / rtx-5080, a process's first `cuMemsetD8Async` of 8 KiB or more
+ * costs 13–17 us on the host, every later one 2–4 us whatever its size (a
+ * fill below 8 KiB pays its own first ~6 us), and a thread's first fill
+ * still 7–8 us after another thread's. One fill of each kind into a kept
+ * scratch buffer on the init thread (the process's part), then again on the
+ * thread that loads the module (its own part, before the first site): the
+ * program's zeros run at their steady cost. */
+#define WARM_ZERO_BYTES (64 * 1024)
+static CUdeviceptr warm_buf;
 
 /* Chain streams (`STREAMS`): created with the context. Eight because that is
  * the driver's default count of hardware work queues
@@ -129,6 +142,11 @@ static int chains_busy;
 static CUevent evs[MAPAL_GPU_STREAMS + 1];
 static unsigned slot_of(uint32_t s) {
   return s ? 1 + (s - 1) % MAPAL_GPU_STREAMS : 0;
+}
+/* `warm-zero`: a small and a large fill of the scratch buffer. */
+static void warm_fills(void) {
+  CK(cuMemsetD8Async(warm_buf, 0, 4, streams[0]));
+  CK(cuMemsetD8Async(warm_buf, 0, WARM_ZERO_BYTES, streams[0]));
 }
 
 static CUmodule module;
@@ -274,6 +292,13 @@ static void init_all(void) {
   if (flags & STREAMS)
     for (int i = 1; i <= MAPAL_GPU_STREAMS; i++)
       CK(cuStreamCreate(&streams[i], CU_STREAM_NON_BLOCKING));
+  if (flags & WARM_ZERO) {
+    double w0 = now_ms();
+    CK(cuMemAlloc(&warm_buf, WARM_ZERO_BYTES));
+    warm_fills();
+    CK(cuStreamSynchronize(streams[0]));
+    tot.warm = now_ms() - w0;
+  }
   tot.init = t1 - t0;
   tot.ctx = t2 - t1;
   tot.module = now_ms() - t2;
@@ -320,6 +345,11 @@ static void load_module(void) {
   if (init_state == 1) {
     pthread_join(init_thread, 0);
     CK(cuCtxSetCurrent(ctx)); /* the context is current on the init thread */
+    if (flags & WARM_ZERO) {
+      double w0 = now_ms();
+      warm_fills(); /* this thread's part (`warm-zero`) */
+      tot.warm += now_ms() - w0;
+    }
   } else {
     init_all();
   }
