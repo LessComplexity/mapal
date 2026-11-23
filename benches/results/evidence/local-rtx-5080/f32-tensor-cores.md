@@ -138,9 +138,11 @@ Measured but not shipped (the replay's loser lines): `mma-depth` (`bk` 16 × 5 s
 - **Deeper TF32 pipelines** (design R-T2) — **attempted, open**: more stages at the register-first residency lost
   everywhere (the fact the rule lacks is the k-step's barrier + wait cost against the second block's cover); the
   depth-first 128 × 128 × 32 × 3-stage geometry needs XOR-swizzled panels (96 KiB) — not attempted.
-- **narrow1's 4 × 8 tile** is 7 % faster with a 64 B address spill (0.7317 vs 0.7882 ms, before the cut) — the
-  register estimate now counts the chain temporaries and ships the spill-free 2 × 4 tile; a schedule that adds each
-  tile's chain before the next tile's products (ptxas hoists them) would recover it — **open**.
+- **narrow1's 4 × 8 tile** was 7 % faster than the spill-free 2 × 4 uncut (0.7317 vs 0.7882 ms) with a 64 B address
+  spill in the loop — **closed**: the register estimate counts the chain temporaries (one accumulator a tile: ptxas
+  issues a k-step's products before their adds), and with `mma-combine`'s cut the spill-free 2 × 4 tile is the fastest
+  measured (ABBA, 2048 × 4096 × 4096: 2 × 4 cut S = 2 **0.6913**, 4 × 4 at 208 registers 0.7144, 4 × 8 spilling
+  0.7308, FFMA 1.6750 ms).
 - **The split's absolute term** (design §2.5 underflow) — **closed without weakening D2**: the guard sends operands
   below `exact_above` to the FFMA path instead of adding `abs·Σ(|a|+|b|)` to the gate.
 - Not attempted: bf16x6 / bf16x3n emission (the A100's and H100's candidates; F1 carries their numerics), the `wgmma`
