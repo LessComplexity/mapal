@@ -637,6 +637,24 @@ INTENT = {
         ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')],
         applies_off="plan.kind == 'mma' and plan.get('set') == 'tf32|f32' and 'stage' not in plan", off=[
         ('cp.async panels: LDGSTS, no UBLKCP', "sass.ldgsts > 0 and sass.get('ublkcp', 0) == 0")]),
+    # hopper-wgmma-tma `wgmma-ws` (R2 / K2): the Hopper TF32 site as a warp-specialized `wgmma` kernel
+    # (`ws=1 stage=tma boxes=<n>`): one producer warpgroup copies each stage as whole tensor boxes (UTMALDG, one per
+    # box, onto a full barrier: SYNCS) and rounds the `aT` box once; consumers issue bk/8 HGMMA a trip with no block
+    # barrier in the loop. OFF (`.off-wgmma-ws`): the S53 kernel (every warp's cp.async: LDGSTS).
+    'wgmma-ws': dict(rule=True, applies_on="plan.kind == 'wgmma' and plan.get('ws') == 1", on=[
+        ('the stage as tensor boxes: one UTMALDG a box, transaction barriers, no LDGSTS',
+         "sass.get('utmaldg', 0) == plan.boxes and sass.get('syncs', 0) > 0 and sass.ldgsts == 0"),
+        ('bk/8 HGMMA a trip of the hot loop, no block barrier in it',
+         'sass.hot.hgmma == plan.bk // 8 and sass.hot.bar == 0'),
+        ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')],
+        applies_off="plan.kind == 'wgmma' and plan.get('ws') != 1", off=[
+        ('cp.async panels: LDGSTS, no UTMALDG', "sass.ldgsts > 0 and sass.get('utmaldg', 0) == 0")]),
+    # hopper-wgmma-tma `ws-regs` (R3): the producer warpgroup gives registers to the consumers (`regs=<p>/<c>`:
+    # USETMAXREG DEALLOC + TRY_ALLOC). OFF: no USETMAXREG, the even share (a smaller `n`).
+    'ws-regs': dict(applies_on="plan.kind == 'wgmma' and plan.get('ws') == 1 and 'regs' in plan", on=[
+        ('register reallocation: USETMAXREG (producer down, consumers up)', "sass.get('usetmaxreg', 0) == 2")],
+        applies_off="plan.kind == 'wgmma' and plan.get('ws') == 1 and 'regs' not in plan", off=[
+        ('no reallocation', "sass.get('usetmaxreg', 0) == 0")]),
     # site-geometry `row-split` (D1): a retained site's one-row pass takes the fold chooser — the row zeroed and one
     # launch whose partials add into it (a part without the atomic split: the workspace split and its reduce) —
     # instead of one block over the row (decode: grid 1x1x256 per trip).

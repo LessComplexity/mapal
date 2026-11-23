@@ -192,6 +192,19 @@ nvcc -O3 -std=c++17 -arch="${SM%a}" -Icutlass/include -Icutlass/tools/util/inclu
 if [ -f gemm_lib.cu ]; then
     nvcc -O3 -std=c++17 -arch="${SM%a}" gemm_lib.cu -lcublasLt -lcublas -o gemm_lib 2>&1 | grep -v Wno | tail -5 | tee -a "$LOG"
     [ -x gemm_lib ] || say "GEMM HARNESS BUILD FAILED"
+    # hopper-wgmma-tma: the library kernels the TF32 legs launch (CUPTI, ktrace.cpp): name, grid, block, regs, smem.
+    if [ -x gemm_lib ] && [ -f ktrace.cpp ]; then
+        g++ -O2 -shared -fPIC -DKTRACE_KERNEL=CUpti_ActivityKernel9 -DKTRACE_MEMCPY=CUpti_ActivityMemcpy5 \
+            -DKTRACE_MEMSET=CUpti_ActivityMemset4 -I"$CUDA/include" -I"$CUDA/extras/CUPTI/include" ktrace.cpp -o ktrace.so \
+            -L"$CUDA/lib64" -L"$CUDA/extras/CUPTI/lib64" -lcupti 2>&1 | tail -3 | tee -a "$LOG"
+        for shp in "pt_pj_m2048_n4096_k4096_tf32 2048 4096 4096" "pt_pj_m128_n4096_k4096_tf32 128 4096 4096"; do
+            set -- $shp
+            LD_LIBRARY_PATH="$CUDA/extras/CUPTI/lib64:$CUDA/lib64:${LD_LIBRARY_PATH:-}" CUDA_INJECTION64_PATH=$PWD/ktrace.so \
+                KTRACE_OUT=$PWD/ktrace-$1.tsv ./gemm_lib "$1" "$2" "$3" "$4" 3 --tf32 > /dev/null 2>&1
+            awk -F'\t' -v p="$1" '$1 == "K" {print "libkernel prog=" p " name=" $2 " grid=" $3 " block=" $4 " regs=" $5 " smem=" $6 "+" $7}' \
+                "ktrace-$1.tsv" 2>/dev/null | sort | uniq -c | sort -rn | head -8 | tee -a "$LOG"
+        done
+    fi
 fi
 # cross-arch: the device calibration (calib.cu, every kind once, then `gsync`, `copy` and `body` twice more: the medians
 # of three the profile's launch, copy and body properties cite) -> calib-<profile>.txt, while the GPU is idle (the torch
@@ -213,6 +226,16 @@ if [ "${CALIB:-1}" = 1 ] && [ -f calib.cu ]; then
             say "exp_calib: $(grep '^exp ' "calib-$PROF.txt" | tr '\n' ' ')"
         else
             say "EXP_CALIB BUILD FAILED"
+        fi
+    fi
+    # hopper-wgmma-tma: the bulk-copy engine's ns per copy (`tma_copy_ns`, tma_calib.cu), as `tma ` lines.
+    if [ -f tma_calib.cu ]; then
+        nvcc -O3 -std=c++17 -arch="$SM" tma_calib.cu -lcuda -o tma_calib 2>&1 | grep -v Wno | tail -5 | tee -a "$LOG"
+        if [ -x tma_calib ]; then
+            timeout 5m ./tma_calib >> "calib-$PROF.txt" 2>&1
+            say "tma_calib: $(grep '^tma ' "calib-$PROF.txt" | tr '\n' ' ')"
+        else
+            say "TMA_CALIB BUILD FAILED"
         fi
     fi
 fi

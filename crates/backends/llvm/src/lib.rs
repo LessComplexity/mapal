@@ -843,6 +843,27 @@ pub struct GpuRungs {
     /// `cp.async` groups. Off (`--gpu-off=bulk-stage`): every thread's 16-byte
     /// `cp.async` copies.
     pub bulk_stage: bool,
+    /// hopper-wgmma-tma R2 (`wgmma-ws`): the Hopper TF32 site as a
+    /// warp-specialized `wgmma` kernel — one producer warpgroup copying each
+    /// stage as whole tensor boxes (`cp.async.bulk.tensor`, a host-encoded
+    /// map per operand) onto a full barrier and rounding the `aᵀ` box once,
+    /// consumer warpgroups releasing each stage on an empty barrier once the
+    /// group reading it completed (`wgmma.wait_group`)
+    /// ([`profile::TargetProfile::gpu_wgmma_ws_tile`]). Off
+    /// (`--gpu-off=wgmma-ws`): the S53 kernel.
+    pub wgmma_ws: bool,
+    /// hopper-wgmma-tma R3 (`ws-regs`): the warp-specialized kernel moves
+    /// registers from its producer to its consumers (`setmaxnreg`) where the
+    /// part reallocates ([`profile::Caps::reg_realloc`]). Off: every thread
+    /// keeps the launch's even share (a smaller consumer tile).
+    pub ws_regs: bool,
+    /// hopper-wgmma-tma R1 (`tma-digits`): the `b` panel of a stage as ONE
+    /// tensor box — its lane axis split into digits `lane = 32·q + r` (a
+    /// 3-d map: the 32-word swizzle row, `k`, then `q` at 128 bytes), which
+    /// lands the `bn/32` column slabs one after another exactly as `bn/32`
+    /// 2-d boxes do: 2 copies a stage instead of `1 + bn/32` (the engine's
+    /// measured cost is per copy, `tma_copy_ns`). Off: a 2-d box per slab.
+    pub tma_digits: bool,
     /// flash-attention `stream`: a row-block group `stream_plan` proves one
     /// pass over windows of its axis (attention's `q·Kᵀ → softmax → P·V`)
     /// runs as one kernel walking the axis window by window — each fold's
@@ -1012,6 +1033,9 @@ impl GpuRungs {
         stream_fly: true,
         vec_spread: true,
         bulk_stage: true,
+        wgmma_ws: true,
+        ws_regs: true,
+        tma_digits: true,
         stream: true,
         stream_fact: true,
         split_kv: true,
@@ -1024,7 +1048,7 @@ impl GpuRungs {
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 123] = [
+    pub const NAMES: [&'static str; 126] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1140,6 +1164,9 @@ impl GpuRungs {
         "stream-fly",
         "vec-spread",
         "bulk-stage",
+        "wgmma-ws",
+        "ws-regs",
+        "tma-digits",
         "stream",
         "stream-fact",
         "split-kv",
@@ -1268,6 +1295,9 @@ impl GpuRungs {
             "stream-fly" => &mut self.stream_fly,
             "vec-spread" => &mut self.vec_spread,
             "bulk-stage" => &mut self.bulk_stage,
+            "wgmma-ws" => &mut self.wgmma_ws,
+            "ws-regs" => &mut self.ws_regs,
+            "tma-digits" => &mut self.tma_digits,
             "stream" => &mut self.stream,
             "stream-fact" => &mut self.stream_fact,
             "split-kv" => &mut self.split_kv,

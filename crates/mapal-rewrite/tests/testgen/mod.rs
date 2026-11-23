@@ -6056,3 +6056,84 @@ pub fn split_src_at(p: &SplitProg, m: u64, n: u64, k: u64) -> (String, (usize, u
     src += "}\n";
     (src, (cells.len(), m, k))
 }
+
+// --- hopper-wgmma-tma: TF32 GEMMs at warpgroup-tile extents -----------------
+
+/// A TF32 GEMM `y = a · b` at extents a warpgroup tile divides or misses:
+/// `m` 8–320, `n` 64–384, `k` 8–640 (from one tile below a box to twenty
+/// stages: the barrier phases wrap), `a` rows `ci` apart (`pad`: 0 dense, 4 a
+/// granule-whole pad, 3 a misaligned one the box refuses), the operands at an
+/// offset (`off`: whole granules or not), `b` read as `k × n` or transposed
+/// (`bt`: `n × k`, no `c × k` box). Integer-valued operands over 7 / 9: the
+/// TF32 rounding of each operand is exercised, the bound of D3 judges the sum.
+#[derive(Clone, Debug)]
+pub struct WgmmaProg {
+    pub dims: [u8; 3],
+    pub pad: u8,
+    pub off: u8,
+    pub bt: bool,
+    pub law: [u8; 2],
+}
+
+pub fn wgmma_prog_strategy() -> impl Strategy<Value = WgmmaProg> {
+    (
+        prop::array::uniform3(any::<u8>()),
+        prop::sample::select(vec![0u8, 0, 0, 4, 3]),
+        prop::sample::select(vec![0u8, 0, 0, 4, 1]),
+        prop::bool::weighted(0.15),
+        prop::array::uniform2(any::<u8>()),
+    )
+        .prop_map(|(dims, pad, off, bt, law)| WgmmaProg {
+            dims,
+            pad,
+            off,
+            bt,
+            law,
+        })
+}
+
+/// [`WgmmaProg`]'s source (`main` on the TF32 face) and its `(m, n, k)`.
+/// Prints two cells of `y`, each followed by its `M` (`Σ |a·b|`).
+pub fn wgmma_src(p: &WgmmaProg) -> (String, (u64, u64, u64)) {
+    let pick = |d: u8, v: &[u64]| v[usize::from(d) % v.len()];
+    let m = pick(p.dims[0], &[8, 16, 64, 128, 192, 256, 320]);
+    let n = pick(p.dims[1], &[64, 128, 192, 256, 384]);
+    let k = pick(p.dims[2], &[8, 32, 64, 96, 128, 256, 640]);
+    let ci = k + u64::from(p.pad);
+    let (oa, ob) = (u64::from(p.off), u64::from(p.off) * 2);
+    let (a1, a2) = (
+        u64::from(p.law[0] % 13) * 2 + 3,
+        u64::from(p.law[1] % 11) * 2 + 5,
+    );
+    let bi = if p.bt {
+        format!("b[{ob} + j * {k} + k]")
+    } else {
+        format!("b[{ob} + k * {n} + j]")
+    };
+    let ai = format!("a[{oa} + i * {ci} + k]");
+    let (c0, c1) = (
+        u64::from(p.law[0]) * 7 % (m * n),
+        m * n - 1 - u64::from(p.law[1]) % n,
+    );
+    let src = format!(
+        "fn main(): tf32 | f32 {{
+    {na} -> iota -> ia;
+    ia -> map {{ t -> (t * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> a;
+    {nb} -> iota -> ib;
+    ib -> map {{ t -> (t * {a2} + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 }} -> b;
+    {mn} -> iota -> ic;
+    {k} -> iota -> kr;
+    ic -> map {{ t -> t / {n} -> i; t % {n} -> j; (0.0, kr) -> fold {{ acc, k -> acc + {ai} * {bi} }} }} -> y;
+    ic -> map: f32 {{ t -> t / {n} -> i; t % {n} -> j; (0.0, kr) -> fold {{ acc, k -> {ai} * {bi} -> p; (p > 0.0) -> {{ -true-> p; -false-> 0.0 - p; }} -> q; acc + q }} }} -> mag;
+    y[{c0}] -> println;
+    mag[{c0}] -> println;
+    y[{c1}] -> println;
+    mag[{c1}] -> println;
+}}
+",
+        na = oa + m * ci,
+        nb = ob + k * n,
+        mn = m * n
+    );
+    (src, (m, n, k))
+}

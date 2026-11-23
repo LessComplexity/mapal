@@ -241,7 +241,29 @@ pub struct Caps {
     /// count), as the geometry it executes ([`BulkCopy`]); `None`: no such
     /// engine (`cp.async` and register copies only).
     pub bulk: Option<BulkCopy>,
+    /// hopper-wgmma-tma: **warpgroup register reallocation** (`setmaxnreg`):
+    /// a warpgroup hands registers back to the block's pool or takes them
+    /// from it, within the geometry [`RegRealloc`] states; `None`: every
+    /// thread keeps the count the block launched with.
+    pub reg_realloc: Option<RegRealloc>,
 }
+
+/// `setmaxnreg.{inc,dec}`'s geometry: the per-thread counts a warpgroup may
+/// set (`min ..= max`, multiples of `step`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RegRealloc {
+    pub min: u64,
+    pub max: u64,
+    pub step: u64,
+}
+
+/// `setmaxnreg` of the arch-specific targets (`sm_90a`, `sm_100a`,
+/// `sm_120a`; PTX ISA 8.0): 24 to 256 registers in steps of 8.
+pub const REG_REALLOC_SM90: RegRealloc = RegRealloc {
+    min: 24,
+    max: 256,
+    step: 8,
+};
 
 /// **The bulk-copy engine's geometry** (TMA: `cp.async.bulk`,
 /// `cp.async.bulk.tensor`, `mbarrier.expect_tx`): what one copy may move and
@@ -268,6 +290,11 @@ pub struct BulkCopy {
     /// the cluster that asks for it).
     pub cluster: u64,
     pub multicast: bool,
+    /// hopper-wgmma-tma: bytes of the encoded tensor map a box copy names
+    /// (`CUtensorMap`: 128, aligned to 64) — a kernel parameter by value.
+    pub desc_bytes: u64,
+    /// A box reaching past the tensor's extent lands zero-filled there.
+    pub oob_zero: bool,
 }
 
 /// The bulk-copy engine of compute capability 9.0 and up (H100 sm_90a,
@@ -281,6 +308,8 @@ pub const BULK_SM90: BulkCopy = BulkCopy {
     tx_bytes: (1 << 20) - 1,
     cluster: 8,
     multicast: true,
+    desc_bytes: 128,
+    oob_zero: true,
 };
 
 impl BulkCopy {
@@ -309,6 +338,41 @@ impl BulkCopy {
             && (base * elem).is_multiple_of(g)
             && rows * row <= self.tx_bytes
             && swizzle.is_none_or(|w| self.swizzles.contains(&w) && row <= w)
+    }
+
+    /// hopper-wgmma-tma R1: **a box of sides `sides` over a dense tensor of
+    /// `dims` (`(extent, stride)` in elements, innermost first, the innermost
+    /// unit-stride) is one tensor copy** — at most `box_dims` dimensions, each
+    /// side within `box_side` and dividing its extent, the inner row whole
+    /// granules and exactly its swizzle span when swizzled (a span the engine
+    /// writes), every outer stride and the base whole granules, the box within
+    /// one barrier phase.
+    pub fn tensor_box_fits(
+        &self,
+        dims: &[(u64, u64)],
+        sides: &[u64],
+        base: u64,
+        elem: u64,
+        swizzle: Option<u64>,
+    ) -> bool {
+        let g = self.granule;
+        let row = sides.first().map_or(0, |s| s * elem);
+        let bytes: u64 = sides.iter().product::<u64>() * elem;
+        !dims.is_empty()
+            && dims.len() == sides.len()
+            && dims.len() as u64 <= self.box_dims
+            && dims[0].1 == 1
+            && dims
+                .iter()
+                .zip(sides)
+                .all(|(&(ext, _), &s)| s > 0 && s <= self.box_side && ext.is_multiple_of(s))
+            && row.is_multiple_of(g)
+            && dims[1..]
+                .iter()
+                .all(|&(_, st)| (st * elem).is_multiple_of(g))
+            && (base * elem).is_multiple_of(g)
+            && bytes <= self.tx_bytes
+            && swizzle.is_none_or(|w| self.swizzles.contains(&w) && row == w)
     }
 }
 
@@ -569,6 +633,7 @@ pub const CAPS_WARP_MMA: Caps = Caps {
     red_f64: true,
     ex2: Some(EX2_UNITS),
     bulk: None,
+    reg_realloc: None,
 };
 
 /// [`CAPS_WARP_MMA`] with the fp8 warp products: the RTX 4090 (8.9).
@@ -589,6 +654,7 @@ pub const CAPS_WARP_MMA_PDL: Caps = Caps {
 /// arch-specific Hopper target (the H100 profiles).
 pub const CAPS_WARPGROUP_MMA: Caps = Caps {
     matrix: &MATRIX_WARPGROUP,
+    reg_realloc: Some(REG_REALLOC_SM90),
     ..CAPS_WARP_MMA_PDL
 };
 
@@ -620,6 +686,13 @@ pub const fn caps_of_cc(cc: u64, arch_specific: bool) -> Caps {
         red_f64: cc >= 60,
         ex2: Some(EX2_UNITS),
         bulk: if cc >= 90 { Some(BULK_SM90) } else { None },
+        // `setmaxnreg`: the arch-specific targets from 9.0 (spike: `sm_120a`
+        // takes it, `sm_120` refuses it).
+        reg_realloc: if cc >= 90 && arch_specific {
+            Some(REG_REALLOC_SM90)
+        } else {
+            None
+        },
     }
 }
 
@@ -751,6 +824,13 @@ pub struct DeviceCost {
     /// flight waits on the latency, not the DRAM. 0 = not measured: derived
     /// ([`Gpu::stream_fly_per_sm`]).
     pub fly_bytes_per_sm: u64,
+    /// hopper-wgmma-tma: **the bulk-copy engine's time per copy**, ns — one
+    /// SM's elected thread issuing back-to-back copies, its engine's ns per
+    /// copy at the panel sizes a stage moves (`calib.cu tma`). What separates
+    /// a stage of row copies (96–144 a stage: the 5080's measured 4.3–14.5×
+    /// loss) from one of whole-tile boxes (2–5). 0 = not measured: derived
+    /// ([`Gpu::tma_copy_ns`]).
+    pub tma_copy_ns: u64,
     /// flash-attention `stream` (P1): one block barrier of 256 threads
     /// with a dependent shared-memory round trip before it — what each window
     /// of a streamed unit pays per barrier on its block's critical path
@@ -821,6 +901,7 @@ pub const NO_PLAN: DeviceCost = DeviceCost {
     sm_bytes_per_ns: 0,
     coop_body_cycles: 0,
     fly_bytes_per_sm: 0,
+    tma_copy_ns: 0,
     bar_ns: 0,
 };
 
@@ -830,7 +911,7 @@ impl DeviceCost {
     /// overrides by name ([`Gpu::fp32_lanes`], [`Gpu::clock_khz`], and the
     /// hardware-properties the rung rules read: SMs, L2, shared memory,
     /// threads, registers and blocks per SM, the DRAM interface).
-    pub const NAMES: [&'static str; 41] = [
+    pub const NAMES: [&'static str; 42] = [
         "flops_per_ns",
         "bytes_per_ns",
         "launch_ns",
@@ -859,6 +940,7 @@ impl DeviceCost {
         "coop_body_cycles",
         "fly_bytes_per_sm",
         "bar_ns",
+        "tma_copy_ns",
         "fp32_lanes",
         "clock_khz",
         "sms",
@@ -919,7 +1001,7 @@ pub type CostOver = [Option<u64>; DeviceCost::NAMES.len()];
 impl Gpu {
     /// [`DeviceCost::NAMES`] that name a [`DeviceCost`] field (those before
     /// `fp32_lanes`).
-    const NAMES_COST: usize = 28;
+    const NAMES_COST: usize = 29;
 
     /// This part with the overrides in `over` applied (a part without a
     /// [`DeviceCost`] takes one from [`NO_PLAN`]).
@@ -956,6 +1038,7 @@ impl Gpu {
                 "coop_body_cycles" => &mut d.coop_body_cycles,
                 "fly_bytes_per_sm" => &mut d.fly_bytes_per_sm,
                 "bar_ns" => &mut d.bar_ns,
+                "tma_copy_ns" => &mut d.tma_copy_ns,
                 "fp32_lanes" => &mut self.fp32_lanes,
                 "clock_khz" => &mut self.clock_khz,
                 "sms" => &mut self.sms,
@@ -1010,6 +1093,7 @@ impl Gpu {
             "coop_body_cycles" => d.coop_body_cycles,
             "fly_bytes_per_sm" => d.fly_bytes_per_sm,
             "bar_ns" => d.bar_ns,
+            "tma_copy_ns" => d.tma_copy_ns,
             "fp32_lanes" => self.fp32_lanes,
             "clock_khz" => self.clock_khz,
             "sms" => self.sms,
@@ -1361,6 +1445,41 @@ impl Gpu {
             0 => self.dram_peak_bytes_per_ns() * d.lat_ns / self.sms.max(1),
             f => f,
         }
+    }
+
+    /// hopper-wgmma-tma: **the bulk-copy engine's ns per copy** —
+    /// [`DeviceCost::tma_copy_ns`] where measured, else the loaded panel
+    /// latency over the copies one SM's engine overlaps
+    /// ([`TMA_COPIES_IN_FLIGHT`]); 0 when neither is known.
+    pub fn tma_copy_ns(&self) -> u64 {
+        let d = self.cost.unwrap_or(NO_PLAN);
+        match d.tma_copy_ns {
+            0 => d.lat_ns / TMA_COPIES_IN_FLIGHT,
+            t => t,
+        }
+    }
+
+    /// hopper-wgmma-tma R1: **the time a block's tensor cores take to consume
+    /// one stage of `flops` flops**, ns, at the part's per-SM matrix rate
+    /// (`blocks` resident blocks sharing it): the time a stage's copies must
+    /// issue within. The rate is f32-tensor-cores P1's
+    /// ([`Self::matrix_flops_per_clk`], the fastest of the part's products in
+    /// `fmt`); the FFMA rate stands in where no matrix rate is given (it is
+    /// the lower one: the price errs toward the copies).
+    pub fn stage_consume_ns(&self, flops: u64, blocks: u64, fmt: MmaFmt) -> u64 {
+        let matrix = self
+            .caps
+            .matrix
+            .iter()
+            .filter(|o| o.fmt == fmt)
+            .map(|o| self.matrix_flops_per_clk(o) * self.clock_khz / 1_000_000)
+            .max()
+            .unwrap_or(0);
+        let per_sm = match matrix {
+            0 => self.ffma_flops_per_ns() / self.sms.max(1),
+            m => m,
+        };
+        flops * blocks.max(1) / per_sm.max(1)
     }
 
     /// hardware-properties: **the machine balance** — FFMA flops the part
@@ -1743,6 +1862,20 @@ pub const WGMMA_SWIZZLE_BYTES: u64 = 128;
 /// Rows of one swizzle atom; an atom (8 × 128 B) must start 1024-aligned.
 pub const WGMMA_ATOM_ROWS: u64 = 8;
 
+/// hopper-wgmma-tma: the copies one SM's bulk-copy engine overlaps, the
+/// derivation of [`Gpu::tma_copy_ns`] where it is not measured — the RTX 5080's
+/// row-copy kernel (1.961 ms over 1.57 M copies on 84 SMs: about 100 ns a
+/// copy, `gemv-tma.md`) at its loaded latency of 573 ns: ≈ 6.
+pub const TMA_COPIES_IN_FLIGHT: u64 = 6;
+/// Registers a warp-specialized `wgmma` consumer thread spends beyond its
+/// accumulators and `a` fragments (descriptors, barrier and fragment
+/// addresses, the loop): read off `ptxas -v` at `sm_90a` (the P0 measurement,
+/// [`WGMMA_ADDR_REGS`]'s policy for the producer-fed kernel).
+pub const WGMMA_WS_ADDR_REGS: u64 = 40;
+/// The producer warpgroup's register count under `setmaxnreg` (its loop:
+/// box coordinates, the barrier waits, one rounded chunk at a time).
+pub const WGMMA_WS_PRODUCER_REGS: u64 = 40;
+
 /// The Hopper TF32 tile (S53 `wgmma-hopper`): the site's product transposed,
 /// `cᵀ = bᵀ·aᵀ`, because `wgmma` takes TF32 shared-memory operands only
 /// K-major — `a` (`ck = 1`) already is, `b` (lanes contiguous) is not. So `bᵀ`
@@ -1762,6 +1895,16 @@ pub struct GpuWgmmaTile {
     /// Words of padding on each `b` panel row (the register-operand loads).
     pub pad_b: u64,
     pub blocks_per_sm: u64,
+    /// hopper-wgmma-tma R2 (`wgmma-ws`): the block is one producer warpgroup
+    /// — its elected thread copies each stage as whole tensor boxes onto a
+    /// full barrier, its threads round the `aᵀ` box once — beside `groups`
+    /// consumer warpgroups that wait on it and release each stage on an
+    /// empty barrier once the group reading it completed.
+    /// `false`: the S53 kernel (every warp copies by `cp.async`).
+    pub ws: bool,
+    /// R3 (`ws-regs`): the producer's and each consumer's register count
+    /// under `setmaxnreg` (`None`: every thread keeps the launch's count).
+    pub realloc: Option<(u64, u64)>,
 }
 
 impl GpuWgmmaTile {
@@ -1772,7 +1915,28 @@ impl GpuWgmmaTile {
         self.groups * WGMMA_M
     }
     pub fn threads(&self, warp: u64) -> u64 {
-        self.groups * WARPGROUP_WARPS * warp
+        (self.groups + u64::from(self.ws)) * WARPGROUP_WARPS * warp
+    }
+    /// `wgmma-ws`: bytes of a stage's `aᵀ` box (`n` rows of `bk` words, the
+    /// 128-byte swizzle the descriptor reads).
+    pub fn ws_a_bytes(&self) -> u64 {
+        self.n * self.bk * 4
+    }
+    /// `wgmma-ws`: the `b` panel's boxes, each `bk` rows of one swizzle span
+    /// (32 words).
+    pub fn ws_b_boxes(&self) -> u64 {
+        self.bn() * 4 / WGMMA_SWIZZLE_BYTES
+    }
+    /// `wgmma-ws`: one stage — the `aᵀ` box, then the `b` boxes — whole
+    /// 1024-byte swizzle patterns, so every box starts on one.
+    pub fn ws_stage_bytes(&self) -> u64 {
+        let atom = WGMMA_ATOM_ROWS * WGMMA_SWIZZLE_BYTES;
+        (self.ws_a_bytes() + self.bn() * self.bk * 4).next_multiple_of(atom)
+    }
+    /// `wgmma-ws`: the stages and their three barriers each (full, ready,
+    /// empty; 8 bytes apiece).
+    pub fn ws_smem_bytes(&self) -> u64 {
+        self.stages * (self.ws_stage_bytes() + 24)
     }
     pub fn ldb(&self) -> u64 {
         self.bn() + self.pad_b
@@ -1789,6 +1953,9 @@ impl GpuWgmmaTile {
         (self.a_words() + self.bk * self.ldb()).next_multiple_of(atom_words)
     }
     pub fn smem_bytes(&self) -> u64 {
+        if self.ws {
+            return self.ws_smem_bytes();
+        }
         self.stages * self.stage_words() * 4
     }
     /// Stride-dimension byte offset: between 8-row groups, one atom.
@@ -3322,6 +3489,148 @@ impl TargetProfile {
     /// ([`Geom::wg_n`], `wg_groups`) replaces steps 1–3; one the site cannot
     /// take falls back to the derived tile, never to another kernel class.
     pub fn gpu_wgmma_tile(&self, rows: u64, c: u64, k: u64) -> Option<GpuWgmmaTile> {
+        self.gpu_wgmma_tile_s53(rows, c, k)
+    }
+
+    /// **hopper-wgmma-tma R2 (`wgmma-ws`): the warp-specialized `wgmma`
+    /// geometry** for a `rows × c × k` f32 site on the TF32 face, fed by
+    /// tensor boxes. `None` without the warpgroup product, the bulk-copy
+    /// engine, or a geometry below. `realloc` (R3, `ws-regs`): the part's
+    /// [`Caps::reg_realloc`] may move registers between the producer and the
+    /// consumers.
+    ///
+    /// - **Depth.** `bk` is the TF32 swizzle span, 32 words: one `aᵀ` box row
+    ///   is one 128-byte swizzle row, the descriptor's layout.
+    /// - **Block.** One producer warpgroup and `g` ∈ {2, 1} consumer
+    ///   warpgroups, one block per SM by construction (the shared memory
+    ///   below is the block's own, not a register-derived share — why the
+    ///   S53 derivation refused the 2048² MLP site).
+    /// - **Registers.** A consumer holds `n/2` accumulators, `4·bk/8`
+    ///   fragments and [`WGMMA_WS_ADDR_REGS`]: under `realloc` within
+    ///   `(regs_per_sm − 128·`[`WGMMA_WS_PRODUCER_REGS`]`)/(128·g)` (down to
+    ///   the step, at most `max`), else within the launch's even share
+    ///   `regs_per_sm / threads`.
+    /// - **Shared memory.** `stages` × (the `aᵀ` box + the `b` boxes, whole
+    ///   1024-byte patterns) + 24 bytes of barriers a stage within
+    ///   `smem_per_block`; as many stages as fit, at most `k/bk`, at least 2.
+    /// - **Fill.** Among the `(g, n)` that fit (`n` a multiple of 8 dividing
+    ///   `rows`, `bn = 64·g` dividing `c`), the largest flops per staged byte
+    ///   (`bn·n/(bn + n)`) whose grid covers the SMs; none covers them: the
+    ///   largest grid (the split that would fill it is open).
+    pub fn gpu_wgmma_ws_tile(
+        &self,
+        rows: u64,
+        c: u64,
+        k: u64,
+        realloc: bool,
+        digits: bool,
+    ) -> Option<GpuWgmmaTile> {
+        let g = self.gpu()?;
+        if !g.has_wgmma() || g.caps.bulk.is_none() {
+            return None;
+        }
+        let row = WGMMA_SWIZZLE_BYTES / 4;
+        if !k.is_multiple_of(row) {
+            return None;
+        }
+        // R1's price: a stage's 2 copies (`tma-digits`) issue within the time
+        // its tensor cores take to consume it — the shallowest such depth (a
+        // whole number of swizzle rows, at most 4: the `aᵀ` box's k digits);
+        // none: the deepest. Without digits a stage is one swizzle row deep.
+        let depths: Vec<u64> = match digits {
+            true => (1..=4)
+                .map(|d| d * row)
+                .filter(|bk| k.is_multiple_of(*bk))
+                .collect(),
+            false => vec![row],
+        };
+        let wg = WARPGROUP_WARPS * g.warp;
+        let rr = g.caps.reg_realloc.filter(|_| realloc);
+        let mut cands = Vec::new();
+        for &bk in &depths {
+            let frag = 4 * (bk / WGMMA_K) + WGMMA_WS_ADDR_REGS;
+            for groups in [2u64, 1] {
+                let threads = (groups + 1) * wg;
+                if threads > g.max_threads_per_block {
+                    continue;
+                }
+                let (cap, regs) = match rr {
+                    Some(r) => {
+                        let p = WGMMA_WS_PRODUCER_REGS.max(r.min);
+                        let cap = (g.regs_per_sm.saturating_sub(wg * p) / (wg * groups)) / r.step
+                            * r.step;
+                        let cap = cap.min(r.max);
+                        (cap, Some((p, cap)))
+                    }
+                    None => (
+                        (g.regs_per_sm / threads).min(g.regs_per_thread) / 8 * 8,
+                        None,
+                    ),
+                };
+                if cap <= frag {
+                    continue;
+                }
+                let bn = groups * WGMMA_M;
+                if !c.is_multiple_of(bn) {
+                    continue;
+                }
+                let n_max = (2 * (cap - frag)).min(WGMMA_N_MAX);
+                for n in (1..=n_max / WGMMA_N_STEP).rev().map(|i| i * WGMMA_N_STEP) {
+                    if !rows.is_multiple_of(n) {
+                        continue;
+                    }
+                    let geom = GpuWgmmaTile {
+                        n,
+                        groups,
+                        bk,
+                        stages: 2,
+                        pad_b: 0,
+                        blocks_per_sm: 1,
+                        ws: true,
+                        realloc: regs,
+                    };
+                    let per = geom.ws_stage_bytes() + 24;
+                    let stages = (g.smem_per_block / per).min(k / bk);
+                    if stages < 2 {
+                        continue;
+                    }
+                    cands.push(GpuWgmmaTile { stages, ..geom });
+                }
+            }
+        }
+        let tiles = |w: &GpuWgmmaTile| (rows / w.n) * (c / w.bn());
+        let copies = if digits { 2 } else { 0 };
+        let priced = |w: &GpuWgmmaTile| {
+            let flops = 2 * w.n * w.bn() * w.bk;
+            copies * g.tma_copy_ns() <= g.stage_consume_ns(flops, 1, MmaFmt::Tf32)
+        };
+        // Per (groups, n): the shallowest priced depth, else the deepest.
+        let pick = |w: &GpuWgmmaTile| {
+            let same: Vec<&GpuWgmmaTile> = cands
+                .iter()
+                .filter(|x| x.n == w.n && x.groups == w.groups)
+                .collect();
+            let best = same
+                .iter()
+                .filter(|x| priced(x) && x.stages >= 3)
+                .min_by_key(|x| x.bk)
+                .or_else(|| same.iter().filter(|x| priced(x)).min_by_key(|x| x.bk))
+                .or_else(|| same.iter().max_by_key(|x| x.bk))
+                .copied();
+            best.is_some_and(|b| b.bk == w.bk)
+        };
+        let cands: Vec<GpuWgmmaTile> = cands.iter().filter(|w| pick(w)).copied().collect();
+        let intensity = |w: &GpuWgmmaTile| w.bn() * w.n * 1000 / (w.bn() + w.n);
+        cands
+            .iter()
+            .filter(|w| tiles(w) >= g.sms)
+            .max_by_key(|w| (intensity(w), w.groups))
+            .or_else(|| cands.iter().max_by_key(|w| (tiles(w), intensity(w))))
+            .copied()
+    }
+
+    /// The S53 `wgmma` geometry ([`Self::gpu_wgmma_tile`]'s derivation).
+    fn gpu_wgmma_tile_s53(&self, rows: u64, c: u64, k: u64) -> Option<GpuWgmmaTile> {
         let q = self.gpu()?.geom;
         self.wgmma_tile_at(rows, c, k, q.wg_n, q.wg_groups)
             .or_else(|| {
@@ -3405,6 +3714,8 @@ impl TargetProfile {
                     stages: WGMMA_MIN_STAGES,
                     pad_b,
                     blocks_per_sm,
+                    ws: false,
+                    realloc: None,
                 };
                 // Whole 16-byte chunks per thread, and whole swizzle rows.
                 let whole = (n * bk / 4).is_multiple_of(threads)
@@ -4402,6 +4713,7 @@ pub const RTX_4090: TargetProfile = TargetProfile {
             // stream-fly: `calib.cu bw` on the cross-arch box (60f0f8ce): 90 % of
             // its 958 GB/s DRAM peak first at 4 KiB in flight an SM.
             fly_bytes_per_sm: 4096,
+            tma_copy_ns: 0,
             bar_ns: 0,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_89), 2.52 GHz under load. The
@@ -4451,6 +4763,10 @@ pub const H100: TargetProfile = TargetProfile {
             // 3177 GB/s DRAM peak first at 32 KiB in flight an SM (16 KiB:
             // 80 %); the loaded latency there 632 ns.
             fly_bytes_per_sm: 32768,
+            // hopper-wgmma-tma: `tma_calib.cu` on a rented H100 SXM (h100-s1): 159 ns a
+            // copy at 128 B - 16 KiB for any ring depth >= 4 (186-302 ns alone); 32 KiB
+            // boxes 352-475 ns (13.5 TB/s over the part at 16 KiB: 102 B/ns an SM).
+            tma_copy_ns: 159,
             bar_ns: 0,
             // kernel-merging `calls`: `coop_body_cycles` not measured here —
             // derived, the rtx-5080's 4390 cycles at 1.807 GHz = 2429 ns a
@@ -4588,6 +4904,7 @@ pub const RTX_5090: TargetProfile = TargetProfile {
             // stream-fly: `calib.cu bw` (plan-cost v2 `B-bw-rtx-5090.tsv`): 90 %
             // of its 1701 GB/s DRAM peak first at 8 KiB in flight an SM.
             fly_bytes_per_sm: 8192,
+            tma_copy_ns: 0,
             bar_ns: 0,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_120), 2.41 GHz under load.
@@ -4709,6 +5026,11 @@ pub const RTX_5080: TargetProfile = TargetProfile {
             // 899 GB/s DRAM peak first at 8 KiB in flight an SM (84 SMs x 8
             // warps x 2 loads of 16 B: 890 GB/s; 4 KiB: 594-606).
             fly_bytes_per_sm: 8192,
+            // hopper-wgmma-tma: `tma_calib.cu`, one elected thread an SM, every SM,
+            // L2-resident: 197 ns a copy at 128 B - 4 KiB boxes for any ring
+            // depth >= 2 (234 ns alone: the latency); 16 / 32 KiB boxes 289 / 654 ns
+            // (the SM's 50-57 B/ns, 4.2-4.8 TB/s over the part).
+            tma_copy_ns: 197,
             // flash-attention P1: `calib.cu bar`, 256 threads (16.9 ns).
             bar_ns: 17,
         }),
@@ -7213,6 +7535,109 @@ mod tests {
             assert_eq!(p.gpu_wgmma_tile(4096, 4096, 4096), None, "{}", p.name);
         }
         assert!(H100.gpu().is_some_and(Gpu::has_wgmma));
+    }
+
+    /// hopper-wgmma-tma: the capabilities as geometry per part — the H100
+    /// (`sm_90a`) has the warpgroup product, the bulk-copy engine and
+    /// register reallocation; the RTX 5080 (`sm_120`) the engine alone (its
+    /// arch-specific `sm_120a` would add reallocation); the 4090 / 3090 / A100
+    /// none of the three. The version enters only through `caps_of_cc`.
+    #[test]
+    fn caps_are_geometry_per_part() {
+        let caps = |p: &TargetProfile| p.gpu().expect("a GPU").caps;
+        let h = caps(&H100);
+        assert!(h.bulk.is_some() && h.reg_realloc == Some(REG_REALLOC_SM90));
+        assert!(H100.gpu().is_some_and(Gpu::has_wgmma));
+        let b = caps(&RTX_5080);
+        assert!(b.bulk.is_some() && b.reg_realloc.is_none());
+        for p in [&RTX_4090, &RTX_3090, &A100] {
+            let c = caps(p);
+            assert!(c.bulk.is_none() && c.reg_realloc.is_none(), "{}", p.name);
+        }
+        assert_eq!(caps_of_cc(90, true), CAPS_WARPGROUP_MMA);
+        assert_eq!(caps_of_cc(120, true).reg_realloc, Some(REG_REALLOC_SM90));
+        assert_eq!(caps_of_cc(120, false).reg_realloc, None);
+        let bc = BULK_SM90;
+        assert_eq!((bc.desc_bytes, bc.oob_zero), (128, true));
+        // A box: inner 32 words = the 128-byte span; a padded outer stride
+        // of whole granules fits, a misaligned one, a misaligned base, a
+        // row past the span or a side past the engine's does not.
+        let d = [(4096, 1), (2048, 4096)];
+        assert!(bc.tensor_box_fits(&d, &[32, 256], 0, 4, Some(128)));
+        assert!(bc.tensor_box_fits(&[(4096, 1), (2048, 4100)], &[32, 256], 4, 4, Some(128)));
+        assert!(!bc.tensor_box_fits(&[(4096, 1), (2048, 4099)], &[32, 256], 0, 4, Some(128)));
+        assert!(!bc.tensor_box_fits(&d, &[32, 256], 1, 4, Some(128)));
+        assert!(!bc.tensor_box_fits(&d, &[64, 256], 0, 4, Some(128)));
+        assert!(!bc.tensor_box_fits(&d, &[32, 512], 0, 4, Some(128)));
+    }
+
+    /// hopper-wgmma-tma R2, hand-worked on the H100 SXM (132 SMs, 65 536
+    /// registers, 227 KiB a block):
+    /// - 2048 × 4096 × 4096: consumers at (65 536 − 128·40)/256 = 236 → 232
+    ///   registers hold n = 256 (128 + 16 + 40); two consumer warpgroups
+    ///   (bn 128), 48 KiB a stage ⇒ 4 stages; 8 × 32 = 256 tiles.
+    /// - 2048³ (the TF32 MLP's site, which the S53 derivation refuses): two
+    ///   consumers at n 256 give 128 tiles < 132; the filling geometry of
+    ///   most flops per staged byte is n 128 with two consumers (256 tiles).
+    /// - The depth (R1's price, `tma_copy_ns` 159 measured): a stage's 2
+    ///   copies (318 ns) within its consume time at 2048 TF32 flop/clk/SM
+    ///   (1.807 GHz): n 256 × bn 128 × bk 32 takes 567 ns — 32; n 128 takes
+    ///   283 ns at 32 — 64 (566 ns), three 64 KiB stages.
+    /// - 128 × 4096 × 4096: no geometry fills 132 SMs at these rows without a
+    ///   split; the largest grid — n 32, one consumer (256 tiles).
+    /// - `ws-regs` off: every thread keeps 65 536 / 384 → 168 registers, so
+    ///   n ≤ 2·(168 − 56) = 224 — 128 at 2048 rows (bk 64 by the price).
+    /// - No warpgroup product (the 5080, the 4090): `None`.
+    #[test]
+    fn wgmma_ws_tile_is_derived_from_hopper_properties() {
+        let t = |r, c, k, rr| {
+            let w = H100.gpu_wgmma_ws_tile(r, c, k, rr, true).expect("sm_90a");
+            assert!(w.ws && w.ws_stage_bytes() % 1024 == 0);
+            assert!(w.smem_bytes() <= H100.gpu().unwrap().smem_per_block);
+            (w.n, w.groups, w.bk, w.stages, w.realloc)
+        };
+        assert_eq!(t(2048, 4096, 4096, true), (256, 2, 32, 4, Some((40, 232))));
+        assert_eq!(H100.gpu_wgmma_tile(2048, 2048, 2048).map(|w| w.ws), None);
+        assert_eq!(t(2048, 2048, 2048, true), (128, 2, 64, 3, Some((40, 232))));
+        assert_eq!(t(128, 4096, 4096, true).0, 32);
+        assert_eq!(t(128, 4096, 4096, true).1, 1);
+        assert_eq!(t(2048, 4096, 4096, false), (128, 2, 64, 3, None));
+        // Without `tma-digits` a stage is one swizzle row deep.
+        let w = H100
+            .gpu_wgmma_ws_tile(2048, 2048, 2048, true, false)
+            .unwrap();
+        assert_eq!((w.n, w.bk, w.stages), (128, 32, 7));
+        // k not a whole swizzle row: no box of the descriptor's layout.
+        assert_eq!(H100.gpu_wgmma_ws_tile(2048, 4096, 4100, true, true), None);
+        for p in [&RTX_5080, &RTX_4090, &GENERIC] {
+            assert_eq!(
+                p.gpu_wgmma_ws_tile(2048, 4096, 4096, true, true),
+                None,
+                "{}",
+                p.name
+            );
+        }
+    }
+
+    /// hopper-wgmma-tma R1's price input: the engine's ns per copy, measured
+    /// where given, else the loaded latency over the copies it overlaps.
+    #[test]
+    fn tma_copy_ns_is_measured_or_derived() {
+        let g = *H100.gpu().unwrap();
+        assert_eq!(g.tma_copy_ns(), 159);
+        assert_eq!(RTX_5080.gpu().unwrap().tma_copy_ns(), 197);
+        let lat = RTX_5080.gpu().unwrap().cost.unwrap().lat_ns;
+        assert!(lat > 0);
+        let mut over: CostOver = [None; DeviceCost::NAMES.len()];
+        let i = DeviceCost::NAMES
+            .iter()
+            .position(|x| *x == "tma_copy_ns")
+            .unwrap();
+        over[i] = Some(77);
+        assert_eq!(g.with_cost(&over).tma_copy_ns(), 77);
+        over[i] = Some(0);
+        let derived = RTX_5080.gpu().unwrap().with_cost(&over).tma_copy_ns();
+        assert_eq!(derived, lat / TMA_COPIES_IN_FLIGHT);
     }
 
     /// The matrix descriptor's constant fields for the S52 bench geometries:
