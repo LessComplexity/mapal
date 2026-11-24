@@ -133,6 +133,37 @@ pub fn eval_values(
         .collect()
 }
 
+/// [`eval_values`] without the per-root retry: all of `roots` under one
+/// `budget`, all `None` when it aborts (ADR-0048: an attempt, whose work is
+/// not known before it runs, spends its budget once).
+pub fn eval_values_once(
+    ir: &CategoryIr,
+    f: FuncId,
+    roots: &[ObjectId],
+    budget: u64,
+) -> Vec<Option<RValue>> {
+    if roots.is_empty() {
+        return Vec::new();
+    }
+    let cones: Vec<Option<SecondaryMap<ObjectId, ()>>> =
+        roots.iter().map(|&r| static_cone(ir, f, r)).collect();
+    let mut all: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
+    for c in cones.iter().flatten() {
+        for (o, ()) in c {
+            all.insert(o, ());
+        }
+    }
+    let mut fuel = budget;
+    match eval::eval_cone(ir, f, &all, &mut fuel) {
+        Ok(env) => roots
+            .iter()
+            .zip(&cones)
+            .map(|(&r, c)| c.as_ref().and_then(|_| env.get(r).cloned()))
+            .collect(),
+        Err(_) => vec![None; roots.len()],
+    }
+}
+
 /// The backward cone of `root` in `f`, closed under sources (a loop merge
 /// brings its whole loop: decide / advance / exit work), or `None` when it
 /// reaches the function's input or an IO-token value.

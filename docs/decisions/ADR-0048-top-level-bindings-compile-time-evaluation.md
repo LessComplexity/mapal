@@ -71,13 +71,14 @@ replaced by its value.* Two places apply the rule:
   and, for a loop's value, when the whole loop is (its every decide, advance and exit value: the oracle runs a loop as
   a unit). Its **roots** are the computable values a run-time value reads (or that leave the function); a product
   assembled slot by slot is not a root, its computable components are. Each root carries its bytes, cells and the
-  oracle's work over its cone (a map or fold `n` times its body's, a call its callee's; unknown through a loop), and
-  the **rule — bytes against work** — realizes it:
+  oracle's work over its cone (a map or fold `n` times its body's, a call its callee's, a counted loop its trips —
+  `trip_split` — times its body's; unknown through any other loop), and the **rule — bytes against work** —
+  realizes it:
 
   | realization | when | what happens |
   | --- | --- | --- |
   | `Embed` | bytes ≤ 16 KiB, work ≤ 2²⁴ steps, work > cells | the oracle computes it; a scalar becomes a constant, a product a pack of constants; its cone, evaluated without a trap, is dropped |
-  | `Attempt` | bytes ≤ 16 KiB, work unknown (a loop) | evaluated under 2²⁴ steps; embedded when it comes out |
+  | `Attempt` | bytes ≤ 16 KiB, work unknown (a loop that is not counted) | the function's attempts evaluated together under 2²² steps, once; embedded when they come out |
   | `Compute` | otherwise: too large to embed, too much work while compiling, or no cheaper as a value than as its law — an array with a closed-form element law (`elem_plan`: the backends rebuild it where it is read, a device site where it runs), or no more work than cells (`iota`, `fill`, a pack of literals) | stays computed at run time — once, where the existing facts (`unchanged_plan`, `call_keep`, `elem_plan`) place it — and its computable operands are roots in turn |
 
   A root whose evaluation traps stays computed at run time (the trap is the program's meaning). 16 KiB bounds the

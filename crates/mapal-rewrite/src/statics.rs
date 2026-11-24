@@ -9,7 +9,7 @@
 //! Dead cones fall to the default pipeline's DCE.
 
 use mapal_interp::RValue;
-use mapal_ir::{CategoryIr, EVAL_WORK, ObjectId, Realize};
+use mapal_ir::{ATTEMPT_WORK, CategoryIr, EVAL_WORK, ObjectId, Realize};
 
 use crate::plan::RewritePlan;
 use crate::replay::replay;
@@ -37,11 +37,31 @@ pub fn fold_static(ir: CategoryIr) -> (CategoryIr, StaticReport) {
             .iter()
             .filter(|r| r.realize == Realize::Compute)
             .count() as u64;
-        let roots: Vec<ObjectId> = sp.evaluated().map(|r| r.value).collect();
-        if roots.is_empty() {
+        // Known-cheap roots together (one retried alone when another traps);
+        // attempts together under their own budget, never retried.
+        let embed: Vec<ObjectId> = sp
+            .roots
+            .iter()
+            .filter(|r| r.realize == Realize::Embed)
+            .map(|r| r.value)
+            .collect();
+        let attempt: Vec<ObjectId> = sp
+            .roots
+            .iter()
+            .filter(|r| r.realize == Realize::Attempt)
+            .map(|r| r.value)
+            .collect();
+        if embed.is_empty() && attempt.is_empty() {
             continue;
         }
-        let values = mapal_interp::eval_values(&ir, f, &roots, EVAL_WORK);
+        let mut values = mapal_interp::eval_values(&ir, f, &embed, EVAL_WORK);
+        values.extend(mapal_interp::eval_values_once(
+            &ir,
+            f,
+            &attempt,
+            ATTEMPT_WORK,
+        ));
+        let roots: Vec<ObjectId> = embed.into_iter().chain(attempt).collect();
         let mut done: Vec<ObjectId> = Vec::new();
         for (o, v) in roots.into_iter().zip(values) {
             match v {

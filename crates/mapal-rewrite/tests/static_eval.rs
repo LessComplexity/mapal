@@ -115,8 +115,9 @@ fn map_k(b: bool) -> i32 { 3 -> ret; }";
 }
 
 #[test]
-fn a_loop_is_attempted_under_the_budget() {
-    // Heron's square root of 2 as a counted loop: work unknown before it runs.
+fn a_counted_loop_is_priced_and_another_attempted_under_the_budget() {
+    // Heron's square root of 2 as a counted loop: `trip_split` gives its 20
+    // trips, so its work is known — embedded, the loop gone.
     let src = "fn main() {
     (0, 1.0) -> mut s;
     loop {
@@ -128,9 +129,30 @@ fn a_loop_is_attempted_under_the_budget() {
     r -> println;
 }";
     let ir = lower(src);
-    assert_eq!(realizations(&ir), vec![Realize::Attempt]);
+    assert_eq!(realizations(&ir), vec![Realize::Embed]);
     let (folded_ir, out) = folded(src);
     assert!(out.starts_with("1.41421"), "{out}");
+    assert!(
+        folded_ir
+            .funcs()
+            .all(|(f, _)| folded_ir.loop_structure(f).is_empty())
+    );
+    // Halving until at most one: no counter, trips unknown before it runs —
+    // attempted under the budget, embedded when it comes out.
+    let src = "fn main() {
+    (0, 1000.0) -> mut s;
+    loop {
+        s.1 > 1.0 -> {
+            -true-> { (s.0 + 1, s.1 * 0.5) -> s; -> loop; }
+            -false-> { s.0 -> r; }
+        }
+    }
+    r -> println;
+}";
+    let ir = lower(src);
+    assert_eq!(realizations(&ir), vec![Realize::Attempt]);
+    let (folded_ir, out) = folded(src);
+    assert_eq!(out, "10\n");
     assert!(
         folded_ir
             .funcs()

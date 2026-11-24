@@ -17,16 +17,17 @@
 //!
 //! **The rule** — bytes against work. Each root carries its bytes, its scalar
 //! cells and the oracle's work to compute it (interpreter steps over its cone;
-//! a map or fold `n` times its body's; `None` when the cone holds a loop, whose
+//! a map or fold `n` times its body's; a counted loop ([`CategoryIr::trip_split`])
+//! its trips times its body's; `None` when the cone holds another loop, whose
 //! trips are not known before it runs):
 //!
 //! - [`Realize::Embed`] — `bytes ≤ EMBED_BYTES`, `work ≤ EVAL_WORK` and
 //!   `work > cells`: computing it costs more steps than its cells, so its value
 //!   replaces its cone (the oracle computes it; a scalar becomes a constant, a
 //!   product a pack of constants).
-//! - [`Realize::Attempt`] — `bytes ≤ EMBED_BYTES`, work unknown (a loop): the
-//!   oracle tries under `EVAL_WORK` steps and the value is embedded when it
-//!   comes out.
+//! - [`Realize::Attempt`] — `bytes ≤ EMBED_BYTES`, work unknown (a loop that is
+//!   not counted): the oracle tries under `ATTEMPT_WORK` steps and the value is
+//!   embedded when it comes out.
 //! - [`Realize::Compute`] — otherwise: too large to embed, too much work to do
 //!   while compiling, or no cheaper as a value than as its law (an array with
 //!   a closed-form element law, [`CategoryIr::elem_plan`] — the backends
@@ -51,6 +52,10 @@ pub const EMBED_BYTES: u64 = 16 << 10;
 /// The most oracle steps compile-time evaluation spends on one function's
 /// roots (2²⁴: well under a second).
 pub const EVAL_WORK: u64 = 1 << 24;
+
+/// The oracle steps an attempt (a root whose work is unknown before it runs)
+/// may spend, for all of one function's attempts together.
+pub const ATTEMPT_WORK: u64 = 1 << 22;
 
 /// How a computable root is realized (see the module doc).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -149,6 +154,9 @@ impl CategoryIr {
         let mut in_loop: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
         // A loop's exit values leave it: roots when computable.
         let mut exits: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
+        // Each loop's members (by merge) and its plan's morphisms.
+        let mut loop_of: SecondaryMap<ObjectId, ObjectId> = SecondaryMap::new();
+        let mut loop_steps: Vec<(ObjectId, Vec<crate::graph::MorphismId>)> = Vec::new();
         let mut has_loop = false;
         for scc in self.loop_structure(f) {
             has_loop = true;
@@ -173,7 +181,17 @@ impl CategoryIr {
                     }
                 }
                 let whole = members.iter().all(|o| fixed.contains_key(*o));
+                loop_of.insert(mg, mg);
+                loop_steps.push((
+                    mg,
+                    plan.decide_order
+                        .iter()
+                        .chain(&plan.advance_order)
+                        .copied()
+                        .collect(),
+                ));
                 for &o in &members {
+                    loop_of.insert(o, mg);
                     in_loop.insert(o, ());
                     if !whole {
                         fixed.remove(o);
@@ -200,6 +218,30 @@ impl CategoryIr {
         // Work: oracle steps per object over its cone (memoized, saturating;
         // a shared sub-cone counted per path — an over-estimate, so never
         // embedding more than the rule allows).
+        // A counted loop ([`CategoryIr::trip_split`]) runs `hi − lo` trips
+        // (plus the exit trip's decide work): its work is that many times its
+        // body's steps. Any other loop's is unknown before it runs.
+        let trips = self.trip_split(f);
+        let mut loop_cost: SecondaryMap<ObjectId, Option<u64>> = SecondaryMap::new();
+        for (mg, steps) in &loop_steps {
+            let n = trips
+                .iter()
+                .find(|t| t.merge == *mg)
+                .map(|t| u64::try_from(t.hi - t.lo).unwrap_or(0).saturating_add(1));
+            let body = steps
+                .iter()
+                .filter_map(|&m| self.morphism(m))
+                .map(|mm| self.step_work(mm.op, mm.source, mm.target))
+                .try_fold(0u64, |a, w| w.map(|w| a.saturating_add(w)));
+            loop_cost.insert(
+                *mg,
+                match (n, body) {
+                    (Some(n), Some(b)) => Some(n.saturating_mul(b)),
+                    _ => None,
+                },
+            );
+        }
+        let mut loop_total: SecondaryMap<ObjectId, Option<u64>> = SecondaryMap::new();
         let mut work: SecondaryMap<ObjectId, Option<u64>> = SecondaryMap::new();
         for m in self.topo_order(f) {
             let Some(mm) = self.morphism(m) else { continue };
@@ -213,11 +255,35 @@ impl CategoryIr {
                 (Some(a), Some(b)) => Some(a.saturating_add(b)),
                 _ => None,
             };
-            let w = if in_loop.contains_key(mm.target) {
-                None
-            } else {
-                w
-            };
+            if let Some(&mg) = loop_of.get(mm.target) {
+                // A loop's values: the loop's work and the cones it reads.
+                if !loop_total.contains_key(mg) {
+                    let mut total = loop_cost.get(mg).copied().flatten();
+                    for (_, steps) in loop_steps.iter().filter(|(g, _)| *g == mg) {
+                        for &sm in steps {
+                            if let Some(x) = self.morphism(sm)
+                                && !loop_of.contains_key(x.source)
+                            {
+                                let ext = work.get(x.source).copied().unwrap_or(Some(0));
+                                total = match (total, ext) {
+                                    (Some(a), Some(b)) => Some(a.saturating_add(b)),
+                                    _ => None,
+                                };
+                            }
+                        }
+                    }
+                    if let Some(init) = self.loop_plan(f, mg).map(|p| p.init) {
+                        let ext = work.get(init).copied().unwrap_or(Some(0));
+                        total = match (total, ext) {
+                            (Some(a), Some(b)) => Some(a.saturating_add(b)),
+                            _ => None,
+                        };
+                    }
+                    loop_total.insert(mg, total);
+                }
+                work.insert(mm.target, loop_total[mg]);
+                continue;
+            }
             let prev = work.get(mm.target).copied().unwrap_or(Some(0));
             let total = match (prev, w) {
                 (Some(a), Some(b)) => Some(a.saturating_add(b)),
@@ -225,18 +291,15 @@ impl CategoryIr {
             };
             work.insert(mm.target, total);
         }
-        let fn_work = if has_loop {
-            None
-        } else {
-            Some(
-                fd.morphisms
-                    .iter()
-                    .filter_map(|&m| self.morphism(m))
-                    .map(|mm| self.step_work(mm.op, mm.source, mm.target))
-                    .try_fold(0u64, |a, w| w.map(|w| a.saturating_add(w))),
-            )
-            .flatten()
-        };
+        let _ = has_loop;
+        let fn_work = fd
+            .morphisms
+            .iter()
+            .filter_map(|&m| self.morphism(m))
+            .filter(|mm| !loop_of.contains_key(mm.target))
+            .map(|mm| self.step_work(mm.op, mm.source, mm.target))
+            .chain(loop_cost.values().copied())
+            .try_fold(0u64, |a, w| w.map(|w| a.saturating_add(w)));
 
         // The frontier: computable values a run-time value (or the output)
         // reads, then down through every root realized at run time.
@@ -356,7 +419,6 @@ impl CategoryIr {
             Operation::Iota | Operation::Fill | Operation::Zip | Operation::Enumerate => {
                 cells(target)
             }
-            Operation::LoopEnter | Operation::LoopBack | Operation::LoopExit => return None,
             _ => 1,
         })
     }
