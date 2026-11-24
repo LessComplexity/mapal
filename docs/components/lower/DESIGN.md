@@ -410,6 +410,7 @@ available (§10). Catalogue (each gets ≥1 rejection test, §14):
 | L1610 | EnumerateOverflow | `enumerate` array length > `i32::MAX` — the index `i32` could not name every element (F4/SND-3 precedent; ADR-0018) |
 | L1611 | SeqNoValue | a `seq { … }` whose chain **continues** past the stage (a following stage, or return position) but whose block has **no tail value** (ADR-0019 pin c; §8.10). Its own code, not L1305: a fanout demands a value from *every* branch to join, a seq demands *one* tail — distinct conditions, distinct messages (the L1305 name/trigger are fanout-specific) |
 | L1701–L1707 | UnknownSize · DuplicateSize · SizeRebound · SizeConflict · SizeNotIntegral · SizeUnbound · SizeOutOfRange | size-generic functions: their declarations, the inference of a call's sizes and the dimensions they give (ADR-0047 D1–D4) |
+| L1801–L1809 | TopMutable · TopNameReused · TopStage · TopDuplicate · TopNoBinding · TopEffect · TopCycle · NotComputable · TypeSizes | top-level bindings (never `mut`, a local never reuses one, no `ret` / `loop`, bound once, at least one binding, no effects, acyclic), a size that does not come out of compile-time evaluation, a size-generic type's size count (ADR-0048 D1–D4) |
 | L1901 | Internal | a builder call failed during emission (lower bug; message embeds the `IrError` debug form) |
 
 ## 5. Pass A — type table

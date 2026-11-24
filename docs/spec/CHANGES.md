@@ -231,6 +231,21 @@ the threshold; L1616 otherwise) and `w -> widen_f32` / `widen_f64` widen exactly
 site: the device's one-thread-per-cell kernel loads the 2-byte format, the register-staged tile widens its panels as
 it copies them; the cost model prices operand bytes per format. fp8 and 16-bit tensor-core products are decided in ADR-0043 and open.
 
+### 9.6 Top-level bindings, compile-time evaluation, `_`, size-generic types (ADR-0048, 2026-11-25)
+
+**Before.** A model's sizes were literals in every signature (the real-size Llama was rendered by a Python template);
+types were spelled structurally; a value computable before the program runs (a table, `1 / sqrt(head_size)`) was
+recomputed at run time — constant folding stopped at one scalar operation.
+
+**After.** `2048 -> hidden_size;` at the top level binds a program-wide value (order-independent, immutable, no effects;
+L1801–L1807). The compiler decides from the dataflow which values are computable before the program runs: top-level
+scalars are computed by the interpreter during lowering and become literals (usable as sizes; L1808 when a size does
+not come out); on the graph, the `static_plan` fact marks every value with no input and no effect in its cone and
+realizes it by bytes against work — `fold_static` embeds the cheap ones (oracle values, cones and finished loops
+dropped), the rest run. `type Hidden { _: [f32; hidden_size] }` is a zero-cost alias; `_` beside other fields is read
+where the struct's own type does not fit; `type Matrix<rows, columns>` is a size-generic type (`Matrix<hidden_size,
+hidden_size>`; L1809). Formatter, Neovim, tests on generated programs (interpreter, native CPU, every emulator mode).
+
 ### 9.5 Size-generic functions (ADR-0047, 2026-11-25)
 
 **Before.** An array's size is part of its type, so a function over arrays served one shape: the readable Llama
