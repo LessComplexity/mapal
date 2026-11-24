@@ -172,14 +172,17 @@ pub fn pdl_pays(g: &Gpu, repeats: bool) -> bool {
 }
 
 /// f32-tensor-cores R-F: the split rate rule's margin, per mille — a split
-/// form of `P` part products a k-step pays where the part's matrix rate
-/// reaches `θ · P` times its FFMA rate ([`split_rate_pays`]). `θ` = 1.3: the
-/// TF32 tile's realized efficiency deficit against the FFMA tile (Mapal TF32
-/// at 47–55 % of its peak against FFMA at 70–90 %, f32-tensor-cores design
-/// §4); between the rtx-5080's measured tf32x3 loser (256 against 3 · 256 an
-/// SM a clock: the forced ON arm, `rung_replay.tsv`) and its narrow1 winner
-/// (512 against 256).
-pub const SPLIT_RATE_PM: u64 = 1300;
+/// form of `P` part products a k-step pays where the matrix rate its tile
+/// realizes ([`split_issue_pm`]) reaches `θ · P` times the part's FFMA rate
+/// ([`split_rate_pays`]). tensor-cores-2 places `θ` = 1.6 on the A100's
+/// measured split tiles (rented, `local-rtx-5080/tensor-cores-2.md`): issue
+/// 1.00 / 0.83 (θ ≤ 2.67 / 3.2) won all 15 (FFMA / split 1.43–1.56), issue
+/// 1.81 (θ ≤ 1.47) lost or tied all three (0.83, 0.87, 1.00), issue 1.40
+/// (θ ≤ 1.91) is mixed (1.06, 1.11 and the uncut under-filled 128 × 6144
+/// 0.81: open). 1.3 before (the TF32 tile's efficiency deficit) took the
+/// 1.81 losers. The rtx-5080's tf32x3 loser (θ ≤ 0.33) and narrow1 winner
+/// (2.0) stand on either side.
+pub const SPLIT_RATE_PM: u64 = 1600;
 
 /// **f32-tensor-cores R-F, the part's side: a split form of `products`
 /// passes on `op` pays against the FFMA tile** — the matrix rate the split
@@ -401,7 +404,7 @@ mod tests {
     /// `local-rtx-5080/hardware-properties.md`. The replay must find exactly
     /// these: a rule change that fixes one moves it out, one that breaks a
     /// measurement fails here.
-    const OPEN: [(&str, &str, &str, &str); 21] = [
+    const OPEN: [(&str, &str, &str, &str); 22] = [
         // The launch does not read whether its operands are in L2 (flushed
         // L2 wins, warm L2 and the composed MLP lose): `residence_plan`.
         ("asyncstage", "h100-pcie", "on", "l2-flushed"),
@@ -466,6 +469,12 @@ mod tests {
         // (hopper.md open 5; the persistent grid in raster order or R6's
         // split would read `b` once).
         ("wgmma-ws", "h100", "off", "blocks=256"),
+        // tensor-cores-2: the GeForce bf16x2n tile is pipe-bound (issue
+        // 0.38) and realizes ~90 % of its bf16 pipe, beating the FFMA tile
+        // the rule keeps (2 x 256 against 1.6 x 256); the A100's issue-bound
+        // tiles realize ~39 % at issue 1.0. The tensor tile's realized
+        // fraction at its issue is the missing fact, not one margin.
+        ("split-tile", "rtx-5080", "on", "split=bf16x2n,issue=375"),
     ];
 
     /// **hardware-properties: every cited measurement, replayed.** For each
@@ -639,7 +648,7 @@ mod tests {
         }
         assert_eq!(open, OPEN.to_vec(), "measurements the rules do not pick");
         // The counts the evidence file reports.
-        assert_eq!((picked, null, mixed, open.len()), (141, 72, 10, 21));
+        assert_eq!((picked, null, mixed, open.len()), (152, 72, 11, 22));
     }
 
     /// No rule reads a name, an architecture string or a version: a part
