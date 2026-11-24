@@ -309,7 +309,12 @@ fn decode_state_stays_on_device() {
     // (`tile-post` off too: with the O projection a post tile site, this
     // OFF arm also runs the norm's scaling map on the host and uploads its
     // 16 KB — device-geometry's open placement item.)
-    let off = shipped(&ir, &["carry-made", "tile-post"]);
+    // (model-ready `trip-cells` / `bytes-place` off too: they keep the
+    // step's cells beside the carried state by the bytes they move.)
+    let off = shipped(
+        &ir,
+        &["carry-made", "tile-post", "trip-cells", "bytes-place"],
+    );
     let m = moves(&off);
     assert!(m.contains("2:16384:two") && m.contains("h2d=16384"), "{m}");
     // `cond-bounds` off: RoPE keeps its traps, the caches cross too.

@@ -218,6 +218,11 @@ fn emit_s54(ir: &CategoryIr, off: &[&str], contract: bool) -> (String, String) {
     opts.gpu.on.retain_resident = true;
     opts.gpu.on.delta_h2d = true;
     opts.gpu.on.lane_stride = true;
+    // The S53/S54 retention mechanisms on host-placed maps: model-ready
+    // `trip-cells` / `bytes-place` (a loop's small maps on the device by
+    // the bytes they move) off.
+    opts.gpu.off.trip_cells = true;
+    opts.gpu.off.bytes_place = true;
     for r in off {
         *opts.gpu.off.rung(r).expect("a rung") = true;
     }

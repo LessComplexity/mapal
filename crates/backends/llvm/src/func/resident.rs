@@ -1918,6 +1918,7 @@ impl<'a> FnEmit<'a> {
     fn range_in_place(&self, m: MorphismId) -> Option<mapal_ir::Outside> {
         let (ou, arr) = self.range_write(m)?;
         let target = self.ir.morphism(m)?.target;
+        let chain = gpu::host_rungs(self.profile, self.contract, self.gpu_arms).range_chain;
         // placement `chain`: the written array is a state view, or the output
         // of a range map written over one (each dead past its writer).
         let mut w = arr;
@@ -1932,6 +1933,9 @@ impl<'a> FnEmit<'a> {
                 && self.ir.object(p.source)?.kind == ObjectKind::LoopMerge
             {
                 break (w, index, p.source);
+            }
+            if !chain {
+                return None;
             }
             let (_, before) = self.range_write(*self.ir.in_edges(w).first()?)?;
             w = before;
@@ -1962,6 +1966,9 @@ impl<'a> FnEmit<'a> {
                     self.lup.dead_after(arr, pos)
                 };
                 return (!views.iter().any(|&v| self.guard_read(v, Some(m))) && dead).then_some(ou);
+            }
+            if !chain {
+                return None;
             }
             let after = self.ir.out_edges(t).iter().find_map(|&e| {
                 let pm = self.ir.morphism(e)?;
@@ -2007,14 +2014,15 @@ impl<'a> FnEmit<'a> {
                 // row of `w` for a 1-row projection) is read coalesced by a
                 // warp a cell and `k` elements apart by a thread a cell —
                 // there a warp a cell whether or not the cells fill the part.
-                let unit = match fm.op {
-                    Operation::Fold { body, .. } => self
-                        .ir
-                        .step_algebra(body)
-                        .regroup
-                        .is_some_and(|r| r.reads.contains(&Some(1))),
-                    _ => false,
-                };
+                let unit = rungs.stride_lanes
+                    && match fm.op {
+                        Operation::Fold { body, .. } => self
+                            .ir
+                            .step_algebra(body)
+                            .regroup
+                            .is_some_and(|r| r.reads.contains(&Some(1))),
+                        _ => false,
+                    };
                 let units = if unit { 1 } else { site.extent };
                 gpu::warp_lanes(self.profile, self.order, &elem, k, units)
             }
@@ -2133,6 +2141,7 @@ impl<'a> FnEmit<'a> {
             matches!(x.op, Operation::Map { body, .. } | Operation::Fold { body, .. } if body == self.f)
         });
         let straight = self.straight_line();
+        let trip = gpu::host_rungs(self.profile, self.contract, self.gpu_arms).trip_cells;
         if !body && gpu::host_rungs(self.profile, self.contract, self.gpu_arms).devmap {
             for (m, site) in self.ir.cell_plan(self.f).iter() {
                 // An epilogue member (R1) runs in its site's store already.
@@ -2143,7 +2152,7 @@ impl<'a> FnEmit<'a> {
                 // placement is what would cross the bus each trip.
                 if !sites_mut.contains_key(m)
                     && self.member_src(m, 0).is_none()
-                    && (self.cell_pays(m, site) || !straight.contains_key(m))
+                    && (self.cell_pays(m, site) || (trip && !straight.contains_key(m)))
                     && let Some(c) = self.cell_of(m, site)
                 {
                     cells.insert(m, c);
@@ -2217,24 +2226,38 @@ impl<'a> FnEmit<'a> {
             // guard arm, or a parameter) is uploaded at its producer once
             // (F1/F2) — for a cell a loop runs every trip it is there.
             let straight = self.straight_line();
+            let rungs = gpu::host_rungs(self.profile, self.contract, self.gpu_arms);
             let made_once = |o: ObjectId| {
-                self.ir
-                    .in_edges(o)
-                    .first()
-                    .is_none_or(|&p| straight.contains_key(p))
+                rungs.trip_cells
+                    && self
+                        .ir
+                        .in_edges(o)
+                        .first()
+                        .is_none_or(|&p| straight.contains_key(p))
             };
             let drop: Vec<MorphismId> = cells
                 .iter()
                 .filter(|(m, c)| {
                     let ops = c.operands();
                     let per_trip = !straight.contains_key(*m);
-                    let there = |o: ObjectId| there(o) || (per_trip && made_once(o));
+                    // placement `bytes-place`: a nest cell that finishes
+                    // sooner on the device by its own roofline (a 1-row
+                    // projection) is a tile site's kin — like one, it copies
+                    // its host operands in at their producers and its output
+                    // out where the host reads it.
+                    let alone = rungs.bytes_place
+                        && !c.nested.is_empty()
+                        && self.ir.cell_plan(self.f).get(*m).is_some_and(|site| {
+                            let (flops, bytes) = self.cell_roofline(*m, site);
+                            self.profile.device_pays(flops, bytes)
+                        });
+                    let there = |o: ObjectId| there(o) || alone || (per_trip && made_once(o));
                     let t = self.ir.morphism(*m).expect("cell").target;
                     // placement `carry`: a carry's next state forwards its
                     // pointer into the back edge (no host read there).
                     let fwd: Vec<MorphismId> = carries
                         .iter()
-                        .filter(|k| k.next == t)
+                        .filter(|k| rungs.carry_fwd && k.next == t)
                         .filter_map(|k| {
                             let lp = self.ir.loop_plan(self.f, k.merge)?;
                             let state = self.pair_source(lp.back_route, 0)?;
@@ -2253,7 +2276,7 @@ impl<'a> FnEmit<'a> {
                             .iter()
                             .any(|k| k.inplace && (k.next == t || k.chain.contains(&t)));
                     let held = ops.iter().all(|&(o, _)| there(o) || walked(o))
-                        && (ops.iter().any(|&(o, _)| device_only(o)) || !host());
+                        && (alone || ops.iter().any(|&(o, _)| device_only(o)) || !host());
                     // placement `bytes`: a cell a loop runs every trip runs
                     // where it moves fewer bytes per trip. On the device it
                     // uploads the operands the device holds no copy of and
@@ -2281,7 +2304,7 @@ impl<'a> FnEmit<'a> {
                         );
                         down + out_up > 0 && up + out_down <= down + out_up
                     };
-                    homeless || !(held || (per_trip && moved()))
+                    homeless || !(held || (rungs.bytes_place && per_trip && moved()))
                 })
                 .map(|(m, _)| m)
                 .collect();

@@ -37,13 +37,15 @@ fn outsides(ir: &CategoryIr) -> Vec<Option<Outside>> {
         .collect()
 }
 
+/// `r` is read from an array, so it reaches the map as a captured number (a
+/// constant one is that constant in the law: model-ready placement).
 fn one_map(body: &str) -> String {
     format!(
         "fn main() {{
     64 -> iota -> tc;
     0.5 -> h: f32;
     (h, 64) -> fill -> x;
-    3 -> r: i32;
+    tc[3] -> r;
     tc -> map {{ c -> {body} }} -> y;
     y[0] -> println;
     y[63] -> println;

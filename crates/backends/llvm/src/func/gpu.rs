@@ -551,7 +551,12 @@ pub(crate) fn tile_plan(
     if rungs.narrow_tile {
         for (m, s) in ir.tile_plan_narrow(f).sites.iter() {
             let strided = s.a.clane > 1 || s.b.clane > 1;
+            // model-ready `stride-lanes`: one row over a k-major `b` (a
+            // 1-row projection) shares no panel — its nest cell's warp a
+            // row reads `b` coalesced, the one-thread kernel `k` apart.
+            let lone_k_major = rungs.stride_lanes && row_group(s) == 1 && b_k_major(s);
             if s.post.is_none()
+                && !lone_k_major
                 && (rungs.lane_stride || !strided)
                 && gpu_site(s, profile, rungs.window)
             {
@@ -2466,6 +2471,13 @@ fn launch_key(l: &Launch) -> String {
         // sweep-runtime-2: `streamk-epi` decides an epilogue group's
         // combine (keyed through its ticket kernel's id).
         .replace(", streamk_epi: false", "")
+        // model-ready placement: host-only rungs (where cells run, which
+        // range cells write in place, a cell's lanes — keyed by the cell).
+        .replace(", trip_cells: false", "")
+        .replace(", bytes_place: false", "")
+        .replace(", range_chain: false", "")
+        .replace(", stride_lanes: false", "")
+        .replace(", carry_fwd: false", "")
         .replace(", cells: 1 }", " }")
 }
 

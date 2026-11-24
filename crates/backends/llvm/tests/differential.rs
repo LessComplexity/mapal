@@ -3668,6 +3668,22 @@ fn differential_natural_twins_values_and_movement() {
         };
         mapal_backend_llvm::emit_detailed(ir, &opts).expect("emits")
     };
+    let emit_off = |ir: &CategoryIr, target: &'static str, extra: &[&str]| {
+        let mut gpu = mapal_backend_llvm::GpuArms::default();
+        for r in ["streams", "pinned", "pdl", "async", "place"]
+            .iter()
+            .chain(extra)
+        {
+            *gpu.off.rung(r).expect("rung") = true;
+        }
+        let opts = mapal_backend_llvm::EmitOpts {
+            host: "generic",
+            target,
+            gpu,
+            ..mapal_backend_llvm::EmitOpts::exact()
+        };
+        mapal_backend_llvm::emit_detailed(ir, &opts).expect("emits")
+    };
     let moves = |t: &str| -> Vec<String> {
         t.lines()
             .filter(|l| l.starts_with("; mapal.move"))
@@ -3782,29 +3798,56 @@ fn differential_natural_twins_values_and_movement() {
             // and kernels are the twins' with it off, and with it on at most
             // its range cells more, each replacing a written row's upload.
             let flat = emit(&ni, target, true, false);
-            let ranges = range_cells(&on.device);
-            if launches(&on.text) > launches(&flat.text) + ranges {
+            // model-ready placement `range-chain`: a chain of range cells
+            // carries the state on the device link by link and the trip's
+            // cells follow it there (more launches, fewer bytes) — the
+            // single-cell bound is `range-chain` off's; with it on, no loop
+            // moves more bytes per trip.
+            let single = emit_off(&ni, target, &["range-chain"]);
+            let ranges = range_cells(&single.device);
+            if launches(&single.text) > launches(&flat.text) + ranges {
                 findings.push(format!(
                     "{tag} {target}: range-cell launches {} > {} + {ranges} range cells\n{ns}",
-                    launches(&on.text),
+                    launches(&single.text),
                     launches(&flat.text)
+                ));
+            }
+            let bytes = |t: &str| -> Vec<i64> {
+                moves(t)
+                    .iter()
+                    .map(|l| {
+                        l.split_whitespace()
+                            .filter_map(|x| x.split_once('='))
+                            .filter(|(k, _)| *k == "h2d" || *k == "d2h")
+                            .filter_map(|(_, v)| v.parse::<i64>().ok())
+                            .sum()
+                    })
+                    .collect()
+            };
+            let (bc, bs) = (bytes(&on.text), bytes(&single.text));
+            if bc.len() != bs.len() || bc.iter().zip(&bs).any(|(c, s)| c > s) {
+                findings.push(format!(
+                    "{tag} {target}: range-chain bytes {bc:?} > {bs:?}\n{ns}"
                 ));
             }
             let (mn, mu) = (moves(&on.text), moves(&un.text));
             if mn != mu {
-                // As well or better: per loop, no more bytes moved, copied or
-                // allocated per trip, no less retained.
+                // As well or better: per loop, no more bytes over the bus
+                // (h2d + d2h: model-ready `bytes-place` trades one way for the
+                // other), copied or allocated per trip, no less retained.
                 let costs = |l: &str| -> Vec<i64> {
                     let kv: std::collections::HashMap<&str, i64> = l
                         .split_whitespace()
                         .filter_map(|x| x.split_once('='))
                         .filter_map(|(k, v)| Some((k, v.parse().ok()?)))
                         .collect();
-                    ["h2d", "d2h", "host_copy", "alloc"]
-                        .iter()
-                        .map(|k| kv[k])
-                        .chain([-kv["retained"]])
-                        .collect()
+                    [
+                        kv["h2d"] + kv["d2h"],
+                        kv["host_copy"],
+                        kv["alloc"],
+                        -kv["retained"],
+                    ]
+                    .to_vec()
                 };
                 let worse = mn.len() != mu.len()
                     || mn
