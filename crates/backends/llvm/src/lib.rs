@@ -30,7 +30,7 @@ mod ty;
 
 pub use crate::profile::TargetProfile;
 pub use crate::profile::resolve as resolve_profile;
-pub use crate::profile::{CostOver, DeviceCost};
+pub use crate::profile::{CostOver, DeviceCost, Ptx};
 
 /// The profile a target name resolves to (`native` included), `None` for an
 /// unknown name — what [`EmitOpts::target`] and [`EmitOpts::host`] accept.
@@ -2125,7 +2125,7 @@ fn emit_module(
         out.push_str(&crate::exp::defs(&funcs, real));
     }
     // ADR-0043: the host's narrow roundings, for the formats a body rounds to.
-    out.push_str(&crate::narrow::defs(&funcs, false, false));
+    out.push_str(&crate::narrow::defs(&funcs, false, false).0);
     // Same rule for the SME leg: the emitted call IS the requirement, so the
     // three intrinsic declarations and the one streaming panel kernel appear
     // exactly when some tile site took the SME rung. A module without one is

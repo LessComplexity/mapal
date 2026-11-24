@@ -2289,13 +2289,34 @@ pub(crate) fn site_cands(
 /// tile-completing CTA evaluates the members on the whole sums
 /// ([`Kernel::ticket`]); its atomic and workspace splits stay off — one
 /// launch either way. `--gpu-off=streamk-epi`: the ordered kernel it
-/// measured with (S54).
+/// measured with (S54); so does a group whose walk would lose its panels'
+/// L2 reuse ([`epi_walk`], bugs-properties).
 pub(crate) fn group_order(
     epi: Option<&EpiKernel>,
+    site: &TileSite,
+    profile: &TargetProfile,
     arms: crate::GpuArms,
     order: Order,
 ) -> (crate::GpuArms, Order) {
-    epi_order(epi.map(|e| e.post.is_some()), arms, order)
+    epi_order(
+        epi.map(|e| e.post.is_some()),
+        arms,
+        order,
+        epi_walk(site, profile, arms),
+    )
+}
+
+/// bugs-properties `streamk-epi`: whether an epilogue group at `site` may
+/// take the stream-K walk — its operands' L2 reuse on the part
+/// ([`crate::rules::streamk_epi_pays`]); `--gpu-on=streamk-epi` forces it
+/// (the measurement arm).
+pub(crate) fn epi_walk(site: &TileSite, profile: &TargetProfile, arms: crate::GpuArms) -> bool {
+    let operands = site.rows * site.k * site.a.elem_bytes(&site.elem)
+        + site.k * site.c * site.b.elem_bytes(&site.elem);
+    arms.on.get("streamk-epi")
+        || profile
+            .gpu()
+            .is_none_or(|g| crate::rules::streamk_epi_pays(g, operands))
 }
 
 /// [`group_order`] by the group's shape alone: `post` — `None` without an
@@ -2306,6 +2327,7 @@ pub(crate) fn epi_order(
     post: Option<bool>,
     arms: crate::GpuArms,
     order: Order,
+    walk: bool,
 ) -> (crate::GpuArms, Order) {
     match post {
         Some(true) => {
@@ -2314,7 +2336,7 @@ pub(crate) fn epi_order(
             *a.off.rung("streamk").expect("a rung") = true;
             (a, order)
         }
-        Some(_) if !arms.off.get("streamk-epi") => {
+        Some(_) if !arms.off.get("streamk-epi") && walk => {
             let mut a = arms;
             *a.off.rung("splitk-atomic").expect("a rung") = true;
             *a.off.rung("splitk").expect("a rung") = true;
@@ -2729,7 +2751,9 @@ pub(crate) const MMA_CUT_PM: u64 = 950;
 /// partials added into the output, about one panel) — `stages` panels. The
 /// cut `S` (dividing the panels, each piece at least [`MMA_PIECE_PANELS`], at
 /// most [`MMA_PIECES_MAX`]) minimizing `⌈blocks·S / slots⌉·(P/S + stages)`
-/// is taken where it saves more than [`MMA_CUT_PM`] of the uncut time. A
+/// panel times plus the cut's own partials and zero pass, in ns at the
+/// part's rates ([`MmaCut::ns`], bugs-properties `cut-price`), is taken
+/// where it saves more than [`MMA_CUT_PM`] of the uncut time. A
 /// grid of at least one wave over a site whose flops per operand byte stay
 /// below twice the part's matrix balance (its matrix rate over its DRAM
 /// rate: every SM already streams the operands from DRAM) is not cut: the
@@ -2761,8 +2785,17 @@ fn mma_pieces(l: &Launch, m: &GpuMmaTile, site: &TileSite, gpu: &Gpu) -> u64 {
     if blocks >= slots && !compute {
         return 1;
     }
-    // In panel times of one block.
-    let time = |s: u64| (blocks * s).div_ceil(slots) * (panels / s + m.stages);
+    let cut = MmaCut {
+        blocks,
+        slots,
+        panels,
+        stages: m.stages,
+        panel_flops: 2 * m.bm() * m.bn() * m.bk,
+        blocks_per_sm: m.blocks_per_sm.max(1),
+        cells: site.rows * site.c,
+        bytes,
+    };
+    let time = |s: u64| cut.ns(gpu, rate, s);
     let mut best = (1, time(1));
     let mut s = 2;
     while s <= MMA_PIECES_MAX {
@@ -2771,9 +2804,75 @@ fn mma_pieces(l: &Launch, m: &GpuMmaTile, site: &TileSite, gpu: &Gpu) -> u64 {
         }
         s *= 2;
     }
-    match best.1 * 1000 <= MMA_CUT_PM * time(1) {
+    match best.1 * 1000.0 <= MMA_CUT_PM as f64 * time(1) {
         true => best.0,
         false => 1,
+    }
+}
+
+/// bugs-properties `cut-price`: **a tensor tile's grid and the price of
+/// cutting its `k`** ([`mma_pieces`]) — `blocks` tiles on `slots` resident
+/// places, `panels` panels of `panel_flops` each, a pipeline of `stages`,
+/// `blocks_per_sm` blocks sharing an SM, `cells` outputs, `bytes` of
+/// operands and output (its working set).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct MmaCut {
+    pub blocks: u64,
+    pub slots: u64,
+    pub panels: u64,
+    pub stages: u64,
+    pub panel_flops: u64,
+    pub blocks_per_sm: u64,
+    pub cells: u64,
+    pub bytes: u64,
+}
+
+impl MmaCut {
+    /// **The cut into `s` pieces, ns**: `⌈blocks·s / slots⌉` waves of
+    /// pieces of `panels / s + stages` panels (the prologue and the fixup
+    /// about `stages` panels), a panel at one block's share of the SM's
+    /// matrix rate (`rate`, the part's flops per ns), and — where it cuts —
+    /// the cut's own work: the output's zero pass (`zero_ns` and its bytes at
+    /// the fill rate) and `s · cells` partials added by `red` at the part's
+    /// `atomic_ops_per_ns` ([`crate::profile::Gpu::plan_cost`]'s rates, as
+    /// `streamk_priced` prices a stream-K fixup) — where the cut's working
+    /// set spills the L2 the part keeps ([`Gpu::l2_keep_bytes`]); inside it
+    /// the adds resolve in the L2 beside the other pieces' products (`red`
+    /// is issued and left), overlapped with the waves: the rtx-5080's 2048³
+    /// MLP GEMM (48 MiB in its 66 MiB keep) won its cut 1.06× (local ABBA:
+    /// 1.568 against 1.667 ms) where the serial price of its 33.5 M adds
+    /// (84 µs) refused it. The panel count alone (the
+    /// rule before) took every cut whose waves shrank: cross-arch 5fcb401b
+    /// measured 9 of 20 such cuts losing (`mma-combine`, finding 5) — the
+    /// A100's and 3090's 2048³ MLP GEMMs (`S` 4 / 8: 16.8–33.5 M adds at 248
+    /// / 217 an ns, 68–155 µs against 62–68 µs of waves saved), the 4090's
+    /// and H100's 128 × 6144 × 4096 (9.6–10.7 µs of partials against 2–10
+    /// µs); priced, 18 of the 20 arms pick their measured side.
+    pub fn ns(&self, gpu: &Gpu, rate: u64, s: u64) -> f64 {
+        let waves = (self.blocks * s).div_ceil(self.slots) as f64;
+        let per_sm = rate as f64 / gpu.sms.max(1) as f64;
+        let panel = match per_sm > 0.0 {
+            true => self.panel_flops as f64 * self.blocks_per_sm as f64 / per_sm,
+            false => 1.0,
+        };
+        let run = waves * ((self.panels / s) as f64 + self.stages as f64) * panel;
+        let d = gpu.plan_cost();
+        let fill = match (d.fill_bytes_per_ns, d.l2_bytes_per_ns) {
+            (0, l2) => l2,
+            (f, _) => f,
+        };
+        let spills = self.bytes > gpu.l2_keep_bytes();
+        let fixed = match (s, d.atomic_ops_per_ns, per_sm > 0.0) {
+            (1, _, _) | (_, 0, _) | (_, _, false) => 0.0,
+            (s, a, true) => {
+                let adds = match spills {
+                    true => (s * self.cells) as f64 / a as f64,
+                    false => 0.0,
+                };
+                adds + d.zero_ns as f64 + (self.cells * 4) as f64 / fill.max(1) as f64
+            }
+        };
+        run + fixed
     }
 }
 
@@ -3433,7 +3532,9 @@ pub(crate) fn split_name(k: SplitKind) -> &'static str {
 /// 1. *bound* — always: the form's coefficient at the site's `K` meets D2
 ///    ([`SplitForm::admits`], the accumulator's measured guard bits);
 /// 2. *part* — the matrix rate pays for the form's `P` passes against the
-///    FFMA rate ([`crate::rules::split_rate_pays`]);
+///    FFMA rate ([`crate::rules::split_rate_pays`]), and the realization's
+///    instruction issue at this tile does
+///    ([`crate::rules::split_issue_pays`]: its splits and flushes a k-step);
 /// 3. *site* — the flops per operand byte reach the part's FFMA balance
 ///    (a DRAM-bound site keeps the FFMA tile, which splits `k` to fill the
 ///    part) or the tile's grid fills the warp schedulers (`half-fill`'s
@@ -3455,6 +3556,11 @@ fn split_pays(site: &TileSite, gpu: &Gpu, kind: SplitKind, m: &GpuMmaTile, force
         return true;
     }
     if !crate::rules::split_rate_pays(gpu, &op, form.products()) {
+        return false;
+    }
+    // bugs-properties `split-issue`: the realization's own instruction issue
+    // at this tile (its splits, flushes and products a k-step).
+    if !crate::rules::split_issue_pays(gpu, kind, m.mt, m.nt, op.shape.k) {
         return false;
     }
     let bytes = site.rows * site.k * m.ea + site.k * site.c * m.eb + site.rows * site.c * 4;
@@ -4582,7 +4688,7 @@ pub(crate) fn device_module(
         });
         // An epilogue group's kernel is ordered: its candidates are too — a
         // `tile-post` group's may split into a workspace (`group_order`).
-        let (garms, gorder) = group_order(Some(&e.k), arms, order);
+        let (garms, gorder) = group_order(Some(&e.k), &e.site, profile, arms, order);
         cand_kernels(
             &mut kernels,
             &mut site_lines,
@@ -4737,10 +4843,16 @@ pub(crate) fn device_module(
         out.push_str(&defs);
     }
     // ADR-0043: the device's narrow roundings (`cvt.rn`).
+    let caps = profile.gpu().map(|g| g.caps);
+    let mut ptx = caps.map(|c| c.ptx);
     {
-        let cvt_f8 = profile.gpu().is_some_and(|g| g.caps.cvt_f8);
-        let defs = crate::narrow::defs(&out, true, cvt_f8);
+        let cvt_f8 = caps.and_then(|c| c.cvt_f8);
+        let (defs, hw) = crate::narrow::defs(&out, true, cvt_f8.is_some());
         out.push_str(&defs);
+        // bugs-properties `ptx-isa`: the conversions' encoding on this part.
+        if hw {
+            ptx = ptx.max(cvt_f8);
+        }
     }
     // `pdl`: the runtime launches every kernel behind a kernel as a dependent
     // launch, so every kernel waits for its producer's grid before it reads.
@@ -4753,6 +4865,15 @@ pub(crate) fn device_module(
     // start on 1024-byte boundaries.
     if out.contains("wgmma.mma_async") || out.contains("cp.async.bulk.tensor") {
         out = out.replacen("[0 x i8], align 16", "[0 x i8], align 1024", 1);
+    }
+    // bugs-properties `ptx-isa`: the module declares the largest encoding its
+    // target and its instructions need — every `llc` step passes it.
+    if let Some(p) = ptx {
+        out = out.replacen(
+            "; mapal-backend-llvm device module\n",
+            &format!("; mapal-backend-llvm device module\n{}", p.declare()),
+            1,
+        );
     }
     Some(out)
 }
@@ -9791,7 +9912,8 @@ impl<'a> FnEmit<'a> {
             // the rules' ordered launch under an L2 window. An epilogue
             // group's kernel is ordered, so are its candidates.
             if !col && !streams {
-                let (arms, order) = group_order(epi.as_ref(), self.gpu_arms, self.order);
+                let (arms, order) =
+                    group_order(epi.as_ref(), site, self.profile, self.gpu_arms, self.order);
                 let cands = site_cands(site, self.profile, self.contract, arms, order, false);
                 let c0 = cands[0].launch;
                 let windowed = epi.is_none()
@@ -11293,13 +11415,16 @@ mod tests {
     fn mma_pieces_on_the_measured_cells() {
         // f32-tensor-cores `mma-combine` on the rtx-5080's TF32 cells (ABBA,
         // `f32-tensor-cores.md`): the measured best cut where one won, none
-        // where every cut lost; the OFF arm never cuts.
+        // where every cut lost; the OFF arm never cuts. bugs-properties
+        // `cut-price`: 2048 × 4096 × 4096 takes the measured S = 4 (1.3346
+        // against 1.4179 ms, `rung_replay.tsv`), priced with its partials;
+        // the 2048³ MLP GEMM keeps its measured S = 8 (its adds in the L2).
         for (m, n, k, best) in [
             (128, 6144, 4096, 8),
             (128, 4096, 14336, 8),
             (128, 4096, 4096, 1),
             (128, 28672, 4096, 1),
-            (2048, 4096, 4096, 8),
+            (2048, 4096, 4096, 4),
             (2048, 4096, 14336, 8),
             (2048, 6144, 4096, 1),
             (2048, 2048, 2048, 8),
@@ -11322,6 +11447,261 @@ mod tests {
             let off = at(off(&["mma-combine"]));
             assert_eq!(off, Combine::None, "{m}x{n}x{k}");
         }
+    }
+
+    /// bugs-properties `cut-price`: **every measured `mma-combine` arm of
+    /// cross-arch 5fcb401b, replayed** (`analysis/arms.md`, same-box OFF /
+    /// ON, the arm's plan line: its tile, grid and cut `S`) — the priced cut
+    /// ([`MmaCut::ns`]) must keep the measured side: cut where ON won, whole
+    /// where it lost (a null either way). The wave count alone cut all 20
+    /// (9 lost). Open: the 4090's 128 × 6144 × 4096 (bf16 / TF32, priced
+    /// 1.18 / 1.14 and cut as before: its `b` stream at the DRAM rate bounds
+    /// both arms, 55 / 105 µs against 44 / 83 µs of waves; a DRAM floor in
+    /// the price misprices the A100's under-filled 128 × 4096 × 14336, whose
+    /// uncut kernel runs at 2.8× its peak estimate — the tensor tile's
+    /// efficiency at its occupancy is the missing fact) — `OPEN` below.
+    #[test]
+    fn mma_cut_replay() {
+        use crate::profile::{A100, RTX_3090, RTX_5080};
+        // part, m, n, k, tf32 (else bf16), mt, nt, warps_x, warps_y, bk,
+        // stages, blocks an SM, S, OFF / ON.
+        let arms: [(&TargetProfile, u64, u64, u64, bool, [u64; 8], f64); 21] = [
+            (
+                &RTX_3090,
+                2048,
+                2048,
+                2048,
+                true,
+                [4, 8, 2, 2, 16, 2, 2, 8],
+                0.946,
+            ),
+            (
+                &RTX_3090,
+                2048,
+                2048,
+                2048,
+                true,
+                [4, 8, 2, 2, 16, 2, 2, 8],
+                0.943,
+            ),
+            (
+                &RTX_3090,
+                128,
+                4096,
+                14336,
+                false,
+                [2, 2, 4, 2, 64, 2, 2, 8],
+                0.928,
+            ),
+            (
+                &RTX_3090,
+                128,
+                4096,
+                14336,
+                true,
+                [2, 2, 4, 2, 32, 2, 2, 8],
+                1.074,
+            ),
+            (
+                &RTX_3090,
+                128,
+                6144,
+                4096,
+                false,
+                [4, 4, 2, 2, 16, 2, 4, 8],
+                1.273,
+            ),
+            (
+                &RTX_3090,
+                128,
+                6144,
+                4096,
+                true,
+                [4, 4, 2, 2, 8, 2, 4, 8],
+                1.494,
+            ),
+            (
+                &A100,
+                2048,
+                2048,
+                2048,
+                true,
+                [4, 8, 2, 2, 32, 2, 2, 4],
+                0.836,
+            ),
+            (
+                &A100,
+                2048,
+                2048,
+                2048,
+                true,
+                [4, 8, 2, 2, 32, 2, 2, 4],
+                0.914,
+            ),
+            (
+                &A100,
+                128,
+                4096,
+                14336,
+                false,
+                [2, 2, 4, 2, 128, 2, 2, 8],
+                1.106,
+            ),
+            (
+                &A100,
+                128,
+                4096,
+                14336,
+                true,
+                [2, 2, 4, 2, 64, 2, 2, 8],
+                1.342,
+            ),
+            (
+                &A100,
+                2048,
+                4096,
+                14336,
+                false,
+                [4, 8, 2, 2, 64, 2, 2, 2],
+                1.090,
+            ),
+            (
+                &A100,
+                2048,
+                4096,
+                14336,
+                true,
+                [4, 8, 2, 2, 32, 2, 2, 8],
+                0.956,
+            ),
+            (
+                &RTX_4090,
+                128,
+                4096,
+                14336,
+                false,
+                [2, 2, 4, 2, 64, 2, 2, 2],
+                1.087,
+            ),
+            (
+                &RTX_4090,
+                128,
+                4096,
+                14336,
+                true,
+                [2, 2, 4, 2, 32, 2, 2, 2],
+                1.020,
+            ),
+            (
+                &RTX_4090,
+                128,
+                6144,
+                4096,
+                false,
+                [2, 2, 4, 2, 64, 2, 2, 4],
+                0.864,
+            ),
+            (
+                &RTX_4090,
+                128,
+                6144,
+                4096,
+                true,
+                [2, 2, 4, 2, 32, 2, 2, 4],
+                0.922,
+            ),
+            (
+                &H100,
+                128,
+                6144,
+                4096,
+                false,
+                [2, 2, 4, 2, 128, 3, 2, 4],
+                0.899,
+            ),
+            // The rtx-5080's (f32-tensor-cores.md, ABBA; ON / OFF inverted).
+            (
+                &RTX_5080,
+                2048,
+                2048,
+                2048,
+                true,
+                [4, 8, 2, 2, 16, 2, 2, 8],
+                1.0 / 0.945,
+            ),
+            (
+                &RTX_5080,
+                128,
+                6144,
+                4096,
+                true,
+                [2, 4, 4, 2, 16, 3, 2, 8],
+                0.2389 / 0.1815,
+            ),
+            (
+                &RTX_5080,
+                128,
+                4096,
+                14336,
+                true,
+                [2, 2, 4, 2, 32, 2, 2, 8],
+                0.4541 / 0.4163,
+            ),
+            (
+                &RTX_5080,
+                2048,
+                4096,
+                14336,
+                true,
+                [4, 8, 2, 2, 16, 2, 2, 8],
+                4.90 / 4.43,
+            ),
+        ];
+        const OPEN: [(&str, u64, u64, bool); 2] = [
+            ("rtx-4090", 6144, 4096, true),
+            ("rtx-4090", 6144, 4096, false),
+        ];
+        let (mut kept, mut open) = (0, 0);
+        for (p, m, n, k, tf32, [mt, nt, wx, wy, bk, stages, bps, s], meas) in arms {
+            let g = p.gpu().expect("gpu");
+            let fmt = if tf32 { MmaFmt::Tf32 } else { MmaFmt::Bf16 };
+            let op = g.caps.matrix_op(fmt, Home::Regs).expect("a warp product");
+            let (bm, bn) = (MMA_M * mt * wy, MMA_N * nt * wx);
+            let cut = MmaCut {
+                blocks: (m / bm) * (n / bn),
+                slots: g.sms * bps,
+                panels: k / bk,
+                stages,
+                panel_flops: 2 * bm * bn * bk,
+                blocks_per_sm: bps,
+                cells: m * n,
+                bytes: m * k * 4 + k * n * if tf32 { 4 } else { 2 } + m * n * 4,
+            };
+            let rate = g.matrix_flops_per_ns(&op);
+            let priced = cut.ns(g, rate, 1) / cut.ns(g, rate, s);
+            let cuts = priced * MMA_CUT_PM as f64 >= 1000.0;
+            eprintln!(
+                "{} {m}x{n}x{k} {} S={s}: priced {priced:.2}, measured {meas:.3}",
+                p.name,
+                if tf32 { "tf32" } else { "bf16" }
+            );
+            if (meas - 1.0).abs() <= 0.03 {
+                continue;
+            }
+            if OPEN.contains(&(p.name, n, k, tf32)) && m == 128 {
+                assert_ne!(cuts, meas > 1.0, "{} {m}x{n}x{k}: no longer open", p.name);
+                open += 1;
+                continue;
+            }
+            assert_eq!(
+                cuts,
+                meas > 1.0,
+                "{} {m}x{n}x{k}: priced {priced:.2}",
+                p.name
+            );
+            kept += 1;
+        }
+        assert_eq!((kept, open), (18, 2));
     }
 
     #[test]

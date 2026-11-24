@@ -112,6 +112,24 @@ pub const SMEM_PER_SM_MANY_BLOCKS: u64 = 200 * 1024;
 /// holds 388 KiB.
 pub const L2_PER_SM: u64 = 128 * 1024;
 
+/// **bugs-properties `streamk-epi`: an epilogue group's stream-K walk keeps
+/// its operand panels' reuse.** The walk's CTAs start `iters` units apart,
+/// so the blocks that read one `a` / `b` panel read it at skewed `k`: their
+/// reuse is the L2's, across the walk, where the ordered grid's lockstep
+/// wave shares each panel at once. A part whose L2 share an SM reaches
+/// [`L2_PER_SM`] (the `grid-share` property) keeps it; a smaller one keeps
+/// it only where the site's operands (`operand_bytes`, `a` and `b`) fit the
+/// L2 it keeps ([`Gpu::l2_keep_bytes`]) — else the group keeps its ordered
+/// kernel (`--gpu-off=streamk-epi`'s). Cross-arch 5fcb401b, the RTX 3090
+/// (75 KiB an SM, 6 MiB): `loop_4096` / `epi_4096` (128 MiB of operands)
+/// 0.74 / 0.94, the stream-K kernel 6.0 against the ordered 5.3–5.6 ms with
+/// the same k loop (SASS: 2048 FFMA, 96 LDS, 8 LDG a trip, 224 / 230
+/// registers); `indep_512` / `mlp_512` (2 MiB) 1.05 / 1.13; the 2048s null;
+/// the H100 (388 KiB) 3 W / 5 null, the 5080 (780 KiB) 8 W.
+pub fn streamk_epi_pays(g: &Gpu, operand_bytes: u64) -> bool {
+    g.l2_bytes_per_sm() >= L2_PER_SM || operand_bytes <= g.l2_keep_bytes()
+}
+
 /// DRAM bytes per µs per SM ([`Gpu::dram_bytes_per_us_per_sm`]) at and above
 /// which a retained site's one-row pass pays for the split that fills the
 /// part (`row-split`): the H100 PCIe (17.9 KB/µs a SM) won 1.41–1.56×; the
@@ -187,6 +205,69 @@ pub const SPLIT_RATE_PM: u64 = 1300;
 /// the SM's matrix and FFMA rates a clock (`calib.cu matrix`, `ffma`).
 pub fn split_rate_pays(g: &Gpu, op: &crate::profile::MatrixOp, products: u64) -> bool {
     g.matrix_flops_per_ns(op) * 1000 >= SPLIT_RATE_PM * products * g.ffma_flops_per_ns()
+}
+
+/// bugs-properties `split-issue`: **the warp-instructions the split
+/// realization issues a k-step for each operand element it splits** —
+/// `hi = rna(x)`, `lo = rna(x − hi)` (an integer sequence on every SM:
+/// no `F2F` in the loop), the guard's tests and selects, and the fragment's
+/// addressing. Counted in the shipped tf32x3 kernel's k loop
+/// (`pj_m2048_n4096_k4096` on the A100, `mt × nt` = 2 × 4, `bk` 32: 1543
+/// non-HMMA instructions per 4 k-steps over 16 split elements a k-step,
+/// less [`SPLIT_FLUSH_INSNS`]' 128 — 22 an element; the same PTX through
+/// `ptxas -arch=sm_86 / sm_90 / sm_120`: 1524 / 1506 / 1568, within 4 %).
+pub const SPLIT_ELEM_INSNS: u64 = 22;
+
+/// bugs-properties `split-issue`: the round-to-nearest adds that flush a
+/// k-step's products into the f32 accumulator, a thread's 4 per `m16n8`
+/// tile ([`SPLIT_ELEM_INSNS`]' kernel: FADD 192 per 4 k-steps of 8 tiles,
+/// 6 a tile with the products' own chain adds).
+pub const SPLIT_FLUSH_INSNS: u64 = 4;
+
+/// bugs-properties `split-issue`: the margin, per mille, a split tile's
+/// issue ceiling must reach over the FFMA rate — the split tile realizes
+/// 0.40 of its ceiling where the FFMA tile realizes 0.68 of its peak (A100,
+/// cross-arch 5fcb401b, `pj_m2048_n4096_k4096`: split 7.09 ms = 63.6 useful
+/// flops an SM a clock against a 160 ceiling; FFMA 5.21 ms = 86.6 of 128),
+/// so the ceiling breaks even at 1.25 / 0.73 = 1.7 times the FFMA rate. The
+/// rtx-5080's measured tf32x3 loser (ceiling 0.63 × its FFMA rate, 4.10
+/// against 1.83 ms) sits below it too.
+pub const SPLIT_ISSUE_PM: u64 = 1700;
+
+/// **bugs-properties `split-issue`: the split realization pays its
+/// instruction issue against the FFMA tile** — the part's side of
+/// `split-tile` beside [`split_rate_pays`] (the matrix rate). Per warp and
+/// k-step of `k` on an `mt × nt` grid of `m16n8` tiles the realization
+/// issues the form's `P` products a tile, [`SPLIT_FLUSH_INSNS`] a tile, and
+/// [`SPLIT_ELEM_INSNS`] for each fragment element it splits (`4·mt + 2·nt`
+/// at `k` 8 where the form splits an operand into parts, none where both
+/// enter as stored: `narrow1`), for `2·16mt·8nt·k` useful flops; the SM
+/// issues `schedulers` warp-instructions a clock. Pays where that ceiling
+/// reaches [`SPLIT_ISSUE_PM`] of the FFMA rate (`2 · fp32_lanes` an SM a
+/// clock). Physical properties (schedulers, FP32 lanes) and the tile's
+/// geometry only. Cross-arch 5fcb401b: the A100's tf32x3 tile (2 × 4: 160
+/// against 128) lost 12 / 12 where the matrix rate alone priced it a win,
+/// and the H100's measured `mma.sync` rate (1351) would have moved its f32
+/// GEMMs onto the same kernel (`split_rate_pays` flips; this does not).
+pub fn split_issue_pays(
+    g: &Gpu,
+    kind: mapal_ir::split::SplitKind,
+    mt: u64,
+    nt: u64,
+    k: u64,
+) -> bool {
+    let form = mapal_ir::split::SplitForm::of(kind);
+    let split = form.parts_a > 1 || form.parts_b > 1;
+    // A thread's fragment elements a k-step: `16·k / 32` of `a` an `m16`
+    // tile, `8·k / 32` of `b` an `n8` tile.
+    let elems = if split {
+        (16 * mt + 8 * nt) * k / 32
+    } else {
+        0
+    };
+    let insns = (form.products() + SPLIT_FLUSH_INSNS) * mt * nt + SPLIT_ELEM_INSNS * elems;
+    let useful = 2 * 16 * mt * 8 * nt * k;
+    g.schedulers * useful * 1000 >= SPLIT_ISSUE_PM * insns.max(1) * 2 * g.fp32_lanes
 }
 
 /// FP32 lanes per SM below which the exact face's fully unrolled panel loop
@@ -450,6 +531,8 @@ mod tests {
             let mut wave = None;
             let mut scalar = None;
             let mut split = None;
+            let mut tile = None;
+            let mut operands = None;
             for kv in cond.split(',') {
                 let Some((k, v)) = kv.split_once('=') else {
                     continue;
@@ -461,6 +544,14 @@ mod tests {
                     "wave" => wave = Some(v.parse::<u64>().expect("wave")),
                     "scalar" => scalar = Some(v.parse::<u64>().expect("scalar")),
                     "split" => split = Some(v),
+                    // bugs-properties: the measured kernel's warp tile
+                    // (`mt x nt` m16n8 tiles, its plan line) and an
+                    // epilogue group's operand bytes (`a` and `b`).
+                    "tile" => {
+                        let (a, b) = v.split_once('x').expect("tile=MTxNT");
+                        tile = Some((a.parse::<u64>().expect("mt"), b.parse::<u64>().expect("nt")));
+                    }
+                    "operands" => operands = Some(v.parse::<u64>().expect("operands")),
                     _ => {
                         let n: u64 = v.parse().expect(line);
                         let mut over = [None; DeviceCost::NAMES.len()];
@@ -533,6 +624,14 @@ mod tests {
                         let op = g.caps.matrix_op(fmt, Home::Regs).expect(line);
                         let p = mapal_ir::split::SplitForm::of(kind).products();
                         v = v && split_rate_pays(&g, &op, p);
+                        if let Some((mt, nt)) = tile {
+                            v = v && split_issue_pays(&g, kind, mt, nt, op.shape.k);
+                        }
+                    }
+                    // bugs-properties `streamk-epi`: the group's operands
+                    // against the part's L2.
+                    if let (Some(b), "streamk-epi") = (operands, e.rung) {
+                        v = v && streamk_epi_pays(&g, b);
                     }
                     // The wide tile's grid against its wave.
                     if let (Some(b), Some(w), "wide-fma") = (blocks, wave, e.rung) {
@@ -573,7 +672,7 @@ mod tests {
         }
         assert_eq!(open, OPEN.to_vec(), "measurements the rules do not pick");
         // The counts the evidence file reports.
-        assert_eq!((picked, null, mixed, open.len()), (140, 72, 10, 21));
+        assert_eq!((picked, null, mixed, open.len()), (144, 74, 14, 21));
     }
 
     /// No rule reads a name, an architecture string or a version: a part

@@ -122,10 +122,13 @@ fn widen_symbol(n: NarrowFloat) -> &'static str {
     }
 }
 
-/// The definitions `text` calls and does not define yet, for one side.
+/// The definitions `text` calls and does not define yet, for one side, and
+/// whether they emit the fp8 conversion instructions (whose encoding the
+/// module then declares, [`crate::profile::Caps::cvt_f8`]).
 /// `cvt_f8`: the device has `cvt.rn.satfinite.{e4m3,e5m2}x2.f32`.
-pub(crate) fn defs(text: &str, device: bool, cvt_f8: bool) -> String {
+pub(crate) fn defs(text: &str, device: bool, cvt_f8: bool) -> (String, bool) {
     let mut out = String::new();
+    let mut hw = false;
     for n in NarrowFloat::ALL {
         let (sym, t) = (symbol(n), llvm_ty(n));
         if !text.contains(&format!("{sym}("))
@@ -141,6 +144,7 @@ pub(crate) fn defs(text: &str, device: bool, cvt_f8: bool) -> String {
                  %w = trunc i32 %v to i16\n  %y = bitcast i16 %w to bfloat\n  ret bfloat %y\n"
                 .to_string(),
             (NarrowFloat::F8e4m3 | NarrowFloat::F8e5m2, true) if cvt_f8 => {
+                hw = true;
                 let f = if n == NarrowFloat::F8e4m3 {
                     "e4m3"
                 } else {
@@ -201,7 +205,10 @@ pub(crate) fn defs(text: &str, device: bool, cvt_f8: bool) -> String {
             // ALU share, gemv-stream `vec-cells`). `f8e5m2` is f16's top
             // byte: its integer form is already a shift.
             let body = match (n, device && cvt_f8) {
-                (NarrowFloat::F8e4m3, true) => f8_widen_cvt_body(w),
+                (NarrowFloat::F8e4m3, true) => {
+                    hw |= w.is_none_or(|l| l % 2 == 0);
+                    f8_widen_cvt_body(w)
+                }
                 _ => f8_widen_body(n, w),
             };
             out.push_str(&format!(
@@ -209,7 +216,7 @@ pub(crate) fn defs(text: &str, device: bool, cvt_f8: bool) -> String {
             ));
         }
     }
-    out
+    (out, hw)
 }
 
 /// An LLVM float literal: the `double` holding `v` exactly, in hex.
@@ -372,11 +379,15 @@ mod tests {
             widen_rhs(NarrowFloat::F8e5m2, "i8", "%w", "float"),
             "call float @mapal.widen_f8e5m2(i8 %w)"
         );
-        let d = defs(
+        let (d, hw) = defs(
             "call float @mapal.widen_f8e5m2(i8 %w) call <4 x float> @mapal.widen_f8e5m2.v4(",
             true,
             true,
         );
+        // e5m2's widening is a shift: no conversion instruction to declare.
+        assert!(!hw);
+        assert!(defs("call float @mapal.widen_f8e4m3(i8 %w)", true, true).1);
+        assert!(!defs("call float @mapal.widen_f8e4m3(i8 %w)", true, false).1);
         assert!(d.contains("define internal float @mapal.widen_f8e5m2(i8 %b)"));
         assert!(d.contains("define internal <4 x float> @mapal.widen_f8e5m2.v4(<4 x i8> %b)"));
         assert!(!d.contains("e4m3"));

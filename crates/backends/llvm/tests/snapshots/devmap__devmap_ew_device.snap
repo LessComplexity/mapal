@@ -3,6 +3,7 @@ source: crates/backends/llvm/tests/devmap.rs
 expression: "ew.device.expect(\"device\")"
 ---
 ; mapal-backend-llvm device module
+; mapal.ptx isa=78 sm=89 mattr=+ptx78
 ; mapal.device target=rtx-4090 fma=0 order=Sequential reduced=None
 target datalayout = "e-p6:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64"
 target triple = "nvptx64-nvidia-cuda"

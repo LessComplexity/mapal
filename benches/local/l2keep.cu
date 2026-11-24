@@ -16,7 +16,9 @@ int main() {
   int l2 = 0, sms = 0; cudaDeviceGetAttribute(&l2, cudaDevAttrL2CacheSize, 0); cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, 0);
   size_t cap = (size_t)l2 * 4; char *buf; float *out; cudaMalloc(&buf, cap); cudaMalloc(&out, 4); cudaMemset(buf, 0, cap);
   cudaEvent_t a, b; cudaEventCreate(&a); cudaEventCreate(&b);
-  double r[] = {1.0, 1.005, 1.01, 1.015, 1.02, 1.025, 1.03, 1.035, 1.04, 1.045, 1.05};
+  // bugs-properties: from a quarter of the L2 — the 3090 / A100 / H100 re-read a 1.0 × L2 stream below the
+  // midpoint (5fcb401b), so their keep lies below the old sweep's first point.
+  double r[] = {0.25, 0.375, 0.5, 0.625, 0.75, 0.8125, 0.875, 0.9375, 1.0, 1.005, 1.01, 1.015, 1.02, 1.025, 1.03, 1.035, 1.04, 1.045, 1.05};
   printf("l2_bytes=%d sms=%d\n", l2, sms);
   for (double x : r) {
     size_t ws = (size_t)(x * l2) / 16 * 16, n = ws / 16;

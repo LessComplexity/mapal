@@ -35,7 +35,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from occ import occupancy  # noqa: E402
 from ptx_static import CLS, entries  # noqa: E402
-from sass_stats import accumulators, functions, split, stats, width  # noqa: E402
+from sass_stats import TENSOR_MACS, accumulators, functions, split, stats, width  # noqa: E402
 
 # Per part: the `facts` line its box prints (cudaDeviceProp); `occ.py`'s limits.
 PARTS = {
@@ -231,7 +231,10 @@ def sass_facts(body):
         j = addr.index(int(m.group(1), 16))
         loop = body[j:i + 1]
         ops = Counter(split(x)[1].split('.')[0] for _, x in loop)
-        key = (sum(ops[k] for k in MAC), -len(loop))
+        # bugs-properties: a matrix instruction weighs its multiply-accumulates a thread (`TENSOR_MACS`), so a
+        # tensor kernel's hot loop is its HMMA loop, not the FFMA guard path beside it (tf32x3's cold loop, 128
+        # FFMA + 32 LDG, out-counted the 96-HMMA k loop: cross-arch 5fcb401b's "40 LDG, 0 LDGSTS").
+        key = (ops['FFMA'] + ops['FMUL'] + TENSOR_MACS * (ops['HMMA'] + ops['HGMMA']), -len(loop))
         spans.append((j, i, key, loop))
         if best is None or key > best[0]:
             best = (key, loop, j, i)
@@ -917,6 +920,19 @@ def static(d, sm):
             with open(a, 'w') as fh:
                 subprocess.run([objdump, '-d', '--no-show-raw-insn', o], stdout=fh)
     print(f'static: {len(todo)} PTX through ptxas/cuobjdump ({len(seen)} distinct)', file=sys.stderr)
+    # bugs-properties `ptx-isa`: the preflight — every distinct PTX of the part must pass `ptxas` for its target
+    # (an error, a fatal, or no SASS fails the bundle loudly; cross-arch 5fcb401b finding 1: 25 `_f8w` modules
+    # rejected on sm_89 were logged here and nothing read them, the box failed at `cuModuleLoadData`).
+    bad = []
+    for t in sorted(seen.values()):
+        log = read(os.path.join(ev, t + '.ptxas')) or ''
+        errs = [l for l in log.splitlines() if re.search(r'\b(error|fatal)\s*:', l)]
+        if errs or not (read(os.path.join(ev, t + '.sass')) or '').strip():
+            bad.append((t, errs or ['no SASS']))
+    if bad:
+        for t, errs in bad:
+            print(f'ptxas preflight FAILED {sm} {t}.ptx: ' + ' | '.join(errs[:3]), file=sys.stderr)
+        sys.exit(f'ptxas preflight: {len(bad)} of {len(seen)} PTX rejected for {sm} in {d}')
 
 
 # ---- facts -------------------------------------------------------------------------------------------

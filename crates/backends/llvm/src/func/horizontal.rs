@@ -486,10 +486,16 @@ impl FnEmit<'_> {
     /// ([`gpu::epi_order`]: a `tile-post` group splits only into a
     /// workspace; any other group is ordered), else the function's.
     pub(super) fn site_choice(&self, m: MorphismId) -> (crate::GpuArms, crate::Order) {
+        let walk = self
+            .tile_plan
+            .as_ref()
+            .and_then(|t| t.sites.get(m))
+            .is_none_or(|s| gpu::epi_walk(s, self.profile, self.gpu_arms));
         gpu::epi_order(
             self.groups.get(m).map(|g| g.post.is_some()),
             self.gpu_arms,
             self.order,
+            walk,
         )
     }
 

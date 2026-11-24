@@ -327,10 +327,13 @@ fn build(a: &Args, ir: &CategoryIr, exe: &Path) -> Res<(&'static str, Option<Pat
             remarks(&mut opt, exe, "opt");
             sh(a, opt, "set LLVM=<dir with opt/llc>")?;
             let mut llc = llvm_tool("llc");
-            llc.args(["-O3", &format!("-mcpu={arch}"), "-nvptx-fma-level=0"])
-                .arg(&oll)
-                .arg("-o")
-                .arg(&ptx);
+            llc.args(["-O3", &format!("-mcpu={arch}"), "-nvptx-fma-level=0"]);
+            // bugs-properties `ptx-isa`: the PTX ISA the module declares (its
+            // target's and its instructions' encodings, `; mapal.ptx`).
+            if let Some(p) = mapal_backend_llvm::Ptx::declared(dev) {
+                llc.arg(format!("-mattr={}", p.mattr()));
+            }
+            llc.arg(&oll).arg("-o").arg(&ptx);
             remarks(&mut llc, exe, "llc");
             sh(a, llc, "set LLVM=<dir with opt/llc>")?;
             wrote.extend([dll, ptx.clone()]);

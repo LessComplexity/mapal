@@ -1181,8 +1181,9 @@ mod tests {
     /// within its persistent grid) price no body term: decode's chain forms
     /// on the 4090 / 3090 (656 / 522 ns saved; it won 1.20 / 1.48 formed in
     /// 7a2b67bf and lost refused in 60f0f8ce) as does causal's (won 1.16 /
-    /// 1.36). The grid-stride form pays the derived 4-round body: the a100's
-    /// causal chain at 4 rounds refuses (2021 ns saved against 3113). Long
+    /// 1.36). The grid-stride form pays the 4-round body: the a100's causal
+    /// chain at 4 rounds refuses (2021 ns saved against 2871: its measured
+    /// 4048 cycles, cross-arch 5fcb401b `calib.cu body`; 3113 derived). Long
     /// phases pay their 22 ‰: the H100's smlp chain (two GEMM phases of at
     /// least 70 us at its FFMA peak, 1.47x slower formed) refuses, 1540 ns
     /// against 695 saved. Open: the a100's one-round causal family forms
@@ -1211,7 +1212,7 @@ mod tests {
         assert!((sep - per - 2021.0).abs() < 1.0, "{per} {sep}");
         let (per, sep) = chain_ns0(&causal, 128, 5, &a100, false, 0, 4, 0.0).unwrap();
         assert!(
-            per > sep && (a100.coop_body_ns() - 3113.0).abs() < 1.0,
+            per > sep && (a100.coop_body_ns() - 2871.0).abs() < 1.0,
             "{per} {sep}"
         );
         let h100 = part("h100");

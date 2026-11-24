@@ -116,7 +116,7 @@ pt_smlp_4096_256_1024	rtx-4090	exact	131d156aa4ba7f4f
 pt_smlp_4096_256_1024	rtx-5090	default	8a4f5e12d02e7c27
 pt_smlp_4096_256_1024	rtx-5090	contract	ee82ec5dd3bac0cc
 pt_smlp_4096_256_1024	rtx-5090	exact	b43f83a5f35b5308
-pt_smlp_4096_256_1024	rtx-3090	default	e9c4f164a357b6f2
+pt_smlp_4096_256_1024	rtx-3090	default	8b75490464b2ff63
 pt_smlp_4096_256_1024	rtx-3090	contract	7a22852d6aff0d71
 pt_smlp_4096_256_1024	rtx-3090	exact	b70ea4b8bca6ce5b
 pt_smlp_4096_256_1024	h100-pcie	default	cf25fe9493c73dda
@@ -176,7 +176,7 @@ pt_epi_2048	rtx-4090	exact	47b6ce65da2e8f1e
 pt_epi_2048	rtx-5090	default	7237fa084f090aed
 pt_epi_2048	rtx-5090	contract	8f72f8ace4a8e4a3
 pt_epi_2048	rtx-5090	exact	a70a2a45cd102e24
-pt_epi_2048	rtx-3090	default	1e08938257c274ab
+pt_epi_2048	rtx-3090	default	417fa812f7e983f9
 pt_epi_2048	rtx-3090	contract	417fa812f7e983f9
 pt_epi_2048	rtx-3090	exact	412a0871de27345e
 pt_epi_2048	h100-pcie	default	d93978b90c5b810c

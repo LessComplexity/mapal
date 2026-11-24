@@ -117,7 +117,7 @@ def hot_loop(body):
             continue
         j = addr.index(t)
         loop = body[j:i + 1]
-        nf = mac(loop)
+        nf = work(loop)
         key = (nf, -len(loop))
         spans.append((key, loop, t, a))
         if best is None or key > best[0]:
@@ -129,6 +129,21 @@ def hot_loop(body):
             break
         best = max(inner, key=lambda s: s[0])
     return best
+
+
+# bugs-properties: a matrix instruction's multiply-accumulates a thread (HMMA.1688 TF32: 16·8·8 / 32 = 32; the
+# 16-bit and wider shapes more) — so a tensor kernel's hot loop is its HMMA loop, not a cold FFMA path beside it
+# (cross-arch 5fcb401b finding 2 read the tf32x3 split kernel's FFMA guard loop, 32-40 LDG, as its hot loop: the
+# HMMA loop streams its panels by LDGSTS).
+TENSOR_MACS = 32
+
+
+def work(loop):
+    """The hot-loop key: FFMA-equivalent multiply-accumulates (`mac`) plus the matrix instructions' (HMMA, HGMMA,
+    IMMA, QMMA, OMMA, UTC*MMA) at `TENSOR_MACS` each."""
+    c = Counter(split(x)[1].split('.')[0] for _, x in loop)
+    tensor = sum(n for op, n in c.items() if re.fullmatch(r'(H|HG|I|Q|O|UTC[A-Z]*)MMA', op))
+    return mac(loop) + TENSOR_MACS * tensor
 
 
 def mac(loop):

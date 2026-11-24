@@ -132,6 +132,8 @@ host_cc() { # <stem> <march>
         -fsave-optimization-record=yaml -foptimization-record-file="$1.host.remarks.yaml" \
         "-foptimization-record-passes=$REMARK_PASSES"
 }
+# bugs-properties `ptx-isa`: the `-mattr` a device module declares (empty for a module without the line).
+ptx_mattr() { sed -n 's/^; mapal\.ptx .*mattr=\([^ ]*\).*/-mattr=\1/p' "$1" | head -1; }
 emit_one() { # <src> <stem> <prof> <sm> [flags...]
     local src=$1 stem=$2 prof=$3 sm=$4 m=x86-64-v3 a; shift 4
     for a in "$@"; do case $a in --gpu-off=*hostopt*) m=x86-64 ;; esac; done
@@ -147,8 +149,10 @@ t[:2] = [l.replace(o, n) for l in t[:2]]; open(p, "w").write("\n".join(t))' "$st
         if [ -f "$stem.dev.ll" ]; then
             "$LLVM/opt" -O3 "$stem.dev.ll" -S -o "$stem.dev.opt.ll" -pass-remarks-output="$stem.dev.opt.remarks.yaml" \
                 -pass-remarks-filter='loop-unroll|sroa|licm|gvn|instcombine|loop-vectorize'
-            "$LLVM/llc" -O3 -mcpu="$sm" -nvptx-fma-level=0 "$stem.dev.opt.ll" -o "$stem.ptx" \
-                -pass-remarks-output="$stem.dev.llc.remarks.yaml"
+            # bugs-properties `ptx-isa`: the PTX ISA the module declares (`; mapal.ptx ... mattr=+ptx<isa>`);
+            # every PTX then passes `ptxas` for its target (`evidence.py static`'s preflight) or the bundle stops.
+            "$LLVM/llc" -O3 -mcpu="$sm" -nvptx-fma-level=0 $(ptx_mattr "$stem.dev.ll") "$stem.dev.opt.ll" \
+                -o "$stem.ptx" -pass-remarks-output="$stem.dev.llc.remarks.yaml"
         fi
         echo "$stem" > "$stem.stem"
         cache_put "$c" "$(dirname "$stem")" "$(basename "$stem")." "${OBJS[@]}" stem
