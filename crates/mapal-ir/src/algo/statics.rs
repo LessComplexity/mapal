@@ -28,8 +28,10 @@
 //!   oracle tries under `EVAL_WORK` steps and the value is embedded when it
 //!   comes out.
 //! - [`Realize::Compute`] — otherwise: too large to embed, too much work to do
-//!   while compiling, or no cheaper as a value than as its law (an `iota`, a
-//!   `fill`, a pack of literals). It stays computed at run time — once, where
+//!   while compiling, or no cheaper as a value than as its law (an array with
+//!   a closed-form element law, [`CategoryIr::elem_plan`] — the backends
+//!   rebuild it where it is read; an `iota`, a `fill`, a pack of literals:
+//!   no more work than cells). It stays computed at run time — once, where
 //!   the facts that follow (`unchanged_plan`, `call_keep`, `elem_plan`)
 //!   place it — and its computable operands are roots in turn.
 //!
@@ -251,6 +253,9 @@ impl CategoryIr {
                 cands.push(o);
             }
         }
+        // An array with a closed-form element law is cheaper as its law: the
+        // backends rebuild it where it is read (`elem_plan`).
+        let laws = self.elem_plan(f);
         let mut roots: Vec<StaticRoot> = Vec::new();
         let mut seen: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
         while let Some(o) = cands.pop() {
@@ -285,7 +290,7 @@ impl CategoryIr {
             let (bytes, cells) = ty_extent(&obj.ty);
             let w = work.get(o).copied().flatten();
             let realize = match w {
-                _ if bytes > EMBED_BYTES => Realize::Compute,
+                _ if bytes > EMBED_BYTES || laws.src(o).is_some() => Realize::Compute,
                 None => Realize::Attempt,
                 Some(w) if w <= EVAL_WORK && w > cells => Realize::Embed,
                 Some(_) => Realize::Compute,
