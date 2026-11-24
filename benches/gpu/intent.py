@@ -718,6 +718,17 @@ INTENT = {
         ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')],
         applies_off="plan.kind == 'wgmma' and plan.get('ws') != 1", off=[
         ('cp.async panels: LDGSTS, no UTMALDG', "sass.ldgsts > 0 and sass.get('utmaldg', 0) == 0")]),
+    # hopper-launch `ws-persist`: the warp-specialized kernel on a persistent grid (`persist=<ctas> tiles=<n>`): the
+    # launch is `ctas` CTAs (sms x residency), each walking its tiles on one stage ring — the hot loop still the
+    # k-step's (bk/8 HGMMA, no block barrier), no spill. OFF (`.off-ws-persist`): a CTA a tile (grid = tiles).
+    'ws-persist': dict(applies_on="plan.kind == 'wgmma' and plan.get('ws') == 1 and 'persist' in plan", on=[
+        ('the grid is the persistent CTAs', 'launch.gx * launch.gy == plan.persist and plan.persist < plan.tiles'),
+        ('one CTA an SM at most (residency)', 'plan.persist <= occ.blocks_per_sm * occ.sms'),
+        ('bk/8 HGMMA a trip of the hot loop, no block barrier in it',
+         'sass.hot.hgmma == plan.bk // 8 and sass.hot.bar == 0'),
+        ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')],
+        applies_off="plan.kind == 'wgmma' and plan.get('ws') == 1 and 'persist' not in plan", off=[
+        ('a CTA a tile', 'launch.gx * launch.gy == (plan.rows // plan.n) * (plan.c // (64 * plan.groups))')]),
     # hopper-wgmma-tma `ws-regs` (R3): the producer warpgroup gives registers to the consumers (`regs=<p>/<c>`:
     # USETMAXREG DEALLOC + TRY_ALLOC). OFF: no USETMAXREG, the even share (a smaller `n`).
     'ws-regs': dict(applies_on="plan.kind == 'wgmma' and plan.get('ws') == 1 and 'regs' in plan", on=[

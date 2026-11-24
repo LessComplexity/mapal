@@ -71,6 +71,11 @@ static struct {
   unsigned long long n_preload, n_async, n_staged; /* cpu-gpu-boundary */
   unsigned long long n_tmap; /* hopper-wgmma-tma: tensor maps encoded */
   double warm;               /* sweep-gemm-2 `warm-zero`: the init thread's zero */
+  /* hopper-launch: host time a launch spends on its tensor maps (recipe
+   * lookup + encodes, outside the launch's own `ms`), the init thread's TMA
+   * warm, and the recipes read from the module text at load. */
+  double tmap, tma_warm;
+  unsigned long long n_recipe;
 } tot;
 static unsigned flags;
 static double now_ms(void) {
@@ -85,12 +90,14 @@ static void total_line(void) {
           "kernel_ms=%.3f gen_ms=%.3f d2h_ms=%.3f free_ms=%.3f bytes_in=%llu "
           "bytes_out=%llu h2d=%llu d2h=%llu launches=%llu gens=%llu allocs=%llu "
           "l2_windows=%llu l2_persist=%llu pin_ms=%.3f pins=%llu events=%llu pdl=%llu "
-          "preloaded=%llu h2d_async=%llu staged=%llu tmaps=%llu warm_ms=%.3f\n",
+          "preloaded=%llu h2d_async=%llu staged=%llu tmaps=%llu warm_ms=%.3f "
+          "tmap_ms=%.3f tma_warm_ms=%.3f recipes=%llu\n",
           flags, tot.load, tot.lead, tot.init, tot.ctx, tot.module, tot.alloc,
           tot.h2d, tot.kernel, tot.gen, tot.d2h, tot.free, tot.in, tot.out,
           tot.n_h2d, tot.n_d2h, tot.n_launch, tot.n_gen, tot.n_alloc, tot.n_l2,
           tot.l2_persist, tot.pin, tot.n_pin, tot.n_event, tot.n_pdl,
-          tot.n_preload, tot.n_async, tot.n_staged, tot.n_tmap, tot.warm);
+          tot.n_preload, tot.n_async, tot.n_staged, tot.n_tmap, tot.warm,
+          tot.tmap, tot.tma_warm, tot.n_recipe);
 }
 
 #define CK(x)                                                                  \
@@ -108,7 +115,15 @@ static void total_line(void) {
  * (`mapal_gpu_init`; the bit is `GPU_INIT_EAGER` in
  * crates/backends/llvm/src/func/gpu.rs). A program without that call runs the
  * S52 path: init at the first site. */
-enum { EAGER = 1, STREAMS = 2, PDL = 4, PRELOAD = 8, STAGE = 16, WARM_ZERO = 32 };
+enum {
+  EAGER = 1,
+  STREAMS = 2,
+  PDL = 4,
+  PRELOAD = 8,
+  STAGE = 16,
+  WARM_ZERO = 32,
+  TMA_COLD = 64
+};
 
 /* sweep-gemm-2 `warm-zero` (`WARM_ZERO`, set when the module's launches zero
  * an output): the driver initializes its memset path lazily — measured on
@@ -161,11 +176,60 @@ static uint64_t module_hash;
  * 0.040 -> 0.060 ms, lsm_32_8192 0.023 -> 0.049). -1: more names than the table
  * holds (or one too long): every kernel is asked, as before. */
 #define TMAP_NAMES 64
+#define TMAP_MAX 4
+#define TMAP_WORDS 20
+#define TMAP_REC_WORDS (1 + TMAP_MAX * TMAP_WORDS)
 static char tmap_names[TMAP_NAMES][48];
 static int n_tmap_names;
+/* hopper-launch: each listed recipe's words, parsed from the global's
+ * initializer in the module text at load (`tmap_ok`), so a launch never reads
+ * it from the device: the first launch's `cuModuleGetGlobal` + a synchronous
+ * pageable `cuMemcpyDtoH` cost 23–30 us on the RTX 5080 inside the program's
+ * clock (`hopper-launch.md`). A recipe the text does not spell as parsed here
+ * is read from the device at its first launch, as before. */
+static uint64_t tmap_rec[TMAP_NAMES][TMAP_REC_WORDS];
+static int tmap_ok[TMAP_NAMES];
 static int ident_char(char c) {
   return c == '_' || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') ||
          (c >= 'A' && c <= 'Z');
+}
+/* The initializer after a global's name (`[N] = {v, v, …}`), its element
+ * width read from the declaration's type on the same line (`.b8` / `.u8` or
+ * `.b64` / `.u64`: NVPTX spells an `[n x i64]` constant as its bytes), into
+ * `rec` as little-endian 64-bit words. 0 where the text is not that shape. */
+static int tmap_parse(const char *line, const char *after, uint64_t *rec) {
+  int w = 0;
+  for (const char *q = line; q < after && !w; q++)
+    if (q[0] == '.' && (q[1] == 'b' || q[1] == 'u'))
+      w = q[2] == '8' && q[3] == ' '                     ? 1
+          : q[2] == '6' && q[3] == '4' && q[4] == ' ' ? 8
+                                                        : 0;
+  if (!w || *after != '[')
+    return 0;
+  char *e;
+  unsigned long long count = strtoull(after + 1, &e, 10);
+  while (*e == ']' || *e == ' ' || *e == '=' || *e == '\t')
+    e++;
+  if (*e != '{' || !count || count * (unsigned)w > TMAP_REC_WORDS * 8ull)
+    return 0;
+  memset(rec, 0, TMAP_REC_WORDS * sizeof *rec);
+  const char *v = e + 1;
+  for (unsigned long long i = 0; i < count; i++) {
+    while (*v == ' ' || *v == ',' || *v == '\n' || *v == '\t')
+      v++;
+    if (*v == '}')
+      break; /* NVPTX leaves the trailing zeros out */
+    char *ve;
+    unsigned long long x = strtoull(v, &ve, 10);
+    if (ve == v)
+      return 0;
+    v = ve;
+    if (w == 8)
+      rec[i] = x;
+    else
+      rec[i / 8] |= (uint64_t)(x & 0xff) << (8 * (i % 8));
+  }
+  return rec[0] <= TMAP_MAX;
 }
 static void tmap_scan(const char *ptx) {
   for (const char *p = strstr(ptx, "_tmap"); p; p = strstr(p + 5, "_tmap")) {
@@ -177,26 +241,36 @@ static void tmap_scan(const char *ptx) {
       n_tmap_names = -1;
       return;
     }
-    int seen = 0;
-    for (int i = 0; i < n_tmap_names && !seen; i++)
-      seen = !strncmp(tmap_names[i], s, n) && !tmap_names[i][n];
-    if (seen)
-      continue;
-    if (n_tmap_names == TMAP_NAMES) {
-      n_tmap_names = -1;
-      return;
+    int seen = -1;
+    for (int i = 0; i < n_tmap_names && seen < 0; i++)
+      if (!strncmp(tmap_names[i], s, n) && !tmap_names[i][n])
+        seen = i;
+    if (seen < 0) {
+      if (n_tmap_names == TMAP_NAMES) {
+        n_tmap_names = -1;
+        return;
+      }
+      seen = n_tmap_names++;
+      memcpy(tmap_names[seen], s, n);
+      tmap_names[seen][n] = 0;
     }
-    memcpy(tmap_names[n_tmap_names], s, n);
-    tmap_names[n_tmap_names++][n] = 0;
+    if (!tmap_ok[seen]) {
+      const char *line = s;
+      while (line > ptx && line[-1] != '\n')
+        line--;
+      tmap_ok[seen] = tmap_parse(line, p + 5, tmap_rec[seen]);
+      tot.n_recipe += (unsigned long long)tmap_ok[seen];
+    }
   }
 }
-static int tmap_listed(const char *name) {
+/* The listed name's index (-2: not listed; -1: every kernel is asked). */
+static int tmap_index(const char *name) {
   if (n_tmap_names < 0)
-    return 1;
+    return -1;
   for (int i = 0; i < n_tmap_names; i++)
     if (!strcmp(tmap_names[i], name))
-      return 1;
-  return 0;
+      return i;
+  return -2;
 }
 
 /* `preload`: every `.entry` of the module, resolved at load. `smem` is the
@@ -244,6 +318,8 @@ static pthread_t init_thread;
 static int init_state; /* 0 not started, 1 running on init_thread, 2 ready */
 static double t_init;  /* when mapal_gpu_init ran */
 
+static void tma_warm(void);
+static void tmap_table(void);
 /* cuInit, the primary context and the module: everything a site needs before
  * its first call, none of which depends on the program's values. */
 static void init_all(void) {
@@ -279,9 +355,12 @@ static void init_all(void) {
   module_hash = choice_fnv(ptx, (size_t)n, CHOICE_FNV0);
   CK(cuModuleLoadData(&module, ptx));
   tmap_scan(ptx);
+  tmap_table();
   if (flags & PRELOAD)
     preload(ptx);
   free(ptx);
+  if (!(flags & TMA_COLD) && n_tmap_names)
+    tma_warm();
   if (flags & STAGE) {
     void *b;
     CK(cuMemHostAlloc(&b, (size_t)STAGE_SLOTS * STAGE_SLOT, 0));
@@ -580,50 +659,77 @@ void mapal_gpu_event(uint32_t record, uint32_t wait) {
  * dims[5], byte strides of dims 1..4, box[5], 0]` — so the host ABI is
  * unchanged: the launch encodes each map (`cuTensorMapEncodeTiled`) from the
  * pointer it is handed and passes it by value after the pointers (a 128-byte
- * `__grid_constant__` parameter). A map is re-encoded only when its pointer
- * changes (`tmaps=` on the trace's total line: 0 per call in steady state). */
-#define TMAP_MAX 4
-#define TMAP_WORDS 20
+ * `__grid_constant__` parameter).
+ *
+ * hopper-launch: a map's encode depends only on the recipe and the buffer's
+ * address, so each map keeps the last `TMAP_SLOTS` addresses it was encoded
+ * for: a buffer whose address is fixed (an arena member, a weight, a cached
+ * allocation) is encoded once for the program's life, and a loop that
+ * alternates a map between buffers (a carried state's two halves) re-encodes
+ * nothing (`tmaps=` on the trace's total line counts encodes; `tmap_ms` the
+ * host time a launch spends here). The recipe itself is the module text's
+ * (`tmap_scan`, at load). */
+#define TMAP_SLOTS 4
 struct tmap_e {
   CUfunction fn;
   uint32_t n;
   uint64_t rec[TMAP_MAX][TMAP_WORDS];
-  CUdeviceptr ptr[TMAP_MAX];
-  CUtensorMap map[TMAP_MAX];
+  CUdeviceptr ptr[TMAP_MAX][TMAP_SLOTS];
+  CUtensorMap map[TMAP_MAX][TMAP_SLOTS];
+  uint32_t next[TMAP_MAX]; /* the slot the next new address replaces */
 };
-static struct tmap_e *tmaps; /* TMAP_KERNELS entries, made at the first recipe */
+/* The table: one entry a listed recipe (TMAP_KERNELS when the module lists
+ * more names than `tmap_scan` holds), made and touched at load
+ * (`tmap_table`). Made at the first launch, its zeroed pages (768 KiB at 256
+ * entries) cost that launch 28-35 us on the RTX 5080, up to 260 us when the
+ * init ran on the program's own thread (`hopper-launch.md`). */
+static struct tmap_e *tmaps;
 #define TMAP_KERNELS 256
-static size_t n_tmaps;
+static size_t n_tmaps, cap_tmaps;
+static void tmap_table(void) {
+  cap_tmaps = n_tmap_names > 0   ? (size_t)n_tmap_names
+              : n_tmap_names < 0 ? TMAP_KERNELS
+                                 : 0;
+  if (!cap_tmaps)
+    return;
+  if (!(tmaps = malloc(cap_tmaps * sizeof *tmaps))) {
+    fprintf(stderr, "mapal_gpu: tensor-map table: out of memory\n");
+    exit(102);
+  }
+  memset(tmaps, 0, cap_tmaps * sizeof *tmaps);
+}
 static struct tmap_e tmap_none; /* a kernel the module declares no recipe for */
 static struct tmap_e *tmap_of(CUfunction fn, const char *name) {
-  if (!tmap_listed(name))
+  int ix = tmap_index(name);
+  if (ix == -2)
     return &tmap_none;
   for (size_t i = 0; i < n_tmaps; i++)
     if (tmaps[i].fn == fn)
       return &tmaps[i];
-  if (!tmaps && !(tmaps = calloc(TMAP_KERNELS, sizeof *tmaps))) {
-    fprintf(stderr, "mapal_gpu: tensor-map table: out of memory\n");
-    exit(102);
-  }
-  if (n_tmaps == TMAP_KERNELS) {
+  if (n_tmaps == cap_tmaps) {
     fprintf(stderr, "mapal_gpu: tensor-map table full\n");
     exit(102);
   }
   struct tmap_e *e = &tmaps[n_tmaps++];
   memset(e, 0, sizeof *e);
   e->fn = fn;
+  uint64_t buf[TMAP_REC_WORDS] = {0};
   char g[64];
   snprintf(g, sizeof g, "%s_tmap", name);
-  CUdeviceptr d;
-  size_t bytes;
-  if (cuModuleGetGlobal(&d, &bytes, module, g) != CUDA_SUCCESS)
-    return e;
-  uint64_t buf[1 + TMAP_MAX * TMAP_WORDS] = {0};
-  if (bytes > sizeof buf || bytes < 8) {
-    fprintf(stderr, "mapal_gpu: %s: %zu bytes\n", g, bytes);
-    exit(102);
+  if (ix >= 0 && tmap_ok[ix]) {
+    memcpy(buf, tmap_rec[ix], sizeof buf);
+  } else {
+    /* A recipe the module text does not spell as `tmap_parse` reads. */
+    CUdeviceptr d;
+    size_t bytes;
+    if (cuModuleGetGlobal(&d, &bytes, module, g) != CUDA_SUCCESS)
+      return e;
+    if (bytes > sizeof buf || bytes < 8) {
+      fprintf(stderr, "mapal_gpu: %s: %zu bytes\n", g, bytes);
+      exit(102);
+    }
+    CK(cuMemcpyDtoH(buf, d, bytes));
   }
-  CK(cuMemcpyDtoH(buf, d, bytes));
   e->n = (uint32_t)buf[0];
   if (e->n > TMAP_MAX) {
     fprintf(stderr, "mapal_gpu: %s: %u maps\n", g, e->n);
@@ -631,11 +737,47 @@ static struct tmap_e *tmap_of(CUfunction fn, const char *name) {
   }
   memcpy(e->rec, buf + 1, e->n * TMAP_WORDS * sizeof(uint64_t));
   for (uint32_t m = 0; m < e->n; m++)
-    e->ptr[m] = ~(CUdeviceptr)0;
+    for (uint32_t s = 0; s < TMAP_SLOTS; s++)
+      e->ptr[m][s] = ~(CUdeviceptr)0;
   return e;
 }
-/* `args` (the `nptr` pointer arguments) followed by `e`'s maps, encoded for
- * this launch's pointers, in `out`. */
+/* One map of recipe `r` (TMAP_WORDS words) over the bytes at `p`. */
+static void tmap_encode(CUtensorMap *out, const uint64_t *r, CUdeviceptr p,
+                        uint32_t m) {
+  cuuint64_t dims[5], strides[4];
+  cuuint32_t box[5], es[5];
+  uint32_t rank = (uint32_t)r[2];
+  for (uint32_t i = 0; i < 5; i++) {
+    dims[i] = r[5 + i];
+    box[i] = (cuuint32_t)r[14 + i];
+    es[i] = 1;
+  }
+  for (uint32_t i = 0; i < 4; i++)
+    strides[i] = r[10 + i];
+  CUtensorMapSwizzle sw = r[3] == 128 ? CU_TENSOR_MAP_SWIZZLE_128B
+                          : r[3] == 64 ? CU_TENSOR_MAP_SWIZZLE_64B
+                          : r[3] == 32 ? CU_TENSOR_MAP_SWIZZLE_32B
+                                       : CU_TENSOR_MAP_SWIZZLE_NONE;
+  CUtensorMapDataType ty = r[1] == 2 ? CU_TENSOR_MAP_DATA_TYPE_UINT16
+                                     : CU_TENSOR_MAP_DATA_TYPE_UINT32;
+  CUresult rc = cuTensorMapEncodeTiled(
+      out, ty, rank, (void *)(uintptr_t)p, dims, strides, box, es,
+      CU_TENSOR_MAP_INTERLEAVE_NONE, sw, CU_TENSOR_MAP_L2_PROMOTION_L2_128B,
+      CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE);
+  if (rc != CUDA_SUCCESS) {
+    const char *s_ = 0;
+    cuGetErrorString(rc, &s_);
+    fprintf(stderr,
+            "mapal_gpu: cuTensorMapEncodeTiled (map %u, rank %u, ptr "
+            "%llx): %s\n",
+            m, rank, (unsigned long long)p, s_ ? s_ : "?");
+    exit(102);
+  }
+  tot.n_tmap++;
+}
+/* `args` (the `nptr` pointer arguments) followed by `e`'s maps for this
+ * launch's pointers, in `out`: each from its address's slot, encoded into
+ * the oldest slot on a new address. */
 static void tmap_args(struct tmap_e *e, void **args, uint32_t nptr,
                       void **out) {
   for (uint32_t i = 0; i < nptr; i++)
@@ -648,41 +790,71 @@ static void tmap_args(struct tmap_e *e, void **args, uint32_t nptr,
       exit(102);
     }
     CUdeviceptr p = *(CUdeviceptr *)args[r[0]] + r[4];
-    if (p != e->ptr[m]) {
-      cuuint64_t dims[5], strides[4];
-      cuuint32_t box[5], es[5];
-      uint32_t rank = (uint32_t)r[2];
-      for (uint32_t i = 0; i < 5; i++) {
-        dims[i] = r[5 + i];
-        box[i] = (cuuint32_t)r[14 + i];
-        es[i] = 1;
-      }
-      for (uint32_t i = 0; i < 4; i++)
-        strides[i] = r[10 + i];
-      CUtensorMapSwizzle sw = r[3] == 128 ? CU_TENSOR_MAP_SWIZZLE_128B
-                              : r[3] == 64 ? CU_TENSOR_MAP_SWIZZLE_64B
-                              : r[3] == 32 ? CU_TENSOR_MAP_SWIZZLE_32B
-                                           : CU_TENSOR_MAP_SWIZZLE_NONE;
-      CUtensorMapDataType ty = r[1] == 2 ? CU_TENSOR_MAP_DATA_TYPE_UINT16
-                                         : CU_TENSOR_MAP_DATA_TYPE_UINT32;
-      CUresult rc = cuTensorMapEncodeTiled(
-          &e->map[m], ty, rank, (void *)(uintptr_t)p, dims, strides, box, es,
-          CU_TENSOR_MAP_INTERLEAVE_NONE, sw, CU_TENSOR_MAP_L2_PROMOTION_L2_128B,
-          CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE);
-      if (rc != CUDA_SUCCESS) {
-        const char *s_ = 0;
-        cuGetErrorString(rc, &s_);
-        fprintf(stderr,
-                "mapal_gpu: cuTensorMapEncodeTiled (map %u, rank %u, ptr "
-                "%llx): %s\n",
-                m, rank, (unsigned long long)p, s_ ? s_ : "?");
-        exit(102);
-      }
-      e->ptr[m] = p;
-      tot.n_tmap++;
+    uint32_t s = 0;
+    while (s < TMAP_SLOTS && e->ptr[m][s] != p)
+      s++;
+    if (s == TMAP_SLOTS) {
+      s = e->next[m];
+      e->next[m] = (s + 1) % TMAP_SLOTS;
+      tmap_encode(&e->map[m][s], r, p, m);
+      e->ptr[m][s] = p;
     }
-    out[nptr + m] = &e->map[m];
+    out[nptr + m] = &e->map[m][s];
   }
+}
+
+/* hopper-launch `tma-warm` (unless `TMA_COLD`, the measurement arm; a module
+ * whose text carries a tensor-map recipe, `tmap_scan`): the driver readies a context's tensor-memory-access
+ * path at the first launch of a kernel holding a `cp.async.bulk.tensor` —
+ * measured on CUDA 13 / RTX 5080 (driver 620.73), that launch's host call
+ * takes 1.34–1.49 ms, every later one 3–4 us, a second such kernel's first
+ * launch ~10 us more than a plain one, and one launch of any such kernel (its
+ * own module, another thread) readies the path for all of them. On the H100
+ * it is the 120–270 us a `wgmma-ws` program's call spent outside its kernel
+ * (cross-arch 5fcb401b finding 3). So the init thread launches the runtime's
+ * own one-box kernel once — a 32 × 8-word box, 128-byte swizzle, onto an
+ * `mbarrier` — with one encode (the encoder's own first call is ~2 us more
+ * than a later one): the program's first TMA launch runs at its steady cost. */
+static const char tma_warm_ptx[] =
+    ".version 8.0\n.target sm_90\n.address_size 64\n"
+    ".extern .shared .align 1024 .b8 mapal_warm_smem[];\n"
+    ".visible .entry mapal_tma_warm(.param .u64 o, .param .align 64 .b8 "
+    "tm[128]) {\n"
+    "  .reg .b64 %rd<4>; .reg .b32 %r<6>; .reg .f32 %f<2>; .reg .pred %p;\n"
+    "  mov.u32 %r0, %tid.x; setp.ne.u32 %p, %r0, 0; @%p bra done;\n"
+    "  mov.b64 %rd0, tm; cvta.param.u64 %rd1, %rd0;\n"
+    "  mov.u32 %r1, mapal_warm_smem; add.u32 %r2, %r1, 1024;\n"
+    "  mbarrier.init.shared::cta.b64 [%r2], 1;\n"
+    "  fence.proxy.async.shared::cta;\n"
+    "  mbarrier.arrive.expect_tx.shared::cta.b64 _, [%r2], 1024;\n"
+    "  mov.u32 %r3, 0;\n"
+    "  cp.async.bulk.tensor.2d.shared::cluster.global.tile.mbarrier::"
+    "complete_tx::bytes [%r1], [%rd1, {%r3, %r3}], [%r2];\n"
+    "w: mbarrier.try_wait.parity.shared::cta.b64 %p, [%r2], 0; @!%p bra w;\n"
+    "  ld.shared.f32 %f1, [%r1];\n"
+    "  ld.param.u64 %rd2, [o]; st.global.f32 [%rd2], %f1;\n"
+    "done: ret;\n}\n";
+static void tma_warm(void) {
+  double t0 = now_ms();
+  CUmodule wm;
+  CUfunction wk;
+  if (cuModuleLoadData(&wm, tma_warm_ptx) != CUDA_SUCCESS ||
+      cuModuleGetFunction(&wk, wm, "mapal_tma_warm") != CUDA_SUCCESS)
+    return; /* a device without the copy engine: nothing to ready */
+  CUdeviceptr buf;
+  CK(cuMemAlloc(&buf, 4096));
+  CK(cuMemsetD8Async(buf, 0, 4096, streams[0]));
+  /* rank 2, u32, 128-byte swizzle, dims (32, 8), row stride 128 B, box (32, 8) */
+  uint64_t r[TMAP_WORDS] = {0, 4, 2, 128, 0, 32, 8, 1, 1, 1, 128, 0, 0, 0,
+                            32, 8, 1, 1, 1, 0};
+  CUtensorMap tm;
+  tmap_encode(&tm, r, buf, 0);
+  void *args[] = {&buf, &tm};
+  CK(cuLaunchKernel(wk, 1, 1, 1, 32, 1, 1, 2048, streams[0], args, 0));
+  CK(cuStreamSynchronize(streams[0]));
+  CK(cuMemFree(buf));
+  tot.n_tmap--; /* the warm's encode is not the program's */
+  tot.tma_warm = now_ms() - t0;
 }
 
 /* One tile kernel on stream slot `k`. A chain stream first joins program
@@ -695,11 +867,13 @@ static void launch_on(unsigned k, uint64_t id, void **args, uint32_t nptr,
   load_module();
   char name[40];
   CUfunction fn = kernel("mapal_tile", id, smem, name, sizeof name);
+  double tq = now_ms();
   struct tmap_e *tm = tmap_of(fn, name);
   void *targs[32 + TMAP_MAX];
   if (tm->n) {
     tmap_args(tm, args, nptr, targs);
     args = targs;
+    tot.tmap += now_ms() - tq;
   }
   if (k && joined[k] != legacy_ops) {
     event(0, k, 1);

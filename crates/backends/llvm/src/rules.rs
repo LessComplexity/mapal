@@ -189,6 +189,33 @@ pub fn split_rate_pays(g: &Gpu, op: &crate::profile::MatrixOp, products: u64) ->
     g.matrix_flops_per_ns(op) * 1000 >= SPLIT_RATE_PM * products * g.ffma_flops_per_ns()
 }
 
+/// **hopper-launch `ws-persist`, priced at the site**: the time the
+/// warp-specialized `wgmma` kernel saves walking its `tiles` on `ctas`
+/// persistent CTAs (the part's SMs × the tile's residency) against a CTA a
+/// tile, in ns on the busiest SM. Both grids put `⌈tiles / ctas⌉` tiles on
+/// it, and the walk's round `r` runs the tiles wave `r` would (round robin in
+/// the launch's raster order: the same operand panels in flight, so the L2
+/// traffic is the waves'). What changes is each later tile's start: a CTA a
+/// tile starts after the previous block's epilogue drained and then fills
+/// its pipeline (`fill_ns`: the `stages − 1` box copies ahead of the first
+/// `wgmma`, [`Gpu::tma_copy_ns`] each); the walk's producer copies the next
+/// tile's stages while the consumers store this one (`epi_ns`: the tile's
+/// bytes at the SM's DRAM share). One round — `tiles ≤ ctas` — is the same
+/// kernel: nothing saved.
+pub fn ws_persist_saves_ns(tiles: u64, ctas: u64, fill_ns: u64, epi_ns: u64) -> u64 {
+    tiles.div_ceil(ctas.max(1)).saturating_sub(1) * (fill_ns + epi_ns)
+}
+
+/// **hopper-launch `ws-persist`**: the persistent walk where it saves time
+/// ([`ws_persist_saves_ns`]) — a grid of more than one round. The site's
+/// fill and epilogue are priced from the part's properties
+/// ([`Gpu::tma_copy_ns`], [`Gpu::dram_bytes_per_us_per_sm`]).
+pub fn ws_persist_pays(g: &Gpu, tiles: u64, ctas: u64, stages: u64, tile_bytes: u64) -> bool {
+    let fill = stages.saturating_sub(1) * g.tma_copy_ns();
+    let epi = tile_bytes * 1000 / g.dram_bytes_per_us_per_sm().max(1);
+    ws_persist_saves_ns(tiles, ctas, fill, epi) > 0
+}
+
 /// FP32 lanes per SM below which the exact face's fully unrolled panel loop
 /// costs (`unroll`): the A100's 64-lane SM lost on the exact face.
 pub const FULL_FP32_LANES: u64 = 128;
@@ -269,6 +296,16 @@ pub fn rungs(g: &Gpu, wps: u64, face: Face) -> GpuRungs {
         // exit trigger keeps the launch overlap (rtx-5080 decode 0.905 exit
         // vs 0.918 entry, the rest within 1 %).
         pdl_early: false,
+        // hopper-launch `ws-persist`: the persistent walk measured mixed on
+        // the H100 SXM (two boxes, ABBA, against a CTA a tile): one-consumer
+        // tiles (64 columns) won 1.9-4.8 %, the 128 × 256 two-consumer tiles
+        // lost 0.3-3.0 % beyond a 0-1.8 % null, with the hot loop's SASS the
+        // same (4 HGMMA, 2 UTMALDG a trip; +40 index instructions a kernel).
+        // What separates them — the walk's static round robin against the
+        // hardware's dynamic placement of a later block, per tile time — is
+        // not read yet (`hopper-launch.md`), so a CTA a tile ships and the
+        // ON arm measures the walk where [`ws_persist_pays`] prices it.
+        ws_persist: false,
         // TMA `bulk-stage` (gemv-tma.md): the TF32 mma tile's panels by
         // row bulk copies lost on the RTX 5080 (4.3–14.5×: one copy per
         // 64–128-byte row, the engine's issue per copy against the 16-byte
@@ -341,7 +378,7 @@ mod tests {
     /// `local-rtx-5080/hardware-properties.md`. The replay must find exactly
     /// these: a rule change that fixes one moves it out, one that breaks a
     /// measurement fails here.
-    const OPEN: [(&str, &str, &str, &str); 21] = [
+    const OPEN: [(&str, &str, &str, &str); 22] = [
         // The launch does not read whether its operands are in L2 (flushed
         // L2 wins, warm L2 and the composed MLP lose): `residence_plan`.
         ("asyncstage", "h100-pcie", "on", "l2-flushed"),
@@ -404,8 +441,17 @@ mod tests {
         // L2 (S53's 2-3 blocks an SM hold them in one) — the operand's
         // re-read across waves (`raster` answers 1 here) is the open fact
         // (hopper.md open 5; the persistent grid in raster order or R6's
-        // split would read `b` once).
+        // split would read `b` once). hopper-launch: still 0.0876 / 0.0941 ms
+        // with the launch path fixed; the raster order removes it (the
+        // `l2-gate` line below: 0.0822 ms).
         ("wgmma-ws", "h100", "off", "blocks=256"),
+        // hopper-launch: the gate keeps row-major where one block's panels
+        // fit the L2, but a row-major wave of 132 one-CTA-an-SM tiles reads
+        // every `b` panel of the 128-row projections (64-235 MB) and the next
+        // wave reads them again; raster wins 5-12 % there and is null on the
+        // 2048-row sites. The wave's own panel bytes against the L2 is the
+        // open fact (it changes the gate for every tile kernel on every part).
+        ("l2-gate", "h100", "off", "-"),
     ];
 
     /// **hardware-properties: every cited measurement, replayed.** For each
@@ -450,6 +496,11 @@ mod tests {
             let mut wave = None;
             let mut scalar = None;
             let mut split = None;
+            // hopper-launch `ws-persist`: the site's tiles, stage depth and
+            // tile bytes (the CTAs are the part's SMs at one a tile).
+            let mut tiles = None;
+            let mut stages = None;
+            let mut tile_bytes = None;
             for kv in cond.split(',') {
                 let Some((k, v)) = kv.split_once('=') else {
                     continue;
@@ -461,6 +512,9 @@ mod tests {
                     "wave" => wave = Some(v.parse::<u64>().expect("wave")),
                     "scalar" => scalar = Some(v.parse::<u64>().expect("scalar")),
                     "split" => split = Some(v),
+                    "tiles" => tiles = Some(v.parse::<u64>().expect("tiles")),
+                    "stages" => stages = Some(v.parse::<u64>().expect("stages")),
+                    "tile_bytes" => tile_bytes = Some(v.parse::<u64>().expect("tile_bytes")),
                     _ => {
                         let n: u64 = v.parse().expect(line);
                         let mut over = [None; DeviceCost::NAMES.len()];
@@ -534,6 +588,12 @@ mod tests {
                         let p = mapal_ir::split::SplitForm::of(kind).products();
                         v = v && split_rate_pays(&g, &op, p);
                     }
+                    // The persistent walk's saved fills and epilogues.
+                    if let (Some(t), Some(s), Some(b), "ws-persist") =
+                        (tiles, stages, tile_bytes, e.rung)
+                    {
+                        v = v && ws_persist_pays(&g, t, g.sms, s, b);
+                    }
                     // The wide tile's grid against its wave.
                     if let (Some(b), Some(w), "wide-fma") = (blocks, wave, e.rung) {
                         v = v && wide_fma_pays(&g, b, w);
@@ -573,7 +633,35 @@ mod tests {
         }
         assert_eq!(open, OPEN.to_vec(), "measurements the rules do not pick");
         // The counts the evidence file reports.
-        assert_eq!((picked, null, mixed, open.len()), (140, 72, 10, 21));
+        assert_eq!((picked, null, mixed, open.len()), (143, 72, 11, 22));
+    }
+
+    /// hopper-launch `ws-persist`, hand-worked on the H100 SXM: the 2048 ×
+    /// 4096 × 4096 site's 256 tiles of 256 × 128 on 132 CTAs walk two rounds
+    /// — one later tile a CTA, whose fill (3 copies at `tma_copy_ns` 159) and
+    /// epilogue (131 072 B at the SM's DRAM share) the walk overlaps; 132
+    /// tiles are one round (nothing saved, a CTA a tile); a part with twice
+    /// the SMs takes the 256 in one round too.
+    #[test]
+    fn ws_persist_prices_the_walk() {
+        let h = *crate::profile::H100.gpu().expect("gpu");
+        let tile = 256 * 128 * 4;
+        let fill = 3 * h.tma_copy_ns();
+        assert_eq!(fill, 477);
+        let epi = tile * 1000 / h.dram_bytes_per_us_per_sm();
+        assert_eq!(ws_persist_saves_ns(256, h.sms, fill, epi), fill + epi);
+        assert_eq!(
+            ws_persist_saves_ns(1792, h.sms, fill, epi),
+            13 * (fill + epi)
+        );
+        assert_eq!(ws_persist_saves_ns(132, h.sms, fill, epi), 0);
+        assert!(ws_persist_pays(&h, 256, h.sms, 4, tile));
+        assert!(!ws_persist_pays(&h, 132, h.sms, 4, tile));
+        let wide = crate::profile::Gpu {
+            sms: 2 * h.sms,
+            ..h
+        };
+        assert!(!ws_persist_pays(&wide, 256, wide.sms, 4, tile));
     }
 
     /// No rule reads a name, an architecture string or a version: a part

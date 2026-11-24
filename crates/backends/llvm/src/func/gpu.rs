@@ -79,6 +79,12 @@ pub(crate) const GPU_INIT_STAGE: u32 = 16;
 /// sweep-gemm-2 `warm-zero`: the module zeroes outputs; the init thread runs
 /// one zero first, so the driver's memset path is initialized before the clock.
 pub(crate) const GPU_INIT_WARM_ZERO: u32 = 32;
+/// hopper-launch `tma-warm`, off: the runtime leaves the context's
+/// tensor-copy path cold. On (the bit clear), a module whose text carries a
+/// tensor-map recipe has the init thread launch the runtime's one-box TMA
+/// kernel before the clock — the runtime reads that fact from the module text
+/// it loads, so the flag word of a module without one is what it was.
+pub(crate) const GPU_INIT_TMA_COLD: u32 = 64;
 
 /// `main`'s first call in a module with a GPU site: hands the runtime its host
 /// rungs. Off, the runtime does nothing until the first site, the S52 path.
@@ -89,7 +95,8 @@ pub(crate) fn init_call(rungs: crate::GpuRungs, streams: bool, pdl: bool, zeroes
         + u32::from(pdl) * GPU_INIT_PDL
         + u32::from(rungs.preload) * GPU_INIT_PRELOAD
         + u32::from(rungs.stage && rungs.async_h2d) * GPU_INIT_STAGE
-        + u32::from(rungs.warm_zero && zeroes) * GPU_INIT_WARM_ZERO;
+        + u32::from(rungs.warm_zero && zeroes) * GPU_INIT_WARM_ZERO
+        + u32::from(!rungs.tma_warm) * GPU_INIT_TMA_COLD;
     format!("  call void @mapal_gpu_init(i32 {flags})\n")
 }
 
@@ -1013,13 +1020,30 @@ pub(crate) fn launch_split(
                 })
                 .flatten();
             if let Some(w) = wgmma {
+                // hopper-launch `ws-persist`: the warp-specialized kernel on
+                // `sms × blocks_per_sm` CTAs walking its tiles, where the walk
+                // saves the later rounds' fills and epilogues.
+                let tiles = (site.rows / w.bm()) * (site.c / w.bn());
+                let ctas = gpu.sms * w.blocks_per_sm.max(1);
+                let tile_bytes = w.bm() * w.bn() * 4;
+                let w = match w.ws
+                    && rungs.ws_persist
+                    && crate::rules::ws_persist_pays(gpu, tiles, ctas, w.stages, tile_bytes)
+                {
+                    true => GpuWgmmaTile { ctas, ..w },
+                    false => w,
+                };
+                let (gx, gy) = match w.ctas {
+                    0 => (site.c / w.bn(), site.rows / w.bm()),
+                    c => (c, 1),
+                };
                 return Launch {
                     arithmetic: Arithmetic::Tf32Wgmma,
                     tiled: None,
                     mma: None,
                     wgmma: Some(w),
-                    gx: site.c / w.bn(),
-                    gy: site.rows / w.bm(),
+                    gx,
+                    gy,
                     block: w.threads(gpu.warp),
                     smem: w.smem_bytes(),
                     raster: raster(rungs, w.bm(), w.bn(), w.blocks_per_sm),
@@ -1476,6 +1500,12 @@ fn plan_line(
             f += &format!(" ws=1 stage=tma boxes={}", 1 + b);
             if let Some((p, c)) = w.realloc {
                 f += &format!(" regs={p}/{c}");
+            }
+            // hopper-launch (intent.py `ws-persist`): the walk's CTAs and
+            // its tiles.
+            if w.ctas > 0 {
+                let tiles = (site.rows / w.bm()) * (site.c / w.bn());
+                f += &format!(" persist={} tiles={tiles}", w.ctas);
             }
         }
     }
@@ -5550,6 +5580,17 @@ impl Kernel<'_> {
         t
     }
 
+    /// `code` (`udiv` / `urem`) of the `i64` value `v` (below 2³¹) by the
+    /// constant `c`, in 32 bits, zero-extended back: a 32-bit magic division
+    /// holds half the registers of a 64-bit one.
+    fn op32(&mut self, code: &str, v: &str, c: u64) -> String {
+        let (n, r, w) = (self.tmp(), self.tmp(), self.tmp());
+        self.line(format!("{n} = trunc i64 {v} to i32"));
+        self.line(format!("{r} = {code} i32 {n}, {c}"));
+        self.line(format!("{w} = zext i32 {r} to i64"));
+        w
+    }
+
     /// The block's `(column, row)` in the grid: `ctaid.x`, `ctaid.y`, remapped
     /// by [`raster_block`] when the derived group height is above 1.
     fn block_ids(&mut self) -> (String, String) {
@@ -6962,10 +7003,60 @@ impl Kernel<'_> {
         self.header(name, threads, GPU_VEC_BYTES, 1);
 
         let tid = self.sreg("tid.x");
-        let (bx, by) = self.block_ids();
+        // hopper-launch `ws-persist` ([`GpuWgmmaTile::ctas`]): CTA `cta` walks
+        // the tiles `cta, cta + ctas, …` below `tiles` — `n_t` of them, each
+        // `nk` steps of the one stage ring (step `t·nk + kk`), its barrier
+        // phases running on across tiles. Else the block's own tile.
+        let persist = g.ctas > 0;
+        let (tiles_x, tiles_y) = (s.c / bn, s.rows / bm);
+        // The walk's CTA and its tile count, read where each warpgroup uses
+        // them — after its `setmaxnreg`: a value live across the reallocation
+        // is spilled (8 bytes at every walk when read once at entry).
+        let walk = |k: &mut Self| -> (String, String) {
+            // The linear CTA: the host may lay the grid out either way.
+            let x = k.sreg("ctaid.x");
+            let y = k.sreg("ctaid.y");
+            let nx = k.sreg("nctaid.x");
+            let yx = k.op("mul", &y, &nx);
+            let cta = k.op("add", &x, &yx);
+            let left = k.op("sub", &(tiles_x * tiles_y + g.ctas - 1).to_string(), &cta);
+            let n_t = k.op32("udiv", &left, g.ctas);
+            (cta, n_t)
+        };
+        let (row0, col0) = if persist {
+            (String::new(), String::new())
+        } else {
+            let (bx, by) = self.block_ids();
+            (by, bx)
+        };
         let wg = self.op("udiv", &tid, wgt);
-        let row0 = self.op("mul", &by, bm);
-        let col0 = self.op("mul", &bx, bn);
+        let (row0, col0) = match persist {
+            true => (row0, col0),
+            false => (self.op("mul", &row0, bm), self.op("mul", &col0, bn)),
+        };
+        let h = self.raster.1;
+        // Tile `t` of the walk: `(row0, col0)` of tile `cta + t·ctas` in the
+        // raster order the launch derived.
+        let tile_at = |k: &mut Self, cta: &str, t: &str| -> (String, String) {
+            let off = k.op("mul", t, g.ctas);
+            let id = k.op("add", cta, &off);
+            // `raster_block`'s walk of `id` (`h` block-rows per column), its
+            // divisions by constants in 32 bits: the producer warpgroup runs
+            // this at its `setmaxnreg.dec` share (a 64-bit magic division
+            // spilled 8 bytes there at `nk` 448).
+            let (bx, by) = if h >= 2 {
+                let group = k.op32("udiv", &id, h * tiles_x);
+                let local = k.op32("urem", &id, h * tiles_x);
+                let top = k.op("mul", &group, h);
+                let dy = k.op32("urem", &local, h);
+                let c = k.op32("udiv", &local, h);
+                let r = k.op("add", &top, &dy);
+                (k.opaque(&c), k.opaque(&r))
+            } else {
+                (k.op32("urem", &id, tiles_x), k.op32("udiv", &id, tiles_x))
+            };
+            (k.op("mul", &by, bm), k.op("mul", &bx, bn))
+        };
         let accs = (n / 2) as usize;
         let acc = self.tmp();
         self.line(format!("{acc} = alloca [{accs} x float], align 16"));
@@ -6976,9 +7067,11 @@ impl Kernel<'_> {
             ));
             p
         };
-        for idx in 0..accs {
-            let p = acc_slot(self, idx);
-            self.line(format!("store float {seed}, ptr {p}, align 4"));
+        if !persist {
+            for idx in 0..accs {
+                let p = acc_slot(self, idx);
+                self.line(format!("store float {seed}, ptr {p}, align 4"));
+            }
         }
         // Barriers: full (kind 0), ready (1), empty (2), `stages` each.
         let bars = self.tmp();
@@ -7021,7 +7114,21 @@ impl Kernel<'_> {
                 t
             })
             .collect();
-        let r32 = self.i32_of(&row0);
+        let r32 = if persist {
+            String::new()
+        } else {
+            self.i32_of(&row0)
+        };
+        // The walk's steps: `n_t·nk` (one tile: `nk`).
+        let (cta, n_t) = match persist {
+            true => walk(self),
+            false => (String::new(), String::new()),
+        };
+        let steps = if persist {
+            self.op("mul", &n_t, nk)
+        } else {
+            nk.to_string()
+        };
         self.line("br label %pl");
         self.out.push_str("pl:\n");
         let (j, jn) = (self.tmp(), self.tmp());
@@ -7088,13 +7195,22 @@ impl Kernel<'_> {
         // Issue tile `j` (thread 0).
         self.out.push_str("pi:\n");
         let lt = self.tmp();
-        self.line(format!("{lt} = icmp ult i64 {j}, {nk}"));
+        self.line(format!("{lt} = icmp ult i64 {j}, {steps}"));
         let t0 = self.tmp();
         self.line(format!("{t0} = icmp eq i64 {tid}, 0"));
         let go = self.tmp();
         self.line(format!("{go} = and i1 {lt}, {t0}"));
         self.line(format!("br i1 {go}, label %pt, label %pn"));
         self.out.push_str("pt:\n");
+        // Step `j`'s tile and its `k` step (one tile: `j` itself).
+        let (r32, col0, kj) = if persist {
+            let t = self.op32("udiv", &j, nk);
+            let kj = self.op32("urem", &j, nk);
+            let (r0, c0) = tile_at(self, &cta, &t);
+            (self.i32_of(&r0), c0, kj)
+        } else {
+            (r32.clone(), col0.clone(), j.clone())
+        };
         let x = self.op("urem", &j, st);
         let ph = self.op("udiv", &j, st);
         let ph = self.op("and", &ph, 1);
@@ -7108,7 +7224,7 @@ impl Kernel<'_> {
             "r,r,r",
             &[format!("i32 {fb}"), format!("i32 {bytes}"), "i32 0".into()],
         );
-        let k0 = self.op("mul", &j, bk);
+        let k0 = self.op("mul", &kj, bk);
         let k32 = self.i32_of(&k0);
         let base = self.op("mul", &x, sb);
         let ad = self.smem_at(&base);
@@ -7182,7 +7298,12 @@ impl Kernel<'_> {
         self.out.push_str("pn:\n");
         self.line(format!("{jn} = add i64 {j}, 1"));
         let fin = self.tmp();
-        self.line(format!("{fin} = icmp eq i64 {jn}, {}", nk + lead));
+        let last = if persist {
+            self.op("add", &steps, lead)
+        } else {
+            (nk + lead).to_string()
+        };
+        self.line(format!("{fin} = icmp eq i64 {jn}, {last}"));
         self.line(format!("br i1 {fin}, label %pend, label %pl"));
         self.out.push_str("pend:\n  ret void\n");
 
@@ -7191,6 +7312,10 @@ impl Kernel<'_> {
         if let Some((_, c)) = g.realloc {
             self.asm(&format!("setmaxnreg.inc.sync.aligned.u32 {c};"));
         }
+        let (cta, n_t) = match persist {
+            true => walk(self),
+            false => (String::new(), String::new()),
+        };
         let cw = self.op("sub", &wg, 1);
         let ct = self.op("sub", &tid, wgt);
         let warp_id = self.op("udiv", &ct, warp);
@@ -7223,12 +7348,36 @@ impl Kernel<'_> {
             let o = self.op("add", &qo, &sw);
             offs.push(self.op("add", &o, ab));
         }
+        // Under `ws-persist`: tile `t` of the walk (`ctl`), its seeds, its
+        // first ring step `t·nk`.
+        let (row0, col0, t, tn, step0) = if persist {
+            self.line("br label %ctl");
+            self.out.push_str("ctl:\n");
+            let (t, tn) = (self.tmp(), self.tmp());
+            self.line(format!("{t} = phi i64 [0, %cons], [{tn}, %cnx]"));
+            let (r0, c0) = tile_at(self, &cta, &t);
+            for idx in 0..accs {
+                let p = acc_slot(self, idx);
+                self.line(format!("store float {seed}, ptr {p}, align 4"));
+            }
+            let step0 = self.op("mul", &t, nk);
+            (r0, c0, t, tn, step0)
+        } else {
+            (row0, col0, String::new(), String::new(), String::new())
+        };
+        let from = if persist { "ctl" } else { "cons" };
         self.line("br label %ct");
         self.out.push_str("ct:\n");
         let (it, itn) = (self.tmp(), self.tmp());
-        self.line(format!("{it} = phi i64 [0, %cons], [{itn}, %cgo]"));
-        let x = self.op("urem", &it, st);
-        let ph = self.op("udiv", &it, st);
+        self.line(format!("{it} = phi i64 [0, %{from}], [{itn}, %cgo]"));
+        // The ring step: the tile's own `it`, or `t·nk + it` on the walk.
+        let gs = if persist {
+            self.op("add", &step0, &it)
+        } else {
+            it.clone()
+        };
+        let x = self.op("urem", &gs, st);
+        let ph = self.op("udiv", &gs, st);
         let ph = self.op("and", &ph, 1);
         let fb = bar(self, 0, &x);
         self.mbar_wait(&fb, &ph, "cf");
@@ -7249,7 +7398,7 @@ impl Kernel<'_> {
         self.line(format!("{go} = and i1 {rel}, {l0}"));
         self.line(format!("br i1 {go}, label %crel, label %cgo"));
         self.out.push_str("crel:\n");
-        let prev = self.op("sub", &it, 1);
+        let prev = self.op("sub", &gs, 1);
         let px = self.op("urem", &prev, st);
         let eb = bar(self, 2, &px);
         self.asm_args(
@@ -7339,6 +7488,24 @@ impl Kernel<'_> {
 
         self.out.push_str("cd:\n");
         self.asm("wgmma.wait_group.sync.aligned 0;");
+        if persist {
+            // The tile's last stage, released now: the producer fills the
+            // next tile's stages under this epilogue.
+            let l0 = self.tmp();
+            self.line(format!("{l0} = icmp eq i64 {lane}, 0"));
+            self.line(format!("br i1 {l0}, label %cdr, label %cde"));
+            self.out.push_str("cdr:\n");
+            let lst = self.op("add", &step0, nk - 1);
+            let lx = self.op("urem", &lst, st);
+            let eb = bar(self, 2, &lx);
+            self.asm_args(
+                "mbarrier.arrive.shared::cta.b64 _, [$0];",
+                "r",
+                &[format!("i32 {eb}")],
+            );
+            self.line("br label %cde");
+            self.out.push_str("cde:\n");
+        }
         let er = self.op("mul", &t4, 2);
         let er = self.op("add", &er, &row0);
         let er = self.op("mul", &er, s.c);
@@ -7362,6 +7529,15 @@ impl Kernel<'_> {
                     self.line(format!("store float {xv}, ptr addrspace(1) {op}, align 4"));
                 }
             }
+        }
+        if persist {
+            self.line("br label %cnx");
+            self.out.push_str("cnx:\n");
+            self.line(format!("{tn} = add i64 {t}, 1"));
+            let more = self.tmp();
+            self.line(format!("{more} = icmp ult i64 {tn}, {n_t}"));
+            self.line(format!("br i1 {more}, label %ctl, label %cend"));
+            self.out.push_str("cend:\n");
         }
         self.out.push_str("  ret void\n}\n");
         // The tensor maps' recipe (`mapal_gpu.c` `tmap_of`).
@@ -10971,6 +11147,18 @@ mod tests {
             flags(GpuRungs::ALL, true) & !GPU_INIT_WARM_ZERO,
             flags(off, true)
         );
+        // hopper-launch `tma-warm`: shipped, the flag word is the one before
+        // the rung (the runtime reads the module's recipes itself); the OFF
+        // arm sets one bit and nothing else.
+        assert_eq!(flags(GpuRungs::ALL, true) & GPU_INIT_TMA_COLD, 0);
+        let cold = GpuRungs {
+            tma_warm: false,
+            ..GpuRungs::ALL
+        };
+        assert_eq!(
+            flags(cold, true),
+            flags(GpuRungs::ALL, true) | GPU_INIT_TMA_COLD
+        );
     }
 
     /// S62: the skinny M16 projections take the cooperative ordered tile on the
@@ -11223,16 +11411,22 @@ mod tests {
                         p.name == "rtx-3090" && n == 8192,
                         "{why}"
                     );
+                    // The tile grid's height (a persistent walk launches
+                    // `ctas × 1` and walks the tiles in this order).
+                    let gy = |l: &Launch| match l.wgmma {
+                        Some(w) if w.ctas > 0 => s.rows / w.bm(),
+                        _ => l.gy,
+                    };
                     let ungated = at(arms(true));
                     if n == 8192 {
                         assert!(ungated.raster > 1, "{why}");
                     }
-                    assert!(ungated.gy % ungated.raster == 0, "{why}");
+                    assert!(gy(&ungated) % ungated.raster == 0, "{why}");
                     let shipped = at(crate::GpuArms::default());
                     if shipped.raster > 1 {
                         assert!(p.name == "rtx-3090" && n == 8192, "{why}");
                     }
-                    assert!(shipped.gy % shipped.raster == 0, "{why}");
+                    assert!(gy(&shipped) % shipped.raster == 0, "{why}");
                 }
             }
         }
