@@ -136,7 +136,7 @@ fn ir_err(e: IrError, span: syn::SourceLoc) -> syn::Diagnostic {
         ),
         IrError::InvalidExp => (
             LCode::InvalidExp,
-            "`exp` takes an `f32` or `f64`".to_string(),
+            "a math builtin (`exp`, `sqrt`, `sin`, `cos`) takes an `f32` or `f64`".to_string(),
         ),
         IrError::InvalidNarrow => (
             LCode::InvalidNarrow,
@@ -1155,7 +1155,13 @@ impl Emitter<'_> {
                         "enumerate" => self.emit_enumerate(fb, wire, dest, e.span)?,
                         "iota" => self.emit_iota_stage(fb, wire, dest, e.span)?,
                         "fill" => self.emit_fill_stage(fb, wire, dest, e.span)?,
-                        "exp" => self.emit_exp(fb, wire, dest, e.span)?,
+                        t if mapal_ir::MathFn::from_name(t).is_some() => self.emit_math(
+                            fb,
+                            wire,
+                            mapal_ir::MathFn::from_name(t).expect("math builtin"),
+                            dest,
+                            e.span,
+                        )?,
                         t if crate::narrow_target(t).is_some() => self.emit_narrow(
                             fb,
                             wire,
@@ -2678,27 +2684,32 @@ impl Emitter<'_> {
         Ok(self.record(o, Ty::Narrow(fmt)))
     }
 
-    /// `x -> exp` (ADR-0042): `eˣ` of a float scalar, its width kept. Owns
-    /// L1615 (any other source type).
-    fn emit_exp(
+    /// `x -> exp` (ADR-0042), `x -> sqrt` / `sin` / `cos` (ADR-0046): the
+    /// builtin of a float scalar, its width kept. Owns L1615 (any other
+    /// source type).
+    fn emit_math(
         &mut self,
         fb: &mut FnBuilder,
         wire: ObjectId,
+        f: mapal_ir::MathFn,
         dest: Dest,
         sp: syn::SourceLoc,
     ) -> ER<ObjectId> {
         let source = self.ty_of(fb, wire);
+        let name = f.name();
         if !matches!(source, Ty::Float { bits: 32 | 64 }) {
             return Err(diag(
                 LCode::InvalidExp,
                 sp,
                 format!(
-                    "`exp` takes an `f32` or `f64`, got `{}`; widen an integer first (`x -> widen_f32 -> exp`)",
+                    "`{name}` takes an `f32` or `f64`, got `{}`; widen an integer first (`x -> widen_f32 -> {name}`)",
                     ty_name(&source)
                 ),
             ));
         }
-        let o = fb.exp(wire, dest, ir_loc(sp)).map_err(|e| ir_err(e, sp))?;
+        let o = fb
+            .math(f, wire, dest, ir_loc(sp))
+            .map_err(|e| ir_err(e, sp))?;
         self.prop(o, &[wire]);
         Ok(self.record(o, source))
     }

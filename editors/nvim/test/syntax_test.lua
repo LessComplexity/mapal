@@ -63,6 +63,15 @@ local cases = {
   -- them unchanged. The leading `-` is different — it falls to flowOperator the moment
   -- the guard rule stops matching. Found by deliberately breaking a guard and watching
   -- this suite pass.
+  -- ADR-0042 / ADR-0046: the math builtins are builtins mid-pipeline, never
+  -- the between-arrows binding or a declared fn.
+  { 48, "sqrt", "flowBuiltin", "sqrt (ADR-0046)" },
+  { 48, "r", "flowBinding", "binding after sqrt" },
+  { 49, "sin", "flowBuiltin", "sin (ADR-0046)" },
+  { 50, "cos", "flowBuiltin", "cos (ADR-0046)" },
+  { 50, "c", "flowBinding", "binding after cos" },
+  { 51, "exp", "flowBuiltin", "exp (ADR-0042)" },
+
   { 18, 9, "flowGuardArrow", "chrome of -true->" },
   { 38, 9, "flowGuardArrow", "chrome of -0->" },
   { 41, 9, "flowGuardArrow", "chrome of -Some(x)->" },

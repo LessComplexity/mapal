@@ -43,3 +43,11 @@ fn extras(n: i32, arr: [i32; 4]) -> i32 {
         -[head, ...tail]-> split;
     n -> ret;
 }
+
+fn waves(x: f32) -> f32 {
+    x -> sqrt -> r;
+    x -> sin -> s;
+    x -> cos -> c;
+    x -> exp -> e;
+    r + s * c + e -> ret;
+}
