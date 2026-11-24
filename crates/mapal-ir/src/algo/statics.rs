@@ -5,8 +5,10 @@
 //!
 //! **Computable.** A value whose dataflow cone holds no input of its function
 //! and no effect is the same on every call — [`CategoryIr::unchanged_plan`]'s
-//! `inputs` mask is 0 (the IO token is an input slot, so every `print`,
-//! `time` and `read` result, and everything computed from one, is not). A
+//! `inputs` mask is 0 (the IO token is an input slot, so every `print` and
+//! `time` result, and everything computed from one, is not) — and reads no
+//! file: a `read`'s array is the same at every call (mask 0, ADR-0045 D7) but
+//! its bytes exist only at run time. A
 //! value of a loop is computable only when the whole loop is (its every
 //! decide, advance and exit value): the oracle runs a loop as a unit.
 //!
@@ -143,9 +145,12 @@ impl CategoryIr {
         let mut fixed: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
         for &o in &objs {
             let Some(obj) = self.object(o) else { continue };
+            // A read's array (ADR-0045) is the same at every call — mask 0 —
+            // but its bytes are the file's at run time: never computable.
             if obj.kind == ObjectKind::Parameter
                 || ty_contains_token(&obj.ty)
                 || masks.get(o).copied().unwrap_or(u64::MAX) != 0
+                || self.read_of(o).is_some()
             {
                 continue;
             }

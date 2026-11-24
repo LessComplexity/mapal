@@ -71,7 +71,7 @@ pub fn lower(source: &str, program: &Program) -> Result<mapal_ir::CategoryIr, Ve
                 diags.push(diag(
                     LCode::TopEffect,
                     it.span,
-                    "a top-level binding has no effect: `print`, `println`, `time`, `read` and \
+                    "a top-level binding may not have an effect: `print`, `println`, `time`, `read` and \
                      effectful functions belong in a function (ADR-0048 D1)",
                 ));
             }
