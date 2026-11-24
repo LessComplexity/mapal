@@ -6007,7 +6007,9 @@ pub fn flash_strategy() -> impl Strategy<Value = FlashProg> {
             prop::sample::select(vec![1u64, 2, 3, 4, 8, 16, 32, 64]),
             prop::sample::select(vec![4u64, 16, 24, 64, 100, 128, 256]),
             prop::sample::select(vec![3u64, 4, 8, 16]),
-            prop::sample::select(vec![3u64, 4, 8, 16]),
+            // attention-chains: a value width of 32 — two 16-byte chunks a
+            // lane of a 4-lane row group (the interleaved consumer columns).
+            prop::sample::select(vec![3u64, 4, 8, 16, 32]),
         ),
         (0u8..3, 0u8..3, any::<bool>(), any::<bool>()),
         (

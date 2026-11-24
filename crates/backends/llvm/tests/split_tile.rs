@@ -133,7 +133,8 @@ fn gemm(rows: u64, c: u64, k: u64, fmt: Option<&str>) -> String {
 /// A100: 1012 against 3 · 1.6 · 128 an SM a clock at the integer cut's issue
 /// 1.0, on a site whose warp tile is not shrunk to fill the part —
 /// `split_issue_prices_the_realization`; the 5fcb401b `cvt.rna` cut's issue
-/// 2.1 lost 0 / 12, bugs-properties / tensor-cores-2) and nowhere else by
+/// 2.1 lost 0 / 12, bugs-properties / tensor-cores-2 / attention-chains)
+/// and nowhere else by
 /// rule (GeForce 256, the H100's measured `mma.sync` 1351 at that site's
 /// issue); every part under the ON arm; never
 /// below the form's `K_min` (24 at the measured `g = 2`), nor on the exact

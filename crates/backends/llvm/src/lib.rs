@@ -1540,11 +1540,12 @@ pub struct GpuArms {
     /// precedent): a flow unit the slicing admits takes `s` blocks a row,
     /// the prices aside. 0 = derive; 1 = one block a row.
     pub row_slices_s: u64,
-    /// Measurement override (`--stream=<b>x<kb>[x<rt>[x<s>]]`, the
-    /// `--row-block` precedent): a stream group takes `b` rows a block,
-    /// windows of `kb` keys (and `rt` rows a thread, `s` blocks a row block;
-    /// 0 = any) where they fit, the price aside. `None` = derive.
-    pub stream_force: Option<(u64, u64, u64, u64)>,
+    /// Measurement override (`--stream=<b>x<kb>[x<rt>[x<s>[x<threads>]]]`,
+    /// the `--row-block` precedent): a stream group takes `b` rows a block,
+    /// windows of `kb` keys (and `rt` rows a thread, `s` blocks a row block,
+    /// `threads` a block; 0 = any) where they fit, the price aside. `None` =
+    /// derive.
+    pub stream_force: Option<(u64, u64, u64, u64, u64)>,
 }
 
 /// [`GpuArms::site_cands`]'s default (design B1).

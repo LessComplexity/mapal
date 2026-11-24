@@ -37,10 +37,15 @@ pub fn apply(opts: &mut EmitOpts, a: &str) -> Result<bool, String> {
             let v = &a["--stream=".len()..];
             let parts: Vec<Option<u64>> = v.split('x').map(|x| x.parse::<u64>().ok()).collect();
             let f = match parts[..] {
-                [Some(b), Some(k)] => (b, k, 0, 0),
-                [Some(b), Some(k), Some(r)] => (b, k, r, 0),
-                [Some(b), Some(k), Some(r), Some(s)] => (b, k, r, s),
-                _ => return Err(format!("--stream expects <b>x<kb>[x<rt>[x<s>]], got `{a}`")),
+                [Some(b), Some(k)] => (b, k, 0, 0, 0),
+                [Some(b), Some(k), Some(r)] => (b, k, r, 0, 0),
+                [Some(b), Some(k), Some(r), Some(s)] => (b, k, r, s, 0),
+                [Some(b), Some(k), Some(r), Some(s), Some(t)] => (b, k, r, s, t),
+                _ => {
+                    return Err(format!(
+                        "--stream expects <b>x<kb>[x<rt>[x<s>[x<threads>]]], got `{a}`"
+                    ));
+                }
             };
             opts.gpu.stream_force = Some(f);
         }
