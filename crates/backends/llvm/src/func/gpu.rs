@@ -3432,7 +3432,8 @@ pub(crate) fn split_name(k: SplitKind) -> &'static str {
 /// **f32-tensor-cores R-F: whether a split tile `m` realizes the site.**
 /// 1. *bound* — always: the form's coefficient at the site's `K` meets D2
 ///    ([`SplitForm::admits`], the accumulator's measured guard bits);
-/// 2. *part* — the matrix rate pays for the form's `P` passes against the
+/// 2. *part* — the matrix rate pays for the form's `P` passes, and the FP32
+///    lanes for its operand splits at the tile's warp geometry, against the
 ///    FFMA rate ([`crate::rules::split_rate_pays`]);
 /// 3. *site* — the flops per operand byte reach the part's FFMA balance
 ///    (a DRAM-bound site keeps the FFMA tile, which splits `k` to fill the
@@ -3454,7 +3455,7 @@ fn split_pays(site: &TileSite, gpu: &Gpu, kind: SplitKind, m: &GpuMmaTile, force
     if forced {
         return true;
     }
-    if !crate::rules::split_rate_pays(gpu, &op, form.products()) {
+    if !crate::rules::split_rate_pays(gpu, &op, kind, (m.mt, m.nt)) {
         return false;
     }
     let bytes = site.rows * site.k * m.ea + site.k * site.c * m.eb + site.rows * site.c * 4;

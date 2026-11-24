@@ -128,10 +128,12 @@ fn gemm(rows: u64, c: u64, k: u64, fmt: Option<&str>) -> String {
     testgen::split_src_at(&p, rows, c, k).0
 }
 
-/// **The rule per part, per face, per `K`.** tf32x3 on a part whose TF32
-/// rate pays three passes against its FFMA rate (the A100: 1024 against
-/// 3 · 1.3 · 128 an SM a clock) and nowhere else by rule (GeForce 256, the
-/// H100's `mma.sync` 532 against 998); every part under the ON arm; never
+/// **The rule per part, per face, per `K`.** tf32x3 nowhere by rule: where
+/// the TF32 rate pays three passes against the FFMA rate (the A100: 1024
+/// against 3 · 1.3 · 128 an SM a clock) the operand splits' 21 instructions
+/// an element bind its FP32 lanes (attention-chains: 0 W / 12 L there), and
+/// elsewhere the matrix rate does not (GeForce 256, the H100's `mma.sync`
+/// 532 against 998); every part under the ON arm; never
 /// below the form's `K_min` (24 at the measured `g = 2`), nor on the exact
 /// or sequential faces, nor under the OFF arm. narrow1 by rule on every part
 /// with a 16-bit warp product (512 against 1.3 · 256 on GeForce).
@@ -142,8 +144,8 @@ fn split_rule_by_rate_bound_and_face() {
         split_of(&emission(&ir, t, base, off, on, 0))
     };
     let d = EmitOpts::default;
-    assert_eq!(at("a100", d(), &[], &[]).as_deref(), Some("tf32x3"));
     for t in [
+        "a100",
         "rtx-5080",
         "rtx-4090",
         "rtx-3090",

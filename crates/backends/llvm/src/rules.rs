@@ -181,12 +181,53 @@ pub fn pdl_pays(g: &Gpu, repeats: bool) -> bool {
 /// (512 against 256).
 pub const SPLIT_RATE_PM: u64 = 1300;
 
-/// **f32-tensor-cores R-F, the part's side: a split form of `products`
-/// passes on `op` pays against the FFMA tile** — `matrix_flops_per_ns(op) ≥
-/// θ · P · ffma_flops_per_ns` ([`SPLIT_RATE_PM`]). Physical properties only:
-/// the SM's matrix and FFMA rates a clock (`calib.cu matrix`, `ffma`).
-pub fn split_rate_pays(g: &Gpu, op: &crate::profile::MatrixOp, products: u64) -> bool {
-    g.matrix_flops_per_ns(op) * 1000 >= SPLIT_RATE_PM * products * g.ffma_flops_per_ns()
+/// attention-chains: **the thread instructions one operand element's split
+/// costs** where the split tile splits it in registers (`split_tf32`: the
+/// infinity / subnormal guards, two `cvt.rna.tf32.f32` — no SASS conversion
+/// on sm_80, sm_90 or sm_120: each an integer `LOP3` / `ISETP` / `SEL` /
+/// `IADD3` sequence — and the residual's subtract). 21: the A100's split
+/// tile `pj_m2048_n4096_k4096` (2 × 4 m16n8 tiles a warp, `bk` 32) issues
+/// 1 543 SASS beside its 96 `HMMA` a k-loop trip — per k8 step 16 operand
+/// elements, 32 accumulator `FADD`s and 11 shared loads — on sm_80, sm_90 and
+/// sm_120 alike (5fcb401b, `attention-chains.md`). `Narrow1` splits nothing:
+/// its panels are the stored halves, read by `ldmatrix`.
+pub fn split_elem_instr(kind: mapal_ir::split::SplitKind) -> u64 {
+    match kind {
+        mapal_ir::split::SplitKind::Narrow1 => 0,
+        _ => 21,
+    }
+}
+
+/// **f32-tensor-cores R-F, the part's side: a split form pays against the
+/// FFMA tile** — its products' realized rate reaches `θ` times the FFMA rate
+/// ([`SPLIT_RATE_PM`]). A warp's `mt × nt` tile of `op`'s products a
+/// `k`-step issues `P · mt · nt` instructions on the matrix pipe and, on the
+/// FP32 lanes, its operand elements' splits ([`split_elem_instr`]: the `a`
+/// fragments' `m·k` and the `b` fragments' `k·n` elements of each tile a
+/// warp holds) and, `P` > 1, each tile's four adds of the split's temporary
+/// into its f32 accumulator: the step takes the slower of the two pipes. The
+/// matrix pipe alone was the rule before (the A100's TF32 at 1 024 flops an
+/// SM a clock against 3 · 1.3 · 128 took tf32x3 on every f32 GEMM — 0 W /
+/// 12 L, 0.56–0.79, its k loop bound by the 21 instructions an element on 64
+/// lanes: attention-chains). Physical properties only: the SM's matrix rate
+/// (`calib.cu matrix`) and its FP32 lanes (`ffma`).
+pub fn split_rate_pays(
+    g: &Gpu,
+    op: &crate::profile::MatrixOp,
+    kind: mapal_ir::split::SplitKind,
+    (mt, nt): (u64, u64),
+) -> bool {
+    let p = mapal_ir::split::SplitForm::of(kind).products();
+    let sh = op.shape;
+    let flops = 2 * sh.m * sh.n * sh.k;
+    let tiles = mt * nt;
+    let mma = (p * tiles * flops) as f64 / g.matrix_flops_per_clk(op).max(1) as f64;
+    let elems = (mt * sh.m * sh.k + nt * sh.k * sh.n) / g.warp.max(1);
+    let adds = if p > 1 { 4 * tiles } else { 0 };
+    let alu =
+        ((elems * split_elem_instr(kind) + adds) * g.warp) as f64 / g.fp32_lanes.max(1) as f64;
+    let rate = (tiles * flops) as f64 / mma.max(alu).max(1e-9);
+    rate * 1000.0 >= (SPLIT_RATE_PM * 2 * g.fp32_lanes) as f64
 }
 
 /// FP32 lanes per SM below which the exact face's fully unrolled panel loop
@@ -450,6 +491,7 @@ mod tests {
             let mut wave = None;
             let mut scalar = None;
             let mut split = None;
+            let mut tile = None;
             for kv in cond.split(',') {
                 let Some((k, v)) = kv.split_once('=') else {
                     continue;
@@ -461,6 +503,10 @@ mod tests {
                     "wave" => wave = Some(v.parse::<u64>().expect("wave")),
                     "scalar" => scalar = Some(v.parse::<u64>().expect("scalar")),
                     "split" => split = Some(v),
+                    "tile" => {
+                        let (m, n) = v.split_once('x').expect(line);
+                        tile = Some((m.parse::<u64>().expect(line), n.parse::<u64>().expect(line)));
+                    }
                     _ => {
                         let n: u64 = v.parse().expect(line);
                         let mut over = [None; DeviceCost::NAMES.len()];
@@ -531,8 +577,9 @@ mod tests {
                             _ => panic!("{line}: split form {f}"),
                         };
                         let op = g.caps.matrix_op(fmt, Home::Regs).expect(line);
-                        let p = mapal_ir::split::SplitForm::of(kind).products();
-                        v = v && split_rate_pays(&g, &op, p);
+                        let t =
+                            tile.unwrap_or_else(|| panic!("{line}: split needs tile=<mt>x<nt>"));
+                        v = v && split_rate_pays(&g, &op, kind, t);
                     }
                     // The wide tile's grid against its wave.
                     if let (Some(b), Some(w), "wide-fma") = (blocks, wave, e.rung) {
@@ -573,7 +620,7 @@ mod tests {
         }
         assert_eq!(open, OPEN.to_vec(), "measurements the rules do not pick");
         // The counts the evidence file reports.
-        assert_eq!((picked, null, mixed, open.len()), (140, 72, 10, 21));
+        assert_eq!((picked, null, mixed, open.len()), (141, 72, 10, 21));
     }
 
     /// No rule reads a name, an architecture string or a version: a part
