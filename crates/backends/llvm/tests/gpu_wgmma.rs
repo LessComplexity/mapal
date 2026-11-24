@@ -111,8 +111,13 @@ fn wgmma_is_unreachable_off_hopper_and_off_the_tf32_face() {
             "{target}"
         );
     }
+    // tensor-cores-2: the H100's measured `mma.sync` TF32 rate takes the
+    // free-order f32 site's split tile (`split-tile`, `tests/split_tile.rs`);
+    // its OFF arm is the FMA kernel this pins.
+    let mut fma = GpuArms::default();
+    *fma.off.rung("split-tile").expect("a rung") = true;
     for contract in [false, true] {
-        let k = device("h100-pcie", contract, false, GpuArms::default());
+        let k = device("h100-pcie", contract, false, fma);
         assert!(
             !k.contains("wgmma") && !k.contains("tf32"),
             "contract={contract}"

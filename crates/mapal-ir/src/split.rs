@@ -48,6 +48,11 @@ pub enum SplitKind {
     /// One operand stored narrow (its exact widening, ADR-0043), the other
     /// cut into three exact bf16 parts: three products, no split error.
     Bf16x3n,
+    /// tensor-cores-2: one operand stored narrow, the other cut into two
+    /// bf16 parts (`rn(a)`, `rn` of the residual): two products, split error
+    /// `|a·b − (a₀ + a₁)·b| ≤ 2⁻¹⁶|a·b|` — admitted where the fold is long
+    /// enough for D2 to cover it (`K ≥ 288` at `g = 2`).
+    Bf16x2n,
     /// Both operands stored in one narrow format: one exact product a k-step.
     Narrow1,
 }
@@ -90,6 +95,7 @@ const BF16X6_CLASSES: [f64; 6] = [
     1.0,
 ];
 const BF16X3N_CLASSES: [f64; 3] = [RHO_BF16 * RHO_BF16, RHO_BF16, 1.0];
+const BF16X2N_CLASSES: [f64; 2] = [RHO_BF16, 1.0];
 const NARROW1_CLASSES: [f64; 1] = [1.0];
 
 impl SplitForm {
@@ -122,6 +128,18 @@ impl SplitForm {
                 parts_b: 1,
                 classes: &BF16X3N_CLASSES,
                 e: 0.0,
+                exact_above: 2f64.powi(-110),
+            },
+            // `a − a₀ − a₁ = r − rn(r)`, `|r| ≤ 2⁻⁸|a|`: `|·| ≤ 2⁻⁸|r| ≤
+            // 2⁻¹⁶|a|` while `r` is normal; on the subnormal grid at most
+            // `2⁻¹³⁴`, within `2⁻¹⁶|a|` for `|a| ≥ 2⁻¹¹⁸` (the guard's
+            // `2⁻¹¹⁰`, bf16x3n's, keeps it).
+            SplitKind::Bf16x2n => SplitForm {
+                kind,
+                parts_a: 2,
+                parts_b: 1,
+                classes: &BF16X2N_CLASSES,
+                e: 2f64.powi(-16) / U,
                 exact_above: 2f64.powi(-110),
             },
             SplitKind::Narrow1 => SplitForm {
@@ -295,6 +313,36 @@ mod tests {
         assert_eq!(at(SplitKind::Tf32x3, 8, G2), Some(24));
         assert_eq!(at(SplitKind::Bf16x6, 16, G2), Some(16));
         assert_eq!(at(SplitKind::Narrow1, 16, G2), Some(16));
+        // tensor-cores-2: the two-part cut's `2⁻¹⁶` split error needs a fold
+        // whose `γ_{K+1}` covers 256 units.
+        assert_eq!(at(SplitKind::Bf16x2n, 16, G2), Some(288));
+        assert_eq!(at(SplitKind::Bf16x2n, 16, G0), Some(320));
+    }
+
+    /// tensor-cores-2: the two-part cut of an f32 is within `2⁻¹⁶|x|` on
+    /// every binade edge at and above `2⁻¹¹⁰` and on pseudo-random values.
+    #[test]
+    fn bf16_two_parts_within_two_to_minus_16() {
+        let mut xs = Vec::new();
+        for e in -110..=127 {
+            let b = 2f32.powi(e);
+            xs.extend([b, b * (1.0 + f32::EPSILON), b * (2.0 - f32::EPSILON)]);
+            // The guard takes what rounds to infinity (`2¹²⁸ − 2¹¹¹` and up).
+            xs.retain(|x| x.to_bits() < 0x7f7f_8000);
+        }
+        let mut st = 0x2545_f491_4f6c_dd1du64;
+        for _ in 0..20_000 {
+            st ^= st << 13;
+            st ^= st >> 7;
+            st ^= st << 17;
+            let x = f32::from_bits((st as u32 & 0x007f_ffff) | 0x3f80_0000);
+            xs.push(x * 2f32.powi((st >> 40) as i32 % 200 - 100));
+        }
+        for x in xs {
+            let [p0, p1, _] = bf16_parts(x);
+            let err = (f64::from(x) - f64::from(p0) - f64::from(p1)).abs();
+            assert!(err <= 2f64.powi(-16) * f64::from(x).abs(), "{x:e}");
+        }
     }
 
     /// `E` at K = 4096 (g = 0), the design's last column, within rounding.

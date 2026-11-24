@@ -946,6 +946,22 @@ pub struct GpuRungs {
     /// the FFMA tile (the emission before it); on (`--gpu-on=split-tile`):
     /// the split wherever the bound admits it, past the rate rule.
     pub split_tile: bool,
+    /// tensor-cores-2 `split-issue`: a split tile's realization at its
+    /// issue rate — each f32 element cut by integer rounding with the value
+    /// classes left to the guard (which now also takes an element whose
+    /// leading part rounds to infinity), and each tile's zeroed chain
+    /// carried over the k-steps the bound admits before its round-to-nearest
+    /// add ([`func::gpu::split_flush`]). Off (`--gpu-off=split-issue`): the
+    /// 5fcb401b realization (`cvt.rna`, the overflow select, a flush every
+    /// k-step) — the A100's tf32x3 loser (1612 SASS instructions a panel of
+    /// 96 `HMMA` against 792).
+    pub split_issue: bool,
+    /// tensor-cores-2 `split-least`: an f32 × bf16 product takes the split
+    /// form of fewest part products its bound admits at the site's `K` —
+    /// bf16x2n (two bf16 parts of the f32 operand, split error `2⁻¹⁶`)
+    /// before bf16x3n (three, exact). Off (`--gpu-off=split-least`):
+    /// bf16x3n wherever the split is taken.
+    pub split_least: bool,
     /// f32-tensor-cores R-T2 `mma-depth`: a tensor-core tile takes the panel
     /// depth keeping the most operand bytes in flight a block at its
     /// residency (`profile::mma_depth_pick`: `bk` 16 × 5 stages against `bk`
@@ -1121,6 +1137,8 @@ impl GpuRungs {
         unit_uniform: true,
         mma_combine: true,
         split_tile: true,
+        split_issue: true,
+        split_least: true,
         mma_depth: true,
         round_store: true,
         warm_zero: true,
@@ -1130,7 +1148,7 @@ impl GpuRungs {
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 135] = [
+    pub const NAMES: [&'static str; 137] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1258,6 +1276,8 @@ impl GpuRungs {
         "finite",
         "mma-combine",
         "split-tile",
+        "split-issue",
+        "split-least",
         "mma-depth",
         "unit-uniform",
         "round-store",
@@ -1401,6 +1421,8 @@ impl GpuRungs {
             "unit-uniform" => &mut self.unit_uniform,
             "mma-combine" => &mut self.mma_combine,
             "split-tile" => &mut self.split_tile,
+            "split-issue" => &mut self.split_issue,
+            "split-least" => &mut self.split_least,
             "mma-depth" => &mut self.mma_depth,
             "round-store" => &mut self.round_store,
             "warm-zero" => &mut self.warm_zero,

@@ -498,11 +498,18 @@ INTENT = {
     # narrow format, one HMMA.16816 a tile and k16), each k-step's products summed from a zeroed accumulator (`float
     # 0.0` c operands) and added to the f32 accumulator by FADD (no FFMA in the loop but tf32x3's cold path);
     # tf32x3's guard: one vote a warp (VOTE) after the k loop. OFF (`.off-split-tile`): the FFMA tile.
+    # tensor-cores-2: `split=bf16x3n` / `bf16x2n` (an f32 operand cut into three / two bf16 parts against a bf16 one,
+    # three / two HMMA.16816 a tile and k16, F2FP the cut's conversions, the guard's vote); `split-issue`: the plan's
+    # `flush` (k-steps a zeroed chain carries) and `issue_pm` (the tile's issue against its matrix pipe) — the hot
+    # loop's instructions a matrix instruction within the priced issue (SASS: the k-step's slots over P·mt·nt).
     'split-tile': dict(applies_on="'split' in plan", on=[
         ('mma.sync in PTX', 'ptx.mma > 0'),
         ('HMMA in SASS and FADD (the round-to-nearest flush) beside it', 'sass.hmma > 0 and sass.fadd > 0'),
-        ('tf32x3: the guard`s warp vote', "plan.split != 'tf32x3' or sass.vote > 0"),
+        ('a cut form: the guard`s warp vote', "plan.split == 'narrow1' or sass.vote > 0"),
+        ('bf16 cuts: F2FP conversions in the hot loop', "plan.split not in ('bf16x3n', 'bf16x2n') or sass.hot.f2fp > 0"),
         ('16-byte cp.async panels: LDGSTS in the hot loop, no LDG', 'sass.hot.ldgsts > 0 and sass.hot.ldg == 0'),
+        ('the hot loop issues within 1.25x the priced slots a matrix instruction (`slots_pm`)',
+         "plan.get('slots_pm') is None or sass.hot.insns * 1000 <= 1.25 * plan.slots_pm * sass.hot.hmma"),
         ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')],
         applies_off="plan.get('set', '') in ('', 'f32')", off=[
         ('no split form', "'split' not in plan")]),

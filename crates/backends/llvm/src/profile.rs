@@ -3449,7 +3449,7 @@ impl TargetProfile {
             fill,
             (MmaFmt::Tf32, 4, 4, false),
             depth,
-            (2, true),
+            Some((2, 2)),
         )
     }
 
@@ -3481,7 +3481,9 @@ impl TargetProfile {
     /// own 16-byte bank group and the f32 fragment pairs (`LDS.64`) of each
     /// half warp in distinct banks. `None` where the part lists no warp
     /// product of `fmt` with `ldmatrix` and `cp.async`. `bt`: the `b` panel
-    /// is `n × k` ([`GpuMmaTile::bt`]).
+    /// is `n × k` ([`GpuMmaTile::bt`]). `split`: a split form's parts of
+    /// the `a` and `b` fragments a thread holds (narrow1 `(1, 1)`, bf16x3n
+    /// `(3, 1)` / `(1, 3)`: the f32 operand's three bf16 parts).
     #[allow(clippy::too_many_arguments)]
     pub fn gpu_mma16_tile(
         &self,
@@ -3495,7 +3497,7 @@ impl TargetProfile {
         eb: u64,
         bt: bool,
         depth: bool,
-        split: bool,
+        split: Option<(u64, u64)>,
     ) -> Option<GpuMmaTile> {
         let g = self.gpu()?;
         let op = g.caps.matrix_op(fmt, Home::Regs)?;
@@ -3504,7 +3506,7 @@ impl TargetProfile {
         {
             return None;
         }
-        self.gpu_mma_geom_parts(rows, c, k, wide, fill, (fmt, ea, eb, bt), depth, (1, split))
+        self.gpu_mma_geom_parts(rows, c, k, wide, fill, (fmt, ea, eb, bt), depth, split)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -3521,12 +3523,12 @@ impl TargetProfile {
         bt: bool,
         depth: bool,
     ) -> Option<GpuMmaTile> {
-        self.gpu_mma_geom_parts(rows, c, k, wide, fill, (fmt, ea, eb, bt), depth, (1, false))
+        self.gpu_mma_geom_parts(rows, c, k, wide, fill, (fmt, ea, eb, bt), depth, None)
     }
 
-    /// [`Self::gpu_mma_geom`] with each operand fragment held `parts` times
-    /// (a split form's parts, f32-tensor-cores) and, under a split form
-    /// (`split`), each tile's chain result beside its accumulator: ptxas
+    /// [`Self::gpu_mma_geom`] under a split form (`split`: the parts of
+    /// each `a` / `b` fragment a thread holds, f32-tensor-cores) with each
+    /// tile's chain result beside its accumulator: ptxas
     /// issues a k-step's products before their adds, so a thread holds a
     /// temporary accumulator a tile (the rtx-5080's narrow1 `4 × 8` tile at
     /// 254 registers spilled 64 B of `cp.async` addresses in the loop).
@@ -3540,16 +3542,18 @@ impl TargetProfile {
         fill: bool,
         (fmt, ea, eb, bt): (MmaFmt, u64, u64, bool),
         depth: bool,
-        (parts, split): (u64, bool),
+        parts: Option<(u64, u64)>,
     ) -> Option<GpuMmaTile> {
         let g = self.gpu()?;
         let acc_per_tile = MMA_M * MMA_N / g.warp; // 4
+        let split = parts.is_some();
+        let (pa, pb) = parts.unwrap_or((1, 1));
         let (mt, nt, regs_est) = if wide {
             // nt = 2·mt keeps the warp tile square (16·mt = 8·nt).
             let held = |mt: u64| {
                 let nt = 2 * mt;
                 acc_per_tile * mt * nt * (1 + u64::from(split))
-                    + 2 * parts * (4 * mt + 2 * nt)
+                    + 2 * (4 * mt * pa + 2 * nt * pb)
                     + MMA_ADDR_REGS
             };
             let mut mt = 1;
@@ -5061,12 +5065,13 @@ pub const H100: TargetProfile = TargetProfile {
         mem_bus_bits: 5120,
         // f32-tensor-cores P1: `wgmma` TF32 — the datasheet's dense 494.7
         // Tflop/s over 132 SMs at 1.83 GHz (2048). bugs-properties: `mma.sync`
-        // measured (`calib.cu matrix`, cross-arch 5fcb401b, 32 warps an SM of
-        // independent register chains, clock64 spans): TF32 1351, bf16 / f16
-        // 2702 flops an SM a clock (the 532 / 1064 before were Mapal's HMMA
-        // tile realized, mlp_2048_tf32 — a lower bound). Read with the split
-        // realization's issue (`rules::split_issue_pays`), the rate moves no
-        // f32 GEMM onto tf32x3: the rate rule alone flips.
+        // measured (`calib.cu matrix`, cross-arch 5fcb401b, `calib-h100.txt`,
+        // 32 warps an SM of independent register chains, clock64 spans):
+        // m16n8k8 TF32 1351, m16n8k16 bf16 / f16 2702 flops an SM a clock (the
+        // 532 / 1064 before were Mapal's HMMA tile realized, mlp_2048_tf32 — a
+        // lower bound). Read with the split tile's issue priced
+        // (`rules::split_issue_pm`, tensor-cores-2), the rate moves no f32 GEMM
+        // onto tf32x3: the rate rule alone flips.
         mma_tf32_per_clk: 1351,
         mma_half_per_clk: 2702,
         wgmma_tf32_per_clk: 2048,
