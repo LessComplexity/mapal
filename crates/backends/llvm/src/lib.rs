@@ -977,6 +977,12 @@ pub struct GpuRungs {
     /// elsewhere the S52 panel. Off (`--gpu-off=mma-fly`): the S52 panel on
     /// every site.
     pub mma_fly: bool,
+    /// gapfix tensor-tile (C4) `tile-rounds`: a tensor tile's block takes
+    /// fewer warps of the same warp tile where the grid's rounds on the
+    /// SMs' matrix pipes (`⌈tiles / sms⌉ · bm · bn`) shrink
+    /// (`profile::mma_rounds_pick`). Off (`--gpu-off=tile-rounds`): the
+    /// square-most block of the residency's warps.
+    pub tile_rounds: bool,
     /// sweep-gemm `round-store` (ADR-0041 D5 `round_at` over arrays): an f32
     /// array a map produces whose every element read is a multiplicand of a
     /// product admitting `bf16` ([`mapal_ir::PrecisionPlan::store`]) is
@@ -1171,6 +1177,7 @@ impl GpuRungs {
         split_least: true,
         mma_depth: true,
         mma_fly: true,
+        tile_rounds: true,
         round_store: true,
         warm_zero: true,
         streamk_price: true,
@@ -1181,7 +1188,7 @@ impl GpuRungs {
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 140] = [
+    pub const NAMES: [&'static str; 141] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1313,6 +1320,7 @@ impl GpuRungs {
         "split-least",
         "mma-depth",
         "mma-fly",
+        "tile-rounds",
         "unit-uniform",
         "round-store",
         "stream-mma",
@@ -1461,6 +1469,7 @@ impl GpuRungs {
             "split-least" => &mut self.split_least,
             "mma-depth" => &mut self.mma_depth,
             "mma-fly" => &mut self.mma_fly,
+            "tile-rounds" => &mut self.tile_rounds,
             "round-store" => &mut self.round_store,
             "warm-zero" => &mut self.warm_zero,
             "streamk-price" => &mut self.streamk_price,
