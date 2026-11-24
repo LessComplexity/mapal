@@ -102,6 +102,7 @@ impl<'a> FnEmit<'a> {
             taken: Vec::new(),
             site_table: None,
             cand_tables: String::new(),
+            zero_slots: Vec::new(),
             hz: horizontal::HzEmit::default(),
             views: SecondaryMap::new(),
             views_done: false,

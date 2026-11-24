@@ -2277,6 +2277,13 @@ fn emit_module(
     if funcs.contains("@mapal_gpu_site(") {
         out.push_str(crate::func::gpu::SITE_DECL);
     }
+    // gaps-disasm C1 `load-dispatch`: the tables registered before the init.
+    let host_rungs = crate::func::gpu::host_rungs(profile, opts.contract, opts.gpu);
+    let (n_sites, registry) = match gpu_host && host_rungs.load_dispatch {
+        true => crate::func::gpu::site_registry(&funcs),
+        false => (0, String::new()),
+    };
+    out.push_str(&registry);
     let sme_store = funcs.contains("@mapal_sme_panel(");
     let sme_acc = funcs.contains("@mapal_sme_panel_acc(");
     let sme = sme_store || sme_acc;
@@ -2311,7 +2318,7 @@ fn emit_module(
     // runtime: the same gate as `GPU_INIT_DECL`.
     let prologue = if gpu_host {
         crate::func::gpu::init_call(
-            crate::func::gpu::host_rungs(profile, opts.contract, opts.gpu),
+            host_rungs,
             // Streams are opened where a launch names one: `launchv` on stream 0
             // is also `epilogue`'s and `devmap`'s (S54 integration).
             funcs
@@ -2320,6 +2327,7 @@ fn emit_module(
                 .any(|t| t.split(", ").nth(1).is_some_and(|s| s != "i32 0")),
             crate::func::gpu::pdl(ir, profile, opts.contract, opts.gpu),
             crate::func::gpu::module_zeroes(&funcs),
+            n_sites,
         )
     } else {
         String::new()

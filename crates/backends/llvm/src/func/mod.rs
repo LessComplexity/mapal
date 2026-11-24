@@ -447,6 +447,9 @@ pub(crate) struct FnEmit<'a> {
     /// per-site-choice: this function's candidate tables, module globals
     /// placed after its text.
     cand_tables: String,
+    /// gaps-disasm C1 `zero-hoist`: which hoisted slots (`@<fn>.zh<j>`) a
+    /// site's table filled (`zero.rs` `zero_slot`).
+    zero_slots: Vec<bool>,
     /// kernel-merging `horizontal`: the launches each group's members left.
     hz: horizontal::HzEmit,
     /// S65 `by-ref` (`frame.rs` `plan_views`): each product's array positions

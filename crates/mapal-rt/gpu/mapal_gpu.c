@@ -122,7 +122,8 @@ enum {
   PRELOAD = 8,
   STAGE = 16,
   WARM_ZERO = 32,
-  TMA_COLD = 64
+  TMA_COLD = 64,
+  ZERO_KERNEL = 128 /* gaps-disasm C1 `zero-host`: the module zeroes, by kernel */
 };
 
 /* sweep-gemm-2 `warm-zero` (`WARM_ZERO`, set when the module's launches zero
@@ -158,10 +159,71 @@ static CUevent evs[MAPAL_GPU_STREAMS + 1];
 static unsigned slot_of(uint32_t s) {
   return s ? 1 + (s - 1) % MAPAL_GPU_STREAMS : 0;
 }
+/* gaps-disasm C1 `zero-host`: an output's zero pass is the runtime's own zero
+ * kernel — one `cuLaunchKernel` on the host — never the driver's memset API,
+ * whose host call cost a one-call program's atomic site 3.7–5.9 us inside its
+ * clock against 2.5–3.9 us for a launch (RTX 5080, `gapfix-launch-combine.md`;
+ * `gaps-disasm.md` C1). Grid-stride 16-byte stores, then the bytes past the
+ * last whole vector; every buffer a site zeroes starts 16-byte aligned
+ * (`cuMemAlloc`, the arena's `ARENA_ALIGN`; a misaligned one takes the
+ * memset). Loaded from its PTX text by the init of a module whose launches
+ * zero (`ZERO_KERNEL`; JIT once, the driver's cache after). Without the flag
+ * (`--gpu-off=zero-host`, or a module that zeroes nothing): the memset API. */
+static const char zero_ptx[] =
+    ".version 6.0\n.target sm_50\n.address_size 64\n"
+    ".visible .entry mapal_rt_zero(.param .u64 zp, .param .u64 zn) {\n"
+    "  .reg .pred %p<3>;\n  .reg .b16 %h0;\n  .reg .b32 %r<6>;\n  .reg .b64 %d<12>;\n"
+    "  ld.param.u64 %d1, [zp];\n  ld.param.u64 %d2, [zn];\n"
+    "  cvta.to.global.u64 %d1, %d1;\n"
+    "  mov.u32 %r1, %ctaid.x;\n  mov.u32 %r2, %ntid.x;\n  mov.u32 %r3, %tid.x;\n"
+    "  mov.u32 %r4, %nctaid.x;\n  mov.u32 %r5, 0;\n  mov.u16 %h0, 0;\n"
+    "  mul.wide.u32 %d3, %r1, %r2;\n  cvt.u64.u32 %d4, %r3;\n  add.u64 %d3, %d3, %d4;\n"
+    "  mul.wide.u32 %d5, %r4, %r2;\n  shr.u64 %d6, %d2, 4;\n  mov.u64 %d7, %d3;\n"
+    "L:\n  setp.ge.u64 %p1, %d7, %d6;\n  @%p1 bra T;\n"
+    "  shl.b64 %d8, %d7, 4;\n  add.u64 %d8, %d1, %d8;\n"
+    "  st.global.v4.u32 [%d8], {%r5, %r5, %r5, %r5};\n"
+    "  add.u64 %d7, %d7, %d5;\n  bra L;\n"
+    "T:\n  and.b64 %d9, %d2, 15;\n  setp.ge.u64 %p2, %d3, %d9;\n  @%p2 bra D;\n"
+    "  shl.b64 %d10, %d6, 4;\n  add.u64 %d10, %d10, %d3;\n  add.u64 %d10, %d1, %d10;\n"
+    "  st.global.u8 [%d10], %h0;\n"
+    "D:\n  ret;\n}\n";
+static CUfunction zero_fn; /* 0: the memset API */
+static uint32_t zero_grid_max;
+#define ZERO_THREADS 256
+static void zero_load(void) {
+  CUmodule zm;
+  CUdevice dev;
+  int sms = 0;
+  if (!(flags & ZERO_KERNEL) || cuModuleLoadData(&zm, zero_ptx) != CUDA_SUCCESS ||
+      cuModuleGetFunction(&zero_fn, zm, "mapal_rt_zero") != CUDA_SUCCESS) {
+    zero_fn = 0;
+    return;
+  }
+  CK(cuCtxGetDevice(&dev));
+  CK(cuDeviceGetAttribute(&sms, CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT, dev));
+  /* Enough 256-thread blocks to fill every SM's threads (eight a 2048-thread
+   * SM), striding past that: a 64 MiB zero is 16 vectors a thread. */
+  zero_grid_max = 8 * (uint32_t)(sms > 0 ? sms : 1);
+}
+/* Zero `bytes` at `d` on stream slot `k`: the zero kernel, or the memset. */
+static void zero_on(unsigned k, CUdeviceptr d, uint64_t bytes) {
+  if (!bytes)
+    return;
+  if (zero_fn && !(d & 15)) {
+    uint64_t w = bytes / 16, b = (w + ZERO_THREADS - 1) / ZERO_THREADS;
+    unsigned grid = (unsigned)(b < zero_grid_max ? (b ? b : 1) : zero_grid_max);
+    void *args[] = {&d, &bytes};
+    CK(cuLaunchKernel(zero_fn, grid, 1, 1, ZERO_THREADS, 1, 1, 0, streams[k], args, 0));
+    last_kernel[k] = 1;
+  } else {
+    CK(cuMemsetD8Async(d, 0, bytes, streams[k]));
+    last_kernel[k] = 0;
+  }
+}
 /* `warm-zero`: a small and a large fill of the scratch buffer. */
 static void warm_fills(void) {
-  CK(cuMemsetD8Async(warm_buf, 0, 4, streams[0]));
-  CK(cuMemsetD8Async(warm_buf, 0, WARM_ZERO_BYTES, streams[0]));
+  zero_on(0, warm_buf, 4);
+  zero_on(0, warm_buf, WARM_ZERO_BYTES);
 }
 
 static CUmodule module;
@@ -275,14 +337,60 @@ static int tmap_index(const char *name) {
 
 /* `preload`: every `.entry` of the module, resolved at load. `smem` is the
  * dynamic shared-memory limit already set on it (the attribute is set once).
- * ponytail: a linear scan per launch — a module holds tens of kernels; hash
- * the name if one ever holds thousands. */
+ * gaps-disasm C1 `load-dispatch`: an entry named `<prefix>_<16 hex digits>`
+ * (every kernel the emitter names by id) is also found by its id — one probe
+ * of `fn_hash` — so a launch neither formats nor compares names (a linear
+ * `strcmp` scan, 0.4–0.6 us a launch on the RTX 5080); any other name is
+ * scanned as before. */
 static struct fn_entry {
   char name[40];
   CUfunction fn;
   uint32_t smem;
+  uint32_t plen; /* the prefix's length before `_<id>`; 0: no id */
+  uint64_t id;
 } *fns;
 static size_t n_fns;
+static uint32_t *fn_hash; /* index + 1 into `fns`, 0 empty */
+static size_t fn_hash_mask;
+static size_t fn_slot(uint64_t id) {
+  return (size_t)((id * 0x9e3779b97f4a7c15ull) >> 40) & fn_hash_mask;
+}
+static void fn_index(void) {
+  size_t cap = 64;
+  while (cap < 2 * n_fns)
+    cap *= 2;
+  fn_hash = calloc(cap, sizeof *fn_hash);
+  if (!fn_hash)
+    exit(102);
+  fn_hash_mask = cap - 1;
+  for (size_t i = 0; i < n_fns; i++) {
+    struct fn_entry *e = &fns[i];
+    size_t len = strlen(e->name);
+    const char *u = strrchr(e->name, '_');
+    char *end;
+    if (!u || (size_t)(e->name + len - u) != 17)
+      continue;
+    e->id = strtoull(u + 1, &end, 16);
+    if (*end)
+      continue;
+    e->plen = (uint32_t)(u - e->name);
+    size_t h = fn_slot(e->id);
+    while (fn_hash[h])
+      h = (h + 1) & fn_hash_mask;
+    fn_hash[h] = (uint32_t)(i + 1);
+  }
+}
+static struct fn_entry *fn_find(const char *prefix, uint64_t id) {
+  if (!fn_hash)
+    return 0;
+  size_t plen = strlen(prefix);
+  for (size_t h = fn_slot(id); fn_hash[h]; h = (h + 1) & fn_hash_mask) {
+    struct fn_entry *e = &fns[fn_hash[h] - 1];
+    if (e->id == id && e->plen == plen && !memcmp(e->name, prefix, plen))
+      return e;
+  }
+  return 0;
+}
 static void preload(const char *ptx) {
   size_t cap = 0;
   for (const char *p = strstr(ptx, ".entry "); p; p = strstr(p, ".entry ")) {
@@ -300,9 +408,12 @@ static void preload(const char *ptx) {
     memcpy(e->name, p, n);
     e->name[n] = 0;
     e->smem = 48 * 1024;
+    e->plen = 0;
+    e->id = 0;
     CK(cuModuleGetFunction(&e->fn, module, e->name));
   }
   tot.n_preload = n_fns;
+  fn_index();
 }
 
 /* `stage`: a ring of page-locked slots an async upload is copied into and
@@ -320,6 +431,40 @@ static double t_init;  /* when mapal_gpu_init ran */
 
 static void tma_warm(void);
 static void tmap_table(void);
+static void choice_ready_dev(void);
+static CUfunction kernel(const char *prefix, uint64_t id, uint32_t smem,
+                         char *name, size_t cap);
+static int coop_per(CUfunction fn, uint32_t block, uint32_t smem);
+
+/* gaps-disasm C1 `load-dispatch`: the module's site tables, registered by the
+ * host before its init (`mapal_gpu_sites`), each resolved when the module
+ * loads — its pick where one is decided without a run (`choice_preset`:
+ * forced, stored), every candidate's kernels with their shared-memory limit
+ * set, a cooperative table's occupancy — so a one-call program's first site
+ * goes from its clock to its first driver call through a memo hit. */
+static const struct mapal_site_reg *site_regs;
+static uint32_t n_site_regs, n_site_preset;
+void mapal_gpu_sites(const struct mapal_site_reg *regs, uint32_t n) {
+  site_regs = regs;
+  n_site_regs = n;
+}
+static void sites_resolve(void) {
+  char name[40];
+  choice_ready_dev();
+  for (uint32_t r = 0; r < n_site_regs; r++) {
+    const struct mapal_site_reg *g = &site_regs[r];
+    n_site_preset += choice_preset(g->site, g->n, g->c) >= 0;
+    for (uint32_t i = 0; i < g->n; i++) {
+      const struct mapal_cand *c = &g->c[i];
+      CUfunction fn = kernel("mapal_tile", c->id, c->smem, name, sizeof name);
+      if (c->rid)
+        kernel("mapal_tile", c->rid, 0, name, sizeof name);
+      if (g->flags & MAPAL_SITE_COOP)
+        coop_per(fn, c->block, c->smem);
+    }
+  }
+}
+
 /* cuInit, the primary context and the module: everything a site needs before
  * its first call, none of which depends on the program's values. */
 static void init_all(void) {
@@ -371,6 +516,7 @@ static void init_all(void) {
   if (flags & STREAMS)
     for (int i = 1; i <= MAPAL_GPU_STREAMS; i++)
       CK(cuStreamCreate(&streams[i], CU_STREAM_NON_BLOCKING));
+  zero_load();
   if (flags & WARM_ZERO) {
     double w0 = now_ms();
     CK(cuMemAlloc(&warm_buf, WARM_ZERO_BYTES));
@@ -378,6 +524,8 @@ static void init_all(void) {
     CK(cuStreamSynchronize(streams[0]));
     tot.warm = now_ms() - w0;
   }
+  if (n_site_regs)
+    sites_resolve();
   tot.init = t1 - t0;
   tot.ctx = t2 - t1;
   tot.module = now_ms() - t2;
@@ -399,9 +547,20 @@ static void join_init(void) {
 /* The first call of `main` in a module with a GPU site. Rung `eager-init`:
  * start the init on a thread, so context creation overlaps the host work
  * before the first site. A failed pthread_create falls back to the lazy path. */
+static void trace_env(void) {
+  if (trace < 0) {
+    const char *t = getenv("MAPAL_GPU_TRACE");
+    trace = t ? atoi(t) : 0;
+    if (trace)
+      atexit(total_line);
+  }
+}
+
 void mapal_gpu_init(uint32_t f) {
   flags = f;
   t_init = now_ms();
+  /* Before the init thread: its site decisions (`load-dispatch`) trace. */
+  trace_env();
   if ((flags & EAGER) && pthread_create(&init_thread, 0, init_main, 0) == 0) {
     init_state = 1;
     atexit(join_init);
@@ -410,16 +569,10 @@ void mapal_gpu_init(uint32_t f) {
 
 /* Every entry that needs the device calls it first: joins the eager init, or
  * runs the lazy one. */
-static void choice_ready_dev(void);
 static void load_module(void) {
   if (init_state == 2)
     return;
-  if (trace < 0) {
-    const char *t = getenv("MAPAL_GPU_TRACE");
-    trace = t ? atoi(t) : 0;
-    if (trace)
-      atexit(total_line);
-  }
+  trace_env();
   double t0 = now_ms();
   if (init_state == 1) {
     pthread_join(init_thread, 0);
@@ -442,8 +595,9 @@ static void load_module(void) {
   if (trace)
     fprintf(stderr,
             "mapal_gpu_trace op=load flags=%u wait_ms=%.3f lead_ms=%.3f "
-            "init_ms=%.3f ctx_ms=%.3f module_ms=%.3f\n",
-            flags, tot.load, tot.lead, tot.init, tot.ctx, tot.module);
+            "init_ms=%.3f ctx_ms=%.3f module_ms=%.3f sites=%u preset=%u zero=%s\n",
+            flags, tot.load, tot.lead, tot.init, tot.ctx, tot.module, n_site_regs,
+            n_site_preset, zero_fn ? "kernel" : "memset");
 }
 
 static void choice_ready_dev(void) {
@@ -462,6 +616,17 @@ static void choice_ready_dev(void) {
 
 static CUfunction kernel(const char *prefix, uint64_t id, uint32_t smem,
                          char *name, size_t cap) {
+  struct fn_entry *e = fn_find(prefix, id);
+  if (e) {
+    memcpy(name, e->name, cap < sizeof e->name ? cap : sizeof e->name);
+    name[cap - 1] = 0;
+    if (smem > e->smem) {
+      CK(cuFuncSetAttribute(e->fn, CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
+                            (int)smem));
+      e->smem = smem;
+    }
+    return e->fn;
+  }
   snprintf(name, cap, "%s_%016llx", prefix, (unsigned long long)id);
   for (size_t i = 0; i < n_fns; i++)
     if (!strcmp(fns[i].name, name)) {
@@ -603,16 +768,31 @@ void mapal_gpu_copy2d(uint64_t dst, uint64_t dpitch, uint64_t src,
 
 /* S63 `splitk-atomic` / `streamk` (ADR-0040 D4): zero `bytes` of the device
  * buffer `d` on the legacy stream, ahead of the kernel whose partials add into
- * it. Not a kernel: the launch behind it is not a dependent (PDL) launch. */
+ * it — the runtime's zero kernel (`zero-host`; the launch behind it may then
+ * be a dependent (PDL) launch: its `griddepcontrol.wait` waits for the whole
+ * zero grid), or the memset API. */
 void mapal_gpu_zero(uint64_t d, uint64_t bytes) {
   load_module();
   double t0 = now_ms();
-  CK(cuMemsetD8Async((CUdeviceptr)d, 0, bytes, streams[0]));
+  zero_on(0, (CUdeviceptr)d, bytes);
   legacy_ops++;
-  last_kernel[0] = 0;
   if (trace)
     fprintf(stderr, "mapal_gpu_trace op=zero ms=%.3f bytes=%llu\n", now_ms() - t0,
             (unsigned long long)bytes);
+}
+
+/* gaps-disasm C1 `zero-hoist`: a site's zero issued ahead of it (after the
+ * last access to its bytes), skipped where its table `c`'s pick is decided —
+ * at load (`load-dispatch`) or by an earlier execution — and adds nothing
+ * into the output (a workspace split, an ordered candidate). Undecided (a
+ * site that will trial) or without a table: the zero. */
+void mapal_gpu_zero_for(const struct mapal_cand *c, uint64_t d, uint64_t bytes) {
+  if (c) {
+    struct choice_memo *m = choice_memo_of(c);
+    if (m->c == c && !c[m->pick].zero)
+      return;
+  }
+  mapal_gpu_zero(d, bytes);
 }
 
 /* `bytes` from byte `off` of the device buffer `d` into host `h`.
@@ -931,6 +1111,24 @@ static struct coop_occ_e coop_occ[64];
 static size_t n_coop_occ;
 static int coop_sms;
 
+/* The blocks of `fn` an SM holds at `block` threads and `smem` bytes (queried
+ * once a recipe; `load-dispatch` asks at load for a registered table). */
+static int coop_per(CUfunction fn, uint32_t block, uint32_t smem) {
+  if (!coop_sms) {
+    CUdevice dev;
+    CK(cuCtxGetDevice(&dev));
+    CK(cuDeviceGetAttribute(&coop_sms, CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT, dev));
+  }
+  for (size_t i = 0; i < n_coop_occ; i++)
+    if (coop_occ[i].fn == fn && coop_occ[i].block == block && coop_occ[i].smem == smem)
+      return coop_occ[i].per;
+  int per = -1;
+  CK(cuOccupancyMaxActiveBlocksPerMultiprocessor(&per, fn, (int)block, smem));
+  if (n_coop_occ < sizeof coop_occ / sizeof *coop_occ)
+    coop_occ[n_coop_occ++] = (struct coop_occ_e){fn, block, smem, per};
+  return per;
+}
+
 static void launch_coop_on(unsigned k, uint64_t id, void **args, uint32_t gx,
                            uint32_t block, uint32_t smem) {
   load_module();
@@ -940,20 +1138,7 @@ static void launch_coop_on(unsigned k, uint64_t id, void **args, uint32_t gx,
     event(0, k, 1);
     joined[k] = legacy_ops;
   }
-  if (!coop_sms) {
-    CUdevice dev;
-    CK(cuCtxGetDevice(&dev));
-    CK(cuDeviceGetAttribute(&coop_sms, CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT, dev));
-  }
-  int per = -1;
-  for (size_t i = 0; i < n_coop_occ; i++)
-    if (coop_occ[i].fn == fn && coop_occ[i].block == block && coop_occ[i].smem == smem)
-      per = coop_occ[i].per;
-  if (per < 0) {
-    CK(cuOccupancyMaxActiveBlocksPerMultiprocessor(&per, fn, (int)block, smem));
-    if (n_coop_occ < sizeof coop_occ / sizeof *coop_occ)
-      coop_occ[n_coop_occ++] = (struct coop_occ_e){fn, block, smem, per};
-  }
+  int per = coop_per(fn, block, smem);
   if (per < 1) {
     fprintf(stderr, "mapal_gpu: %s: no block of %u threads, %u B fits an SM\n", name, block, smem);
     exit(102);

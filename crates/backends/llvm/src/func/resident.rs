@@ -389,8 +389,17 @@ pub(crate) struct ResidentPlan {
     /// kernel-merging `zero-fold`: a kernel (a cell or a unit launch) that
     /// zeroes the outputs of later atomic sites, each `(site, bytes)`.
     pub zero_by: SecondaryMap<MorphismId, Vec<(MorphismId, u64)>>,
-    /// The sites whose zero pass a `zero_by` kernel runs.
+    /// The sites whose zero pass a `zero_by` kernel runs — or (gaps-disasm
+    /// C1 `zero-hoist`) a zero op issued after the `zero_after` step.
     pub zeroed: SecondaryMap<MorphismId, ()>,
+    /// gaps-disasm C1 `zero-hoist`: a step after which the zero ops of later
+    /// atomic sites no kernel took are issued, each `(site, bytes)` — the
+    /// earliest point the walk allows, off the site's own host path.
+    pub zero_after: SecondaryMap<MorphismId, Vec<(MorphismId, u64)>>,
+    /// Each hoisted site's slot `j`: the global `@<fn>.zh<j>` holding its
+    /// candidate table (null without one), so the hoisted op zeroes only
+    /// where the site's pick adds into the output (`mapal_gpu_zero_for`).
+    pub zero_hoist_ix: SecondaryMap<MorphismId, usize>,
     /// The host intent line (`; mapal.zero.host …`): the atomic sites, the
     /// folded ones, and why each other kept its zero op.
     pub zero_line: String,
@@ -2759,12 +2768,14 @@ impl<'a> FnEmit<'a> {
     }
 
     /// The zero passes `zero-fold` folds into earlier kernels under the
-    /// arena `a` (a trial on a copy of the plan).
+    /// arena `a` (a trial on a copy of the plan) — tails only: a hoisted zero
+    /// (`zero-hoist`) is still an op of its own, so it never decides the
+    /// layout against a fold.
     fn zero_folds(&self, plan: &ResidentPlan, a: &Arena) -> usize {
         let mut trial = plan.clone();
         trial.arena = Some(a.clone());
         self.zero_fold(&mut trial);
-        trial.zeroed.len()
+        trial.zeroed.len() - trial.zero_hoist_ix.len()
     }
 
     fn arena(&self, plan: &ResidentPlan, by_size: bool) -> Arena {
@@ -3726,6 +3737,33 @@ impl<'a> FnEmit<'a> {
             self.line(format!("call void @mapal_gpu_free(ptr {slot})"));
             self.dvalid.remove(o);
         }
+        // gaps-disasm C1 `zero-hoist`: later atomic sites' zero ops, hoisted
+        // here (`zero_fold`).
+        let hoisted = self
+            .resident
+            .as_ref()
+            .and_then(|p| p.zero_after.get(m))
+            .cloned()
+            .unwrap_or_default();
+        for (l, bytes) in hoisted {
+            let target = self.ir.morphism(l).expect("site").target;
+            let d = self.dalloc(target, bytes);
+            let j = self
+                .resident
+                .as_ref()
+                .and_then(|p| p.zero_hoist_ix.get(l).copied())
+                .expect("a hoisted site has its slot");
+            // The site's table (null without one): the runtime skips the
+            // zero where the table's pick does not add into the output.
+            let t = self.tmp();
+            self.line(format!(
+                "{t} = load ptr, ptr @{}.zh{j}",
+                self.fnames[self.f]
+            ));
+            self.line(format!(
+                "call void @mapal_gpu_zero_for(ptr {t}, i64 {d}, i64 {bytes})"
+            ));
+        }
     }
 
     /// `delta-h2d`: after a loop entry's first (whole) upload, only the rows
@@ -3822,7 +3860,9 @@ impl<'a> FnEmit<'a> {
         // (the caller places them).
         if let Some(o_row) = self.row_out.clone() {
             match self.site_table.take() {
-                Some(t) => self.site_call(t, &[a_row, b, o_row]),
+                Some(t) => {
+                    self.site_call(t, &[a_row, b, o_row]);
+                }
                 None => self.line(call(&a_row, &b, &o_row)),
             }
             self.row_done = true;
@@ -3835,7 +3875,9 @@ impl<'a> FnEmit<'a> {
         self.line(format!("{o_row} = add i64 {o}, {o_off}"));
         // per-site-choice: a row with candidates launches its table.
         match self.site_table.take() {
-            Some(t) => self.site_call(t, &[a_row, b, o_row]),
+            Some(t) => {
+                self.site_call(t, &[a_row, b, o_row]);
+            }
             None => self.line(call(&a_row, &b, &o_row)),
         }
         let keep = self
@@ -4064,7 +4106,13 @@ impl<'a> FnEmit<'a> {
                 }
                 let ptrs =
                     ptrs.unwrap_or_else(|| vec![ops[0].clone(), ops[1].clone(), dout.clone()]);
-                self.site_call(t, &ptrs);
+                // gaps-disasm C1 `zero-hoist`: the hoisted zero's slot holds
+                // this table (`mapal_gpu_zero_for`).
+                let slot = plan.zero_hoist_ix.get(m).copied();
+                let global = self.site_call(t, &ptrs);
+                if let Some(j) = slot {
+                    self.zero_slot(j, &global);
+                }
             }
             (Some(ptrs), Some((id, geom))) => {
                 let n = ptrs.len();
