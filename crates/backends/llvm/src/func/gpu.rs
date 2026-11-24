@@ -1607,7 +1607,7 @@ fn plan_line(
 }
 
 /// The rungs a kernel's text reads ([`plan_line`]); the rest are host rungs.
-const KERNEL_RUNGS: [&str; 46] = [
+const KERNEL_RUNGS: [&str; 48] = [
     "arch-rungs",
     "interleave",
     "unroll",
@@ -1654,6 +1654,8 @@ const KERNEL_RUNGS: [&str; 46] = [
     "ws-regs",
     "tma-digits",
     "kmajor-b",
+    "stream-ld",
+    "kvec-swizzle",
 ];
 
 /// [`launch`] with the fold's realization chosen under `order` (ADR-0040 D4).
@@ -6233,6 +6235,70 @@ impl Kernel<'_> {
     /// The fold's seed: partition 0 starts from the site's seed, every other
     /// partition from `0.0` (ADR-0040's partial folds), so the reduce adds
     /// the seed exactly once.
+    /// gapfix `stream-ld`: **whether operand `b_side` (`a` / `b`) loads
+    /// with the streaming policy** — read once by the grid (`reuse`: the
+    /// blocks or threads that read each of its bytes, 1) and spanning more
+    /// bytes than the L2 keeps ([`Gpu::l2_keep_bytes`], the cyclic set it
+    /// re-reads from L2): such bytes come from DRAM whatever the policy, and
+    /// the default one lets them displace what the L2 does keep (cuBLAS's
+    /// gemv streams its matrix `LDG.E.EF`; gaps-disasm C2). Where the part
+    /// has the policy ([`crate::profile::Caps::l2_evict`]) and the rung is on.
+    fn streams(&self, b_side: bool, reuse: u64) -> bool {
+        let s = self.site;
+        let g = &self.profile_gpu;
+        let (r, cells) = match b_side {
+            true => (&s.b, s.k * s.c),
+            false => (&s.a, s.rows * s.k),
+        };
+        self.rungs.stream_ld
+            && g.caps.l2_evict
+            && reuse == 1
+            && cells.saturating_mul(r.elem_bytes(&s.elem)) > g.l2_keep_bytes()
+    }
+
+    /// A global load of `ty` (`bytes` wide) at `p`: under `stream` the
+    /// streaming policy (`ld.global.cs.nc`, SASS `LDG.E.EF`) on its 32-bit
+    /// words, the value bit-cast back; otherwise (and for a 2-byte or 1-byte
+    /// load) LLVM's own load.
+    fn gload(&mut self, ty: &str, bytes: u64, p: &str, align: u64, stream: bool) -> String {
+        let v = self.tmp();
+        if !stream || !matches!(bytes, 4 | 8 | 16) || align < bytes {
+            self.line(format!(
+                "{v} = load {ty}, ptr addrspace(1) {p}, align {align}"
+            ));
+            return v;
+        }
+        let n = bytes / 4;
+        let w = self.tmp();
+        if n == 1 {
+            self.line(format!(
+                "{w} = call i32 asm \"ld.global.cs.nc.b32 $0, [$1];\", \"=r,l\"(ptr addrspace(1) {p})"
+            ));
+            self.line(format!("{v} = bitcast i32 {w} to {ty}"));
+            return v;
+        }
+        let outs = (0..n)
+            .map(|j| format!("${j}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let cons = vec!["=r"; n as usize].join(",");
+        let st = format!("{{ {} }}", vec!["i32"; n as usize].join(", "));
+        self.line(format!(
+            "{w} = call {st} asm \"ld.global.cs.nc.v{n}.b32 {{{outs}}}, [${n}];\", \"{cons},l\"(ptr addrspace(1) {p})"
+        ));
+        let mut prev = "poison".to_string();
+        for j in 0..n {
+            let (x, y) = (self.tmp(), self.tmp());
+            self.line(format!("{x} = extractvalue {st} {w}, {j}"));
+            self.line(format!(
+                "{y} = insertelement <{n} x i32> {prev}, i32 {x}, i64 {j}"
+            ));
+            prev = y;
+        }
+        self.line(format!("{v} = bitcast <{n} x i32> {prev} to {ty}"));
+        v
+    }
+
     fn split_seed(&mut self, seed: &str) -> String {
         let Some(z) = self.z.clone().or(self.p0.clone()) else {
             return seed.to_string();
@@ -6479,7 +6545,7 @@ impl Kernel<'_> {
         // generic-fusion `window`: a read affine in `(k÷div, k%div)` (conv
         // taps) addresses `cq·(k÷div) + cr·(k%div)`; constant divisors, a
         // constant trip count — LLVM folds the division away.
-        let load = |k: &mut Self, arr: &str, base: &str, r: &mapal_ir::TileRead| {
+        let load = |k: &mut Self, arr: &str, base: &str, r: &mapal_ir::TileRead, stream: bool| {
             let m = if std::ptr::eq(r, &s.a) { ra } else { rb };
             let off = match r.ksplit {
                 // A split partition's `k` starts `z·kc` along the fold.
@@ -6517,12 +6583,13 @@ impl Kernel<'_> {
                 return v;
             }
             let p = k.gep(1, arr, &idx);
-            let v = k.tmp();
-            k.line(format!("{v} = load {t}, ptr addrspace(1) {p}, align {e}"));
-            v
+            k.gload(&t, e, &p, e, stream)
         };
-        let av = load(self, "%a", &abase, &s.a);
-        let bv = load(self, "%b", &bbase, &s.b);
+        // gapfix `stream-ld`: a thread a cell — `b` re-read by every row,
+        // `a` by every column.
+        let (a_cs, b_cs) = (self.streams(false, s.c), self.streams(true, s.rows));
+        let av = load(self, "%a", &abase, &s.a, a_cs);
+        let bv = load(self, "%b", &bbase, &s.b, b_cs);
         let accn = self.step(&acc, &av, &bv);
         self.out = self.out.replace("@ACC_NEXT@", &accn);
         self.line(format!("{kn} = add {ix} {kv}, 1"));
@@ -6608,6 +6675,8 @@ impl Kernel<'_> {
                 "{acc} = phi {t} [{seed}, %body], [@ACC_NEXT_{j}@, %kloop]"
             ));
         }
+        // gapfix `stream-ld`: `b`'s vectors are re-read by every row.
+        let b_cs = self.streams(true, s.rows);
         // The trip's loads first: `u` of `a`, `u` vectors of `b`.
         let mut steps = Vec::new();
         for q in 0..u {
@@ -6647,10 +6716,14 @@ impl Kernel<'_> {
                 Some(n) => {
                     let nt = crate::narrow::llvm_ty(n);
                     let p = self.gep_ty(1, nt, "%b", &bidx);
-                    let (w, x) = (self.tmp(), self.tmp());
-                    self.line(format!(
-                        "{w} = load <{v} x {nt}>, ptr addrspace(1) {p}, align {GPU_VEC_BYTES}"
-                    ));
+                    let w = self.gload(
+                        &format!("<{v} x {nt}>"),
+                        v * n.bytes(),
+                        &p,
+                        GPU_VEC_BYTES,
+                        b_cs,
+                    );
+                    let x = self.tmp();
                     let nvt = format!("<{v} x {nt}>");
                     let tt = if n.bytes() == 1 {
                         self.tmp()
@@ -6664,11 +6737,7 @@ impl Kernel<'_> {
                 }
                 None => {
                     let p = self.gep(1, "%b", &bidx);
-                    let x = self.tmp();
-                    self.line(format!(
-                        "{x} = load {vt}, ptr addrspace(1) {p}, align {GPU_VEC_BYTES}"
-                    ));
-                    x
+                    self.gload(&vt, v * e, &p, GPU_VEC_BYTES, b_cs)
                 }
             };
             steps.push((av, bv));
@@ -9461,14 +9530,12 @@ impl Kernel<'_> {
                        vec: bool,
                        ty: &str,
                        al: u64,
-                       r: &mapal_ir::TileRead| {
+                       r: &mapal_ir::TileRead,
+                       stream: bool| {
             let Some(n) = r.narrow else {
                 let gp = k.gep(1, arr, gi);
-                let v = k.tmp();
-                k.line(format!(
-                    "{v} = load {ty}, ptr addrspace(1) {gp}, align {al}"
-                ));
-                return v;
+                let bytes = if vec { lanes * e } else { e };
+                return k.gload(ty, bytes, &gp, al, stream);
             };
             let nt = crate::narrow::llvm_ty(n);
             let (nty, nal) = match vec {
@@ -9476,10 +9543,8 @@ impl Kernel<'_> {
                 false => (nt.to_string(), n.bytes()),
             };
             let gp = k.gep_ty(1, nt, arr, gi);
-            let (w, v) = (k.tmp(), k.tmp());
-            k.line(format!(
-                "{w} = load {nty}, ptr addrspace(1) {gp}, align {nal}"
-            ));
+            let w = k.gload(&nty, nal, &gp, nal, stream);
+            let v = k.tmp();
             let tt = if n.bytes() == 1 {
                 k.tmp()
             } else {
@@ -9490,17 +9555,21 @@ impl Kernel<'_> {
             }
             v
         };
+        // gapfix `stream-ld`: `b` re-read by every row block, `a` by every
+        // column block.
+        let a_cs = self.streams(false, s.c.div_ceil(g.tx * g.tn));
+        let b_cs = self.streams(true, s.rows.div_ceil(g.ty * g.tm));
         let load_panels = |k: &mut Self, k0: &str| -> Vec<String> {
             let ka = k.op("mul", k0, s.a.ck);
             let kb = k.op("mul", k0, s.b.ck);
             let mut vals = Vec::new();
             for (p, (gsrc, goff, _, _)) in a_src.iter().enumerate() {
                 let gi = gidx(k, ra, &a_kc, p, gsrc, *goff, k0, &ka);
-                vals.push(load_op(k, "%a", &gi, a_vec, &a_ty, a_al, &s.a));
+                vals.push(load_op(k, "%a", &gi, a_vec, &a_ty, a_al, &s.a, a_cs));
             }
             for (p, (gsrc, goff, _, _)) in b_src.iter().enumerate() {
                 let gi = gidx(k, rb, &b_kc, p, gsrc, *goff, k0, &kb);
-                vals.push(load_op(k, "%b", &gi, b_vec || kvb, &b_ty, b_al, &s.b));
+                vals.push(load_op(k, "%b", &gi, b_vec || kvb, &b_ty, b_al, &s.b, b_cs));
             }
             vals
         };
