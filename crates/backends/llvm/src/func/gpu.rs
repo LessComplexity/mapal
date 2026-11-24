@@ -3047,14 +3047,28 @@ fn combine(
     // loads of `cells · e_b` bytes of `b` in flight.
     let naive = l.tiled.is_none();
     let stream = naive && rungs.stream_fly && streaming(site, gpu);
+    // gaps-disasm C5 `split-price`: an under-filled tile whose operands stream
+    // from DRAM (its flops per byte below the part's FFMA balance) takes the
+    // atomic split its price gives ([`TargetProfile::split_priced`]: the
+    // stream at the grid's spread against every partition's partial cells).
+    let bytes = (site.rows * site.k + site.k * site.c + site.rows * site.c) * e;
+    let streams = gpu
+        .ffma_per_dram_byte_pm()
+        .is_some_and(|b| 2 * site.rows * site.c * site.k * 1000 < b * bytes);
+    let priced = |workspace: bool| {
+        (under && !workspace && !naive && streams && rungs.split_price)
+            .then(|| profile.split_priced(blocks, cap, panels, site.rows * site.c, bytes))
+            .flatten()
+    };
     let count = |workspace| match forced {
         s if s > 0 && panels.is_multiple_of(s) => s,
         _ => {
-            let rule = match under {
-                true => {
+            let rule = match (under, priced(workspace)) {
+                (true, Some(s)) => s,
+                (true, None) => {
                     profile.split_fill(blocks, warps, cap, panels, site.rows * site.c, e, workspace)
                 }
-                false => {
+                (false, _) => {
                     profile.split_count(blocks, wave, panels, site.rows * site.c, e, workspace)
                 }
             };

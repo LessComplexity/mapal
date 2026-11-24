@@ -4515,6 +4515,47 @@ impl TargetProfile {
             .unwrap_or(most)
     }
 
+    /// **gaps-disasm C5 `split-price`: the atomic split of a DRAM-streaming
+    /// under-filled site, priced** — over the counts dividing `panels` inside
+    /// `cap` blocks, the cheapest of
+    ///
+    /// `bytes / dram_rate · spread(blocks · S) + S · cells · split_cell_ps`
+    ///
+    /// (the stream at the busiest SM's share — [`crate::rules::grid_spread_pm`]
+    /// — and every partition's partial cells at the part's measured
+    /// [`DeviceCost::split_cell_ps`]); the fewer partitions on a tie. The fill
+    /// rule ([`Self::split_fill`]) takes the fewest partitions that give the
+    /// part `fill_warps` and prices neither: on the rtx-5080 its S = 56 for
+    /// the 16 × 2048 × 7168 cell ran 88.1 µs against the priced S = 14's 79.9
+    /// (cuBLAS 80.9; `gaps-disasm.md` C5). `None` where the part measured no
+    /// `split_cell_ps` or no DRAM rate: the fill rule stands.
+    pub fn split_priced(
+        &self,
+        blocks: u64,
+        cap: u64,
+        panels: u64,
+        cells: u64,
+        bytes: u64,
+    ) -> Option<u64> {
+        let g = self.gpu()?;
+        let d = g.plan_cost();
+        if d.split_cell_ps == 0 || d.dram_bytes_per_ns == 0 {
+            return None;
+        }
+        let stream = bytes as f64 / d.dram_bytes_per_ns as f64;
+        (1..=panels.min(cap / blocks.max(1)).max(1))
+            .filter(|s| panels.is_multiple_of(*s))
+            .map(|s| {
+                let spread = crate::rules::grid_spread_pm(blocks * s, g.sms) as f64 / 1000.0;
+                (
+                    s,
+                    stream * spread + (s * cells) as f64 * d.split_cell_ps as f64 / 1000.0,
+                )
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(s, _)| s)
+    }
+
     /// **stream-fly: the fewest `k` partitions that keep a streaming site's
     /// DRAM busy** — the smallest `S` dividing `panels` at which the split
     /// grid (`blocks · S` blocks, each keeping `fly` bytes in flight) puts a
@@ -8683,4 +8724,42 @@ mod tests {
         }
     }
 
+    /// gaps-disasm C5 `split-price`, replayed on its sweep: the rtx-5080's
+    /// 16 × 2048 × 7168 one-warp split (16 tiles, 896 panels of `bk` 8) —
+    /// measured S = 7 / 8 / 14 / 28 / 56 at 100.4 / 88.1 / 79.9 / 86.0 /
+    /// 88.1 µs — prices S = 14 cheapest and every measured count within 6 %
+    /// of its time; a part without `split_cell_ps` is unpriced.
+    #[test]
+    fn split_price_replays_the_mm16_sweep() {
+        let (blocks, panels, cells) = (16, 896, 16 * 2048);
+        let bytes = (16 * 7168 + 7168 * 2048 + 16 * 2048) * 4;
+        assert_eq!(
+            RTX_5080.split_priced(blocks, 16 * 64, panels, cells, bytes),
+            Some(14)
+        );
+        let g = RTX_5080.gpu().expect("gpu");
+        let d = g.plan_cost();
+        let price = |s: u64| {
+            bytes as f64 / d.dram_bytes_per_ns as f64
+                * crate::rules::grid_spread_pm(blocks * s, g.sms) as f64
+                / 1000.0
+                + (s * cells) as f64 * d.split_cell_ps as f64 / 1000.0
+        };
+        for (s, us) in [(7, 100.4), (8, 88.1), (14, 79.9), (28, 86.0), (56, 88.1)] {
+            let err = (price(s) / 1000.0 - us).abs() / us;
+            assert!(
+                err < 0.06,
+                "S={s}: priced {:.1} vs {us} us",
+                price(s) / 1000.0
+            );
+        }
+        for p in [&RTX_4090, &RTX_3090, &A100, &H100] {
+            assert_eq!(
+                p.split_priced(blocks, 16 * 64, panels, cells, bytes),
+                None,
+                "{}",
+                p.name
+            );
+        }
+    }
 }
