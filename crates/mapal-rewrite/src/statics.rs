@@ -23,6 +23,10 @@ pub struct StaticReport {
     pub computed: u64,
     /// Roots evaluated that trapped or ran out of budget (left at run time).
     pub failed: u64,
+    /// Scalar cells of the embedded values (constants written into the code).
+    pub cells: u64,
+    /// Objects of the cones dropped with them.
+    pub dropped: u64,
 }
 
 /// Replace every root `static_plan` realizes as a value by its value (ADR-0048
@@ -67,10 +71,12 @@ pub fn fold_static(ir: CategoryIr) -> (CategoryIr, StaticReport) {
             match v {
                 Some(RValue::Scalar(x)) => {
                     plan.constify.insert(o, x);
+                    report.cells += 1;
                     report.embedded += 1;
                     done.push(o);
                 }
                 Some(v @ (RValue::Array(_) | RValue::Tuple(_) | RValue::Struct { .. })) => {
+                    report.cells += ir.object(o).map_or(0, |x| mapal_ir::ty_extent(&x.ty).1);
                     plan.embed.insert(o, v);
                     report.embedded += 1;
                     done.push(o);
@@ -80,6 +86,7 @@ pub fn fold_static(ir: CategoryIr) -> (CategoryIr, StaticReport) {
         }
         drop_cones(&ir, f, &done, &mut plan);
     }
+    report.dropped = plan.drop.len() as u64;
     if plan.is_empty() {
         return (ir, report);
     }

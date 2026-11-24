@@ -48,8 +48,10 @@ use crate::graph::{CategoryIr, FuncId, ObjectId, ObjectKind, Operation};
 use crate::ty::{Ty, ty_contains_token};
 
 /// The most bytes a root is embedded with: its cells become constants packed
-/// into the value (16 KiB: 4096 `f32` cells).
-pub const EMBED_BYTES: u64 = 16 << 10;
+/// into the value, one constant and one store per cell in the emitted code
+/// (1 KiB: 256 `f32` cells — measured: 2063 embedded cells added 12 s to the
+/// real-size Llama build, the host compiler's time on the stores).
+pub const EMBED_BYTES: u64 = 1 << 10;
 
 /// The most oracle steps compile-time evaluation spends on one function's
 /// roots (2²⁰: the oracle runs about 10⁶ steps a second on array programs —
