@@ -26,7 +26,7 @@ M.color = "#14B8A6" -- the logo teal
 M.name = "Mapal"
 M.hl = "MapalIcon" -- our own group, so the icon is teal rather than a borrowed colour
 
-local state = { providers = {}, glyph = nil }
+local state = { providers = {}, glyph = nil, opts = nil }
 
 local function ensure_hl(color)
   -- Re-applied on ColorScheme: a colorscheme load clears user groups.
@@ -36,7 +36,10 @@ end
 --- Register the icon with whichever provider is present. Idempotent.
 --- @return table  which providers were reached
 function M.setup(opts)
-  opts = opts or {}
+  -- The plugin re-registers on VeryLazy / VimEnter with no arguments: keep the
+  -- caller's last options so a glyph override (the logo) is not reset to the default.
+  opts = opts or state.opts or {}
+  state.opts = opts
   local glyph = opts.glyph or M.glyph
   local color = opts.color or M.color
 
