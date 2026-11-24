@@ -64,6 +64,9 @@ struct Formatter<'a> {
     sizes: bool,
     /// The `>` closing a size list was just written.
     after_sizes: bool,
+    /// ADR-0048 D4: the size-generic type names (`type Matrix<rows, columns>`)
+    /// — their uses' size lists are written tight too, `Matrix<64, n>`.
+    generic_types: Vec<&'a str>,
 }
 
 impl<'a> Formatter<'a> {
@@ -80,6 +83,15 @@ impl<'a> Formatter<'a> {
             after_params: false,
             sizes: false,
             after_sizes: false,
+            generic_types: tokens
+                .windows(3)
+                .filter(|w| {
+                    w[0].kind == TokenKind::KwType
+                        && w[1].kind == TokenKind::Ident
+                        && w[2].kind == TokenKind::Lt
+                })
+                .map(|w| token_text(source, &w[1]))
+                .collect(),
         }
     }
 
@@ -131,13 +143,17 @@ impl<'a> Formatter<'a> {
                     && !matches!(self.previous, None | Some(TokenKind::LBrace));
                 base + usize::from(continuation)
             };
-            // `fn name <`: the `<` opens the size parameter list.
+            // `fn name <` / `type Name <`: the `<` opens the size parameter
+            // list; `Name <` of a size-generic type opens its sizes.
             let opens_sizes = kind == TokenKind::Lt
                 && i >= 2
                 && self.tokens[i - 1].kind == TokenKind::Ident
-                && self.tokens[i - 2].kind == TokenKind::KwFn;
+                && (matches!(self.tokens[i - 2].kind, TokenKind::KwFn | TokenKind::KwType)
+                    || self
+                        .generic_types
+                        .contains(&token_text(self.source, &self.tokens[i - 1])));
             let tight = opens_sizes
-                || self.after_sizes
+                || (self.after_sizes && kind == TokenKind::LParen)
                 || (self.sizes && kind == TokenKind::Gt)
                 || (self.sizes && self.previous == Some(TokenKind::Lt));
             if !tight && self.needs_space(kind) {
@@ -178,10 +194,11 @@ impl<'a> Formatter<'a> {
                         .is_some_and(|f| f.open == TokenKind::LBrace);
                 }
                 TokenKind::Comma => {
-                    self.break_after = self
-                        .frames
-                        .last()
-                        .is_some_and(|f| f.open == TokenKind::LBrace && !f.params);
+                    self.break_after = !self.sizes
+                        && self
+                            .frames
+                            .last()
+                            .is_some_and(|f| f.open == TokenKind::LBrace && !f.params);
                 }
                 _ => {}
             }

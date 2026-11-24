@@ -40,13 +40,14 @@ pub fn instance_name(generic: &str, values: &[u64]) -> String {
     format!("{generic}<{}>", vs.join(", "))
 }
 
-/// The size environment of an instance of `decl`.
-pub fn env_of(source: &str, decl: &syn::FnDecl, values: &[u64]) -> SizeEnv {
-    decl.sizes
-        .iter()
-        .zip(values)
-        .map(|(n, v)| (name_text(source, *n).to_string(), *v))
-        .collect()
+/// The size environment of an instance of `decl`: the top-level integers
+/// (`base`, ADR-0048 D3) and the instance's sizes.
+pub fn env_of(source: &str, decl: &syn::FnDecl, values: &[u64], base: &SizeEnv) -> SizeEnv {
+    let mut env = base.clone();
+    for (n, v) in decl.sizes.iter().zip(values) {
+        env.insert(name_text(source, *n).to_string(), *v);
+    }
+    env
 }
 
 fn in_range(v: i128) -> bool {
@@ -84,8 +85,9 @@ pub fn eval(source: &str, e: &SizeExpr, env: &SizeEnv) -> Result<u64, syn::Diagn
             LCode::UnknownSize,
             n.span,
             format!(
-                "`{text}` is not a size parameter here: declare it after the function name — \
-                 `fn f<{text}>(x: [f32; {text}])` (ADR-0047; a `type`'s fields take literal sizes)"
+                "`{text}` is not a size here: a size is an integer literal, a size parameter \
+                 declared after the function or type name (`fn f<{text}>(x: [f32; {text}])`, \
+                 ADR-0047) or a top-level integer (`64 -> {text};`, ADR-0048)"
             ),
         ));
     }
@@ -127,7 +129,8 @@ fn names(source: &str, e: &SizeExpr, out: &mut BTreeMap<String, usize>) {
     }
 }
 
-/// Every size expression in a surface type, outermost dimension first.
+/// Every size expression in a surface type, outermost dimension first (a
+/// size-generic type's arguments included, ADR-0048 D4).
 fn size_exprs<'t>(ty: &'t syn::Ty, out: &mut Vec<&'t SizeExpr>) {
     match &ty.kind {
         TyKind::Array { elem, size, .. } => {
@@ -136,9 +139,54 @@ fn size_exprs<'t>(ty: &'t syn::Ty, out: &mut Vec<&'t SizeExpr>) {
             }
             size_exprs(elem, out);
         }
+        TyKind::Generic { args, .. } => out.extend(args.iter()),
         TyKind::Tuple(ts) => ts.iter().for_each(|t| size_exprs(t, out)),
         TyKind::Named(_) | TyKind::Dynamic(_) | TyKind::Error => {}
     }
+}
+
+/// ADR-0048 D4: `e` with every size parameter of a generic type replaced by
+/// its argument at a use (`rows * columns` of `Matrix<n, 64>` is `n * 64`).
+fn subst_size(source: &str, e: &SizeExpr, by: &BTreeMap<String, SizeExpr>) -> SizeExpr {
+    match &e.kind {
+        SizeKind::Name(n) => match by.get(name_text(source, *n)) {
+            Some(a) => a.clone(),
+            None => e.clone(),
+        },
+        SizeKind::Int(_) => e.clone(),
+        SizeKind::Binary { op, lhs, rhs } => SizeExpr {
+            kind: SizeKind::Binary {
+                op: *op,
+                lhs: Box::new(subst_size(source, lhs, by)),
+                rhs: Box::new(subst_size(source, rhs, by)),
+            },
+            span: e.span,
+        },
+    }
+}
+
+/// [`subst_size`] over a surface type.
+fn subst_ty(source: &str, t: &syn::Ty, by: &BTreeMap<String, SizeExpr>) -> syn::Ty {
+    let kind = match &t.kind {
+        TyKind::Array {
+            elem,
+            len,
+            len_span,
+            size,
+        } => TyKind::Array {
+            elem: Box::new(subst_ty(source, elem, by)),
+            len: *len,
+            len_span: *len_span,
+            size: size.as_ref().map(|e| subst_size(source, e, by)),
+        },
+        TyKind::Generic { name, args } => TyKind::Generic {
+            name: *name,
+            args: args.iter().map(|a| subst_size(source, a, by)).collect(),
+        },
+        TyKind::Tuple(ts) => TyKind::Tuple(ts.iter().map(|x| subst_ty(source, x, by)).collect()),
+        k => k.clone(),
+    };
+    syn::Ty { kind, span: t.span }
 }
 
 /// D1: the declaration checks of a size-generic function — duplicate or
@@ -148,6 +196,8 @@ pub fn check_decl(
     source: &str,
     fd: &syn::FnDecl,
     fn_names: &BTreeSet<String>,
+    base: &SizeEnv,
+    tops: &crate::globals::Globals,
     diags: &mut Vec<syn::Diagnostic>,
 ) {
     let fname = name_text(source, fd.name);
@@ -164,6 +214,15 @@ pub fn check_decl(
                 LCode::ReservedName,
                 n.span,
                 format!("`{text}` is a reserved name"),
+            ));
+        } else if tops.is_top(text) {
+            diags.push(diag(
+                LCode::TopNameReused,
+                n.span,
+                format!(
+                    "`{text}` is a top-level name; a size parameter of `{fname}` cannot reuse it \
+                     (ADR-0048 D1)"
+                ),
             ));
         } else if !declared.insert(text) {
             diags.push(diag(
@@ -195,7 +254,8 @@ pub fn check_decl(
     let mut used: BTreeMap<String, usize> = BTreeMap::new();
     for e in &exprs {
         names(source, e, &mut used);
-        let env: SizeEnv = declared.iter().map(|d| (d.to_string(), 1)).collect();
+        let mut env: SizeEnv = base.clone();
+        env.extend(declared.iter().map(|d| (d.to_string(), 1)));
         if let Some(n) = first_unknown(source, e, &env) {
             let text = name_text(source, n);
             diags.push(diag(
@@ -225,8 +285,8 @@ pub fn check_decl(
 
 /// One equation `e = n` of a call: a declared dimension against the actual
 /// length.
-struct Equation<'t> {
-    expr: &'t SizeExpr,
+struct Equation {
+    expr: SizeExpr,
     n: u64,
     /// Where it came from: `x: [f32; n]` (a parameter) or the output type.
     from: String,
@@ -234,32 +294,85 @@ struct Equation<'t> {
 
 /// Match a declared type against an actual one, collecting the equations of
 /// every size-expression dimension (D3.1). Literal dimensions and scalars are
-/// the builder's to check (a mismatch there is its L1201).
-fn collect<'t>(
-    pattern: &'t syn::Ty,
+/// the builder's to check (a mismatch there is its L1201). ADR-0048: a
+/// size-generic type's fields are matched with its sizes substituted (D4),
+/// and an actual struct with a `_` field that does not fit is read as its
+/// `_` (D5).
+fn collect(
+    source: &str,
+    types: &TypeTable,
+    pattern: &syn::Ty,
     actual: &Ty,
     from: &str,
-    out: &mut Vec<Equation<'t>>,
+    out: &mut Vec<Equation>,
+) -> Result<(), ()> {
+    let r = collect_exact(source, types, pattern, actual, from, out);
+    if r.is_err()
+        && let Some(inner) = TypeTable::default_of(actual)
+    {
+        return collect(source, types, pattern, inner, from, out);
+    }
+    r
+}
+
+fn collect_exact(
+    source: &str,
+    types: &TypeTable,
+    pattern: &syn::Ty,
+    actual: &Ty,
+    from: &str,
+    out: &mut Vec<Equation>,
 ) -> Result<(), ()> {
     match (&pattern.kind, actual) {
         (TyKind::Array { elem, size, .. }, Ty::Array { elem: ae, size: n }) => {
             if let Some(e) = size {
                 out.push(Equation {
-                    expr: e,
+                    expr: e.clone(),
                     n: *n,
                     from: from.to_string(),
                 });
             }
-            collect(elem, ae, from, out)
+            collect(source, types, elem, ae, from, out)
         }
         (TyKind::Array { .. }, _) => Err(()),
         (TyKind::Tuple(ps), Ty::Tuple(ts)) if ps.len() == ts.len() => {
             for (p, t) in ps.iter().zip(ts) {
-                collect(p, t, from, out)?;
+                collect(source, types, p, t, from, out)?;
             }
             Ok(())
         }
         (TyKind::Tuple(_), _) => Err(()),
+        (TyKind::Generic { name, args }, _) => {
+            let Some(td) = types.decl(name_text(source, *name)) else {
+                return Ok(());
+            };
+            if td.sizes.len() != args.len() {
+                return Ok(());
+            }
+            let by: BTreeMap<String, SizeExpr> = td
+                .sizes
+                .iter()
+                .zip(args)
+                .map(|(n, a)| (name_text(source, *n).to_string(), a.clone()))
+                .collect();
+            match (td.fields.as_slice(), actual) {
+                ([only], _) if name_text(source, only.name) == "_" => collect(
+                    source,
+                    types,
+                    &subst_ty(source, &only.ty, &by),
+                    actual,
+                    from,
+                    out,
+                ),
+                (fs, Ty::Struct { fields, .. }) if fs.len() == fields.len() => {
+                    for (f, (_, at)) in fs.iter().zip(fields) {
+                        collect(source, types, &subst_ty(source, &f.ty, &by), at, from, out)?;
+                    }
+                    Ok(())
+                }
+                _ => Err(()),
+            }
+        }
         _ => Ok(()),
     }
 }
@@ -306,12 +419,52 @@ enum Inversion {
     Fraction { n: i128, k: i128 },
 }
 
+/// ADR-0048 D4: the sizes of a literal of size-generic type `td` whose fields
+/// (in declared order) have types `fields` — inferred as a call's would be,
+/// the fields standing for parameters.
+pub fn infer_type(
+    source: &str,
+    types: &TypeTable,
+    td: &syn::TypeDecl,
+    fields: &[Ty],
+    span: syn::SourceLoc,
+) -> Result<Vec<u64>, syn::Diagnostic> {
+    let fd = syn::FnDecl {
+        name: td.name,
+        sizes: td.sizes.clone(),
+        params: td
+            .fields
+            .iter()
+            .map(|f| syn::Param {
+                mut_span: None,
+                name: f.name,
+                ty: f.ty.clone(),
+                span: f.span,
+            })
+            .collect(),
+        ret_ty: None,
+        body: syn::Block {
+            items: Vec::new(),
+            tail: None,
+            span: td.span,
+            compute: None,
+        },
+        span: td.span,
+    };
+    let arg = match fields {
+        [one] => one.clone(),
+        many => Ty::Tuple(many.to_vec()),
+    };
+    infer(source, types, &fd, &arg, None, span)
+}
+
 /// D3: the sizes of a call to `fd` whose argument has type `arg` — matched
 /// against the parameter types, solved, then (where parameters stay unbound)
 /// against the output type with `expected`, the call's annotated binding or
 /// the owner's output. Values in the declared order; `span` places errors.
 pub fn infer(
     source: &str,
+    types: &TypeTable,
     fd: &syn::FnDecl,
     arg: &Ty,
     expected: Option<&Ty>,
@@ -339,7 +492,7 @@ pub fn infer(
     };
     match fd.params.as_slice() {
         [] => return Err(mismatch(arg, "no input")),
-        [p] => collect(&p.ty, arg, &from(p), &mut eqs)
+        [p] => collect(source, types, &p.ty, arg, &from(p), &mut eqs)
             .map_err(|()| mismatch(arg, &format!("`{}`", src_slice(source, p.ty.span))))?,
         ps => {
             let want = format!("{} parameters", ps.len());
@@ -350,12 +503,12 @@ pub fn infer(
                 return Err(mismatch(arg, &want));
             }
             for (p, t) in ps.iter().zip(ts) {
-                collect(&p.ty, t, &from(p), &mut eqs)
+                collect(source, types, &p.ty, t, &from(p), &mut eqs)
                     .map_err(|()| mismatch(t, &format!("`{}`", src_slice(source, p.ty.span))))?;
             }
         }
     }
-    let mut env: SizeEnv = SizeEnv::new();
+    let mut env: SizeEnv = types.base_env().clone();
     let mut origin: BTreeMap<String, usize> = BTreeMap::new();
     solve(source, fname, &eqs, &mut env, &mut origin, span)?;
     // D3.4: the output type against the annotation, where still needed.
@@ -370,7 +523,7 @@ pub fn infer(
     {
         let mut out_eqs = Vec::new();
         let from = format!("the result `{}`", mapal_ir::ty_label(want));
-        if collect(r, want, &from, &mut out_eqs).is_ok() {
+        if collect(source, types, r, want, &from, &mut out_eqs).is_ok() {
             eqs.extend(out_eqs);
             solve(source, fname, &eqs, &mut env, &mut origin, span)?;
         }
@@ -387,14 +540,14 @@ pub fn infer(
         ));
     }
     for eq in &eqs {
-        let got = eval(source, eq.expr, &env).map_err(|mut d| {
+        let got = eval(source, &eq.expr, &env).map_err(|mut d| {
             d.span = span;
             d
         })?;
         if got != eq.n {
             let text = src_slice(source, eq.expr.span);
             let mut used = BTreeMap::new();
-            names(source, eq.expr, &mut used);
+            names(source, &eq.expr, &mut used);
             let bound: Vec<String> = declared
                 .iter()
                 .filter(|d| used.contains_key(*d))
@@ -450,7 +603,7 @@ fn solve(
         let mut progress = false;
         for (i, eq) in eqs.iter().enumerate() {
             let mut used = BTreeMap::new();
-            names(source, eq.expr, &mut used);
+            names(source, &eq.expr, &mut used);
             let unknown: Vec<(&String, &usize)> =
                 used.iter().filter(|(n, _)| !env.contains_key(*n)).collect();
             let [(p, count)] = unknown.as_slice() else {
@@ -458,11 +611,11 @@ fn solve(
             };
             let text = src_slice(source, eq.expr.span);
             let inverted = if **count == 1 {
-                invert(source, eq.expr, i128::from(eq.n), p, env)
-            } else if monotone(source, eq.expr, p, env) {
+                invert(source, &eq.expr, i128::from(eq.n), p, env)
+            } else if monotone(source, &eq.expr, p, env) {
                 // D3.3: a repeated unknown (`n * n`) in a non-decreasing
                 // expression: the one whole solution, by bisection.
-                match search(source, eq.expr, i128::from(eq.n), p, env) {
+                match search(source, &eq.expr, i128::from(eq.n), p, env) {
                     Search::Found(v) => Ok(v),
                     Search::None => {
                         return Err(diag(

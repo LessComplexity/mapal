@@ -238,6 +238,12 @@ fn reconstruct_a(
                 done.insert(o, true);
                 return;
             }
+            if let Some(v) = plan.embed.get(o) {
+                let new = materialize(fb, &obj.ty, v, obj.loc).expect("replay: embed");
+                remap.insert(o, new);
+                done.insert(o, true);
+                return;
+            }
             if is_internal_pack(ir, o) {
                 // Rebuilt internally by its consuming primitive; not materialized.
                 done.insert(o, true);
@@ -246,6 +252,44 @@ fn reconstruct_a(
             reconstruct_temp(fb, ir, plan, fmap, fused, lifted, remap, o);
             done.insert(o, true);
         }
+    }
+}
+
+/// ADR-0048 D3: a value of type `ty` as constants packed slot by slot.
+fn materialize(
+    fb: &mut mapal_ir::FnBuilder<'_>,
+    ty: &mapal_ir::Ty,
+    v: &mapal_interp::RValue,
+    loc: mapal_ir::SourceLoc,
+) -> Result<ObjectId, mapal_ir::IrError> {
+    use mapal_interp::RValue;
+    use mapal_ir::{Dest, Ty};
+    match (ty, v) {
+        (_, RValue::Scalar(x)) => fb.constant(x.clone(), loc),
+        (Ty::Array { elem, .. }, RValue::Array(es)) => {
+            let comps = es
+                .iter()
+                .map(|e| materialize(fb, elem, e, loc))
+                .collect::<Result<Vec<_>, _>>()?;
+            fb.pack_array(&comps, Dest::Fresh(None), loc)
+        }
+        (Ty::Tuple(ts), RValue::Tuple(es)) => {
+            let comps = ts
+                .iter()
+                .zip(es)
+                .map(|(t, e)| materialize(fb, t, e, loc))
+                .collect::<Result<Vec<_>, _>>()?;
+            fb.pack(&comps, Dest::Fresh(None), loc)
+        }
+        (Ty::Struct { fields, .. }, RValue::Struct { fields: vs, .. }) => {
+            let comps = fields
+                .iter()
+                .zip(vs)
+                .map(|((_, t), (_, e))| materialize(fb, t, e, loc))
+                .collect::<Result<Vec<_>, _>>()?;
+            fb.pack_struct(ty.clone(), &comps, Dest::Fresh(None), loc)
+        }
+        _ => Err(mapal_ir::IrError::EmptyProduct),
     }
 }
 

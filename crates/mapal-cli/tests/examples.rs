@@ -150,6 +150,10 @@ fn gpu_profile_build_writes_device_unit() {
         // costs: the host finishes it sooner); its OFF arm launches every
         // capable site, which is the device unit this test reads.
         "--gpu-off=place",
+        // ADR-0048 D3: the whole program is computable before it runs (its
+        // inputs are laws); compile-time evaluation would leave no kernel.
+        // Its OFF arm keeps the site this test is about.
+        "--static=off",
         "--emit-only",
     ]);
     let stem = src.with_extension("");

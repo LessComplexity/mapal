@@ -82,6 +82,10 @@ pub struct RewritePlan {
     /// `lift?`: a canonical loop SCC replaced by `Iota` + captured `Map`/`Fold`.
     /// Keys are the input graph's `LoopMerge` objects.
     pub lift: SecondaryMap<ObjectId, LiftSpec>,
+    /// `embed?` (ADR-0048 D3): the object is re-materialized as its value — a
+    /// product (array, tuple, struct) of constants packed slot by slot; its
+    /// defining cone is not replayed for it. Scalars go to `constify`.
+    pub embed: SecondaryMap<ObjectId, mapal_interp::RValue>,
 }
 
 impl RewritePlan {
@@ -99,6 +103,7 @@ impl RewritePlan {
             && self.fuse.is_empty()
             && self.inline.is_empty()
             && self.lift.is_empty()
+            && self.embed.is_empty()
     }
 
     /// Resolve an `alias` chain transitively to its terminal object (DESIGN §1).
@@ -144,6 +149,11 @@ impl RewritePlan {
         }
         for (o, _) in self.drop.iter() {
             if !is_temp(o) {
+                return false;
+            }
+        }
+        for (o, _) in self.embed.iter() {
+            if !is_temp(o) || scc_of.get(o).is_some() {
                 return false;
             }
         }

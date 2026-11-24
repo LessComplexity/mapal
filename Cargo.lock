@@ -512,6 +512,7 @@ version = "0.0.1"
 dependencies = [
  "criterion",
  "insta",
+ "mapal-interp",
  "mapal-ir",
  "mapal-syntax",
  "proptest",

@@ -35,6 +35,9 @@ pub struct Mono<'a> {
     /// The typing walk erred where a generic call was untyped: emit every
     /// unit as far as it goes, to log the calls (the result is discarded).
     pub probe: bool,
+    /// ADR-0048 D3: when set, the object each name `main` binds (the
+    /// compile-time evaluation of top-level bindings reads them).
+    pub bound: Option<&'a RefCell<BTreeMap<String, ObjectId>>>,
 }
 
 /// What emission found at the calls to generic functions: each site's binding
@@ -202,10 +205,14 @@ pub fn lower_program(
         if let syn::Item::Fn(fd) = item {
             let name = name_text(source, fd.name).to_string();
             if fd.sizes.is_empty() {
-                units.push((fd, name, SizeEnv::new()));
+                units.push((fd, name, types.base_env().clone()));
             } else {
                 for (vs, iname) in mono.instances.get(&name).into_iter().flatten() {
-                    units.push((fd, iname.clone(), crate::sizes::env_of(source, fd, vs)));
+                    units.push((
+                        fd,
+                        iname.clone(),
+                        crate::sizes::env_of(source, fd, vs, types.base_env()),
+                    ));
                 }
             }
         }
@@ -250,6 +257,36 @@ pub fn lower_program(
         // D2: declare + build every map/fold body, innermost-first.
         let mut body_ids: BTreeMap<(u32, u32), FuncId> = BTreeMap::new();
         let prec = ir_prec(fd.body.compute, mapal_ir::Precision::F32);
+        // ADR-0048 D3: the bodies of the top-level chains this function
+        // reads (emitted at its outermost scope), at the default precision.
+        let tops = types.globals().used_by(source, fd);
+        if !tops.is_empty() {
+            let block = types.globals().chains_block(&tops);
+            let built = build_bodies(
+                &Shared {
+                    source,
+                    types,
+                    effects,
+                    fn_ids: &fn_ids,
+                    fn_sigs,
+                    info,
+                    owner: name,
+                    mono,
+                    sizes: env,
+                },
+                &block,
+                &mut b,
+                &mut body_ids,
+                mapal_ir::Precision::F32,
+            )
+            .map_err(note);
+            if let Err(e) = built {
+                if !mono.probe {
+                    return Err(e);
+                }
+                first_err.get_or_insert(e);
+            }
+        }
         let built = build_bodies(
             &Shared {
                 source,
@@ -597,7 +634,7 @@ impl Emitter<'_> {
                 .and_then(|s| s.ret.clone()),
             _ => None,
         };
-        let values = crate::sizes::infer(self.source, fd, &arg, expected.as_ref(), sp)?;
+        let values = crate::sizes::infer(self.source, self.types, fd, &arg, expected.as_ref(), sp)?;
         let name = crate::sizes::instance_name(text, &values);
         let inst: Instance = (text.to_string(), values.clone());
         let mut log = self.mono.log.borrow_mut();
@@ -641,6 +678,104 @@ impl Emitter<'_> {
         }
     }
 
+    /// ADR-0048 D5: read `obj` through its `_` field(s) until its type fits
+    /// `fits` — as is when it already does, else `obj._`, `obj._._`, … the
+    /// first that fits; `None` when no step of the chain does.
+    fn read_default(
+        &mut self,
+        fb: &mut FnBuilder,
+        obj: ObjectId,
+        fits: impl Fn(&Ty) -> bool,
+        sp: syn::SourceLoc,
+    ) -> ER<Option<ObjectId>> {
+        let ty = self.ty_of(fb, obj);
+        let Some(k) = TypeTable::default_steps(&ty, fits) else {
+            return Ok(None);
+        };
+        let mut cur = obj;
+        for _ in 0..k {
+            let idx = match self.ty_of(fb, cur) {
+                Ty::Struct { fields, .. } => fields.iter().position(|(n, _)| n == "_"),
+                _ => None,
+            }
+            .ok_or_else(|| internal(sp, "default field vanished"))?;
+            cur = self.proj(fb, cur, idx as u32, Dest::Fresh(None), sp)?;
+        }
+        Ok(Some(cur))
+    }
+
+    /// D5 where a type is expected: `obj` as is when it has type `want`, else
+    /// read through `_` (a tuple component by component) when that fits;
+    /// otherwise `obj` unchanged (the consumer reports the mismatch).
+    fn coerce(
+        &mut self,
+        fb: &mut FnBuilder,
+        obj: ObjectId,
+        want: &Ty,
+        sp: syn::SourceLoc,
+    ) -> ER<ObjectId> {
+        let ty = self.ty_of(fb, obj);
+        if &ty == want {
+            return Ok(obj);
+        }
+        if let (Ty::Tuple(have), Ty::Tuple(wants)) = (&ty, want)
+            && have.len() == wants.len()
+            && have
+                .iter()
+                .zip(wants)
+                .all(|(h, w)| TypeTable::default_steps(h, |t| t == w).is_some())
+        {
+            let mut comps = Vec::with_capacity(wants.len());
+            for (k, w) in wants.iter().enumerate() {
+                let c = self.proj(fb, obj, k as u32, Dest::Fresh(None), sp)?;
+                comps.push(self.coerce(fb, c, w, sp)?);
+            }
+            return self
+                .pack(fb, &comps, Dest::Fresh(None), sp)
+                .map_err(|e| ir_err(e, sp));
+        }
+        Ok(self
+            .read_default(fb, obj, |t| t == want, sp)?
+            .unwrap_or(obj))
+    }
+
+    /// ADR-0048 D3: a top-level scalar computed before the program runs, as
+    /// the literal (or the annotated constant) it is.
+    fn global_const(
+        &mut self,
+        fb: &mut FnBuilder,
+        c: &crate::globals::GlobalConst,
+        sp: syn::SourceLoc,
+    ) -> ER<ObjectId> {
+        use crate::globals::GlobalConst;
+        let val = match c {
+            GlobalConst::Int { value, pinned } => {
+                let ty = pinned
+                    .clone()
+                    .or_else(|| self.lit_ty(sp))
+                    .unwrap_or_else(|| Ty::index_ty(value.unsigned_abs() as u64));
+                self.int_value(value.unsigned_abs() as u64, &ty, sp, *value < 0)?
+            }
+            GlobalConst::Float {
+                value,
+                pinned,
+                literal,
+            } => {
+                let ty = pinned
+                    .clone()
+                    .or_else(|| self.lit_ty(sp))
+                    .unwrap_or_else(Ty::f64);
+                match (pinned, literal) {
+                    (None, Some(lit)) => self.float_value(*lit, &ty)?,
+                    _ if ty == Ty::f32() => Value::F32(*value as f32),
+                    _ => Value::F64(*value),
+                }
+            }
+            GlobalConst::Bool(b) => Value::Bool(*b),
+        };
+        self.constant(fb, val, sp)
+    }
+
     /// Build a surface function body (D3).
     fn emit_fn(&mut self, fd: &syn::FnDecl, mut fb: FnBuilder) -> ER<()> {
         let name = self.owner_name.clone();
@@ -667,6 +802,15 @@ impl Emitter<'_> {
             }
         } else {
             self.bind_params(&mut fb, fd, &sig, input, None)?;
+        }
+
+        // ADR-0048 D3: the top-level values this function reads that are not
+        // literals — their chains, at the outermost scope (captured into
+        // map / fold bodies like any enclosing value).
+        let globals = self.types.globals();
+        for i in globals.used_by(self.source, fd) {
+            let chain = globals.items[i].chain.clone();
+            self.emit_chain(&mut fb, &chain, ChainCtx::Statement)?;
         }
 
         // Emit the body block.
@@ -1156,13 +1300,17 @@ impl Emitter<'_> {
             StageKind::Bind { mut_span, name, ty } => {
                 let wire =
                     cur.ok_or_else(|| diag(LCode::HeadlessChain, sp, "bind with no wire"))?;
-                let bty = if let Some(annot) = ty {
+                let annotated = ty.as_ref().and_then(|annot| {
                     self.types
                         .resolve_sized(self.source, annot, self.sizes, &mut Vec::new())
-                        .unwrap_or_else(|| self.ty_of(fb, wire))
-                } else {
-                    self.ty_of(fb, wire)
+                });
+                // ADR-0048 D5: a binding annotated with `_`'s type reads
+                // through it.
+                let wire = match &annotated {
+                    Some(t) => self.coerce(fb, wire, t, sp)?,
+                    None => wire,
                 };
+                let bty = annotated.unwrap_or_else(|| self.ty_of(fb, wire));
                 let bn = name_text(self.source, *name).to_string();
                 self.bind_new(&bn, wire, bty, mut_span.is_some());
                 Ok(Some(wire))
@@ -1673,6 +1821,10 @@ impl Emitter<'_> {
                         sp,
                         format!("`{text}` read after its loop; bind the exit value instead"),
                     )),
+                    None if self.types.globals().consts.contains_key(text) => {
+                        let c = self.types.globals().consts[text].clone();
+                        self.global_const(fb, &c, sp)
+                    }
                     None if self.sizes.contains_key(text) => {
                         // ADR-0047 D4: a size is an integer literal.
                         let v = self.sizes[text];
@@ -1747,6 +1899,13 @@ impl Emitter<'_> {
                 match field {
                     MemberField::Named(fname) => {
                         let fn_ = name_text(self.source, *fname);
+                        let has = |t: &Ty| match t {
+                            Ty::Struct { fields, .. } => fields.iter().any(|(n, _)| n == fn_),
+                            _ => false,
+                        };
+                        // ADR-0048 D5: a field of `_` reads through it.
+                        let b = self.read_default(fb, b, has, sp)?.unwrap_or(b);
+                        let bty = self.ty_of(fb, b);
                         let idx = match &bty {
                             Ty::Struct { fields, .. } => fields.iter().position(|(n, _)| n == fn_),
                             _ => None,
@@ -1803,9 +1962,65 @@ impl Emitter<'_> {
             }
             ExprKind::Struct { name, fields } => {
                 let tname = name_text(self.source, *name);
-                let sty = self.types.get(tname).cloned().ok_or_else(|| {
-                    diag(LCode::UnknownType, sp, format!("unknown type `{tname}`"))
-                })?;
+                // ADR-0048 D5: an alias's literal `T { _: v }` is `v`.
+                if let Some(td) = self.types.decl(tname)
+                    && let [only] = td.fields.as_slice()
+                    && name_text(self.source, only.name) == "_"
+                    && let [fi] = fields.as_slice()
+                    && name_text(self.source, fi.name) == "_"
+                    && let Some(v) = &fi.value
+                {
+                    return self.emit_expr(fb, v);
+                }
+                // ADR-0048 D4: a size-generic type's literal takes its sizes
+                // from its fields' types.
+                let generic = self
+                    .types
+                    .decl(tname)
+                    .filter(|td| !td.sizes.is_empty())
+                    .cloned();
+                let sty = match &generic {
+                    None => self.types.get(tname).cloned().ok_or_else(|| {
+                        diag(LCode::UnknownType, sp, format!("unknown type `{tname}`"))
+                    })?,
+                    Some(td) => {
+                        let mut objs: BTreeMap<String, ObjectId> = BTreeMap::new();
+                        for fi in fields {
+                            let fname = name_text(self.source, fi.name).to_string();
+                            if let Some(e) = &fi.value {
+                                objs.insert(fname, self.emit_expr(fb, e)?);
+                            } else if let Some((b, false)) = self.scope.resolve(&fname) {
+                                objs.insert(fname, b.obj);
+                            }
+                        }
+                        let mut tys = Vec::new();
+                        for f in &td.fields {
+                            let fname = name_text(self.source, f.name);
+                            let o = objs.get(fname).copied().ok_or_else(|| {
+                                diag(LCode::TypeMismatch, sp, format!("missing field `{fname}`"))
+                            })?;
+                            tys.push(self.ty_of(fb, o));
+                        }
+                        let values =
+                            crate::sizes::infer_type(self.source, self.types, td, &tys, sp)?;
+                        let ty = self
+                            .types
+                            .instance(self.source, tname, &values, sp)
+                            .ok_or_else(|| internal(sp, "generic type instance"))?;
+                        let decl = match &ty {
+                            Ty::Struct { fields, .. } => fields.clone(),
+                            _ => return Err(internal(sp, "non-struct generic literal")),
+                        };
+                        let mut comps = Vec::with_capacity(decl.len());
+                        for (fname, fty) in &decl {
+                            let o = objs[fname];
+                            comps.push(self.coerce(fb, o, fty, sp)?);
+                        }
+                        return self
+                            .pack_struct(fb, ty, &comps, dest, sp)
+                            .map_err(|e| ir_err(e, sp));
+                    }
+                };
                 let decl = match &sty {
                     Ty::Struct { fields, .. } => fields.clone(),
                     _ => return Err(internal(sp, "non-struct in struct ctor")),
@@ -1912,6 +2127,17 @@ impl Emitter<'_> {
         sp: syn::SourceLoc,
     ) -> ER<Option<ObjectId>> {
         let csig = self.fn_sigs.get(callee_name).expect("callee sig").clone();
+        // ADR-0048 D5: an argument reads through `_` where its own type does
+        // not fit the parameter but `_`'s does.
+        let want = match csig.params.as_slice() {
+            [] => None,
+            [one] => Some(one.clone()),
+            ps => Some(Ty::Tuple(ps.to_vec())),
+        };
+        let arg = match want {
+            Some(w) => self.coerce(fb, arg, &w, sp)?,
+            None => arg,
+        };
         if csig.effectful {
             let tok = self.consume_token(sp)?;
             // arg' = pack(tok, arg) (or tok alone when A absent — but a call
@@ -2637,6 +2863,30 @@ impl Emitter<'_> {
                 None => return Err(internal(sp, "capture unbound in the enclosing scope")),
             }
         }
+        // ADR-0048 D5: a mapped struct reads through its `_` array; a fold's
+        // `(seed, s)` reads `s` so.
+        let wire = match op {
+            CollOp::Map => self
+                .read_default(fb, wire, |t| matches!(t, Ty::Array { .. }), sp)?
+                .unwrap_or(wire),
+            CollOp::Fold => match self.ty_of(fb, wire) {
+                Ty::Tuple(ts)
+                    if ts.len() == 2
+                        && !matches!(ts[1], Ty::Array { .. })
+                        && TypeTable::default_steps(&ts[1], |t| matches!(t, Ty::Array { .. }))
+                            .is_some() =>
+                {
+                    let seed = self.proj(fb, wire, 0, Dest::Fresh(None), sp)?;
+                    let s = self.proj(fb, wire, 1, Dest::Fresh(None), sp)?;
+                    let arr = self
+                        .read_default(fb, s, |t| matches!(t, Ty::Array { .. }), sp)?
+                        .unwrap_or(s);
+                    self.pack(fb, &[seed, arr], Dest::Fresh(None), sp)
+                        .map_err(|e| ir_err(e, sp))?
+                }
+                _ => wire,
+            },
+        };
         match op {
             CollOp::Map => {
                 let wty = self.ty_of(fb, wire);
@@ -3786,6 +4036,10 @@ impl Emitter<'_> {
         dest: Dest,
         sp: syn::SourceLoc,
     ) -> ER<ObjectId> {
+        // ADR-0048 D5: an indexed struct reads through its `_` array.
+        let a = self
+            .read_default(fb, a, |t| matches!(t, Ty::Array { .. }), sp)?
+            .unwrap_or(a);
         let aty = self.tyq(a);
         let out = match &aty {
             Ty::Array { elem, .. } => (**elem).clone(),
@@ -3873,6 +4127,11 @@ impl Emitter<'_> {
 
     /// Bind a new surface symbol with a fresh declaration sequence number.
     fn bind_new(&mut self, name: &str, obj: ObjectId, ty: Ty, mutable: bool) {
+        if let Some(b) = self.mono.bound
+            && self.owner_name == "main"
+        {
+            b.borrow_mut().insert(name.to_string(), obj);
+        }
         let seq = self.decl_seq;
         self.decl_seq += 1;
         self.scope.bind(

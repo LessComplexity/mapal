@@ -1114,9 +1114,8 @@ impl CategoryIr {
         }
         let input = fd.input;
         let tuple = matches!(self.object(input).map(|o| &o.ty), Some(Ty::Tuple(_)));
-        if !tuple {
-            mask.insert(input, 1);
-        }
+        // A whole-input read (not a slot's `Proj`) depends on every slot.
+        mask.insert(input, if tuple { u64::MAX } else { 1 });
         for &m in &fd.morphisms {
             if let Some(mm) = self.morphism(m)
                 && mm.source == input
