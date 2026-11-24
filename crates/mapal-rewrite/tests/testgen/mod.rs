@@ -4775,6 +4775,162 @@ pub fn exp_src(p: &ExpProg) -> String {
     s
 }
 
+// ---------------------------------------------------------------------------
+// math builtins (ADR-0046): `x -> sqrt`, `x -> sin`, `x -> cos` over every
+// branch of their references.
+// ---------------------------------------------------------------------------
+
+/// A program taking `sqrt`, `sin` and `cos` (the ones `fns` selects: bit 0
+/// `sqrt`, 1 `sin`, 2 `cos`) of values that reach every branch of the
+/// references — moderate, large (Cody–Waite's range), huge (Payne–Hanek's:
+/// `x·10³⁰`, near `f32::MAX`), tiny and subnormal (`x·10⁻⁴⁰`), near
+/// multiples of `π/2`, and a cell law of special values (`±0`, `±∞`, NaN,
+/// the smallest subnormal, negatives under `sqrt`) — in `f32` and `f64`, in
+/// map cells (a tile site's output: device cells) and fold bodies; cells and
+/// sums printed. `scale` sets the range (`2^scale / 8` times the law's ±`h`).
+#[derive(Clone, Debug)]
+pub struct MathProg {
+    pub n: u64,
+    pub rows: u64,
+    pub mul: u64,
+    pub add: u64,
+    pub m: u64,
+    pub scale: u8,
+    pub fns: u8,
+    pub wide: bool,
+    pub in_fold: bool,
+}
+
+pub fn math_prog_strategy() -> impl Strategy<Value = MathProg> {
+    (
+        prop::sample::select(vec![256u64, 512, 1024]),
+        prop::sample::select(vec![1u64, 2, 4]),
+        prop::sample::select(vec![7u64, 11, 13, 29]),
+        0u64..64,
+        prop::sample::select(vec![101u64, 211, 401]),
+        0u8..6,
+        1u8..8,
+        any::<bool>(),
+        any::<bool>(),
+    )
+        .prop_map(
+            |(n, rows, mul, add, m, scale, fns, wide, in_fold)| MathProg {
+                n,
+                rows,
+                mul,
+                add,
+                m,
+                scale,
+                fns,
+                wide,
+                in_fold,
+            },
+        )
+}
+
+/// The builtins a [`MathProg`] takes.
+pub fn math_fns(p: &MathProg) -> Vec<&'static str> {
+    ["sqrt", "sin", "cos"]
+        .into_iter()
+        .enumerate()
+        .filter(|(i, _)| p.fns & (1 << i) != 0)
+        .map(|(_, f)| f)
+        .collect()
+}
+
+/// [`MathProg`]'s source text.
+pub fn math_src(p: &MathProg) -> String {
+    let (n, r) = (p.n, p.rows);
+    let l = n / r;
+    let sc = f64::from(1u32 << p.scale) / 8.0;
+    let mut s = format!(
+        "fn main() {{\n    {n} -> iota -> t;\n    {r} -> iota -> rr;\n    {l} -> iota -> kl;\n    8 -> iota -> kd;\n    \
+         {rq} -> iota -> tq;\n    tq -> map {{ e -> (e * {mul} + {add}) % 31 - 15 -> widen_f32 -> v; v / 4.0 }} -> q;\n    \
+         {lw} -> iota -> tw;\n    tw -> map {{ e -> (e * 7 + 13) % {m} - {h} -> widen_f32 -> v; v / 8.0 }} -> w;\n    \
+         t -> map {{ e -> e / {l} -> i; e % {l} -> j; (0.0, kd) -> fold {{ acc, d -> acc + q[i * 8 + d] * w[d * {l} + j] }} -> u; u * {sc:.3} }} -> x;\n    \
+         16 -> iota -> ts;\n",
+        rq = r * 8,
+        lw = l * 8,
+        mul = p.mul,
+        add = p.add,
+        m = p.m,
+        h = p.m / 2,
+    );
+    // Decimal literals (Mapal has no exponent notation): `10^k` and `10^-k`.
+    let big = |k: usize| format!("1{}.0", "0".repeat(k));
+    let small = |k: usize| format!("0.{}1", "0".repeat(k - 1));
+    // The argument law: by `e % 8` a range class of the cell's value.
+    let arg32 = format!(
+        "x[e] -> v; e % 8 -> c; (c == 0) -> {{ -true-> v; -false-> (c == 1) -> {{ -true-> v * {e6}; -false-> (c == 2) -> {{ -true-> v * {e30}; -false-> (c == 3) -> {{ -true-> v * {em40}; -false-> (c == 4) -> {{ -true-> v * 1.5707963; -false-> (c == 5) -> {{ -true-> v * 0.001; -false-> (c == 6) -> {{ -true-> v * 100.0; -false-> v * {e38}; }}; }}; }}; }}; }}; }}; }}",
+        e6 = big(6),
+        e30 = big(30),
+        em40 = small(40),
+        e38 = big(38),
+    );
+    // Special values, one a cell of `ts`: ±0, ±∞, NaN, the smallest
+    // subnormal, −1, near `f32::MAX`, near `65·π/2`, the f32 worst
+    // cancellation `16367173·2^72`.
+    let special32 = format!(
+        "(k == 0) -> {{ -true-> 0.0; -false-> (k == 1) -> {{ -true-> -1.0 * 0.0; -false-> (k == 2) -> {{ -true-> {inf}; -false-> (k == 3) -> {{ -true-> -{inf}; -false-> (k == 4) -> {{ -true-> z / z; -false-> (k == 5) -> {{ -true-> {sub}; -false-> (k == 6) -> {{ -true-> -1.0; -false-> (k == 7) -> {{ -true-> 340000000000000000000000000000000000000.0; -false-> (k == 8) -> {{ -true-> 102.10176; -false-> (k == 9) -> {{ -true-> 16367173.0 * 4722366482869645213696.0; -false-> x[k] * 3.0; }}; }}; }}; }}; }}; }}; }}; }}; }}; }}",
+        inf = big(39),
+        sub = small(45),
+    );
+    let fns = math_fns(p);
+    for f in &fns {
+        // `sqrt` of the square keeps the classes non-negative (their
+        // negatives are the special law's).
+        let a = if *f == "sqrt" { "a * a" } else { "a" };
+        s += &format!("    t -> map {{ e -> {arg32} -> a; {a} -> {f} }} -> y_{f};\n");
+        s += &format!(
+            "    ts -> map {{ k -> 0.0 -> z0; z0 - z0 -> z; {special32} -> {f} }} -> s_{f};\n"
+        );
+    }
+    if p.wide {
+        let arg64 = format!(
+            "x[e] -> widen_f64 -> d; e % 5 -> c; (c == 0) -> {{ -true-> d * 7.0; -false-> (c == 1) -> {{ -true-> d * {e300}; -false-> (c == 2) -> {{ -true-> d * {em310}; -false-> (c == 3) -> {{ -true-> d * {e15}; -false-> d * 1.5707963267948966; }}; }}; }}; }}",
+            e300 = big(300),
+            em310 = small(310),
+            e15 = big(15),
+        );
+        for f in &fns {
+            let a = if *f == "sqrt" { "a * a" } else { "a" };
+            s += &format!("    t -> map {{ e -> {arg64} -> a; {a} -> {f} }} -> z_{f};\n");
+            s += &format!(
+                "    0.0 -> zz_{f}: f64;\n    (zz_{f}, z_{f}) -> fold {{ acc, v -> acc + v / 1000000.0 }} -> zs_{f};\n"
+            );
+        }
+    }
+    if p.in_fold {
+        for f in &fns {
+            s += &format!(
+                "    rr -> map {{ i -> (0.0, kl) -> fold {{ acc, j -> x[i * {l} + j] -> v; v * v -> {f} -> w; acc + w }} }} -> fs_{f};\n"
+            );
+        }
+    }
+    for f in &fns {
+        for i in [0, 1, 2, 3, 4, 5, 6, 7, n / 5, n / 2 + 3, n - 1] {
+            s += &format!("    y_{f}[{i}] -> println;\n");
+        }
+        for k in 0..16 {
+            s += &format!("    s_{f}[{k}] -> println;\n");
+        }
+        s += &format!(
+            "    0.0 -> y0_{f}: f32;\n    (y0_{f}, y_{f}) -> fold {{ acc, v -> acc + v / 1000000.0 }} -> ys_{f};\n    ys_{f} -> println;\n"
+        );
+        if p.wide {
+            for i in [0, 1, 2, 3, 4, n / 7, n - 2] {
+                s += &format!("    z_{f}[{i}] -> println;\n");
+            }
+            s += &format!("    zs_{f} -> println;\n");
+        }
+        if p.in_fold {
+            s += &format!("    fs_{f}[{}] -> println;\n", r - 1);
+        }
+    }
+    s += "}\n";
+    s
+}
+
 // --- large-gemm: GEMM shapes from decode GEMVs to model-scale projections ----
 
 /// One `m × k · k × n` product (`y[i·n + j] = Σ_k a[i·k + k'] · b[k'·n + j]`,
