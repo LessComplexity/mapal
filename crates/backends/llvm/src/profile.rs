@@ -1167,8 +1167,15 @@ pub type CostOver = [Option<u64>; DeviceCost::NAMES.len()];
 
 impl Gpu {
     /// [`DeviceCost::NAMES`] that name a [`DeviceCost`] field (those before
-    /// `fp32_lanes`).
-    const NAMES_COST: usize = 30;
+    /// `fp32_lanes`). gapfix: counted, not written — at 30 it had fallen one
+    /// behind the list, so `--cost=l2_keep_bytes=` alone was dropped.
+    const NAMES_COST: usize = {
+        let mut i = 0;
+        while !matches!(DeviceCost::NAMES[i].as_bytes(), b"fp32_lanes") {
+            i += 1;
+        }
+        i
+    };
 
     /// This part with the overrides in `over` applied (a part without a
     /// [`DeviceCost`] takes one from [`NO_PLAN`]).
