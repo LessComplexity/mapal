@@ -342,3 +342,35 @@ where unmeasured, shared by a counted loop's trips (`trip_split`), not free in a
 programs had lost 1.77× / 1.48× to it; refused now). 13 replay lines (243: 140 / 72 / 10 / 21). The streamk-epi table
 is 5 reps (not 8); round-store's m128 n28672 loss re-measured, 12 reps: OFF 0.3846 / ON 0.3996. 5080 text unchanged
 on all 199 programs; 18–50 programs move on each rented part (unmeasured: next rented round).
+
+**bugs-properties** (`bugs-properties.md`): the PTX ISA as a capability (`Ptx`, `Caps::ptx`, `Caps::cvt_f8`: sm_89's
+fp8 conversions need PTX 8.1; each device module declares its largest need, `; mapal.ptx … mattr`, passed to llc) and a
+`ptxas` preflight on every bundle (the 4090's 16 / 55 `_f8w` modules rejected → 55 / 55); the checker's hot loop weighs
+a matrix instruction as 32 FFMA (`TENSOR_MACS`: the A100's "40 LDG" were the cold guard loop); measured `mma.sync`
+rates (H100 1351 / 2702, A100 1012 / 2024), `bar_cycles`, `lat_ns`, `coop_body_cycles`; `mma-combine` priced in ns
+(`MmaCut::ns`, 18 / 20 measured arms), `streamk-epi` where the L2 share or the operands fit (3090 `loop_4096` /
+`epi_4096` off). $0.
+
+**tensor-cores-2** (`fix/tensor-cores`, `tensor-cores-2.md`): split tiles priced at their issue (`split-issue`,
+`split_issue_pm`), the integer TF32 cut (792 instructions a 96-HMMA panel, was 1612), f32 × bf16 on the bf16 warp
+product (bf16x2n / bf16x3n, `split-least`); A100 tf32x3 1.43–1.54 over the FFMA tile (12 / 12 losers → winners),
+bf16w prefills A100 1.74 / 2.67, H100 PCIe 1.69 / 2.16. Open: the GeForce bf16x2n tile's realized pipe fraction. $0.50.
+
+**hopper-launch** (`hopper-launch.md`): the TMA kernel's first-launch path (recipes from the module text, the map
+table at load, a map cache by address, `tma-warm`) and the persistent walk (`ws-persist`, ON arm): H100 `wgmma-ws` vs
+OFF 11 / 12 wins (was 0 W / 3 null / 9 L), ON vs the 5fcb401b build 1.04–2.42×. Open: `l2-gate`'s wave footprint, the
+walk's separating fact. $2.54.
+
+**attention-chains** (`attention-chains.md`): the stream's consumer chunks interleaved (A100 attn 2048 × 128 0.94 →
+0.28 ms, 1.17× the split); the stream priced half in series at the measured broadcast-load rate (`lds_bcast_pm`) with
+the grid's fill over SMs; the A100's MLP / fan / loop rows off the 5fcb401b split tile (1.27–1.85×); 5080 prefills
+1.05–1.13×. $0.25.
+
+**integration — confirmation-fixes merge** (`integration.md` § Confirmation-fixes merge): the four steps on one branch.
+The split rule's three versions of one fact (bugs-properties' and attention-chains' issue prices of the 5fcb401b cut,
+tensor-cores-2's of the cut the realization emits) are one model, `split_issue_pm`, every step's measurement a replay
+line (158 / 74 / 16 / 23 open). Comparing each program's merged emission with each step's on five parts found one
+interaction and it is fixed: `cut-price` weighed a split tile's waves at the matrix pipe's rate (3× fast for tf32x3) and
+refused the A100 cuts tensor-cores-2 timed winning; now at the realized rate. 1541 tests; the five rented parts' 685
+modules through ptxas; full suite + model scale + every competitor leg once: geomean 1.008 against 5fcb401b (126 of
+137 programs equal text), 5080 column 0.979 → **0.965** (32 / 37 / 51). Steps' rental $3.29.

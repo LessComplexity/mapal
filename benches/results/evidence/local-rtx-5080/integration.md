@@ -397,3 +397,139 @@ torch-compile-cg / chain-cache ran 12–17 % faster this session on equal Mapal 
 - **Open (found here)**: `kmajor-b`'s per-row 64-bit addresses at i32 indices (`idx32`, 56 rows) and its B1 decode
   copies' prefetch cover; `test_harness.py`'s 6 stale expectations.
 - No tailored fixes (`docs/tailored-fixes.md` unchanged).
+
+## Confirmation-fixes merge
+
+Branch `local-rtx-5080`: `54afa0b1` + `--no-ff` merges of `fix/bugs-properties` (`710eddfd`, merge `530c5231`),
+`fix/tensor-cores` (`b8a31c27`, `8a9be0fc`), `fix/hopper-launch` (`ed551899`, `01911e7f`) and `fix/attention-chains`
+(`adc9d1ff`, `3bd55d42`), then one interaction fix (`39cd2c87`) and this evidence. The four steps answered the
+cross-arch 5fcb401b confirmation round (`cross-arch/README.md`); their evidence: `bugs-properties.md`,
+`tensor-cores-2.md`, `hopper-launch.md`, `attention-chains.md`. Rental spend of the four steps: $0 + $0.50 + $2.54 +
+$0.25 = **$3.29** (this merge: $0, local only). Raw: `.claude/raw-evidence/local-rtx-5080/confirmation-fixes/`
+(`tests.log`, `testlogs/`, `counters.log`, `counters-split-after-fix.log`, `resS/`, `resM/`; `scripts/`: the bundle and
+run scripts, `alone.py`, `kern.py`, `static_one.sh`, `cmp.py`; `analysis/`: the emission comparisons `alone-<part>.tsv`,
+`kern-none.tsv`, the static pass `static.tsv`, the timing comparison `cmp.txt`, the runtime A/B `rtab-abba.txt`). (The step first wrote into `raw-evidence/local-rtx-5080/integration/`, integration 1's directory: its
+`tests.log` / `counters.log` and `resS/box.out` were overwritten; its resS results are kept in `resS-integration1/`,
+its resM in `resM-integration1/`.)
+
+| merge | conflicts | resolution |
+| --- | --- | --- |
+| bugs-properties | none | — |
+| tensor-cores | `rules.rs` (the split rule), `profile.rs` (the H100 / A100 `mma.sync` rates' comments, `mma_rates_of_cc`), `split_tile.rs`, `evidence.py` (the hot-loop weight) | **one split-issue model** (below); the A100 keeps the measured 1012 / 2024; `MMA_WEIGHT = TENSOR_MACS` (both 32) |
+| hopper-launch | `rules.rs` (replay parsers, `OPEN`, counts) | both sides; `GpuRungs::NAMES` 139 (`split-issue`, `split-least`, `tma-warm`, `ws-persist`) |
+| attention-chains | `rules.rs`, `gpu.rs`, `split_tile.rs` (the split rule again) | the one model; its `tile=` replay lines folded (below) |
+
+**The split rule, three versions of one fact.** bugs-properties (`split_issue_pays`, 22 instructions an operand
+element), attention-chains (`split_elem_instr`, 21 an element at the FP32 lanes) and tensor-cores-2 (`split_issue_pm`)
+each priced the split realization's instruction issue. The first two read the 5fcb401b `cvt.rna` cut's SASS;
+tensor-cores-2 replaced that cut (integer TF32 cut, 792 instructions a 96-HMMA panel against 1612) and prices the cut
+the realization emits (`SPLIT_CUT_TF32` 10, `SPLIT_CUT_TF32_CVT` 22 under `--gpu-off=split-issue`). Kept: tensor-cores-2's
+(`split_rate_pays` over `split_issue_pm`, θ = 1.6) — the other two would refuse the A100's measured tf32x3 winners
+(1.43–1.54× the FFMA tile) and duplicate one fact (CLAUDE.md: no parallel model). Their measurements stay, as replay
+lines: the three copies of the A100 5fcb401b loser are one line (`issue=2100`, every note), the 5080 lines drop `tile=`.
+attention-chains' lane width, tried as a factor on the issue (the A100's 64 lanes take an integer instruction 2 clocks a
+scheduler): it leaves θ a 1.37–1.41 window (the H100 PCIe tf32x3 loser at issue 1.29 against the A100 winners at 1.0)
+and the 5080's bf16x2n winner still needs θ ≤ 1.0 — it separates nothing the realized cut does not (open line kept).
+Replay: 286 lines, **158 picked / 74 null / 16 mixed / 23 open** (the four steps' lines; 1 duplicate folded).
+
+### Merged emission against each step alone
+
+Each of the 137 timed programs (bS + bM stems) emitted by the merge, the 5fcb401b emitter and each branch tip, per part;
+host and device IR less `; mapal.` lines, kernel-name / key hashes and metadata numbers normalized (the launch key's
+fields grew in three steps, renaming every kernel), lines sorted (`alone.py`); a program equal to no single step is then
+split per kernel (`kern.py`): a kernel equal to some step's is a superposition, one equal to none is an interaction.
+
+| part | device text equal to: base / one step / several steps / **none** | kernels equal to no step |
+| --- | --- | --- |
+| rtx-5080 | 126 / ac 7, bugs 4 / — / **0** | none: every timed program runs a step's own text |
+| a100 | 71 / tc 29, bugs 8, ac 4 / 6 / **19** | 14 programs: split tiles × `cut-price` (13: the 2048-row tiles tensor-cores-2 cut `S` 2–4, now whole) and `attn_2048_64`'s stream geometry |
+| h100 | 124 / ac 6, tc 4, bugs 1 / — / **2** (`llm_pre` / `blkpre_t2048_bf16w`) | none: tc's bf16x2n kernels beside ac's stream kernels |
+| rtx-3090 | 105 / bugs 22, ac 8 / — / **2** (`llm_blkpre_t2048(_bf16w)`) | none: bugs' and ac's kernels side by side |
+| rtx-4090 | 127 / ac 9, bugs 1 / — / **0** | none |
+
+- **`cut-price` × the split tile (fixed, `39cd2c87`).** `mma_pieces` priced a tensor tile's waves at the matrix pipe's
+  rate; a split tile runs its form's `P` products a panel at its issue ratio, so bugs-properties' ns price (fitted with
+  no split tile on any part) saw the A100's tf32x3 waves 3× fast and refused the cuts tensor-cores-2 timed winning
+  (`pj_m128_n4096_k4096` / `_k14336`, `S` 8: 1.105 / 1.055 over the FFMA tile). The waves are now priced at the rate
+  the split tile's panels realize (`split_issue`, the existing fact); both cut again (test
+  `split_cut_priced_at_the_realized_rate`). The 2048-row tiles stay whole: 4 waves against 13 of pieces saves 50 µs,
+  16.8 M `red` adds past the 20 MiB the A100 keeps cost 68 µs — the mechanism the A100's TF32 MLP cuts measured losing
+  (0.84–0.91). Unmeasured on the split tile: next round's arm (`--splitk=4`, `mlp_2048` / `pj_m2048_n4096_k4096`).
+  16-bit `narrow1` tiles (P 1, issue < 1) are unchanged: the 5080's emission of all 137 programs is byte-for-byte the
+  steps'.
+- **`attn_2048_64` on the A100**: ac's price with bugs' measured latency (728 ns) and barrier (54 cycles) picks
+  `b8xkb32:rt2g8t32:cp:s8` (141.9 µs priced) where ac picked and timed `b16xkb16:rt4g8t32:cp:s16` (0.160 ms); both
+  stream against a 152.6 µs split. Unmeasured: next round's arm (`--stream=16x16x4x16` against the shipped pick).
+
+### Tests
+
+- **Workspace** (`test_par.py --bins 4`, `RUST_TEST_THREADS=8 MAPAL_PAR=2 MAPAL_TESTGEN_JOBS=4`, CPUs 16–31 / 48–63):
+  126 binaries, **1541 passed, 0 failed** (wall 1181 s, 309 s held for Tctl > 85 C). After the cut fix: backend lib 128,
+  `split_tile` 6 (+1), `golden_ll` 13, `site_choice` 9, `half_tile` 5, `tf32_tile` 36, `calls` 2, `epilogue` 5 — pass.
+- **Counters** (`counters.log`, the merged code; split-tile's again after the cut fix, `counters-split-after-fix.log`:
+  equal): split-tile 64 programs (tf32x3 9, narrow1 26, bf16x3n 4, bf16x2n 2,
+  refused rate 9 / K_min 2, pieces 27, guard / overflow / cancel paths 3–7 each); ptx-isa 128 modules through llc +
+  ptxas (fp8 instructions on the 6 profiles with the conversions, none on the 3090 / A100); flash-attention 128
+  programs, 1023 runs (chunks > 1: 10, contiguous consumer 22, narrow groups streamed 73); wgmma-ws 36 programs (walks
+  9, ring across tiles 2, one long walk); `mma-combine` 21 cut / 21 uncut of 42 tensor kernels, 32 emulated runs;
+  stream-mma 48 programs / 250 runs; kmajor-b 40 / 107. Every counter > 0.
+- **Static, the rented parts at the merge** (`static.tsv`): the 137 programs emitted for the A100, H100 SXM / PCIe,
+  4090 and 3090, `opt`, `llc` at each module's declared PTX ISA (`+ptx70` … `+ptx81`), `ptxas`: **685 / 685 assemble**
+  (tf32x3 tiles in 43, bf16x2n in 18 of the A100 / H100 programs). Spills (16–52 bytes) only in decode programs whose
+  text equals 5fcb401b's.
+
+### Time (`resS` / `resM`, the 5fcb401b protocol: bench lock, CPUs 0–7 idle and pinned, 30 reps, `PROBE_REPS=5`)
+
+Value gates: 41 suite + 96 model-scale programs pass on every arm, 128 px differentials pass; 3 / 800 competitor legs
+with max > 2 × med or med > 1.3 × min (all in resS, not re-timed). Against the 5fcb401b column (same protocol, same
+box): **geomean 1.008** over 137 programs; the 126 with text equal to 5fcb401b's 1.008 (the runtime alone differs:
+hopper-launch's `mapal_gpu.c`); attention-chains' 7 1.024; bugs-properties' 4 1.002.
+
+| workload (5080) | 5fcb401b | merge | fastest competitor (leg) | explanation |
+| --- | ---: | ---: | --- | --- |
+| llm_pre_t8192 | 47.61 | **44.65** | 52.89 (liger) | interleaved consumer chunks (2-way conflicts gone), attention-chains |
+| llm_pre_t2048 | 6.648 | **6.458** | 7.216 (liger) | same |
+| llm_blkpre_t2048 | 25.37 | **25.17** | 26.83 (liger) | same |
+| llm_pre_t2048_bf16w | 6.508 | 6.365 | 1.931 (torch-bf16-compile-cg) | same; bf16x2n refused on GeForce (open) |
+| llm_pre_t2048_tf32 | 5.484 | 5.342 | 4.543 (triton-tf32) | same |
+| pj_m2048_n4096_k4096_bf16 | 0.6908 | 0.6742 | 0.598 (torch-bf16-compile-ro) | `cut-price`: whole tile (bugs-properties) |
+| pj_m2048_n4096_k14336_bf16 | 2.241 | 2.267 | 2.095 (torch-bf16-compile-cg) | same, 0.988 (bugs-properties' own A/B 0.992) |
+| llm_kvn_b1_l2048 (equal text) | 6.433 | 7.526 | 47.57 (naive-compile) | session: 7 of 10 processes at 7.5, both arms; old / new runtime same-box ABBA 6.43 / 6.43 |
+| llm_dec_b1_l2048_f8w (equal text) | 0.861 | 0.990 | (no leg) | the known f8w B1 slow state (integration 2), open |
+
+Slower than 5fcb401b by > 5 % beyond these: `gen_1024_512_256` 0.907 (processes at 7.7 or 8.6–8.9 ms on both
+arms), `firew_rowsum_2048x2048_16` 0.896 (two first-rep outliers; null 0.115), `indep_512` 0.928 (both arms 0.040–0.043)
+— equal text, session. Faster: `lsm_32_8192` 1.235, `pj_m1_n4096_k4096` 1.254 (the bimodal GEMV), `rt_mlp2_1024` 1.075.
+
+### The RTX 5080 column (matrix.md: 5fcb401b → merge; rented parts keep 5fcb401b)
+
+| geomean Mapal / best (rows) | 5fcb401b | merge |
+| --- | ---: | ---: |
+| GEMM cells & projections | 1.045 (47) | 1.033 (47) |
+| MLP chains | 1.054 (6) | 1.048 (6) |
+| Attention / softmax / long rows | 0.858 (14) | 0.840 (14) |
+| LLM decode / prefill / block | 1.036 (37) | 1.015 (37) |
+| Conv / FIR / elementwise | 0.529 (7) | 0.534 (7) |
+| Fan-in/out, loops, CPU+GPU | 1.032 (9) | 1.023 (9) |
+| all tf32 / bf16w / bf16kv / bf16 rows | 1.186 / 1.662 / 1.043 / 0.982 | 1.183 / 1.615 / 1.014 / 0.967 |
+| **all rows** | **0.979 (120)** | **0.965 (120)** |
+| win / even / loss | 30 / 39 / 51 | 32 / 37 / 51 |
+
+The rented columns move at the next round: the steps' single-session measurements (A100 tf32x3 1.43–1.54, bf16w
+prefills A100 1.74 / 2.67 and H100 PCIe 1.69 / 2.16, H100 `wgmma-ws` 11 / 12, A100 streamed attention 1.17–2.8×)
+are not the round's protocol.
+
+### Open problems attacked (integration)
+
+- **Closed**: the split rule's three copies (one model, every step's measurement a replay line); `cut-price` × the
+  split tile (priced at the realized rate: the measured cuts taken again); the 18 decode rows the first comparison
+  missed (zsh word splitting in the stems; rerun under bash: all equal to a step).
+- **Attempted, open**: the 5080's bf16x2n winner (attention-chains' lane width as the separating property: no — above);
+  `llm_kvn_b1_l2048`'s 7.5 ms processes (not the runtime: same-box ABBA null; the slow state unrecorded beyond P1
+  clocks).
+- **Next round's arms** (unmeasured predictions): the A100's split-tile cuts at 2048 rows (`--splitk=4`), its
+  `attn_2048_64` stream geometry, the A100 rows tf32x3 retakes after attention-chains / bugs-properties refused the
+  5fcb401b cut (`rowsum`, `fanout`, `diamond`, `twin`, `indep`, `softmax_rows` 2048), the steps' own queued arms
+  (bugs-properties: the 3090 stream geometry and B1 row slices, `l2keep.cu` below 1.0 × L2; hopper-launch: `l2-gate`'s
+  wave footprint, `ws-persist`'s separating fact).
+- No tailored fixes (`docs/tailored-fixes.md` unchanged).

@@ -1440,7 +1440,9 @@ at the DRAM rate), which the tune's cold flag reads as resident.
    `pj_m2048_n4096_k4096` runs 7.09 ms against the FFMA tile's 5.21 (19 % of the TF32 peak over three products). SASS:
    the split kernel's hot loop has **40 LDG and 0 LDGSTS** (the intent "16-byte cp.async panels" fails on 113 A100
    kernels, `evidence-a100.tsv`): its operand panels are register-staged (LDG → split → STS) at 2 stages, 3 blocks
-   an SM, 145 registers, where the FFMA tile streams them by `cp.async`. **Points at**: the split form's operand
+   an SM, 145 registers, where the FFMA tile streams them by `cp.async`. *(Corrected by bugs-properties /
+   tensor-cores-2: the 40 LDG are the guard's cold FFMA loop, which the checker took as hot by counting an HMMA like
+   an FFMA; the k loop holds 8 LDGSTS and 0 LDG and is issue-bound — 1 612 instructions a 96-HMMA panel.)* **Points at**: the split form's operand
    staging (split on the fragment after an async panel copy) and `split_rate_pays` reading peak rates only — the
    split tile's realized rate at its staging is the property the rule lacks; the H100 flip above makes it urgent.
 3. **`wgmma-ws` on the H100: per kernel it wins, per program it loses.** Traced kernel alone (`probe_kernels`): ON
@@ -1537,6 +1539,15 @@ no LDGSTS in the hot loop); `stream-fly` 34–226 (the post sites now checked on
    combine traffic (5); `streamk-epi`'s shared tiles against the L2 (6).
 5. Derivations to replace by measurement: `bar_ns` (Ampere / Ada 54–57 cycles), the panel latency (ns, not cycles),
    `l2_keep_bytes` (< 1.0 × L2 on the 3090 / A100 / H100), `coop_body_cycles` (348–7 292 measured, 4 390 derived).
+
+Status after the confirmation-fixes merge (`local-rtx-5080/integration.md` § Confirmation-fixes merge): 1 closed
+(`Ptx`, `Caps::ptx`, the `ptxas` preflight: bugs-properties); 2 closed (the split tile priced at its issue,
+`split_issue_pm`; the integer cut: A100 tf32x3 1.43–1.54× the FFMA tile — tensor-cores-2); 3 closed (the first TMA
+launch off the clock, recipes from the module text: hopper-launch); 4 closed for the A100 (the stream's interleaved
+chunks and half-serial price at `lds_bcast_pm`: attention-chains; `mma-combine` priced in ns: bugs-properties;
+`streamk-epi`'s L2 rule: bugs-properties), the H100's long-row stream open; 5 measured (`bar_cycles`, `lat_ns`,
+`coop_body_cycles`), `l2_keep_bytes` below 1.0 × L2 open. New open: `l2-gate`'s wave footprint, `ws-persist`'s
+separating fact (hopper-launch), the GeForce bf16x2n tile's realized pipe fraction (tensor-cores-2).
 
 Raw (local, not in git): `.claude/raw-evidence/cross-arch/5fcb401b/<part>/` (results, run output, `calib-<part>.txt`,
 `evidence-<part>.tsv`, `prof-<part>.tgz`, torch / FA build logs, wisdom, tune; 4090: the f8w-abort and gpu-hang boxes'

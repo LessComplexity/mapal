@@ -195,6 +195,13 @@ layer rows of every rented part (the prefills 0.33–0.41×). Refuted on the har
 120–270 µs a call outside it), the streamed attention at long rows on the A100 / H100 (0.43–0.75× its split form);
 the fp8 rows do not load on the 4090 (PTX ISA 7.8 for an sm_89 instruction that needs 8.1).
 
+Fixed since, on one branch ([confirmation-fixes merge](benches/results/evidence/local-rtx-5080/integration.md#confirmation-fixes-merge);
+single-session A/Bs on rented boxes, the rented columns move at the next round): the PTX ISA as a capability (the 4090's
+55 fp8 modules assemble), tf32x3 tiles at their issue (A100 1.43–1.54× the FFMA tile), bf16 weights on the bf16 warp
+product (A100 / H100 PCIe prefills 1.69–2.67×), the TMA kernel's first launch off the clock (H100 `wgmma-ws` 11 / 12
+wins), the A100's streamed attention (0.94 → 0.30 ms at 2048 × 128). RTX 5080 at the merge, all 120 rows:
+**0.965** (32 / 37 / 51).
+
 On the final code the lsm rows split on every rented part (9.9–13.8× → 0.96–1.69× torch-compile-cg) and the 4090 /
 3090 decode chains form (0.41 / 0.75× the hand-written KV-cache decode); a GEMV epilogue site left unsplit makes B1
 decode 1.2–4.3× slower on the 3090 / A100 / H100 (without those six rows the 86-row geomeans are 0.996 / 1.145 /
