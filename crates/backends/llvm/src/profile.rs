@@ -263,6 +263,12 @@ pub struct Caps {
     /// 5fcb401b finding 1). `None`: no such instruction — the fp8 roundings
     /// are the host's integer sequence ([`mapal_ir::narrow::f8_from_f32`]).
     pub cvt_f8: Option<Ptx>,
+    /// gapfix `stream-ld`: **L2 eviction priority on a load** — the streaming
+    /// cache operator `ld.global.cs` (PTX ISA 1.0, `sm_20`; SASS `LDG.E.EF`:
+    /// its lines are the L2's first to evict), so bytes read once do not
+    /// displace a set the L2 keeps. `false`: every load takes the default
+    /// policy.
+    pub l2_evict: bool,
     /// bugs-properties `ptx-isa`: **the encoding the part's target itself
     /// needs** — the lowest PTX ISA that names its SM target (`llc` refuses
     /// a lower one: `sm_90a` 8.0, `sm_120` 8.7). Every device module declares
@@ -738,6 +744,7 @@ pub const CAPS_WARP_MMA: Caps = Caps {
     bulk: None,
     reg_realloc: None,
     cvt_f8: None,
+    l2_evict: true,
     ptx: ptx_of_target(80, false),
 };
 
@@ -810,6 +817,7 @@ pub const fn caps_of_cc(cc: u64, arch_specific: bool) -> Caps {
         } else {
             None
         },
+        l2_evict: cc >= 20,
         ptx: ptx_of_target(cc, arch_specific),
     }
 }

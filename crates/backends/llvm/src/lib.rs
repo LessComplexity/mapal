@@ -1024,6 +1024,25 @@ pub struct GpuRungs {
     /// H100 measurement is mixed, the separating fact open: `rules::rungs`);
     /// `--gpu-on=ws-persist` measures the walk. Off: a CTA a tile.
     pub ws_persist: bool,
+    /// gapfix `iota-law`: an array a body fn captures whose law
+    /// (`elem_plan` through captures: an `iota` passed in) is closed is
+    /// computed at its read, never loaded (a norm's fold over a captured
+    /// `iota`). Off: the capture is loaded.
+    pub iota_law: bool,
+    /// gapfix `stream-ld`: a tile operand the grid reads once whose bytes
+    /// exceed what the L2 keeps (`Gpu::l2_keep_bytes`) loads with the
+    /// streaming policy (`ld.global.cs`: L2 evict-first) where the part has
+    /// it (`Caps::l2_evict`). Off: the default policy.
+    pub stream_ld: bool,
+    /// gapfix `shfl-tree`: a row unit's lane tree combines inside a warp
+    /// by register shuffles and across warps through one shared exchange
+    /// (one barrier), where its type is 32-bit. Off: a barrier per level.
+    pub shfl_tree: bool,
+    /// gapfix `kvec-swizzle`: a register-staged k-major `b` panel's words
+    /// spread over the shared-memory banks by an XOR of the stored row's
+    /// word group (the bank geometry: `Gpu::smem_banks`). Off: the dense
+    /// panel.
+    pub kvec_swizzle: bool,
 }
 
 impl GpuRungs {
@@ -1168,11 +1187,15 @@ impl GpuRungs {
         streamk_epi: true,
         tma_warm: true,
         ws_persist: true,
+        iota_law: true,
+        stream_ld: true,
+        shfl_tree: true,
+        kvec_swizzle: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 139] = [
+    pub const NAMES: [&'static str; 143] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1312,6 +1335,10 @@ impl GpuRungs {
         "streamk-epi",
         "tma-warm",
         "ws-persist",
+        "iota-law",
+        "stream-ld",
+        "shfl-tree",
+        "kvec-swizzle",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -1456,6 +1483,10 @@ impl GpuRungs {
             "streamk-epi" => &mut self.streamk_epi,
             "tma-warm" => &mut self.tma_warm,
             "ws-persist" => &mut self.ws_persist,
+            "iota-law" => &mut self.iota_law,
+            "stream-ld" => &mut self.stream_ld,
+            "shfl-tree" => &mut self.shfl_tree,
+            "kvec-swizzle" => &mut self.kvec_swizzle,
             _ => return None,
         })
     }
