@@ -46,7 +46,7 @@ Mapal-Core (HANDOFF §4, ADR-0001) is the frozen implementation scope through M5
 | — | `Unit` | the type of `main`'s input and of unwritten returns |
 | `(T1, T2, …)` | `Tuple` | anonymous product, arity ≥ 2 |
 | `type Point { x: f32, y: f32 }` | `Struct { name, fields }` | named product (E5 renamed the keyword to `type`); ≥ 1 field (L1010) |
-| `[T; n]` | `Array { elem, size }` | fixed size, `n ≥ 1` (L1208); `n` is part of the type |
+| `[T; n]` | `Array { elem, size }` | fixed size, `n ≥ 1` (L1208); `n` is part of the type — a literal or a size expression over a size-generic function's size names (ADR-0047, §2.3) |
 | `"literal"` | `Str` | valid **only** directly feeding `print`/`println` (L1206); no string data |
 | (not denotable) | `IoToken` | the linear world token — §2.8 |
 
@@ -69,6 +69,7 @@ Literals: integers (width-unified against context — L1202/L1203), floats, bool
 - `ret` names the return object. Tuple outputs are written per slot (`ret.0`, `ret.1`) and must be covered completely and unmixed (L1306). Exactly one write to a given `Return` may fire on any path — enforced at check (T0101); the oracle trusts it (interp IN3).
 - The call graph must be **acyclic** — recursion is L1008, Core+1, CPU-only when it lands. Function names in expression position are L1105.
 - An effectful function's surface signature `A → B` lowers token-threaded as `(IoToken × A) → (IoToken × B)` (signature synthesis, ADR-0013 law i); `fn main()` declares as `main : IoToken → IoToken`. An effectful fn has at most one surface return site and no `ret.k` slot writes (L1307).
+- **Size-generic functions** (ADR-0047): `fn project<rows, columns>(weight: [bf16; rows * columns], x: [f32; columns]) -> [f32; rows] { … }` declares size parameters once, after the name; an array length anywhere is a size expression — `+`, `-`, `*` over integer literals and the size names, parenthesized (`/` and `%` are P0119: not invertible). The call stays a flow, `(layer.query, normed) -> project -> query;`: the sizes are **inferred** from the argument's type — a bare dimension binds its name, a compound one is inverted for its one unknown (exactly: `rows = 4096 / columns` must divide), a repeated unknown in a non-decreasing expression (`[f32; n * n]`) by bisection, a size only the output mentions from the result's annotation (`-> z: [f32; 8]`) or the declared output at `-> ret`. Errors: L1701 an undeclared name in a size position (no implicit size parameters), L1702 a duplicate or clashing size name, L1703 a binding that reuses a size name, L1704 conflicting sizes, L1705 a size that is not a whole number, L1706 a size no argument determines (also at the declaration: in no parameter or output type), L1707 a dimension outside `1 ..= 2⁶³ − 1`; `main` takes none (L1002). In the body a size is an integer literal of the instance's value (unpinned `Ty::index_ty`: `i32` below 2³¹, `i64` past it), and a size expression in value position (`rows * columns -> iota`, `x[n - 1]`) is one literal. Lowering **monomorphizes**: one fixed-size function per (generic, size tuple) the calls reach, named `project<4096, 4096>`, declared at the generic's position by size tuple — every fact and backend sees ordinary fixed-size functions; an uncalled generic lowers to nothing (its body is typed per instance).
 
 ### 2.4 Guards and Phi
 
