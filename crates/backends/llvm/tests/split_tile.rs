@@ -709,3 +709,29 @@ fn generated_programs_within_d2() {
     ];
     assert!(all.iter().all(|&x| x > 0), "{c:?}");
 }
+
+/// **integration: a split tile's `k` cut is priced at the rate its panels
+/// realize.** `mma-combine`'s price (bugs-properties `cut-price`) weighs the
+/// waves a cut saves against its partials and zero pass; a split tile's
+/// panel runs its form's `P` products at the tile's issue ratio, so at the
+/// matrix pipe's rate its waves were priced `P`× fast and the cut refused.
+/// The A100's tf32x3 128 × 4096 × 4096 tile (128 blocks on 324 slots) is
+/// cut into 8 pieces, as tensor-cores-2 measured it winning (1.105 over the
+/// FFMA tile, `rung_replay.tsv`); the 2048 × 2048 × 2048 tile (4 waves
+/// against 13 of pieces, 16.8 M `red` adds past the L2 it keeps) stays
+/// whole.
+#[test]
+fn split_cut_priced_at_the_realized_rate() {
+    let s_of = |rows, c, k| {
+        let ir = lower(&gemm(rows, c, k, None));
+        let e = emission(&ir, "a100", EmitOpts::default(), &[], &[], 0);
+        let p = mma_plans(&e);
+        let p = p
+            .iter()
+            .find(|p| p.get("split").is_some_and(|s| s == "tf32x3"))
+            .unwrap_or_else(|| panic!("{rows} x {c} x {k}: a tf32x3 tile: {p:?}"));
+        num(p, "S")
+    };
+    assert_eq!(s_of(128, 4096, 4096), 8, "the measured cut");
+    assert_eq!(s_of(2048, 2048, 2048), 1, "the cut's adds past the L2");
+}

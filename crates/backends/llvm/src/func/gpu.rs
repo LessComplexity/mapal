@@ -2813,6 +2813,21 @@ fn mma_pieces(l: &Launch, m: &GpuMmaTile, site: &TileSite, gpu: &Gpu) -> u64 {
         .caps
         .matrix_op(m.fmt, Home::Regs)
         .map_or(0, |op| gpu.matrix_flops_per_ns(&op));
+    // integration (tensor-cores-2 × bugs-properties `cut-price`): a split
+    // tile's panel runs its form's `P` products at the tile's issue ratio
+    // ([`split_issue`]) — the rate its panels realize, the one its waves and
+    // its cut's fixed work are weighed at. At the matrix pipe's rate the
+    // A100's tf32x3 panels were priced 3× fast, so the cut's partials
+    // outweighed the waves it saves: `pj_m128_n4096_k4096` / `_k14336` and
+    // one `mlp_2048` GEMM went uncut where tensor-cores-2 measured their cuts
+    // winning (`S` 8 / 8 / 4: 1.105 / 1.055 / 1.428 over the FFMA tile).
+    let rate = match m.split {
+        Some(kind) => {
+            let issue = split_issue(site, gpu, m, kind, l.rungs.split_issue).max(1000);
+            rate * 1000 / (SplitForm::of(kind).products().max(1) * issue)
+        }
+        None => rate,
+    };
     let dram = gpu
         .cost
         .map_or(0, |d| d.dram_bytes_per_ns)
