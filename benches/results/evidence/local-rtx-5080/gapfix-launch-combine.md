@@ -157,7 +157,13 @@ leg re-runs with the new harness.
 
 ## Tests
 
-`cargo test -p mapal-backend-llvm`: see the run line in the branch's final report. New / extended: unit
+`cargo test -p mapal-backend-llvm`, all 48 binaries green on the branch head (~495 tests; the full run on the
+pre-fix head failed 3 — `site_choice` ×2, `splitk` ×1 — that predated `mapal_gpu_zero_for` in their assertions;
+fixed and re-run with `zero_fold`, `streams`, `tf32_tile`, `tile_sites_pin`, the lib). Coverage:
+`zero_fold_on_generated_programs` 120 programs, 167 atomic sites, 139 folded, 18 hoisted, 256 valued runs;
+`split_price_counted_and_valued_on_unseen_programs` 48 programs, 7 splits moved (all valued), 41 kept. The hoist is
+the straight-line walk only: the generator's loop trips fold every zero they can, so a loop hoist had no coverage
+and is not emitted. New / extended: unit
 `site_registry_lists_each_table_once_before_the_init`, `warm_zero_flag_follows_the_modules_zeros` (+ the zero-kernel
 bit), `split_price_replays_the_mm16_sweep`; `site_choice` `the_measured_pick_is_stored_and_reused` (stored and forced
 decisions `at=load`, a fresh wisdom still trials at the call) and the pre-sprint golden under the three OFF arms;
