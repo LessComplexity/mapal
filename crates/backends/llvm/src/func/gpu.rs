@@ -3229,6 +3229,37 @@ fn kvec_b(s: &TileSite, g: &GpuTile) -> bool {
     }
 }
 
+/// gapfix `kvec-swizzle` (gaps-disasm C12): **the k-major `b` panel's word
+/// groups XOR-swizzled by the bank geometry** — the copy scatters a vector
+/// along `k` to `lanes` panel rows `bn` words apart, so a warp's stores of one
+/// element land `bn` apart: at `bn` a multiple of the banks' 32 words, every
+/// thread with the same key row in one bank (the decode scores' 8-way
+/// `STS`). A warp's copies cover `kv = bk ÷ lanes` key chunks of `banks ÷ kv`
+/// consecutive key rows each; panel word `k·bn + n` is stored at
+/// `k·bn + (n ⊕ σ(k))`, `σ(k) = ((k ÷ lanes) mod G)·S` with `S` the rows a
+/// chunk spans (at least a fragment vector, `lanes` words) and `G = banks ÷
+/// S`: each chunk's rows on their own banks — conflict-free where `S` is the
+/// rows (`bk ≤ 32`), `S ÷ rows`-way past it. The fragment reads apply the
+/// same `σ` (a permutation of whole `lanes` groups inside the row: their
+/// vectors and their degree unchanged). `Some((G, S))` where the panel is
+/// f32 words, `kmajor-b` copies and `bn` is whole bank rows; `None`
+/// otherwise or with the rung off.
+fn kvec_swizzle(s: &TileSite, g: &GpuTile, rungs: &crate::GpuRungs) -> Option<(u64, u64)> {
+    let e = elem_bytes_of(&s.elem);
+    let lanes = GPU_VEC_BYTES / e;
+    let banks = GPU_WAVEFRONT_BYTES / 4;
+    let kv = (g.bk / lanes).max(1);
+    let step = (banks / kv).max(lanes);
+    let groups = banks / step;
+    (rungs.kvec_swizzle
+        && rungs.kmajor_b
+        && kvec_b(s, g)
+        && e == 4
+        && groups > 1
+        && g.bn().is_multiple_of(banks))
+    .then_some((groups, step))
+}
+
 /// gemv-stream: the site's flops per operand byte fall below the part's
 /// FFMA balance ([`Gpu::ffma_per_dram_byte_pm`]): its time is the bytes it
 /// streams, not its FMAs (a matrix-vector product: `2·c·k` flops over
@@ -5725,11 +5756,14 @@ pub(crate) fn panel_excess(
         }),
     };
     let bw = if vector_b(s) { lanes } else { 1 };
+    let swz = kvec_swizzle(s, g, rungs);
     let st_b = match kvb {
-        // `kmajor-b`: a vector along `k` scatters to `lanes` panel rows.
+        // `kmajor-b`: a vector along `k` scatters to `lanes` panel rows
+        // (`kvec-swizzle`: each key chunk's own bank group).
         true => worst(bn * lanes, &|t, p| {
             let (nc, kc) = rc(bm, t, p / lanes);
-            ((kc + p % lanes) * g.bn() + nc, 1)
+            let sw = swz.map_or(0, |(gs, st)| ((kc / lanes) % gs) * st);
+            ((kc + p % lanes) * g.bn() + (nc ^ sw), 1)
         }),
         false => worst(bn, &|t, p| {
             let (kr, nc) = rc(bm, t, p);
@@ -9410,6 +9444,7 @@ impl Kernel<'_> {
         let (a_vec, b_vec) = (vector_a(s), vector_b(s));
         // sweep-attention-2 `kmajor-b`: `b`'s copies along its k-major rows.
         let kvb = rungs.kmajor_b && kvec_b(s, &g);
+        let swz = kvec_swizzle(s, &g, &rungs);
         let [(a_map, a_loads), (b_map, b_loads)] = lane_maps(s, &g, kmaj, kvb);
         // recurrence-precision `radix-tile`: a mixed-radix operand's copy holds
         // its row (lane) digits at `k = 0` and its own `k` offset `kc`; each
@@ -9602,11 +9637,24 @@ impl Kernel<'_> {
             for ((_, _, sdst, soff), v) in b_src.iter().zip(&vals[a_src.len()..]) {
                 if kvb {
                     // `kmajor-b`: one vector along `k` scatters to `lanes`
-                    // panel rows.
+                    // panel rows (`kvec-swizzle`: its key row's word group
+                    // XORed by its key chunk's bank group).
+                    let base = match swz {
+                        Some((gs, st)) => {
+                            let l = k.op("add", sdst, *soff);
+                            let l = k.op("sub", &l, bs_off);
+                            let q = k.op("udiv", &l, bn * lanes);
+                            let q = k.op("urem", &q, gs);
+                            let sw = k.op("mul", &q, st);
+                            let l = k.op("xor", &l, &sw);
+                            (k.op("add", &l, bs_off), 0)
+                        }
+                        None => (sdst.clone(), *soff),
+                    };
                     for j in 0..lanes {
                         let x = k.tmp();
                         k.line(format!("{x} = extractelement {vt} {v}, i64 {j}"));
-                        let si = k.op("add", sdst, soff + j * bn);
+                        let si = k.op("add", &base.0, base.1 + j * bn);
                         let sp = k.gep(3, smem, &si);
                         k.line(format!("store {t} {x}, ptr addrspace(3) {sp}, align {e}"));
                     }
@@ -9812,9 +9860,19 @@ impl Kernel<'_> {
                     n: u64,
                     off: u64,
                     chunk: u64,
-                    narrow: Option<mapal_ir::NarrowFloat>| {
+                    narrow: Option<mapal_ir::NarrowFloat>,
+                    swz: Option<(u64, u64)>| {
+            // `kvec-swizzle`: the row's word groups as the copies stored them.
+            let sw = swz.map(|(gs, st)| {
+                let q = k.op("udiv", ki, lanes);
+                let q = k.op("urem", &q, gs);
+                k.op("mul", &q, st)
+            });
             let r = k.op("mul", ki, row);
-            let r = k.op("add", &r, first);
+            let r = match &sw {
+                Some(_) => r,
+                None => k.op("add", &r, first),
+            };
             let r = k.op("add", &r, off);
             let r = k.op("add", &r, &cbase);
             // `narrow-async`: the stage's narrow `b` region (see `issue`).
@@ -9844,7 +9902,14 @@ impl Kernel<'_> {
             };
             let mut vals = Vec::new();
             for v in 0..n / w {
-                let si = k.op("add", &r, v * chunk);
+                let si = match &sw {
+                    Some(sw) => {
+                        let c = k.op("add", first, v * chunk);
+                        let c = k.op("xor", &c, sw);
+                        k.op("add", &r, &c)
+                    }
+                    None => k.op("add", &r, v * chunk),
+                };
                 let x = if let Some(nf) = narrow {
                     let nt = crate::narrow::llvm_ty(nf);
                     let nwt = if w == 1 {
@@ -9928,13 +9993,13 @@ impl Kernel<'_> {
             for j in 0..lanes as usize {
                 let kj = self.op("mul", &kk, lanes);
                 let kj = self.op("add", &kj, j as u64);
-                let bv = frag(self, &kj, bn, &b_frag0, tn, bs_off, b_chunk, nb);
+                let bv = frag(self, &kj, bn, &b_frag0, tn, bs_off, b_chunk, nb, swz);
                 let av: Vec<String> = rows.iter().map(|r| r[j].clone()).collect();
                 fma(self, &av, &bv);
             }
         } else {
-            let av = frag(self, &kk, sa, &a_frag0, tm, 0, a_chunk, None);
-            let bv = frag(self, &kk, bn, &b_frag0, tn, bs_off, b_chunk, nb);
+            let av = frag(self, &kk, sa, &a_frag0, tm, 0, a_chunk, None, None);
+            let bv = frag(self, &kk, bn, &b_frag0, tn, bs_off, b_chunk, nb, swz);
             fma(self, &av, &bv);
         }
         self.line(format!("{kkn} = add {ix} {kk}, 1"));
@@ -13120,6 +13185,47 @@ mod tests {
         assert!(apart(&[1, 2], &[5], key));
         assert!(!apart(&[1, 3], &[7], key), "7 shares 3's slot");
         assert!(!apart(&[4], &[4], |o| o));
+    }
+
+    /// gapfix `kvec-swizzle`: the k-major `b` copy's scattered stores on the
+    /// bank model — every register-staged kvb geometry with `bn` whole bank
+    /// rows: conflict-free under the swizzle where a chunk spans a vector of
+    /// rows (`bk ≤ 32`), no worse than half the unswizzled degree past it,
+    /// and the fragment reads' degree unchanged (a permutation of groups).
+    #[test]
+    fn kvec_swizzle_spreads_the_scattered_stores() {
+        let s = site(1024, 8192, 128, true, false, Ty::f32());
+        let mut seen = 0;
+        for (tm, tn, tx, ty, bk) in [
+            (4, 4, 32, 1, 32),
+            (4, 4, 32, 1, 16),
+            (4, 4, 32, 1, 64),
+            (4, 4, 16, 2, 32),
+            (8, 4, 8, 4, 32),
+            (4, 8, 16, 2, 16),
+        ] {
+            let (g, r) = bank_tile([tm, tn, tx, ty, bk, 1], true, true, false);
+            if !kvec_b(&s, &g) {
+                continue;
+            }
+            let off = GpuRungs {
+                kvec_swizzle: false,
+                ..r
+            };
+            let (on, base) = (
+                panel_excess(&s, &g, &r, false),
+                panel_excess(&s, &g, &off, false),
+            );
+            assert!(kvec_swizzle(&s, &g, &r).is_some(), "{g:?}");
+            assert_eq!(on[1], base[1], "reads unchanged {g:?}");
+            match bk <= 32 {
+                true => assert_eq!(on[3], 1, "conflict-free {g:?} (off {})", base[3]),
+                false => assert!(on[3] * 2 <= base[3], "{g:?}: {} vs {}", on[3], base[3]),
+            }
+            assert!(base[3] > 1, "the unswizzled copy conflicts {g:?}");
+            seen += 1;
+        }
+        assert!(seen >= 4);
     }
 
     /// per-site-choice A3: [`bank_degree`] / [`panel_excess`] reproduce the
