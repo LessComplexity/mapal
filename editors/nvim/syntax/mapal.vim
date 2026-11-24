@@ -303,4 +303,4 @@ augroup flowDeclaredFns
 augroup END
 call s:FlowHighlightDeclaredFns()
 
-let b:current_syntax = "flow"
+let b:current_syntax = "mapal"

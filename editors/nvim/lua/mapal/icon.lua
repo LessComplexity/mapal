@@ -52,7 +52,7 @@ function M.setup(opts)
   local ok_dev, devicons = pcall(require, "nvim-web-devicons")
   if ok_dev then
     devicons.set_icon({
-      flow = { icon = glyph, color = color, cterm_color = "43", name = M.name },
+      mapal = { icon = glyph, color = color, cterm_color = "43", name = M.name },
     })
     table.insert(state.providers, "nvim-web-devicons")
   end
@@ -94,7 +94,7 @@ end
 
 --- Human-readable diagnostic — why you are or are not seeing the icon.
 function M.report()
-  local lines = { "flow.icon:" }
+  local lines = { "mapal.icon:" }
   local providers = state.glyph and state.providers or {}
   table.insert(lines, ("  registered with : %s"):format(
     #providers > 0 and table.concat(providers, ", ") or "NOTHING (no provider found)"))
@@ -112,12 +112,12 @@ function M.report()
     table.insert(lines, "    install assets/font/MapalIcons.ttf, or drop the glyph override.")
   elseif not have then
     table.insert(lines, "  note: install assets/font/MapalIcons.ttf and set")
-    table.insert(lines, "        glyph = require('flow.icon').logo  for the real mark.")
+    table.insert(lines, "        glyph = require('mapal.icon').logo  for the real mark.")
   end
 
   if #providers == 0 then
     table.insert(lines, "  ! neither mini.icons nor nvim-web-devicons was loadable when")
-    table.insert(lines, "    registration ran. If the plugin is lazy-loaded on ft=flow, the")
+    table.insert(lines, "    registration ran. If the plugin is lazy-loaded on ft=mapal, the")
     table.insert(lines, "    explorer never triggers it — load it eagerly (lazy = false).")
   end
 

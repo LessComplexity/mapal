@@ -19,7 +19,7 @@ end
 vim.g.loaded_mapal_icon = 1
 
 local function register()
-  local ok, icon = pcall(require, "flow.icon")
+  local ok, icon = pcall(require, "mapal.icon")
   if ok then
     pcall(icon.setup)
   end
@@ -42,6 +42,6 @@ vim.api.nvim_create_autocmd("VimEnter", {
 })
 
 vim.api.nvim_create_user_command("MapalIcon", function()
-  local ok, icon = pcall(require, "flow.icon")
-  print(ok and icon.report() or "flow.icon module not on the runtimepath")
+  local ok, icon = pcall(require, "mapal.icon")
+  print(ok and icon.report() or "mapal.icon module not on the runtimepath")
 end, { desc = "Report the Mapal file-icon registration state" })
