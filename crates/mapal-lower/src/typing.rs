@@ -139,6 +139,10 @@ struct Walk<'a> {
     /// ADR-0048: walking a top-level chain (its bindings are the top-level
     /// names themselves, not locals reusing them).
     top_chain: bool,
+    /// A map whose body's value is an unpinned literal: its element width is
+    /// settled at the end of the walk (an annotation or a use downstream may
+    /// pin it), and its block's output with it — (stage key, the literal).
+    pending_maps: Vec<((u32, u32), usize)>,
 }
 
 /// A surface fn's declared (surface) signature, for call typing in D1.
@@ -183,6 +187,7 @@ pub fn analyze_fn(
         info: TypeInfo::default(),
         block_counter: 0,
         top_chain: false,
+        pending_maps: Vec::new(),
     };
     let mut scope: ScopeStack<WTy> = ScopeStack::new();
     // Bind params to their resolved tys.
@@ -512,6 +517,14 @@ impl Walk<'_> {
     /// Resolve every literal var to a concrete ty (defaults i32/f64) and write
     /// `info.lit_ty`. Range-checking is done at emission against the resolved ty.
     fn resolve_all(&mut self) {
+        // A map's body output is its literal's final width.
+        for (key, v) in std::mem::take(&mut self.pending_maps) {
+            if let Some(t) = self.wty_to_ty(&WTy::Var(v))
+                && let Some(sig) = self.info.blocks.get_mut(&key)
+            {
+                sig.body_out = t;
+            }
+        }
         for v in 0..self.uf.len() {
             let r = self.find(v);
             let ty = match self.state[r].clone() {
@@ -1091,13 +1104,27 @@ impl Walk<'_> {
                 name,
             },
         );
-        match op {
-            CollOp::Map => WTy::Known(Ty::Array {
+        let size = cur_ty.as_ref().and_then(array_size).unwrap_or(1);
+        match (op, &tail_ty) {
+            // A literal's width may still be pinned downstream
+            // (`-> table: [f32; n]`): keep its variable, settle at the end.
+            (CollOp::Map, WTy::Var(v)) if self.unpinned(*v) => {
+                self.pending_maps
+                    .push(((stage_span.start, stage_span.end), *v));
+                WTy::Array(Box::new(tail_ty.clone()), size)
+            }
+            (CollOp::Map, _) => WTy::Known(Ty::Array {
                 elem: Box::new(body_out),
-                size: cur_ty.as_ref().and_then(array_size).unwrap_or(1),
+                size,
             }),
-            CollOp::Fold => WTy::Known(body_out),
+            (CollOp::Fold, _) => WTy::Known(body_out),
         }
+    }
+
+    /// Whether literal variable `v` has no width yet.
+    fn unpinned(&mut self, v: usize) -> bool {
+        let r = self.find(v);
+        !matches!(self.state[r], LitState::Fixed(_))
     }
 
     fn type_call(&mut self, sig: &FnSig, arg: &WTy, span: syn::SourceLoc) {

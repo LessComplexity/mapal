@@ -319,6 +319,24 @@ fn main() { S { _: [1.0, 2.0, 3.0], scale: 0.5 } -> s; s -> four -> println; }",
 }
 
 #[test]
+fn a_maps_literal_value_takes_the_width_its_binding_annotates() {
+    // The scout's `map { i -> 0.01 } -> start: [f32; 64]` was `[f64; 64]`
+    // (an L1201 at the annotation): the literal's width is settled at the end
+    // of the walk, so the annotation (or a use) pins it.
+    let src = "4 -> iota -> map { i -> 1.0 } -> ones: [f32; 4];
+fn main() {
+    8 -> iota -> map { i -> 0.25 } -> quarter: [f32; 8];
+    quarter[3] * 2.0 -> x: f32;
+    x -> println;
+    ones[0] -> println;
+    3 -> iota -> map { i -> 0.5 } -> h;
+    h[1] -> println;
+}
+";
+    assert_eq!(out(src), "0.5\n1\n0.5\n");
+}
+
+#[test]
 fn a_program_without_top_level_bindings_is_unchanged() {
     let codes = lower_err_codes("fn main() { x -> println; }");
     assert_eq!(codes, vec!["L1101".to_string()]);
