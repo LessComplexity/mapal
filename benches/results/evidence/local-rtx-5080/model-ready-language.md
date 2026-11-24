@@ -24,8 +24,12 @@ size-generic types. Machine: Threadripper 9970X + RTX 5080, shared with other ag
   `n + 2`, a two-size product, a generic in a loop, sizes past 2¹⁶; generic types over `_` and a `read`. **9 programs ×
   {native CPU, RTX 5080} × {compile-time evaluation on, off}: 36/36 `mapal test` PASS** (fixed face, bytes against the
   interpreter); values checked by hand / against Python.
-- **Tests on the merged tree** (front end, IR, interpreter, rewrite, CLI, runtime; `--no-fail-fast`): all pass. The
-  LLVM backend suite: see the test table below.
+- **Tests on `model/language`** (`--no-fail-fast`): front end, IR, interpreter, rewrite, CLI, runtime — 92 binaries,
+  992 passed, 0 failed (4 ignored); the LLVM backend — all 52 binaries: 45 on the ADR-0048 tree before the merge (465
+  passed; the run hit its 2 h cap before the last 7) and those 7 plus `math`, `read`, `size_generics`, `resident`,
+  `recurrence`, `natural_forms` on the merged tree (72 passed), then `math`, `read`, `top_level`, `size_generics`,
+  `natural_forms`, `resident` again on the final head (37 passed); 0 failed. Neovim syntax + format, the VS Code
+  scope test: pass. Final branch heads merged: read `75ab59db`, math `9e9ac0f6`, generics `9d91dcb2`.
 
 ## (B) ADR-0048
 
