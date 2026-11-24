@@ -280,6 +280,21 @@ are unchanged (the lowered IR is the hand-specialized program's; tested with its
 the RTX 5080 and every emulator mode, and on generated programs). In the body a size is an integer literal.
 `examples/matmul4_loop.mapal` is written over `n`; the formatter keeps `fn f<a, b>(` tight; Neovim highlights the list.
 
+### 9.6 Top-level bindings, compile-time evaluation, `_`, size-generic types (ADR-0048, 2026-11-25)
+
+**Before.** A model's sizes were literals in every signature (the real-size Llama was rendered by a Python template);
+types were spelled structurally; a value computable before the program runs (a table, `1 / sqrt(head_size)`) was
+recomputed at run time — constant folding stopped at one scalar operation.
+
+**After.** `2048 -> hidden_size;` at the top level binds a program-wide value (order-independent, immutable, no effects;
+L1801–L1807). The compiler decides from the dataflow which values are computable before the program runs: top-level
+scalars are computed by the interpreter during lowering and become literals (usable as sizes; L1808 when a size does
+not come out); on the graph, the `static_plan` fact marks every value with no input and no effect in its cone and
+realizes it by bytes against work — `fold_static` embeds the cheap ones (oracle values, cones and finished loops
+dropped), the rest run. `type Hidden { _: [f32; hidden_size] }` is a zero-cost alias; `_` beside other fields is read
+where the struct's own type does not fit; `type Matrix<rows, columns>` is a size-generic type (`Matrix<hidden_size,
+hidden_size>`; L1809). Formatter, Neovim, tests on generated programs (interpreter, native CPU, every emulator mode).
+
 ---
 
 **Version:** 0.2 · **Status:** Design specification.

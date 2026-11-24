@@ -136,6 +136,13 @@ struct Walk<'a> {
     info: TypeInfo,
     /// per-owner map/fold counter (deterministic block names).
     block_counter: usize,
+    /// ADR-0048: walking a top-level chain (its bindings are the top-level
+    /// names themselves, not locals reusing them).
+    top_chain: bool,
+    /// A map whose body's value is an unpinned literal: its element width is
+    /// settled at the end of the walk (an annotation or a use downstream may
+    /// pin it), and its block's output with it — (stage key, the literal).
+    pending_maps: Vec<((u32, u32), usize)>,
 }
 
 /// A surface fn's declared (surface) signature, for call typing in D1.
@@ -179,14 +186,25 @@ pub fn analyze_fn(
         diags: Vec::new(),
         info: TypeInfo::default(),
         block_counter: 0,
+        top_chain: false,
+        pending_maps: Vec::new(),
     };
     let mut scope: ScopeStack<WTy> = ScopeStack::new();
     // Bind params to their resolved tys.
     let sig = walk.fn_sigs.get(&walk.owner_name).cloned();
     if let Some(sig) = &sig {
         for (p, pty) in fd.params.iter().zip(sig.params.iter()) {
+            walk.check_not_size(p.name);
             scope.bind(name_text(source, p.name), WTy::Known(pty.clone()));
         }
+    }
+    // ADR-0048 D3: the top-level values this function reads that are not
+    // literals are their chains, walked at the outermost scope.
+    let globals = types.globals();
+    for i in globals.used_by(source, fd) {
+        walk.top_chain = true;
+        walk.chain(&globals.items[i].chain, &mut scope);
+        walk.top_chain = false;
     }
     walk.block(&fd.body, &mut scope);
     walk.resolve_all();
@@ -194,6 +212,48 @@ pub fn analyze_fn(
 }
 
 impl Walk<'_> {
+    /// ADR-0048 D3: a top-level scalar computed before the program runs — an
+    /// unannotated number is a literal (its width from context), an
+    /// annotated one a constant of its type.
+    fn global_const(&mut self, text: &str, span: syn::SourceLoc) -> WTy {
+        use crate::globals::GlobalConst;
+        match self.types.globals().consts[text].clone() {
+            GlobalConst::Int {
+                pinned: Some(t), ..
+            }
+            | GlobalConst::Float {
+                pinned: Some(t), ..
+            } => WTy::Known(t),
+            GlobalConst::Int {
+                value,
+                pinned: None,
+            } => {
+                let var = self.fresh_var(span, false);
+                if value > i128::from(i32::MAX) || value < i128::from(i32::MIN) {
+                    self.pin(var, &Ty::i64(), span);
+                }
+                WTy::Var(var)
+            }
+            GlobalConst::Float { pinned: None, .. } => WTy::Var(self.fresh_var(span, true)),
+            GlobalConst::Bool(_) => WTy::Known(Ty::Bool),
+        }
+    }
+
+    /// ADR-0048 D5: a known struct read through its `_` field(s) until `fits`.
+    fn through_default(&mut self, w: &WTy, fits: impl Fn(&Ty) -> bool) -> WTy {
+        if let Some(t) = self.wty_to_ty(w)
+            && matches!(t, Ty::Struct { .. })
+            && let Some(k) = TypeTable::default_steps(&t, &fits)
+        {
+            let mut cur = t;
+            for _ in 0..k {
+                cur = TypeTable::default_of(&cur).cloned().unwrap_or(Ty::Unit);
+            }
+            return WTy::Known(cur);
+        }
+        w.clone()
+    }
+
     // --- size parameters (ADR-0047 D4) --------------------------------------
 
     /// The value of a size parameter named `text` not shadowed in `scope`.
@@ -225,7 +285,18 @@ impl Walk<'_> {
     /// L1703: a binding may not reuse a size parameter's name.
     fn check_not_size(&mut self, name: syn::Name) {
         let text = name_text(self.source, name);
-        if self.sizes.env.contains_key(text) {
+        if self.types.globals().is_top(text) {
+            if !self.top_chain {
+                self.diags.push(diag(
+                    LCode::TopNameReused,
+                    name.span,
+                    format!(
+                        "`{text}` is a top-level name; a local cannot reuse it — pick another name \
+                         (ADR-0048 D1)"
+                    ),
+                ));
+            }
+        } else if self.sizes.env.contains_key(text) {
             self.diags.push(diag(
                 LCode::SizeRebound,
                 name.span,
@@ -253,14 +324,14 @@ impl Walk<'_> {
             Some(v) => Some(v.clone()),
             None => self.wty_to_ty(cur).and_then(|arg| {
                 let expected = self.expected_result(next);
-                crate::sizes::infer(self.source, fd, &arg, expected.as_ref(), span).ok()
+                crate::sizes::infer(self.source, self.types, fd, &arg, expected.as_ref(), span).ok()
             }),
         };
         let Some(values) = values else {
             self.size_use.unresolved += 1;
             return WTy::Unknown;
         };
-        let env = crate::sizes::env_of(self.source, fd, &values);
+        let env = crate::sizes::env_of(self.source, fd, &values, self.types.base_env());
         let effectful = self.effects.is_effectful(name);
         let Some(sig) = crate::sizes::instance_sig(self.source, self.types, fd, &env, effectful)
         else {
@@ -446,6 +517,14 @@ impl Walk<'_> {
     /// Resolve every literal var to a concrete ty (defaults i32/f64) and write
     /// `info.lit_ty`. Range-checking is done at emission against the resolved ty.
     fn resolve_all(&mut self) {
+        // A map's body output is its literal's final width.
+        for (key, v) in std::mem::take(&mut self.pending_maps) {
+            if let Some(t) = self.wty_to_ty(&WTy::Var(v))
+                && let Some(sig) = self.info.blocks.get_mut(&key)
+            {
+                sig.body_out = t;
+            }
+        }
         for v in 0..self.uf.len() {
             let r = self.find(v);
             let ty = match self.state[r].clone() {
@@ -843,7 +922,22 @@ impl Walk<'_> {
         cur: &WTy,
         scope: &mut ScopeStack<WTy>,
     ) -> WTy {
-        // Determine element / acc tys from cur.
+        // Determine element / acc tys from cur (ADR-0048 D5: a struct reads
+        // through its `_` array).
+        let cur = &match (op, cur) {
+            (CollOp::Map, _) => self.through_default(cur, |t| matches!(t, Ty::Array { .. })),
+            (CollOp::Fold, WTy::Tuple(ws)) if ws.len() == 2 => WTy::Tuple(vec![
+                ws[0].clone(),
+                self.through_default(&ws[1], |t| matches!(t, Ty::Array { .. })),
+            ]),
+            (CollOp::Fold, WTy::Known(Ty::Tuple(ts))) if ts.len() == 2 => WTy::Tuple(vec![
+                WTy::Known(ts[0].clone()),
+                self.through_default(&WTy::Known(ts[1].clone()), |t| {
+                    matches!(t, Ty::Array { .. })
+                }),
+            ]),
+            _ => cur.clone(),
+        };
         let cur_ty = self.wty_to_ty(cur);
         let idx = self.block_counter;
         self.block_counter += 1;
@@ -905,6 +999,7 @@ impl Walk<'_> {
             .iter()
             .map(|p| name_text(self.source, *p))
             .chain(self.sizes.env.keys().map(String::as_str))
+            .chain(self.types.globals().consts.keys().map(String::as_str))
             .collect();
         let caps = body_captures(self.source, body, &param_names, self.fn_sigs);
         if let Some((cap, sp)) = &caps.write {
@@ -1014,13 +1109,27 @@ impl Walk<'_> {
                 name,
             },
         );
-        match op {
-            CollOp::Map => WTy::Known(Ty::Array {
+        let size = cur_ty.as_ref().and_then(array_size).unwrap_or(1);
+        match (op, &tail_ty) {
+            // A literal's width may still be pinned downstream
+            // (`-> table: [f32; n]`): keep its variable, settle at the end.
+            (CollOp::Map, WTy::Var(v)) if self.unpinned(*v) => {
+                self.pending_maps
+                    .push(((stage_span.start, stage_span.end), *v));
+                WTy::Array(Box::new(tail_ty.clone()), size)
+            }
+            (CollOp::Map, _) => WTy::Known(Ty::Array {
                 elem: Box::new(body_out),
-                size: cur_ty.as_ref().and_then(array_size).unwrap_or(1),
+                size,
             }),
-            CollOp::Fold => WTy::Known(body_out),
+            (CollOp::Fold, _) => WTy::Known(body_out),
         }
+    }
+
+    /// Whether literal variable `v` has no width yet.
+    fn unpinned(&mut self, v: usize) -> bool {
+        let r = self.find(v);
+        !matches!(self.state[r], LitState::Fixed(_))
     }
 
     fn type_call(&mut self, sig: &FnSig, arg: &WTy, span: syn::SourceLoc) {
@@ -1102,6 +1211,9 @@ impl Walk<'_> {
                 let text = name_text(self.source, *n);
                 match scope.resolve(text) {
                     Some((b, _)) => b.clone(),
+                    None if self.types.globals().consts.contains_key(text) => {
+                        self.global_const(text, expr.span)
+                    }
                     None => match self.sizes.env.get(text).copied() {
                         // ADR-0047 D4: an integer literal of the size's value;
                         // unpinned it is `Ty::index_ty(n)`.
@@ -1143,6 +1255,11 @@ impl Walk<'_> {
                 let bty = self.expr(base, scope);
                 match field {
                     syn::MemberField::Named(fname) => {
+                        let fn_ = name_text(self.source, *fname);
+                        let bty = self.through_default(&bty, |t| match t {
+                            Ty::Struct { fields, .. } => fields.iter().any(|(n, _)| n == fn_),
+                            _ => false,
+                        });
                         let bt = self.wty_to_ty(&bty);
                         if let Some(Ty::Struct { fields, .. }) = bt.as_ref() {
                             let fn_ = name_text(self.source, *fname);
@@ -1169,6 +1286,7 @@ impl Walk<'_> {
             }
             ExprKind::Index { base, index } => {
                 let bty = self.expr(base, scope);
+                let bty = self.through_default(&bty, |t| matches!(t, Ty::Array { .. }));
                 let iv = self.expr(index, scope);
                 // index is an integer; if a lit var, leave it (defaults i32) —
                 // unless the literal itself is past i32 (an extent past 2³¹
@@ -1211,6 +1329,54 @@ impl Walk<'_> {
             }
             ExprKind::Struct { name, fields } => {
                 let tname = name_text(self.source, *name);
+                // ADR-0048 D4: a size-generic type's literal, its sizes from
+                // its fields' types (where they are known).
+                if let Some(td) = self
+                    .types
+                    .decl(tname)
+                    .filter(|td| !td.sizes.is_empty())
+                    .cloned()
+                {
+                    let mut tys = Vec::new();
+                    let mut ws = Vec::new();
+                    for f in &td.fields {
+                        let fname = name_text(self.source, f.name);
+                        let w = fields
+                            .iter()
+                            .find(|fi| name_text(self.source, fi.name) == fname)
+                            .map(|fi| match &fi.value {
+                                Some(v) => self.expr(v, scope),
+                                None => scope
+                                    .resolve(fname)
+                                    .map(|(b, _)| b.clone())
+                                    .unwrap_or(WTy::Unknown),
+                            })
+                            .unwrap_or(WTy::Unknown);
+                        // A literal field (no type yet) carries no size.
+                        tys.push(match &w {
+                            WTy::Var(_) => Some(Ty::i32()),
+                            _ => self.wty_to_ty(&w),
+                        });
+                        ws.push(w);
+                    }
+                    let Some(tys) = tys.into_iter().collect::<Option<Vec<Ty>>>() else {
+                        return WTy::Unknown;
+                    };
+                    let Some(ty) =
+                        crate::sizes::infer_type(self.source, self.types, &td, &tys, expr.span)
+                            .ok()
+                            .and_then(|vs| self.types.instance(self.source, tname, &vs, expr.span))
+                    else {
+                        return WTy::Unknown;
+                    };
+                    // The fields' literals take the instance's field types.
+                    if let Ty::Struct { fields: decl, .. } = &ty {
+                        for (w, (_, ft)) in ws.iter().zip(decl) {
+                            self.unify_known(w, ft, expr.span);
+                        }
+                    }
+                    return WTy::Known(ty);
+                }
                 if let Some(sty) = self.types.get(tname).cloned() {
                     if let Ty::Struct { fields: decl, .. } = &sty {
                         for fi in fields {

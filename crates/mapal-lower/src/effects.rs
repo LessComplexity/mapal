@@ -109,6 +109,26 @@ pub fn analyze(
     Ok(Effects { effectful })
 }
 
+/// ADR-0048 D1: whether a top-level chain has an effect — a direct `print` /
+/// `println` / `time` / `read`, or a call of an effectful function.
+pub fn chain_effectful(
+    source: &str,
+    chain: &Chain,
+    fn_names: &BTreeSet<String>,
+    effects: &Effects,
+) -> bool {
+    let mut walk = NameWalk {
+        source,
+        fn_names,
+        direct_effect: false,
+        callees: Vec::new(),
+        seen_callee: BTreeSet::new(),
+    };
+    let mut scope: ScopeStack<()> = ScopeStack::new();
+    walk.chain(chain, &mut scope);
+    walk.direct_effect || walk.callees.iter().any(|c| effects.is_effectful(c))
+}
+
 /// The lexically-scoped name walk (a thin precursor of the typing walk; DESIGN
 /// §6.1). Tracks only names, recording direct `print` use and call edges.
 struct NameWalk<'a> {

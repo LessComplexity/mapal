@@ -19,6 +19,7 @@ mod linear;
 mod precision;
 mod radix;
 mod range;
+mod statics;
 mod stream;
 mod unchanged;
 pub use algebra::{
@@ -32,6 +33,9 @@ pub use precision::{
 };
 pub use radix::{AxisDigit, Digit, RadixAddr, RadixForm, RadixTile, uniform_at};
 pub use range::FinitePlan;
+pub use statics::{
+    ATTEMPT_WORK, EMBED_BYTES, EVAL_WORK, Realize, StaticPlan, StaticRoot, ty_extent,
+};
 pub use stream::{
     BoxClass, GuardBox, GuardSide, StreamGroup, StreamGuard, StreamLaw, StreamPlan, StreamRole,
     extreme_up,

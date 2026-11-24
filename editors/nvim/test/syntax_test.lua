@@ -87,6 +87,14 @@ local cases = {
   { 60, "rows", "flowSizeParam", "a declared size parameter" },
   { 60, "columns", "flowSizeParam", "the second size parameter" },
   { 60, 23, "flowSizeList", "the `>` closing the size list" },
+
+  -- ADR-0048: a top-level binding, a size-generic type, `_`, a type's sizes.
+  { 64, "hidden_size", "flowBinding", "a top-level binding binds like a local" },
+  { 66, 12, "flowSizeList", "the `<` opening a type's size list" },
+  { 66, "rows", "flowSizeParam", "a type's size parameter" },
+  { 67, 5, "flowDefaultField", "`_`, the type's default interpretation" },
+  { 70, 19, "flowSizeArgs", "the `<` of a generic type's sizes, not an operator" },
+  { 70, "hidden_size", "flowSizeParam", "a top-level size as a type's size" },
 }
 
 local failures = 0

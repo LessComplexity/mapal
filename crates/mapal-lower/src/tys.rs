@@ -10,6 +10,7 @@ use mapal_ir::{MAX_TY_DEPTH, Ty};
 use mapal_syntax::{self as syn, Program, Ty as SynTy, TyKind};
 
 use crate::diag::{LCode, diag};
+use crate::globals::Globals;
 use crate::sizes::SizeEnv;
 
 /// Convert a `mapal_syntax::SourceLoc` to a `mapal_ir::SourceLoc` (field-identical;
@@ -19,22 +20,74 @@ pub fn ir_loc(s: syn::SourceLoc) -> mapal_ir::SourceLoc {
 }
 
 /// The resolved type table: surface type name → its fully-expanded
-/// `Ty::Struct`. Keyed deterministically (BTreeMap; I12/§11).
+/// `Ty::Struct` — or, for an ADR-0048 alias (a type whose only field is `_`),
+/// the `_` field's type itself. Size-generic declarations (ADR-0048 D4) are
+/// kept as declarations and instantiated at each use's sizes. Keyed
+/// deterministically (BTreeMap; I12/§11).
 pub struct TypeTable {
     map: BTreeMap<String, Ty>,
+    /// Every well-formed declaration (generic ones included), for
+    /// instantiation at a use's sizes.
+    decls: BTreeMap<String, syn::TypeDecl>,
+    cyclic: std::collections::BTreeSet<String>,
+    /// ADR-0048: the program's top-level values.
+    globals: Globals,
 }
 
 impl TypeTable {
-    /// Look up a resolved struct ty by surface name.
+    /// Look up a resolved (fixed-size) type by surface name.
     pub fn get(&self, name: &str) -> Option<&Ty> {
         self.map.get(name)
     }
+
+    /// ADR-0048: the program's top-level values.
+    pub fn globals(&self) -> &Globals {
+        &self.globals
+    }
+
+    /// The size environment outside every size-generic function: the
+    /// top-level positive integers (ADR-0048 D3).
+    pub fn base_env(&self) -> &SizeEnv {
+        &self.globals.sizes
+    }
+
+    /// ADR-0048 D5: the type a value of type `ty` reads as through its
+    /// default field — `ty._` when `ty` is a struct with a `_` field.
+    pub fn default_of(ty: &Ty) -> Option<&Ty> {
+        match ty {
+            Ty::Struct { fields, .. } => fields.iter().find(|(n, _)| n == "_").map(|(_, t)| t),
+            _ => None,
+        }
+    }
+
+    /// D5: the `_` steps (0, 1, 2, …) that make `ty` read as a type `fits`
+    /// accepts — the value as is first, then `ty._`, `ty._._`, … (a chain is
+    /// followed deterministically, the first fit taken).
+    pub fn default_steps(ty: &Ty, fits: impl Fn(&Ty) -> bool) -> Option<usize> {
+        let mut cur = ty;
+        for k in 0..=MAX_DEFAULT_CHAIN {
+            if fits(cur) {
+                return Some(k);
+            }
+            cur = Self::default_of(cur)?;
+        }
+        None
+    }
 }
+
+/// The longest `_` chain a value is read through (types nest at most
+/// `MAX_TY_DEPTH` deep, so a chain is shorter).
+pub const MAX_DEFAULT_CHAIN: usize = MAX_TY_DEPTH;
 
 /// Build the type table for `program` (DESIGN §5), collecting every diagnostic.
 /// Returns the table regardless (errored entries are simply absent), so later
 /// passes can still resolve the well-formed ones and report their own errors.
-pub fn build(source: &str, program: &Program) -> (TypeTable, Vec<syn::Diagnostic>) {
+/// `globals` gives the sizes a field may name (ADR-0048 D3).
+pub fn build(
+    source: &str,
+    program: &Program,
+    globals: &Globals,
+) -> (TypeTable, Vec<syn::Diagnostic>) {
     let mut diags = Vec::new();
 
     // 1. Index declarations by name in source order; report duplicates (L1004).
@@ -63,7 +116,8 @@ pub fn build(source: &str, program: &Program) -> (TypeTable, Vec<syn::Diagnostic
         by_name.insert(name_text(source, td.name), *td);
     }
 
-    // 2. Reject empty types and duplicate fields up front (L1010 / L1005).
+    // 2. Reject empty types and duplicate fields up front (L1010 / L1005);
+    //    ADR-0048 D4: a size list's names (L1702 / L1706 / L1802).
     for td in &decl_order {
         if td.fields.is_empty() {
             diags.push(diag(
@@ -88,26 +142,87 @@ pub fn build(source: &str, program: &Program) -> (TypeTable, Vec<syn::Diagnostic
                 field_seen.insert(fname, ());
             }
         }
+        check_type_sizes(source, td, globals, &mut diags);
     }
 
     // 3. Detect struct-reference cycles (L1007) via iterative DFS over the decl
     //    reference graph (a struct references another struct by Named tyref).
     let cyclic = detect_cycles(source, &decl_order, &by_name, &mut diags);
 
-    // 4. Resolve each non-cyclic declaration's fields to a fully-expanded
-    //    `Ty::Struct`. Resolution recurses through referenced structs.
+    let mut table = TypeTable {
+        map: BTreeMap::new(),
+        decls: decl_order
+            .iter()
+            .map(|td| (name_text(source, td.name).to_string(), (*td).clone()))
+            .collect(),
+        cyclic,
+        globals: globals.clone(),
+    };
+
+    // 4. Resolve each non-cyclic, fixed-size declaration (a struct, or an
+    //    alias's `_` type). Resolution recurses through referenced types.
     let mut map: BTreeMap<String, Ty> = BTreeMap::new();
     for td in &decl_order {
         let name = name_text(source, td.name).to_string();
-        if cyclic.contains(&name) {
+        if table.cyclic.contains(&name) || !td.sizes.is_empty() {
             continue;
         }
-        if let Some(ty) = resolve_struct(source, td, &by_name, &cyclic, &mut diags) {
+        if let Some(ty) = table.instantiate_at(source, td, &[], 0, &mut diags) {
             map.insert(name, ty);
         }
     }
+    table.map = map;
+    (table, diags)
+}
 
-    (TypeTable { map }, diags)
+/// ADR-0048 D4: a size-generic type's declaration checks — each size name
+/// declared once (L1702), not a top-level name (L1802), used by a field
+/// (L1706); a field's size names are the type's sizes or top-level integers
+/// (else L1701, reported at resolution).
+fn check_type_sizes(
+    source: &str,
+    td: &syn::TypeDecl,
+    globals: &Globals,
+    diags: &mut Vec<syn::Diagnostic>,
+) {
+    let tname = name_text(source, td.name);
+    let mut declared: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+    for n in &td.sizes {
+        let text = name_text(source, *n);
+        if crate::is_reserved(text) {
+            diags.push(diag(
+                LCode::ReservedName,
+                n.span,
+                format!("`{text}` is a reserved name"),
+            ));
+        } else if globals.is_top(text) {
+            diags.push(diag(
+                LCode::TopNameReused,
+                n.span,
+                format!(
+                    "`{text}` is a top-level name; a size parameter of `{tname}` cannot reuse it"
+                ),
+            ));
+        } else if !declared.insert(text) {
+            diags.push(diag(
+                LCode::DuplicateSize,
+                n.span,
+                format!("size parameter `{text}` is declared twice"),
+            ));
+        }
+    }
+    let mut used = crate::globals::Names::default();
+    used.type_decl(source, td);
+    for n in &td.sizes {
+        let text = name_text(source, *n);
+        if !used.sizes.contains(text) {
+            diags.push(diag(
+                LCode::SizeUnbound,
+                n.span,
+                format!("size parameter `{text}` of `{tname}` appears in no field type"),
+            ));
+        }
+    }
 }
 
 /// The text of a `Name` (a bare span into `source`).
@@ -215,6 +330,9 @@ fn collect_named_refs(source: &str, ty: &SynTy, out: &mut Vec<(String, syn::Sour
     while let Some(t) = stack.pop() {
         match &t.kind {
             TyKind::Named(n) => out.push((name_text(source, *n).to_string(), n.span)),
+            TyKind::Generic { name, .. } => {
+                out.push((name_text(source, *name).to_string(), name.span))
+            }
             TyKind::Tuple(ts) => {
                 for inner in ts {
                     stack.push(inner);
@@ -227,60 +345,26 @@ fn collect_named_refs(source: &str, ty: &SynTy, out: &mut Vec<(String, syn::Sour
     }
 }
 
-/// Resolve a `type` declaration to a fully-expanded `Ty::Struct`.
-fn resolve_struct(
+/// The `TyKind ⇀ Ty` resolution skeleton (DESIGN §5): scalar / `Tuple` /
+/// `Array`+L1208 / `Dynamic`|`Error`+L1000 arms and the trailing depth/L1209
+/// check. A `Named` reference and a size-generic `Generic` one resolve through
+/// the table's declarations ([`TypeTable::named`]).
+fn resolve_tykind(
+    table: &TypeTable,
     source: &str,
-    td: &syn::TypeDecl,
-    by_name: &BTreeMap<&str, &syn::TypeDecl>,
-    cyclic: &std::collections::BTreeSet<String>,
+    ty: &SynTy,
+    env: &SizeEnv,
+    depth: usize,
     diags: &mut Vec<syn::Diagnostic>,
 ) -> Option<Ty> {
-    let mut fields = Vec::with_capacity(td.fields.len());
-    let mut field_seen: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
-    for f in &td.fields {
-        let fname = name_text(source, f.name);
-        if !field_seen.insert(fname) {
-            // Duplicate already reported; skip the dup so the struct ty is sane.
-            continue;
-        }
-        let fty = resolve_ty(source, &f.ty, by_name, cyclic, diags)?;
-        fields.push((fname.to_string(), fty));
-    }
-    if fields.is_empty() {
-        // Empty type already reported (L1010); do not register it.
-        return None;
-    }
-    let ty = Ty::Struct {
-        name: name_text(source, td.name).to_string(),
-        fields,
-    };
-    if !depth_ok(&ty) {
+    if depth > MAX_TY_DEPTH {
         diags.push(diag(
             LCode::TypeTooDeep,
-            td.span,
-            format!(
-                "type `{}` nests deeper than the {MAX_TY_DEPTH}-level limit",
-                name_text(source, td.name)
-            ),
+            ty.span,
+            format!("type nests deeper than the {MAX_TY_DEPTH}-level limit"),
         ));
         return None;
     }
-    Some(ty)
-}
-
-/// The `TyKind ⇀ Ty` resolution skeleton (DESIGN §5): scalar / `Tuple` /
-/// `Array`+L1208 / `Dynamic`|`Error`+L1000 arms and the trailing depth/L1209
-/// check, shared verbatim by both callers. The only variation — how a
-/// non-scalar `Named` reference resolves — is the single declared seam
-/// `resolve_named` (FRAMEWORK §5): it maps `(name, name-span, diags) → Ty`,
-/// pushing its own diagnostic and returning `None` on failure.
-fn resolve_tykind(
-    source: &str,
-    ty: &SynTy,
-    resolve_named: &impl Fn(&str, syn::SourceLoc, &mut Vec<syn::Diagnostic>) -> Option<Ty>,
-    env: &SizeEnv,
-    diags: &mut Vec<syn::Diagnostic>,
-) -> Option<Ty> {
     let resolved = match &ty.kind {
         TyKind::Named(n) => {
             let text = name_text(source, *n);
@@ -296,13 +380,27 @@ fn resolve_tykind(
                 "f8e4m3" => Ty::f8e4m3(),
                 "f8e5m2" => Ty::f8e5m2(),
                 "bool" => Ty::Bool,
-                _ => resolve_named(text, n.span, diags)?,
+                _ => table.named(source, text, n.span, &[], depth, diags)?,
             }
+        }
+        TyKind::Generic { name, args } => {
+            let text = name_text(source, *name);
+            let mut values = Vec::with_capacity(args.len());
+            for a in args {
+                match crate::sizes::eval(source, a, env) {
+                    Ok(v) => values.push(v),
+                    Err(d) => {
+                        diags.push(d);
+                        return None;
+                    }
+                }
+            }
+            table.named(source, text, name.span, &values, depth, diags)?
         }
         TyKind::Tuple(ts) => {
             let mut out = Vec::with_capacity(ts.len());
             for inner in ts {
-                out.push(resolve_tykind(source, inner, resolve_named, env, diags)?);
+                out.push(resolve_tykind(table, source, inner, env, depth + 1, diags)?);
             }
             Ty::Tuple(out)
         }
@@ -313,7 +411,7 @@ fn resolve_tykind(
             size,
         } => {
             // ADR-0047 D2: a size expression evaluates under the instance's
-            // sizes (none outside a size-generic function: L1701).
+            // sizes (and the top-level integers, ADR-0048 D3).
             let n = match size {
                 Some(e) => match crate::sizes::eval(source, e, env) {
                     Ok(n) => n,
@@ -332,7 +430,7 @@ fn resolve_tykind(
                 }
                 None => *len,
             };
-            let e = resolve_tykind(source, elem, resolve_named, env, diags)?;
+            let e = resolve_tykind(table, source, elem, env, depth + 1, diags)?;
             Ty::Array {
                 elem: Box::new(e),
                 size: n,
@@ -358,39 +456,114 @@ fn resolve_tykind(
     Some(resolved)
 }
 
-/// Resolve a single `TyKind` to a `mapal_ir::Ty` (DESIGN §5). Reports the
-/// appropriate L-code and returns `None` on failure. Build-time seam: struct
-/// references resolve mid-build via `by_name`+`cyclic`+[`resolve_struct`].
-pub fn resolve_ty(
-    source: &str,
-    ty: &SynTy,
-    by_name: &BTreeMap<&str, &syn::TypeDecl>,
-    cyclic: &std::collections::BTreeSet<String>,
-    diags: &mut Vec<syn::Diagnostic>,
-) -> Option<Ty> {
-    resolve_tykind(
-        source,
-        ty,
-        &|text, span, diags| {
-            if cyclic.contains(text) {
-                // Part of a reported cycle; do not re-resolve.
-                return None;
+impl TypeTable {
+    /// A declared type at `values` (its sizes in declared order; empty for a
+    /// fixed-size type): L1809 when the count is wrong.
+    fn named(
+        &self,
+        source: &str,
+        text: &str,
+        span: syn::SourceLoc,
+        values: &[u64],
+        depth: usize,
+        diags: &mut Vec<syn::Diagnostic>,
+    ) -> Option<Ty> {
+        if self.cyclic.contains(text) {
+            // Part of a reported cycle; do not re-resolve.
+            return None;
+        }
+        let Some(td) = self.decls.get(text) else {
+            diags.push(diag(
+                LCode::UnknownType,
+                span,
+                format!("unknown type `{text}`"),
+            ));
+            return None;
+        };
+        if td.sizes.len() != values.len() {
+            let want = td
+                .sizes
+                .iter()
+                .map(|n| name_text(source, *n))
+                .collect::<Vec<_>>()
+                .join(", ");
+            diags.push(diag(
+                LCode::TypeSizes,
+                span,
+                if td.sizes.is_empty() {
+                    format!("type `{text}` takes no sizes")
+                } else {
+                    format!(
+                        "type `{text}` takes {} size(s), `{text}<{want}>`; this use gives {}",
+                        td.sizes.len(),
+                        values.len()
+                    )
+                },
+            ));
+            return None;
+        }
+        if values.is_empty()
+            && let Some(t) = self.map.get(text)
+        {
+            return Some(t.clone());
+        }
+        self.instantiate_at(source, td, values, depth, diags)
+    }
+
+    /// Resolve declaration `td` at `values` (ADR-0048 D4; a fixed-size
+    /// declaration at none): an alias is its `_` field's type, a struct is
+    /// named `T<v₁, v₂>` at its sizes.
+    fn instantiate_at(
+        &self,
+        source: &str,
+        td: &syn::TypeDecl,
+        values: &[u64],
+        depth: usize,
+        diags: &mut Vec<syn::Diagnostic>,
+    ) -> Option<Ty> {
+        let mut env = self.globals.sizes.clone();
+        for (n, v) in td.sizes.iter().zip(values) {
+            env.insert(name_text(source, *n).to_string(), *v);
+        }
+        let tname = name_text(source, td.name);
+        // ADR-0048 D5: a type whose only field is `_` is that field's type
+        // (a transparent alias, both ways).
+        if let [only] = td.fields.as_slice()
+            && name_text(source, only.name) == "_"
+        {
+            return resolve_tykind(self, source, &only.ty, &env, depth + 1, diags);
+        }
+        let mut fields = Vec::with_capacity(td.fields.len());
+        let mut field_seen: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+        for f in &td.fields {
+            let fname = name_text(source, f.name);
+            if !field_seen.insert(fname) {
+                // Duplicate already reported; skip the dup so the struct ty is sane.
+                continue;
             }
-            match by_name.get(text) {
-                Some(td) => resolve_struct(source, td, by_name, cyclic, diags),
-                None => {
-                    diags.push(diag(
-                        LCode::UnknownType,
-                        span,
-                        format!("unknown type `{text}`"),
-                    ));
-                    None
-                }
-            }
-        },
-        &SizeEnv::new(),
-        diags,
-    )
+            let fty = resolve_tykind(self, source, &f.ty, &env, depth + 1, diags)?;
+            fields.push((fname.to_string(), fty));
+        }
+        if fields.is_empty() {
+            // Empty type already reported (L1010); do not register it.
+            return None;
+        }
+        let name = if values.is_empty() {
+            tname.to_string()
+        } else {
+            crate::sizes::instance_name(tname, values)
+        };
+        let ty = Ty::Struct { name, fields };
+        if !depth_ok(&ty) {
+            diags.push(diag(
+                LCode::TypeTooDeep,
+                td.span,
+                format!("type `{tname}` nests deeper than the {MAX_TY_DEPTH}-level limit"),
+            ));
+            return None;
+        }
+        Some(ty)
+    }
 }
 
 /// Whether `ty` is within `MAX_TY_DEPTH` (mirrors mapal-ir's intake guard; lower
@@ -419,10 +592,6 @@ pub fn depth_ok(ty: &Ty) -> bool {
     true
 }
 
-/// Resolve a top-level annotation ty against the type table (the common
-/// caller-facing entry: params, returns, bind annotations). Wraps
-/// [`resolve_ty`] with the table's `by_name`/`cyclic` context unavailable —
-/// callers in later passes use [`TypeTable::resolve`] instead.
 impl TypeTable {
     /// Resolve a surface annotation ty to a `mapal_ir::Ty` using the table.
     /// Struct references resolve to the table's fully-expanded entry; scalars
@@ -433,7 +602,8 @@ impl TypeTable {
         ty: &SynTy,
         diags: &mut Vec<syn::Diagnostic>,
     ) -> Option<Ty> {
-        self.resolve_sized(source, ty, &SizeEnv::new(), diags)
+        let env = self.globals.sizes.clone();
+        self.resolve_sized(source, ty, &env, diags)
     }
 
     /// [`TypeTable::resolve`] inside an instance of a size-generic function:
@@ -445,23 +615,24 @@ impl TypeTable {
         env: &SizeEnv,
         diags: &mut Vec<syn::Diagnostic>,
     ) -> Option<Ty> {
-        // Post-build seam: struct references resolve against the completed table.
-        resolve_tykind(
-            source,
-            ty,
-            &|text, span, diags| match self.map.get(text) {
-                Some(t) => Some(t.clone()),
-                None => {
-                    diags.push(diag(
-                        LCode::UnknownType,
-                        span,
-                        format!("unknown type `{text}`"),
-                    ));
-                    None
-                }
-            },
-            env,
-            diags,
-        )
+        resolve_tykind(self, source, ty, env, 0, diags)
+    }
+
+    /// ADR-0048 D4: type `name` at sizes `values` (`None` with no report
+    /// when it does not resolve).
+    pub fn instance(
+        &self,
+        source: &str,
+        name: &str,
+        values: &[u64],
+        span: syn::SourceLoc,
+    ) -> Option<Ty> {
+        self.named(source, name, span, values, 0, &mut Vec::new())
+    }
+
+    /// A type declaration by name (ADR-0048 D4: a generic type's sizes are
+    /// substituted into its fields by [`crate::sizes`] inference).
+    pub fn decl(&self, name: &str) -> Option<&syn::TypeDecl> {
+        self.decls.get(name)
     }
 }

@@ -6,8 +6,8 @@
 // P0009 P0010 P0012. (P0011 — deep nesting — is covered in unit/proptest; a deep
 // fixture file is unreadable.)
 
-// P0012: a statement at the top level (not inside a fn).
-top -> level;
+// P0012: a statement at the top level (not inside a fn) that is no binding chain.
+top <- level;
 
 // P0003: a bare expression used as a `;`-terminated statement.
 fn p0003() {

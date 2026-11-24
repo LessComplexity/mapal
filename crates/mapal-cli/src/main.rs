@@ -28,7 +28,8 @@ const USAGE: &str = "usage: mapal <build|run|dump-ir|test|fmt> <file.mapal> [opt
   dump-ir  [--stage=lowered|rewritten|llvm|device]
   test     [--budget N] [--timeout SECS]  the fixed face (or --exact) vs the oracle, byte for byte
            [--weakest]                    vs the weakest-member oracle, within ADR-0041 D3's bound
-common: --target=<profile> --no-rewrite -v, and the emitter flags
+common: --target=<profile> --no-rewrite --static=off -v, and the emitter flags
+  --static=off                            no compile-time evaluation (ADR-0048 D3; MAPAL_STATIC=off)
   --perf --no-tile --no-pack --kc --move-panel=off|W:B
   --exact --no-contract --contract --order=sequential|fixed|free
   --gpu-off=<rung,..> --gpu-on=<rung,..> --splitk=<S> --geom=<knob>=<n>
@@ -53,6 +54,8 @@ struct Args {
     timeout: u64,
     stage: String,
     rewrite: bool,
+    /// ADR-0048 D3: compile-time evaluation (`static_plan` roots embedded).
+    static_eval: bool,
     verbose: bool,
     opts: EmitOpts,
     /// The face flags as given (`test` judges only bit-replayable faces).
@@ -99,6 +102,7 @@ fn parse_args(mut it: impl Iterator<Item = String>) -> Res<Args> {
         timeout: 60,
         stage: "llvm".into(),
         rewrite: true,
+        static_eval: std::env::var("MAPAL_STATIC").map_or(true, |v| v != "off"),
         verbose: false,
         opts: EmitOpts::default(),
         face_flags: Vec::new(),
@@ -126,6 +130,8 @@ fn parse_args(mut it: impl Iterator<Item = String>) -> Res<Args> {
             "--budget" => a.budget = num(it.next(), "--budget")?,
             "--timeout" => a.timeout = num(it.next(), "--timeout")?,
             "--no-rewrite" => a.rewrite = false,
+            "--static=off" => a.static_eval = false,
+            "--static=on" => a.static_eval = true,
             "-v" => a.verbose = true,
             _ if s.starts_with("--stage=") => a.stage = s["--stage=".len()..].into(),
             _ if !s.starts_with('-') && a.file.is_empty() => a.file = s,
@@ -203,6 +209,16 @@ fn rewritten(a: &Args, ir: CategoryIr) -> CategoryIr {
     if !a.rewrite {
         return ir;
     }
+    // ADR-0048 D3: values computable before the program runs, by the rule.
+    let ir = if a.static_eval {
+        let (ir, report) = mapal_rewrite::fold_static(ir);
+        if a.verbose {
+            eprintln!("static: {report:?}");
+        }
+        ir
+    } else {
+        ir
+    };
     let r = mapal_rewrite::rewrite(ir);
     if a.verbose {
         eprintln!("rewrite: {:?}", r.report);

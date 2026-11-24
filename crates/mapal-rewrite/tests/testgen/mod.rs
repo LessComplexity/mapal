@@ -7245,3 +7245,149 @@ impl GenericProg {
             .unwrap_or_else(|d| panic!("generated program does not parse: {d:?}\n{src}"))
     }
 }
+
+/// ADR-0048 counters of one [`GenericProg::tops`] rendering: top-level
+/// bindings, of them computed (not one literal), float literals bound at the
+/// top level, uses of the size-generic alias `Vec<…>`, values read through a
+/// `_` field, reads of a top-level array.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TopsUse {
+    pub bindings: usize,
+    pub computed: usize,
+    pub floats: usize,
+    pub aliases: usize,
+    pub defaults: usize,
+    pub tables: usize,
+}
+
+impl GenericProg {
+    /// ADR-0048: the generic program written with top-level bindings — every
+    /// operand length and the operands' scale a top-level name, declared in a
+    /// seed-shuffled order after `main` (some lengths computed as a sum), and
+    /// every helper's `[f32; e]` the size-generic alias `Vec<e>`. `pure`:
+    /// nothing else, so it lowers to [`Self::source`]'s IR (names and spans
+    /// aside). Otherwise also: every one-array operand passed wrapped in a
+    /// size-generic struct `Tagged<n>` whose `_` is the array (read through
+    /// it by the call's inference and argument), and each scalar result
+    /// scaled by a top-level table of ones (`ones[k % 4]`, exact).
+    pub fn tops(&self, pure: bool) -> (String, TopsUse) {
+        let generic = self.program(false);
+        let mut u = TopsUse::default();
+        let mut tops: Vec<String> = Vec::new();
+        let mut src = String::from("type Vec<n> {\n    _: [f32; n]\n}\n\n");
+        if !pure {
+            src.push_str("type Tagged<n> {\n    _: Vec<n>,\n    tag: i32,\n}\n\n");
+        }
+        let mut body = String::new();
+        let mut in_main = false;
+        let mut k_len = 0usize;
+        for line in generic.lines() {
+            if line.starts_with("fn ") && line.contains('<') && !in_main {
+                // A helper's signature line: its `[f32; e]` → `Vec<e>`.
+                let mut out = String::new();
+                let mut rest = line;
+                while let Some(at) = rest.find("[f32; ") {
+                    out.push_str(&rest[..at]);
+                    let end = at + rest[at..].find(']').expect("closed");
+                    out.push_str(&format!("Vec<{}>", &rest[at + 6..end]));
+                    u.aliases += 1;
+                    rest = &rest[end + 1..];
+                }
+                out.push_str(rest);
+                body.push_str(&out);
+                body.push('\n');
+                continue;
+            }
+            if line.starts_with("fn main") {
+                in_main = true;
+            }
+            if in_main && let Some(arrow) = line.find(" -> iota -> map") {
+                // `    L -> iota -> map { … * 0.125 } -> aK;`
+                let len: u64 = line[..arrow].trim().parse().expect("length literal");
+                let name = format!("len_{k_len}");
+                k_len += 1;
+                if len > 2 && (usize::from(self.seed) + k_len) % 3 != 0 {
+                    u.computed += 1;
+                    tops.push(format!("{} + {} -> {name};", len / 2, len - len / 2));
+                } else {
+                    tops.push(format!("{len} -> {name};"));
+                }
+                let rest = line[arrow..].replace("* 0.125", "* scale");
+                body.push_str(&format!("    {name}{rest}\n"));
+                continue;
+            }
+            if in_main && let Some(at) = line.find(": [f32; ") {
+                // `ramp`'s annotation-bound result.
+                let end = at + line[at..].find(']').expect("closed");
+                let name = format!("len_{k_len}");
+                k_len += 1;
+                tops.push(format!("{} -> {name};", &line[at + 8..end]));
+                body.push_str(&format!(
+                    "{}: Vec<{name}>{}\n",
+                    &line[..at],
+                    &line[end + 1..]
+                ));
+                u.aliases += 1;
+                continue;
+            }
+            if in_main {
+                body.push_str(&line.replace("* 0.125", "* scale"));
+            } else {
+                body.push_str(line);
+            }
+            body.push('\n');
+        }
+        tops.push("0.125 -> scale;".to_string());
+        u.floats += 1;
+        if !pure {
+            tops.push(
+                "4 -> iota -> map {\n    i -> i * 0 + 1 -> widen_f32\n} -> ones;".to_string(),
+            );
+            let mut out = String::new();
+            for line in body.lines() {
+                let t = line.trim_start();
+                // `rK -> println;` of a scalar result: through the table.
+                if let Some(r) = t.strip_suffix(" -> println;")
+                    && let Some(k) = r.strip_prefix('r')
+                    && let Ok(k) = k.parse::<usize>()
+                {
+                    out.push_str(&format!("    r{k} * ones[{}] -> println;\n", k % 4));
+                    u.tables += 1;
+                    continue;
+                }
+                // `aK -> f -> rK;` of a one-array call: through `_`.
+                if let Some(rest) = t.strip_prefix('a')
+                    && let Some((k, call)) = rest.split_once(" -> ")
+                    && let Ok(k) = k.parse::<usize>()
+                    && call.ends_with(&format!(" -> r{k};"))
+                {
+                    out.push_str(&format!(
+                        "    Tagged {{ _: a{k}, tag: {k} }} -> t{k};\n    t{k} -> {call}\n"
+                    ));
+                    u.defaults += 1;
+                    continue;
+                }
+                out.push_str(line);
+                out.push('\n');
+            }
+            body = out;
+        }
+        // Shuffle the bindings by the seed (they are order-independent).
+        let n = tops.len();
+        let mut order: Vec<usize> = (0..n).collect();
+        for i in (1..n).rev() {
+            let j = (usize::from(self.seed) * 31 + i * 17) % (i + 1);
+            order.swap(i, j);
+        }
+        u.bindings = n;
+        src.push_str(&body);
+        src.push('\n');
+        for i in order {
+            src.push_str(&tops[i]);
+            src.push('\n');
+        }
+        let text = mapal_syntax::format_source(&src)
+            .unwrap_or_else(|d| panic!("generated program does not parse: {d:?}\n{src}"));
+        (text, u)
+    }
+}

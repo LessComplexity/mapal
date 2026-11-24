@@ -15,6 +15,7 @@
 mod diag;
 mod effects;
 mod emit;
+mod globals;
 mod scope;
 mod sizes;
 mod typing;
@@ -26,6 +27,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use mapal_syntax::{Diagnostic, Program};
 
 use crate::diag::{LCode, diag};
+use crate::globals::Globals;
 use crate::sizes::{Generics, Instance, SiteKey};
 use crate::tys::name_text;
 
@@ -40,7 +42,342 @@ const MAX_ROUNDS: usize = 32;
 /// (syntax J3: no Error nodes, no rejected-but-kept forms). Encountering such a
 /// form anyway yields L1000, never a panic. Total: never panics, never hangs
 /// (recursion is bounded by the parser's depth guard P0011; DESIGN §13).
+///
+/// ADR-0048: a program with top-level bindings first computes the ones it can
+/// before it runs ([`evaluate_globals`], the interpreter on a synthetic
+/// program), then lowers with them.
 pub fn lower(source: &str, program: &Program) -> Result<mapal_ir::CategoryIr, Vec<Diagnostic>> {
+    if !program
+        .items
+        .iter()
+        .any(|i| matches!(i, mapal_syntax::Item::Bind(_)))
+    {
+        return lower_with(source, program, &Globals::default(), None);
+    }
+    let fn_names: BTreeSet<String> = program
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            mapal_syntax::Item::Fn(fd) => Some(name_text(source, fd.name).to_string()),
+            _ => None,
+        })
+        .collect();
+    let mut diags: Vec<Diagnostic> = Vec::new();
+    let mut g = globals::collect(source, program, &fn_names, &mut diags);
+    globals::dependencies(source, program, &mut g, &mut diags);
+    if let Ok(effects) = effects::analyze(source, program, &fn_names) {
+        for it in &g.items {
+            if effects::chain_effectful(source, &it.chain, &fn_names, &effects) {
+                diags.push(diag(
+                    LCode::TopEffect,
+                    it.span,
+                    "a top-level binding has no effect: `print`, `println`, `time`, `read` and \
+                     effectful functions belong in a function (ADR-0048 D1)",
+                ));
+            }
+        }
+    }
+    if !diags.is_empty() {
+        return Err(diags);
+    }
+    evaluate_globals(source, program, &mut g, &mut diags);
+    if !diags.is_empty() {
+        return Err(diags);
+    }
+    lower_with(source, program, &g, None).map_err(|ds| {
+        ds.into_iter()
+            .map(|mut d| {
+                // L1808: a size that names a top-level value which is no
+                // integer ≥ 1 computed before the program runs.
+                let text = tys::src_slice(source, d.span);
+                if d.code.0 == LCode::UnknownSize.code() && g.is_top(text) {
+                    d.code = mapal_syntax::DiagCode(LCode::NotComputable.code());
+                    d.message = format!(
+                        "`{text}` is a top-level value, but not an integer ≥ 1 computed before \
+                         the program runs, so it cannot be a size (ADR-0048 D3: a size's value \
+                         must come out of compile-time evaluation)"
+                    );
+                }
+                d
+            })
+            .collect()
+    })
+}
+
+/// ADR-0048 D3: compute the top-level scalars before the program runs. Each
+/// round lowers a synthetic program — the types and functions whose sizes are
+/// known so far, and a `main` holding the bindings whose cones they reach, in
+/// dependency order — and runs each scalar binding's cone on the interpreter
+/// (under [`globals::EVAL_BUDGET`]). A scalar that comes out is a literal from
+/// then on (a size, if a positive integer); the rest are realized by their
+/// chains where functions read them ([`Globals::computed`]).
+fn evaluate_globals(source: &str, program: &Program, g: &mut Globals, diags: &mut Vec<Diagnostic>) {
+    use globals::Names;
+    use mapal_syntax as syn;
+    let order = globals::order(g);
+    let n = g.items.len();
+    let mut resolved = vec![false; n];
+    let mut fns: BTreeMap<String, (Names, &syn::FnDecl)> = BTreeMap::new();
+    let mut tys: BTreeMap<String, (Names, &syn::TypeDecl)> = BTreeMap::new();
+    for item in &program.items {
+        match item {
+            syn::Item::Fn(fd) => {
+                let mut nm = Names::default();
+                nm.fn_decl(source, fd);
+                fns.insert(name_text(source, fd.name).to_string(), (nm, fd));
+            }
+            syn::Item::Type(td) => {
+                let mut nm = Names::default();
+                nm.type_decl(source, td);
+                tys.insert(name_text(source, td.name).to_string(), (nm, td));
+            }
+            _ => {}
+        }
+    }
+    // The synthetic `main`'s name: a span past the source (never reported).
+    let ext = format!("{source}\nmain");
+    let main_name = syn::Name {
+        span: syn::SourceLoc::new(source.len() as u32 + 1, source.len() as u32 + 5),
+    };
+    let own = |d: &[syn::Name]| -> BTreeSet<String> {
+        d.iter()
+            .map(|x| name_text(source, *x).to_string())
+            .collect()
+    };
+    let mut all_const = vec![false; n];
+    // A bare integer literal needs no evaluation (and no width of its own).
+    for i in 0..n {
+        if let (Some(v), [name]) = (
+            globals::int_literal(&g.items[i].chain),
+            g.items[i].names.as_slice(),
+        ) {
+            resolved[i] = true;
+            all_const[i] = true;
+            if v >= 1 && v <= i128::from(i64::MAX) {
+                g.sizes.insert(name.clone(), v as u64);
+            }
+            g.consts.insert(
+                name.clone(),
+                globals::GlobalConst::Int {
+                    value: v,
+                    pinned: None,
+                },
+            );
+        }
+    }
+    loop {
+        // Types whose sizes are known (their own size parameters aside).
+        let mut ty_ok: BTreeSet<String> = tys.keys().cloned().collect();
+        loop {
+            let before = ty_ok.len();
+            let keep: BTreeSet<String> = ty_ok
+                .iter()
+                .filter(|t| {
+                    let (nm, td) = &tys[*t];
+                    let params = own(&td.sizes);
+                    nm.sizes
+                        .iter()
+                        .all(|s| g.sizes.contains_key(s) || params.contains(s))
+                        && nm
+                            .types
+                            .iter()
+                            .all(|r| !tys.contains_key(r) || ty_ok.contains(r))
+                })
+                .cloned()
+                .collect();
+            ty_ok = keep;
+            if ty_ok.len() == before {
+                break;
+            }
+        }
+        // Functions whose sizes, types, callees and top-level reads are known.
+        let mut fn_ok: BTreeSet<String> = fns.keys().filter(|f| *f != "main").cloned().collect();
+        loop {
+            let before = fn_ok.len();
+            let keep: BTreeSet<String> = fn_ok
+                .iter()
+                .filter(|f| {
+                    let (nm, fd) = &fns[*f];
+                    let params = own(&fd.sizes);
+                    nm.sizes
+                        .iter()
+                        .all(|s| g.sizes.contains_key(s) || params.contains(s))
+                        && nm
+                            .types
+                            .iter()
+                            .all(|t| !tys.contains_key(t) || ty_ok.contains(t))
+                        && nm.values.iter().all(|v| {
+                            (!fns.contains_key(v) || fn_ok.contains(v))
+                                && (!g.is_top(v) || g.consts.contains_key(v))
+                        })
+                })
+                .cloned()
+                .collect();
+            fn_ok = keep;
+            if fn_ok.len() == before {
+                break;
+            }
+        }
+        // The bindings this round can lower: their sizes known, their reads
+        // constants or other bindings of the round.
+        let mut cand: BTreeSet<usize> = (0..n).filter(|&i| !resolved[i]).collect();
+        let chain_names: Vec<Names> = g
+            .items
+            .iter()
+            .map(|it| {
+                let mut nm = Names::default();
+                nm.chain(source, &it.chain);
+                nm
+            })
+            .collect();
+        loop {
+            let before = cand.len();
+            let names_in: BTreeSet<String> = cand
+                .iter()
+                .flat_map(|&i| g.items[i].names.iter().cloned())
+                .collect();
+            cand.retain(|&i| {
+                let nm = &chain_names[i];
+                nm.sizes.iter().all(|s| g.sizes.contains_key(s))
+                    && nm
+                        .types
+                        .iter()
+                        .all(|t| !tys.contains_key(t) || ty_ok.contains(t))
+                    && nm.values.iter().all(|v| {
+                        (!fns.contains_key(v) || fn_ok.contains(v))
+                            && (!g.is_top(v) || g.consts.contains_key(v) || names_in.contains(v))
+                    })
+            });
+            if cand.len() == before {
+                break;
+            }
+        }
+        if cand.is_empty() {
+            break;
+        }
+        let ordered: Vec<usize> = order.iter().copied().filter(|i| cand.contains(i)).collect();
+        let mut items: Vec<syn::Item> = Vec::new();
+        for (t, (_, td)) in &tys {
+            if ty_ok.contains(t) {
+                items.push(syn::Item::Type((*td).clone()));
+            }
+        }
+        for (f, (_, fd)) in &fns {
+            if fn_ok.contains(f) {
+                items.push(syn::Item::Fn((*fd).clone()));
+            }
+        }
+        let body = syn::Block {
+            items: ordered
+                .iter()
+                .map(|&i| {
+                    syn::BlockItem::Stmt(syn::Stmt {
+                        kind: syn::StmtKind::Chain(g.items[i].chain.clone()),
+                        span: g.items[i].span,
+                    })
+                })
+                .collect(),
+            tail: None,
+            span: program.span,
+            compute: None,
+        };
+        items.push(syn::Item::Fn(syn::FnDecl {
+            name: main_name,
+            sizes: Vec::new(),
+            params: Vec::new(),
+            ret_ty: None,
+            body,
+            span: program.span,
+        }));
+        let synth = Program {
+            items,
+            span: program.span,
+        };
+        let ctx = Globals {
+            consts: g.consts.clone(),
+            sizes: g.sizes.clone(),
+            ..Globals::default()
+        };
+        let bound = RefCell::new(BTreeMap::new());
+        match lower_with(&ext, &synth, &ctx, Some(&bound)) {
+            Ok(ir) => {
+                let bound = bound.into_inner();
+                let mut roots: Vec<(usize, String, mapal_ir::ObjectId)> = Vec::new();
+                for &i in &ordered {
+                    for name in &g.items[i].names {
+                        if let Some(&o) = bound.get(name)
+                            && ir
+                                .object(o)
+                                .is_some_and(|x| x.ty.is_numeric() || x.ty == mapal_ir::Ty::Bool)
+                        {
+                            roots.push((i, name.clone(), o));
+                        }
+                    }
+                }
+                let objs: Vec<mapal_ir::ObjectId> = roots.iter().map(|r| r.2).collect();
+                let vals = mapal_interp::eval_values(&ir, ir.entry(), &objs, globals::EVAL_BUDGET);
+                let mut got: BTreeMap<String, globals::GlobalConst> = BTreeMap::new();
+                for ((i, name, _), v) in roots.iter().zip(vals) {
+                    let chain = &g.items[*i].chain;
+                    let annotated =
+                        matches!(globals::annotation(source, chain, name), Some(Some(_)));
+                    if let Some(c) = v.as_ref().and_then(|v| {
+                        globals::as_const(v, annotated, globals::float_literal(chain))
+                    }) {
+                        got.insert(name.clone(), c);
+                    }
+                }
+                for &i in &ordered {
+                    resolved[i] = true;
+                    if g.items[i].names.iter().all(|x| got.contains_key(x)) {
+                        all_const[i] = true;
+                        for x in &g.items[i].names {
+                            let c = got[x].clone();
+                            if let globals::GlobalConst::Int { value, .. } = c
+                                && value >= 1
+                                && value <= i128::from(i64::MAX)
+                            {
+                                g.sizes.insert(x.clone(), value as u64);
+                            }
+                            g.consts.insert(x.clone(), c);
+                        }
+                    }
+                }
+            }
+            Err(ds) => {
+                let inside: Vec<Diagnostic> = ds
+                    .into_iter()
+                    .filter(|d| {
+                        ordered.iter().any(|&i| {
+                            let s = g.items[i].span;
+                            d.span.start >= s.start && d.span.end <= s.end
+                        })
+                    })
+                    .collect();
+                if !inside.is_empty() {
+                    diags.extend(inside);
+                    return;
+                }
+                // The errors are the functions' (lowering proper reports
+                // them): these bindings are realized by their chains.
+                for &i in &ordered {
+                    resolved[i] = true;
+                }
+            }
+        }
+    }
+    g.computed = order.into_iter().filter(|&i| !all_const[i]).collect();
+}
+
+/// Lower with the top-level values `globals` (ADR-0048). `bound`, when given,
+/// records the object each name `main` binds (compile-time evaluation reads
+/// the top-level bindings' values off them).
+fn lower_with(
+    source: &str,
+    program: &Program,
+    globals: &Globals,
+    bound: Option<&RefCell<BTreeMap<String, mapal_ir::ObjectId>>>,
+) -> Result<mapal_ir::CategoryIr, Vec<Diagnostic>> {
     let mut diags: Vec<Diagnostic> = Vec::new();
 
     // Defensive: any Error item is an unclean tree (L1000).
@@ -118,7 +455,7 @@ pub fn lower(source: &str, program: &Program) -> Result<mapal_ir::CategoryIr, Ve
         if let mapal_syntax::Item::Fn(fd) = item
             && !fd.sizes.is_empty()
         {
-            sizes::check_decl(source, fd, &fn_names, &mut diags);
+            sizes::check_decl(source, fd, &fn_names, &globals.sizes, globals, &mut diags);
             generics
                 .entry(name_text(source, fd.name).to_string())
                 .or_insert(fd);
@@ -126,7 +463,7 @@ pub fn lower(source: &str, program: &Program) -> Result<mapal_ir::CategoryIr, Ve
     }
 
     // --- Pass A: type table.
-    let (types, ty_diags) = tys::build(source, program);
+    let (types, ty_diags) = tys::build(source, program, globals);
     diags.extend(ty_diags);
 
     // --- Pass B: effects & call graph (L1008 aborts).
@@ -196,6 +533,7 @@ pub fn lower(source: &str, program: &Program) -> Result<mapal_ir::CategoryIr, Ve
                 instances: &instances,
                 log: &log,
                 probe,
+                bound,
             },
         );
         if generics.is_empty() {
@@ -286,14 +624,14 @@ fn type_round(
             Unit::Fixed(fd) => (
                 *fd,
                 name_text(source, fd.name).to_string(),
-                sizes::SizeEnv::new(),
+                types.base_env().clone(),
                 false,
             ),
             Unit::Inst((g, vs)) => {
                 let Some(fd) = generics.get(g).copied() else {
                     continue;
                 };
-                let env = sizes::env_of(source, fd, vs);
+                let env = sizes::env_of(source, fd, vs, types.base_env());
                 let Some(sig) =
                     sizes::instance_sig(source, types, fd, &env, effects.is_effectful(g))
                 else {

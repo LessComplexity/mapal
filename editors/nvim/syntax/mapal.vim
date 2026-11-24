@@ -62,6 +62,9 @@ syn keyword flowBuiltin widen_i64 widen_f32 widen_f64 exp sqrt sin cos to_bf16 t
 " Boolean literals.
 syn keyword flowBoolean true false
 
+" ADR-0048 D5: `_`, a type's default interpretation (`type Hidden { _: … }`).
+syn match flowDefaultField "\<_\>"
+
 " ---------------------------------------------------------------------------
 " ret  — the graph sink (function return object). Highlight as Special.
 " ---------------------------------------------------------------------------
@@ -200,7 +203,11 @@ syn match flowArrow "->\|<-"
 " names are the instance's sizes — integer constants in the body — so they read
 " as Constant; the angle brackets as Delimiter. Lookbehind starts the match at
 " the `<` (flowFnName owns the name before it).
-syn match flowSizeList "\%(\<fn\s\+\h\w*\s*\)\@<=<[^<>]*>" contains=flowSizeParam
+" ADR-0048 D4: a size-generic type at its sizes, `Matrix<hidden_size, 64>` —
+" a PascalCase type name followed by the size list (its names are sizes).
+" Defined before the declaration list, which wins at `type Matrix<rows, …>`.
+syn match flowSizeArgs "\%(\<\u\w*\)\@<=<[^<>]*>" contains=flowSizeParam,flowNumber
+syn match flowSizeList "\%(\<\%(fn\|type\)\s\+\h\w*\s*\)\@<=<[^<>]*>" contains=flowSizeParam
 syn match flowSizeParam contained "\h\w*"
 
 " ---------------------------------------------------------------------------
@@ -273,7 +280,9 @@ hi default link flowLabel      Label
 hi default link flowLabelJump  Label
 hi default link flowOperator   Operator
 hi default link flowSizeList   Delimiter
+hi default link flowSizeArgs   Delimiter
 hi default link flowSizeParam  Constant
+hi default link flowDefaultField Special
 hi default link flowArrow      Statement
 " Guard CHROME reads as flow plumbing — same as flowArrow (CHANGE 1).
 hi default link flowGuardArrow    Statement

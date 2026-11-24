@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 mapal-syntax = { path = "../mapal-syntax" }
 mapal-ir = { path = "../mapal-ir" }
+mapal-interp = { path = "../mapal-interp" }
 
 [dev-dependencies]
 insta = "1.47.2"

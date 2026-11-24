@@ -3,7 +3,7 @@
 //! sm_90+. Each test reads the placement off the emitted `mapal_gpu_*` calls;
 //! the values are the box differential's job.
 
-use mapal_backend_llvm::{emit_detailed, Emission, EmitOpts, GpuArms};
+use mapal_backend_llvm::{Emission, EmitOpts, GpuArms, emit_detailed};
 use mapal_ir::CategoryIr;
 
 fn lower_src(src: &str) -> CategoryIr {
@@ -682,9 +682,11 @@ fn grouped_member_row_fold_keeps_its_ordered_whole_copy() {
         let t = calls(&e.text);
         let first = t.iter().position(|x| x == "launchv 1").expect("producer");
         assert_eq!(t[first + 1], "d2h_on 1", "{t:?}");
-        assert!(mapal_main(&e.text)
-            .lines()
-            .any(|l| l.contains("@mapal_gpu_d2h_on(i32 1,") && l.contains("i64 16384)")));
+        assert!(
+            mapal_main(&e.text)
+                .lines()
+                .any(|l| l.contains("@mapal_gpu_d2h_on(i32 1,") && l.contains("i64 16384)"))
+        );
         // The existing base-output row-fold veto also remains conservative.
         let raw = GROUPED_ROW_FOLD.replace("acc + h1[i * 64 + j]", "acc + c1[i * 64 + j]");
         let e = s64(&raw, contract);

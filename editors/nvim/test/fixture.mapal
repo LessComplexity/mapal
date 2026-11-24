@@ -60,3 +60,13 @@ fn waves(x: f32) -> f32 {
 fn scale<rows, columns>(x: [f32; rows * columns]) -> [f32; rows] {
     rows -> iota -> map { r -> x[r * columns] } -> ret;
 }
+
+2048 -> hidden_size;
+
+type Matrix<rows, columns> {
+    _: [bf16; rows * columns]
+}
+
+fn layer(w: Matrix<hidden_size, 4>) -> f32 {
+    w[0] -> widen_f32 -> ret;
+}

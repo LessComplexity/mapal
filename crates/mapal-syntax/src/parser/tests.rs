@@ -1578,8 +1578,10 @@ fn empty_input_no_panic() {
 
 #[test]
 fn top_level_statement_p0012() {
-    // A statement at the top level → P0012.
-    assert!(pcodes("x -> y;").contains(&"P0012"));
+    // A statement at the top level that is no binding chain → P0012
+    // (a chain is a top-level binding, ADR-0048 D1).
+    assert!(pcodes("x <- y;").contains(&"P0012"));
+    assert!(!pcodes("x -> y;").contains(&"P0012"));
 }
 
 #[test]

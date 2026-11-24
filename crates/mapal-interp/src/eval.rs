@@ -88,8 +88,33 @@ pub(crate) fn eval_fn(
     budget: &mut u64,
     orders: &[(FuncId, MorphismId, u64)],
 ) -> Result<RValue, Abort> {
+    eval_fn_within(ir, f, arg, budget, orders, None).map(|(v, _)| v)
+}
+
+/// ADR-0048: evaluate the objects `want` of `f` — a cone closed under its
+/// sources that holds neither the input nor an IO token — and return their
+/// values. Every other morphism is skipped; a loop runs when its merge is
+/// wanted (the cone then holds the whole loop).
+pub(crate) fn eval_cone(
+    ir: &CategoryIr,
+    f: FuncId,
+    want: &SecondaryMap<ObjectId, ()>,
+    budget: &mut u64,
+) -> Result<SecondaryMap<ObjectId, RValue>, Abort> {
+    eval_fn_within(ir, f, RValue::Unit, budget, &[], Some(want)).map(|(_, env)| env)
+}
+
+fn eval_fn_within(
+    ir: &CategoryIr,
+    f: FuncId,
+    arg: RValue,
+    budget: &mut u64,
+    orders: &[(FuncId, MorphismId, u64)],
+    want: Option<&SecondaryMap<ObjectId, ()>>,
+) -> Result<(RValue, SecondaryMap<ObjectId, RValue>), Abort> {
     let fd = ir.func(f).expect("sealed graph: func resolves");
     let mut ctx = EvalCtx::new(ir, f, orders);
+    let wanted = |o: ObjectId| want.is_none_or(|w| w.contains_key(o));
 
     // Seed: the one Parameter object, and every Constant.
     ctx.env.insert(fd.input, arg);
@@ -127,6 +152,9 @@ pub(crate) fn eval_fn(
     for m in ir.topo_order(f) {
         let morph = ir.morphism(m).expect("sealed graph: morphism resolves");
         let op = morph.op;
+        if !wanted(morph.target) {
+            continue;
+        }
         match op {
             Operation::LoopEnter => {
                 if ctx.gated.contains_key(m) {
@@ -159,12 +187,15 @@ pub(crate) fn eval_fn(
         }
     }
 
+    if want.is_some() {
+        return Ok((RValue::Unit, ctx.env));
+    }
     // Return env[output], or Unit if the output ty is Unit and unwritten (§7).
     match ctx.env.get(fd.output) {
-        Some(v) => Ok(v.clone()),
+        Some(v) => Ok((v.clone(), SecondaryMap::new())),
         None => {
             if *ctx.ty_of(fd.output) == Ty::Unit {
-                Ok(RValue::Unit)
+                Ok((RValue::Unit, SecondaryMap::new()))
             } else {
                 // I-RET guarantees a writer fired for non-Unit returns.
                 unreachable!("sealed graph: non-Unit return is always written");

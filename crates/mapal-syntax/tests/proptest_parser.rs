@@ -49,6 +49,14 @@ fn check_program(p: &Program, len: u32) {
                     check_ty(&field.ty, field.span, len);
                 }
             }
+            Item::Bind(b) => {
+                assert!(
+                    within(b.span, p.span),
+                    "bind {:?} ⊄ program {:?}",
+                    b.span,
+                    p.span
+                );
+            }
             Item::Error(s) => {
                 assert!(s.end <= len);
                 assert!(
@@ -177,6 +185,7 @@ fn check_expr(e: &Expr, parent: SourceLoc, len: u32) {
 fn has_error_or_rejected(p: &Program) -> bool {
     p.items.iter().any(|i| match i {
         Item::Error(_) => true,
+        Item::Bind(_) => false,
         Item::Type(t) => t.fields.iter().any(|f| ty_bad(&f.ty)),
         Item::Fn(f) => {
             f.params.iter().any(|p| ty_bad(&p.ty))
@@ -189,7 +198,7 @@ fn has_error_or_rejected(p: &Program) -> bool {
 fn ty_bad(t: &Ty) -> bool {
     match &t.kind {
         TyKind::Error | TyKind::Dynamic(_) => true,
-        TyKind::Named(_) => false,
+        TyKind::Named(_) | TyKind::Generic { .. } => false,
         TyKind::Array { elem, .. } => ty_bad(elem),
         TyKind::Tuple(es) => es.iter().any(ty_bad),
     }

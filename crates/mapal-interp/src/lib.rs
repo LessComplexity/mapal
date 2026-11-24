@@ -20,7 +20,8 @@ mod eval;
 mod loops;
 mod value;
 
-use mapal_ir::{CategoryIr, FuncId, MorphismId, Ty};
+use mapal_ir::{CategoryIr, FuncId, MorphismId, ObjectId, Ty};
+use slotmap::SecondaryMap;
 
 pub use value::{Outcome, RValue, TrapKind, render};
 
@@ -88,6 +89,122 @@ pub fn run_weakest(
     let r = run_ordered(ir, budget, orders);
     eval::WEAKEST.with(|w| w.set(false));
     r
+}
+
+/// ADR-0048 (compile-time evaluation): the values of `roots` — objects of
+/// `f` whose dataflow cone holds no input and no effect — computed from their
+/// cones alone, the rest of `f` never run. All roots are evaluated together
+/// under `budget`; when that aborts (a trap, the budget) each root is retried
+/// alone under the same budget so one root's trap does not hide another's
+/// value (a run out of budget is not retried). `None` for a root whose cone
+/// reaches the input or an IO token (not computable before the program runs),
+/// or whose evaluation aborts.
+pub fn eval_values(
+    ir: &CategoryIr,
+    f: FuncId,
+    roots: &[ObjectId],
+    budget: u64,
+) -> Vec<Option<RValue>> {
+    let cones: Vec<Option<SecondaryMap<ObjectId, ()>>> =
+        roots.iter().map(|&r| static_cone(ir, f, r)).collect();
+    let mut all: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
+    for c in cones.iter().flatten() {
+        for (o, ()) in c {
+            all.insert(o, ());
+        }
+    }
+    let mut fuel = budget;
+    match eval::eval_cone(ir, f, &all, &mut fuel) {
+        Ok(env) => {
+            return roots
+                .iter()
+                .zip(&cones)
+                .map(|(&r, c)| c.as_ref().and_then(|_| env.get(r).cloned()))
+                .collect();
+        }
+        // Out of budget: alone, each would spend it again.
+        Err(value::Abort::Diverged) => return vec![None; roots.len()],
+        Err(_) => {}
+    }
+    roots
+        .iter()
+        .zip(cones)
+        .map(|(&r, c)| {
+            let c = c?;
+            let mut fuel = budget;
+            eval::eval_cone(ir, f, &c, &mut fuel)
+                .ok()
+                .and_then(|env| env.get(r).cloned())
+        })
+        .collect()
+}
+
+/// [`eval_values`] without the per-root retry: all of `roots` under one
+/// `budget`, all `None` when it aborts (ADR-0048: an attempt, whose work is
+/// not known before it runs, spends its budget once).
+pub fn eval_values_once(
+    ir: &CategoryIr,
+    f: FuncId,
+    roots: &[ObjectId],
+    budget: u64,
+) -> Vec<Option<RValue>> {
+    if roots.is_empty() {
+        return Vec::new();
+    }
+    let cones: Vec<Option<SecondaryMap<ObjectId, ()>>> =
+        roots.iter().map(|&r| static_cone(ir, f, r)).collect();
+    let mut all: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
+    for c in cones.iter().flatten() {
+        for (o, ()) in c {
+            all.insert(o, ());
+        }
+    }
+    let mut fuel = budget;
+    match eval::eval_cone(ir, f, &all, &mut fuel) {
+        Ok(env) => roots
+            .iter()
+            .zip(&cones)
+            .map(|(&r, c)| c.as_ref().and_then(|_| env.get(r).cloned()))
+            .collect(),
+        Err(_) => vec![None; roots.len()],
+    }
+}
+
+/// The backward cone of `root` in `f`, closed under sources (a loop merge
+/// brings its whole loop: decide / advance / exit work), or `None` when it
+/// reaches the function's input or an IO-token value.
+fn static_cone(ir: &CategoryIr, f: FuncId, root: ObjectId) -> Option<SecondaryMap<ObjectId, ()>> {
+    let input = ir.func(f)?.input;
+    let mut cone: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
+    let mut stack = vec![root];
+    while let Some(o) = stack.pop() {
+        if cone.contains_key(o) {
+            continue;
+        }
+        let obj = ir.object(o)?;
+        if o == input || mapal_ir::ty_contains_token(&obj.ty) {
+            return None;
+        }
+        cone.insert(o, ());
+        for &m in ir.in_edges(o) {
+            stack.push(ir.morphism(m)?.source);
+        }
+        if obj.kind == mapal_ir::ObjectKind::LoopMerge
+            && let Some(plan) = ir.loop_plan(f, o)
+        {
+            for &m in plan
+                .decide_order
+                .iter()
+                .chain(&plan.advance_order)
+                .chain(&plan.exits)
+            {
+                let mm = ir.morphism(m)?;
+                stack.push(mm.target);
+                stack.push(mm.source);
+            }
+        }
+    }
+    Some(cone)
 }
 
 /// Call one function directly with an argument (interp DESIGN §8). The public
