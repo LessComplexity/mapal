@@ -80,7 +80,8 @@ pub enum IrError {
     NonStaticCount,
     /// ADR-0029: source and target are not an allowed numeric widening pair.
     InvalidWiden,
-    /// ADR-0042: `exp` of a non-float source.
+    /// ADR-0042 / ADR-0046: a math builtin (`exp`, `sqrt`, `sin`, `cos`) of a
+    /// non-float source.
     InvalidExp,
     /// ADR-0043: `to_bf16` / `to_f16` of anything but an `f32`.
     InvalidNarrow,
@@ -1718,13 +1719,26 @@ impl FnBuilder<'_> {
     /// `Exp` (ADR-0042): `eˣ` of a float scalar, the same width out. Rejects
     /// any other source type (`InvalidExp`).
     pub fn exp(&mut self, src: ObjectId, dest: Dest, loc: SourceLoc) -> Result<ObjectId, IrError> {
+        self.math(crate::math::MathFn::Exp, src, dest, loc)
+    }
+
+    /// `Math(f)` (ADR-0046): a math builtin of a float scalar, the same
+    /// width out. Rejects any other source type (`InvalidExp`, the one code
+    /// of every math builtin).
+    pub fn math(
+        &mut self,
+        f: crate::math::MathFn,
+        src: ObjectId,
+        dest: Dest,
+        loc: SourceLoc,
+    ) -> Result<ObjectId, IrError> {
         self.check_obj(src)?;
         let ty = self.ty_of(src);
         if !matches!(ty, Ty::Float { bits: 32 | 64 }) {
             return Err(IrError::InvalidExp);
         }
         let plan = self.dest_target(&dest, &ty, loc)?;
-        Ok(self.emit_to_dest(plan, src, Operation::Exp, loc))
+        Ok(self.emit_to_dest(plan, src, Operation::Math(f), loc))
     }
 
     /// `Iota` (ADR-0029): `[i32; n]` of `0..n-1`. The count rides as a

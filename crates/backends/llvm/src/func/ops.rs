@@ -144,15 +144,15 @@ impl<'a> FnEmit<'a> {
                 self.line(format!("{r} = xor i1 {val}, true"));
                 self.store_obj(target, "i1", &r);
             }
-            Operation::Exp => {
-                // ADR-0042: one call; the module defines it per side and face
-                // (`crate::exp`).
-                let (llt, val) = self.load_whole(source).expect("exp operand");
+            Operation::Math(f) => {
+                // ADR-0042 / ADR-0046: one call; the module defines it per
+                // side and face (`crate::math`).
+                let (llt, val) = self.load_whole(source).expect("math operand");
                 let bits = if llt == "double" { 64 } else { 32 };
                 let r = self.tmp();
                 self.line(format!(
                     "{r} = call {llt} {}({llt} {val})",
-                    crate::exp::symbol(bits)
+                    crate::math::symbol(f, bits)
                 ));
                 self.store_obj(target, &llt, &r);
             }

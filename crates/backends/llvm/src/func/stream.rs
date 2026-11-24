@@ -2088,7 +2088,7 @@ impl UnitGen<'_> {
         let f = self.tmp();
         self.line(format!(
             "{f} = call float {}(float {d})",
-            crate::exp::symbol(32)
+            crate::math::symbol(mapal_ir::MathFn::Exp, 32)
         ));
         f
     }

@@ -458,6 +458,15 @@ static void warp_meet(int w) {
 /* ADR-0042: `ex2.approx.ftz.f32` of the hardware `exp` form (its argument
  * lies in [-1/2, 1/2]: no subnormal in or out). */
 float emu_ex2(float a) { return exp2f(a); }
+/* ADR-0046: the SM's math units the device module may call. `sqrt.rn` is
+ * IEEE `squareRoot` — the host's correctly rounded `sqrtf` / `sqrt`, the same
+ * bits; the approximate units are modeled by the host's functions (their
+ * measured error is the profile's, not the model's). */
+float emu_sqrt_rn(float a) { return sqrtf(a); }
+double emu_sqrt_rn64(double a) { return sqrt(a); }
+float emu_sqrt_approx(float a) { return sqrtf(a); }
+float emu_sin_approx(float a) { return sinf(a); }
+float emu_cos_approx(float a) { return cosf(a); }
 
 float emu_shfl_bfly(float v, int32_t off) {
   w_x[tid_x] = v;

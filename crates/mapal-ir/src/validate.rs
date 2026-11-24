@@ -270,8 +270,8 @@ fn edge_type_ok(ir: &CategoryIr, m: &crate::graph::Morphism, sty: &Ty, tty: &Ty)
                 .unwrap_or(false)
         }
         Operation::Neg => sty.is_numeric() && sty == tty,
-        // ADR-0042: `exp` keeps its float width.
-        Operation::Exp => matches!(sty, Ty::Float { bits: 32 | 64 }) && sty == tty,
+        // ADR-0042 / ADR-0046: a math builtin keeps its float width.
+        Operation::Math(_) => matches!(sty, Ty::Float { bits: 32 | 64 }) && sty == tty,
         Operation::Eq | Operation::Neq => two_tuple(sty)
             .map(|(a, b)| a == b && (a.is_numeric() || *a == Ty::Bool) && *tty == Ty::Bool)
             .unwrap_or(false),

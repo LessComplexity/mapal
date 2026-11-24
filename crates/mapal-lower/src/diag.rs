@@ -75,7 +75,7 @@ pub enum LCode {
     IotaArgs,              // L1612
     FillArgs,              // L1613
     InvalidWiden,          // L1614
-    InvalidExp,            // L1615
+    InvalidExp,            // L1615 (every math builtin: exp, sqrt, sin, cos)
     InvalidNarrow,         // L1616
     ReadAnnotation,        // L1617
     ReadSource,            // L1618

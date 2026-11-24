@@ -48,3 +48,11 @@ fn loads() {
     "weights/embedding.bin" -> read -> token_embedding: [bf16; 64];
     token_embedding[0] -> widen_f32 -> println;
 }
+
+fn waves(x: f32) -> f32 {
+    x -> sqrt -> r;
+    x -> sin -> s;
+    x -> cos -> c;
+    x -> exp -> e;
+    r + s * c + e -> ret;
+}

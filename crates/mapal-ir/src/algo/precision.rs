@@ -33,6 +33,11 @@ pub struct PrecisionPlan {
     /// oracle's constants and the default face's a-priori bound
     /// (`|got − eˣ| ≤ rel·eˣ + abs` on `[lo, hi]`).
     pub exp: SecondaryMap<MorphismId, crate::exp::ExpForm>,
+    /// ADR-0046 D9: each math builtin (`exp`, `sqrt`, `sin`, `cos`) of the
+    /// function with its width's contract — the default face's a-priori
+    /// bound a value gate composes through the builtin
+    /// ([`crate::math::MathForm::compose`]).
+    pub math: SecondaryMap<MorphismId, crate::math::MathForm>,
     /// ADR-0043 D3: each `Narrow` (`to_bf16` / `to_f16`) of the function with
     /// its format's form — the rounding is exact on every face (IEEE
     /// `convertFormat`); a default-face gate adds `u·|x| + abs` per rounding
@@ -123,6 +128,12 @@ impl CategoryIr {
                 && let Some(form) = crate::exp::ExpForm::of_bits(u32::from(*bits))
             {
                 plan.exp.insert(m, form);
+            }
+            if let Operation::Math(fun) = mm.op
+                && let Some(Ty::Float { bits }) = self.objects.get(mm.target).map(|o| &o.ty)
+                && let Some(form) = crate::math::MathForm::of(fun, u32::from(*bits))
+            {
+                plan.math.insert(m, form);
             }
             if mm.op == Operation::Narrow
                 && let Some(Ty::Narrow(n)) = self.objects.get(mm.target).map(|o| &o.ty)

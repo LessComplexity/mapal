@@ -501,10 +501,11 @@ impl Walk<'_> {
                             self.unify_known(&cur, &Ty::f32(), e.span);
                         }
                         WTy::Known(Ty::Narrow(fmt))
-                    } else if text == "exp" {
-                        // ADR-0042: `x -> exp` keeps the float width — a
-                        // literal's variable flows through, so the width is
-                        // whatever unifies with it (emit owns L1615).
+                    } else if mapal_ir::MathFn::from_name(text).is_some() {
+                        // ADR-0042 / ADR-0046: `x -> exp` (`sqrt`, `sin`,
+                        // `cos`) keeps the float width — a literal's variable
+                        // flows through, so the width is whatever unifies
+                        // with it (emit owns L1615).
                         match &cur {
                             WTy::Known(Ty::Float { .. }) | WTy::Var(_) => cur.clone(),
                             _ => WTy::Unknown,

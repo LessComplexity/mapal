@@ -68,6 +68,15 @@ local cases = {
   { 48, '"', "flowString", "the path literal" },
   { 49, "widen_f32", "flowBuiltin", "widening a read bf16" },
 
+  -- ADR-0042 / ADR-0046: the math builtins are builtins mid-pipeline, never
+  -- the between-arrows binding or a declared fn.
+  { 53, "sqrt", "flowBuiltin", "sqrt (ADR-0046)" },
+  { 53, "r", "flowBinding", "binding after sqrt" },
+  { 54, "sin", "flowBuiltin", "sin (ADR-0046)" },
+  { 55, "cos", "flowBuiltin", "cos (ADR-0046)" },
+  { 55, "c", "flowBinding", "binding after cos" },
+  { 56, "exp", "flowBuiltin", "exp (ADR-0042)" },
+
   { 18, 9, "flowGuardArrow", "chrome of -true->" },
   { 38, 9, "flowGuardArrow", "chrome of -0->" },
   { 41, 9, "flowGuardArrow", "chrome of -Some(x)->" },

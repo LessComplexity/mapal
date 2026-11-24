@@ -236,6 +236,20 @@ bit for bit (the interpreter's); on the default face the compiler may take the f
 (`|got − eˣ| ≤ 2⁻²¹·eˣ` for `f32`) — MUFU.EX2 on an NVIDIA GPU, a vectorized polynomial on the CPU. `x > 88.72`
 gives `inf`, `x < −103.97` gives `0`, `NaN` stays `NaN` (f32; f64: 709.78 / −745.13). There is no `exp(x)` form.
 
+**`x -> sqrt`, `x -> sin`, `x -> cos`** (ADR-0046) are builtins of the same kind — `f32` or `f64` in, the same width
+out, anywhere a value flows:
+
+```flow
+(0.0, row) -> fold { acc, j -> acc + x[j] * x[j] } -> ss;  ss / 4096.0 -> sqrt -> rms;   // a norm
+pos -> map { p -> p * freq -> cos } -> c;                                                // a rotation's cosines
+```
+
+On the exact faces `sqrt` is the correctly rounded square root and `sin` / `cos` the language's own algorithm (an
+exact reduction of every argument, however large), bit for bit on every backend; on the default face the compiler may
+take any form within `|got − f(x)| ≤ 2⁻²²·√x` (`sqrt`) / `2⁻²¹·|f(x)|` (`sin`, `cos`, every finite `x`) — the
+GPU's `sqrt.approx` and, for the `cos` half of the reduction, `cos.approx` where the part's measured error admits
+them. `sqrt` of a negative is `NaN`, `sqrt(−0) = −0`; `sin(±0) = ±0`; `sin`, `cos` of `±inf` or `NaN` are `NaN`.
+
 **Narrow storage: `bf16`, `f16`** (ADR-0043). A model's weights can be stored in two bytes. A narrow value takes no
 arithmetic: round an `f32` into it with **`x -> to_bf16`** / **`x -> to_f16`** (once, to nearest even; `f16` overflows
 to `inf` past 65504) and widen it back, exactly, with `widen_f32` / `widen_f64` where you compute:
@@ -1133,7 +1147,7 @@ data -> stage1 -> stage2 -> stage3 -> ret;
 
 ## Appendix A — standard library (planned)
 
-**Math.** (`exp` exists today as a pipeline builtin, §3.3.)
+**Math.** (`exp`, `sqrt`, `sin` and `cos` exist today as pipeline builtins, §3.3.)
 
 ```flow
 abs, sqrt, pow, exp, log

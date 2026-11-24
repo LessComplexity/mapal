@@ -145,73 +145,18 @@ impl ExpForm {
     }
 }
 
-/// The oracle's `exp` on `f32` (`E_32`, module doc). Rust never contracts,
-/// so every step rounds once — the exact face.
+/// The oracle's `exp` on `f32` (`E_32`, module doc): ADR-0046's reference
+/// definition [`crate::math::exp_def`] evaluated natively. Every step rounds
+/// once — the exact face.
+#[inline]
 pub fn exp_f32(x: f32) -> f32 {
-    let f = F32;
-    let c = |b: u64| f32::from_bits(b as u32);
-    let (hi, lo) = (c(f.hi), c(f.lo));
-    let mut xc = if x > hi { hi } else { x };
-    xc = if xc < lo { lo } else { xc };
-    xc = if xc.is_nan() { 0.0 } else { xc };
-    let t = xc * c(f.log2e) + c(f.shifter);
-    let kf = t - c(f.shifter);
-    let k = kf as i32;
-    let r = (xc - kf * c(f.ln2_hi)) - kf * c(f.ln2_lo);
-    let cs = f.coefs();
-    let mut p = c(cs[f.degree as usize]);
-    for i in (0..f.degree as usize).rev() {
-        p = p * r + c(cs[i]);
-    }
-    let k1 = k >> 1;
-    let k2 = k - k1;
-    let s1 = f32::from_bits(((k1 + 127) as u32) << 23);
-    let s2 = f32::from_bits(((k2 + 127) as u32) << 23);
-    let mut y = (p * s1) * s2;
-    if x > hi {
-        y = f32::INFINITY;
-    }
-    if x < lo {
-        y = 0.0;
-    }
-    if x.is_nan() {
-        y = x;
-    }
-    y
+    crate::math::eval_f32(crate::math::MathFn::Exp, x)
 }
 
 /// The oracle's `exp` on `f64` (`E_64`, module doc).
+#[inline]
 pub fn exp_f64(x: f64) -> f64 {
-    let f = F64;
-    let c = f64::from_bits;
-    let (hi, lo) = (c(f.hi), c(f.lo));
-    let mut xc = if x > hi { hi } else { x };
-    xc = if xc < lo { lo } else { xc };
-    xc = if xc.is_nan() { 0.0 } else { xc };
-    let t = xc * c(f.log2e) + c(f.shifter);
-    let kf = t - c(f.shifter);
-    let k = kf as i64;
-    let r = (xc - kf * c(f.ln2_hi)) - kf * c(f.ln2_lo);
-    let cs = f.coefs();
-    let mut p = c(cs[f.degree as usize]);
-    for i in (0..f.degree as usize).rev() {
-        p = p * r + c(cs[i]);
-    }
-    let k1 = k >> 1;
-    let k2 = k - k1;
-    let s1 = f64::from_bits(((k1 + 1023) as u64) << 52);
-    let s2 = f64::from_bits(((k2 + 1023) as u64) << 52);
-    let mut y = (p * s1) * s2;
-    if x > hi {
-        y = f64::INFINITY;
-    }
-    if x < lo {
-        y = 0.0;
-    }
-    if x.is_nan() {
-        y = x;
-    }
-    y
+    crate::math::eval_f64(crate::math::MathFn::Exp, x)
 }
 
 /// `got` is within the default face's bound of `eˣ` for width `form`
