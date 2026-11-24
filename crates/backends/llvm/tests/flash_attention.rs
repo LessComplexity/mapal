@@ -32,7 +32,7 @@ fn lower(src: &str) -> CategoryIr {
 /// the rule's) and the rungs `off` off; the emulator's rungs off (`pdl`,
 /// `streams`, `pinned`), `place` off so every capable site is on the device,
 /// `horizontal` / `calls` off (a unit's own launch).
-fn emission(ir: &CategoryIr, force: Option<(u64, u64, u64, u64)>, off: &[&str]) -> Emission {
+fn emission(ir: &CategoryIr, force: Option<(u64, u64, u64, u64, u64)>, off: &[&str]) -> Emission {
     let mut gpu = GpuArms::default();
     gpu.on.flow = true;
     gpu.stream_force = force;
@@ -194,13 +194,13 @@ fn streamed_attention_values() {
     let Outcome::Done(_) = rr.outcome else {
         panic!("interp")
     };
-    let on = emission(&ir, Some((16, 16, 0, 0)), &[]);
+    let on = emission(&ir, Some((16, 16, 0, 0, 0)), &[]);
     let lines = stream_lines(&on);
     assert_eq!(lines.len(), 1, "{}", on.device.as_deref().unwrap_or(""));
     assert_eq!(field(&lines[0], "store"), "o");
     assert_eq!(field(&lines[0], "dissolved"), "s,ex,p");
     assert_eq!(field(&lines[0], "windows"), "4");
-    let off = emission(&ir, Some((16, 16, 0, 0)), &["stream"]);
+    let off = emission(&ir, Some((16, 16, 0, 0, 0)), &["stream"]);
     assert!(stream_lines(&off).is_empty());
     let Some(clang) = emu::clang() else {
         return;
@@ -241,6 +241,18 @@ fn stream_priced_on_every_part() {
         emit_detailed(ir, &opts).expect("emits")
     };
     let pre = lower(&program("pt_llm_pre_t2048"));
+    // attention-chains: the window's products and their shared loads priced
+    // half in series at the broadcast-load rate — the A100's 64 FP32 lanes
+    // no longer hide the loads of a one-row-a-thread geometry (measured 1.5×
+    // a four-row one): its streams hold four rows a thread, as the GDDR
+    // parts' did.
+    let a128 = lower(&program("pt_attn_2048_128"));
+    for (ir, part) in [(&pre, "a100"), (&a128, "a100")] {
+        let em = on(ir, part);
+        let l = stream_lines(&em);
+        assert_eq!(l.len(), 1, "{part}: {}", em.device.as_deref().unwrap_or(""));
+        assert!(field(&l[0], "stream").contains(":rt4"), "{part}: {}", l[0]);
+    }
     let small = lower(&program("px_attn_64_16"));
     let rr = run(&small, 2_000_000_000);
     let Outcome::Done(_) = rr.outcome else {
@@ -360,7 +372,7 @@ fn check_flash(clang: &str, i: usize, p: &testgen::FlashProg) -> Vec<(&'static s
         (false, 1) => 32,
         _ => 16,
     };
-    let on = emission(&ir, Some((b, kb, 0, 0)), &[]);
+    let on = emission(&ir, Some((b, kb, 0, 0, 0)), &[]);
     let lines = stream_lines(&on);
     let host_line = on
         .text
@@ -439,7 +451,7 @@ fn check_flash(clang: &str, i: usize, p: &testgen::FlashProg) -> Vec<(&'static s
         .into_iter()
         .find(|s| nbw.is_multiple_of(*s) && nbw > 1)
     {
-        let em = emission(&ir, Some((b, kb, 0, sp)), &[]);
+        let em = emission(&ir, Some((b, kb, 0, sp, 0)), &[]);
         let split = stream_lines(&em)
             .iter()
             .any(|l| field(l, "stream").ends_with(&format!(":s{sp}")));
@@ -448,10 +460,23 @@ fn check_flash(clang: &str, i: usize, p: &testgen::FlashProg) -> Vec<(&'static s
             builds.push(("split", em));
         }
     }
+    // attention-chains: 4-lane row groups (`threads = 4b`, a row a group):
+    // a consumer whose columns are whole 16-byte chunks of the group takes
+    // them interleaved across its lanes — two chunks a lane at width 32.
+    if b >= 8 && axis >= 16 {
+        let em = emission(&ir, Some((b, kb, 1, 0, 4 * b)), &[]);
+        let ls = stream_lines(&em);
+        if ls.iter().any(|l| field(l, "stream").contains("g4t")) {
+            out.push(("narrow groups streamed", 1));
+            out.push(("contig consumer", u64::from(p.c.is_multiple_of(16))));
+            out.push(("chunks>1", u64::from(p.c.is_multiple_of(16) && p.c >= 32)));
+            builds.push(("narrow groups", em));
+        }
+    }
     if i % 3 == 0 {
         builds.push((
             "stream off",
-            emission(&ir, Some((b, kb, 0, 0)), &["stream"]),
+            emission(&ir, Some((b, kb, 0, 0, 0)), &["stream"]),
         ));
     }
     if i % 3 == 1 {
@@ -461,17 +486,17 @@ fn check_flash(clang: &str, i: usize, p: &testgen::FlashProg) -> Vec<(&'static s
         // F5 off: every window computed; F7 off: nothing finite, none skipped.
         builds.push((
             "guard-box off",
-            emission(&ir, Some((b, kb, 0, 0)), &["guard-box"]),
+            emission(&ir, Some((b, kb, 0, 0, 0)), &["guard-box"]),
         ));
         builds.push((
             "finite off",
-            emission(&ir, Some((b, kb, 0, 0)), &["finite"]),
+            emission(&ir, Some((b, kb, 0, 0, 0)), &["finite"]),
         ));
     }
     if p.lp {
         // `unit-uniform` off: no unit takes the moved operands (the split
         // realization, every launch its own).
-        let em = emission(&ir, Some((b, kb, 0, 0)), &["unit-uniform"]);
+        let em = emission(&ir, Some((b, kb, 0, 0, 0)), &["unit-uniform"]);
         out.push((
             "unit-uniform off unstreamed",
             u64::from(stream_lines(&em).is_empty()),
@@ -480,7 +505,7 @@ fn check_flash(clang: &str, i: usize, p: &testgen::FlashProg) -> Vec<(&'static s
     }
     if i % 3 == 2 {
         // `cp.async` off: each thread loads and stores the windows.
-        let em = emission(&ir, Some((b, kb, 0, 0)), &["async"]);
+        let em = emission(&ir, Some((b, kb, 0, 0, 0)), &["async"]);
         if !stream_lines(&em).is_empty() {
             out.push(("sync windows", 1));
         }
@@ -489,7 +514,7 @@ fn check_flash(clang: &str, i: usize, p: &testgen::FlashProg) -> Vec<(&'static s
     for (arm, em) in &builds {
         let ex = emu::build_emulated(clang, &em.text, em.device.as_deref().unwrap_or(""));
         let modes: &[[(&str, &str); 2]] = match *arm {
-            "on" | "split" if !lines.is_empty() => &MODES,
+            "on" | "split" | "narrow groups" if !lines.is_empty() => &MODES,
             _ => &MODES[..1],
         };
         for (mode, (got, _)) in modes.iter().zip(ex.run_each(modes)) {
@@ -505,7 +530,8 @@ fn check_flash(clang: &str, i: usize, p: &testgen::FlashProg) -> Vec<(&'static s
 }
 
 /// Generated attention programs (`testgen::flash_strategy`): 1–64 query
-/// rows, 4–256 keys (tails), head and value widths 3–16, the exponent
+/// rows, 4–256 keys (tails), head widths 3–16 and value widths 3–32 (4-lane
+/// row groups: the interleaved 16-byte consumer chunks), the exponent
 /// scaled or not, the extreme a max or a min (the rescale down), its seed
 /// below or inside the scores, the sum's seed 0 or 1, stored scores /
 /// extreme / sum, and the forms the fact refuses (a `÷ den` after the
@@ -565,6 +591,9 @@ fn stream_on_generated_attention() {
         "boxes checked",
         "guard:skip",
         "split-kv streamed",
+        "narrow groups streamed",
+        "contig consumer",
+        "chunks>1",
         "loop programs",
         "loop streamed",
         "trailing members",
@@ -614,7 +643,7 @@ fn check_flash_mma(clang: &str, i: usize, p: &testgen::FlashProg) -> Vec<(&'stat
     }
     let mut out = vec![("programs", 1)];
     let kb = if i % 2 == 1 && p.n >= 32 { 32 } else { 16 };
-    let on = emission(&ir, Some((16, kb, 2, 0)), &[]);
+    let on = emission(&ir, Some((16, kb, 2, 0, 0)), &[]);
     let lines = stream_lines(&on);
     let mma = lines.iter().any(|l| field(l, "stream").contains(":mma"));
     out.push(("mma streamed", u64::from(mma)));
@@ -645,7 +674,7 @@ fn check_flash_mma(clang: &str, i: usize, p: &testgen::FlashProg) -> Vec<(&'stat
         out.push(("mma group>1", u64::from(p.group > 1)));
         out.push(("mma kb32", u64::from(kb == 32)));
     }
-    let off = emission(&ir, Some((16, kb, 2, 0)), &["stream-mma"]);
+    let off = emission(&ir, Some((16, kb, 2, 0, 0)), &["stream-mma"]);
     let off_lines = stream_lines(&off);
     out.push((
         "off streams ffma",
@@ -659,7 +688,7 @@ fn check_flash_mma(clang: &str, i: usize, p: &testgen::FlashProg) -> Vec<(&'stat
     let mut builds = vec![("on", on), ("stream-mma off", off)];
     let nbw = p.n.div_ceil(kb);
     if nbw > 1 && nbw.is_multiple_of(2) && !p.causal {
-        let em = emission(&ir, Some((16, kb, 2, 2)), &[]);
+        let em = emission(&ir, Some((16, kb, 2, 2, 0)), &[]);
         if stream_lines(&em).iter().any(|l| {
             let s = field(l, "stream");
             s.contains(":mma") && s.ends_with(":s2")

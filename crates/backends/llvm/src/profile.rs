@@ -760,6 +760,13 @@ pub struct DeviceCost {
     /// clock, per mille — the floor `warps · trips · lsu / lsu_ipc` under a
     /// wave's FFMA time ([`PlanShape::lsu`]). 0 = not given: no LSU term.
     pub lsu_ipc_pm: u64,
+    /// attention-chains: **16-byte warp shared loads whose row groups
+    /// broadcast one SM issues a clock**, per mille — the streamed
+    /// attention's window loads (`g` lanes on distinct rows, every row group
+    /// the same: `calib.cu lds bcast`, `col` at `g` = 8): 246 on the RTX
+    /// 5080, 241 on the A100 SXM4. 0 = not given: four 128-byte wavefronts a
+    /// warp load, one a clock ([`Self::lds_bcast`]).
+    pub lds_bcast_pm: u64,
     /// kernel-merging `zero-fold`: a zero pass's fill rate beyond `zero_ns`
     /// (`cuMemsetD8Async` device time), bytes per ns. 0 = not given.
     pub fill_bytes_per_ns: u64,
@@ -907,6 +914,7 @@ pub const NO_PLAN: DeviceCost = DeviceCost {
     eff_half: 0,
     lat_ns: 0,
     lsu_ipc_pm: 0,
+    lds_bcast_pm: 0,
     fill_bytes_per_ns: 0,
     tail_bytes_per_ns: 0,
     gsync_ns: 0,
@@ -927,12 +935,23 @@ pub const NO_PLAN: DeviceCost = DeviceCost {
 };
 
 impl DeviceCost {
+    /// attention-chains: [`Self::lds_bcast_pm`] in warp loads a clock —
+    /// measured, else what the shared memory's banks deliver: a warp's 16-byte
+    /// loads `warp · 16` bytes, one 128-byte wavefront a clock (32 banks ×
+    /// 4 B: every part's, [`crate::func::gpu::GPU_WAVEFRONT_BYTES`]).
+    pub fn lds_bcast(&self, warp: u64) -> f64 {
+        match self.lds_bcast_pm {
+            0 => crate::func::gpu::GPU_WAVEFRONT_BYTES as f64 / (warp.max(1) * 16) as f64,
+            pm => pm as f64 / 1000.0,
+        }
+    }
+
     /// `--cost=` names, in [`CostOver`] order: the [`DeviceCost`] fields,
     /// then the [`Gpu`] properties a measurement or a cross-compilation
     /// overrides by name ([`Gpu::fp32_lanes`], [`Gpu::clock_khz`], and the
     /// hardware-properties the rung rules read: SMs, L2, shared memory,
     /// threads, registers and blocks per SM, the DRAM interface).
-    pub const NAMES: [&'static str; 43] = [
+    pub const NAMES: [&'static str; 44] = [
         "flops_per_ns",
         "bytes_per_ns",
         "launch_ns",
@@ -946,6 +965,7 @@ impl DeviceCost {
         "eff_half",
         "lat_ns",
         "lsu_ipc_pm",
+        "lds_bcast_pm",
         "fill_bytes_per_ns",
         "tail_bytes_per_ns",
         "gsync_ns",
@@ -1023,7 +1043,7 @@ pub type CostOver = [Option<u64>; DeviceCost::NAMES.len()];
 impl Gpu {
     /// [`DeviceCost::NAMES`] that name a [`DeviceCost`] field (those before
     /// `fp32_lanes`).
-    const NAMES_COST: usize = 29;
+    const NAMES_COST: usize = 30;
 
     /// This part with the overrides in `over` applied (a part without a
     /// [`DeviceCost`] takes one from [`NO_PLAN`]).
@@ -1045,6 +1065,7 @@ impl Gpu {
                 "eff_half" => &mut d.eff_half,
                 "lat_ns" => &mut d.lat_ns,
                 "lsu_ipc_pm" => &mut d.lsu_ipc_pm,
+                "lds_bcast_pm" => &mut d.lds_bcast_pm,
                 "fill_bytes_per_ns" => &mut d.fill_bytes_per_ns,
                 "tail_bytes_per_ns" => &mut d.tail_bytes_per_ns,
                 "gsync_ns" => &mut d.gsync_ns,
@@ -1101,6 +1122,7 @@ impl Gpu {
             "eff_half" => d.eff_half,
             "lat_ns" => d.lat_ns,
             "lsu_ipc_pm" => d.lsu_ipc_pm,
+            "lds_bcast_pm" => d.lds_bcast_pm,
             "fill_bytes_per_ns" => d.fill_bytes_per_ns,
             "tail_bytes_per_ns" => d.tail_bytes_per_ns,
             "gsync_ns" => d.gsync_ns,
@@ -4834,6 +4856,7 @@ pub const RTX_4090: TargetProfile = TargetProfile {
             // (`benches/results/evidence/plan-cost/v2/B-rates.tsv`,
             // `B-lds-rtx-4090.tsv`); the LDS.128 broadcast rate is open (no ncu).
             lsu_ipc_pm: 500,
+            lds_bcast_pm: 0,
             // zero-fold: not measured on this part (no fold: unpriced).
             fill_bytes_per_ns: 0,
             tail_bytes_per_ns: 0,
@@ -5030,6 +5053,7 @@ pub const RTX_5090: TargetProfile = TargetProfile {
             // (`benches/results/evidence/plan-cost/v2/B-rates.tsv`,
             // `B-lds-rtx-5090.tsv`); the LDS.128 broadcast rate is open (no ncu).
             lsu_ipc_pm: 500,
+            lds_bcast_pm: 0,
             // zero-fold: not measured on this part (no fold: unpriced).
             fill_bytes_per_ns: 0,
             tail_bytes_per_ns: 0,
@@ -5117,6 +5141,9 @@ pub const RTX_5080: TargetProfile = TargetProfile {
             // lsu: calib B `lds`, LDS.32 at 256 threads 64.0 B/clk/SM = 0.5
             // warp-instructions a clock (`B-lds-rtx-5080.txt`).
             lsu_ipc_pm: 500,
+            // attention-chains: `calib.cu lds bcast` (`col`, g = 4 / 8 / 16:
+            // 0.247 / 0.246 / 0.248 warp loads a clock).
+            lds_bcast_pm: 246,
             // kernel-merging zero-fold (CUPTI, pt_rt_mlp2_2048, one traced
             // run an arm, `kernel-merging.md`): a 16 MiB zero pass 8.02 us
             // device time (mean of 9) less `zero_ns` = 2320 B/ns; the same
@@ -5277,6 +5304,9 @@ pub const A100: TargetProfile = TargetProfile {
             // stream-fly: `calib.cu bw` (cross-arch 60f0f8ce): 90 % of the
             // 1483 GB/s DRAM peak first at 16 KiB in flight an SM.
             fly_bytes_per_sm: 16384,
+            // attention-chains: `calib.cu lds bcast` on two vast SXM4 40 GB
+            // boxes (`col` 0.241 warp loads a clock at g = 4–32; `row` 0.393).
+            lds_bcast_pm: 241,
             bar_ns: 0,
             // kernel-merging `calls`: `coop_body_cycles` not measured here —
             // derived, the rtx-5080's 4390 cycles at 1.41 GHz = 3113 ns.
@@ -7767,6 +7797,26 @@ mod tests {
                 p.name
             );
         }
+    }
+
+    /// attention-chains: the stream's broadcast 16-byte loads a clock —
+    /// measured (`calib.cu lds bcast`: the RTX 5080's 0.246, the A100's
+    /// 0.241), else the banks' one 128-byte wavefront a clock over a warp's
+    /// 512 bytes; the same name overrides it.
+    #[test]
+    fn lds_bcast_is_measured_or_derived() {
+        let c = |p: &TargetProfile| p.gpu().unwrap().cost.unwrap_or(NO_PLAN);
+        assert_eq!(c(&RTX_5080).lds_bcast(32), 0.246);
+        assert_eq!(c(&A100).lds_bcast(32), 0.241);
+        assert_eq!(c(&H100).lds_bcast(32), 0.25);
+        let mut over: CostOver = [None; DeviceCost::NAMES.len()];
+        let i = DeviceCost::NAMES
+            .iter()
+            .position(|x| *x == "lds_bcast_pm")
+            .unwrap();
+        over[i] = Some(500);
+        let g = H100.gpu().unwrap().with_cost(&over);
+        assert_eq!(g.cost.unwrap().lds_bcast(32), 0.5);
     }
 
     /// hopper-wgmma-tma R1's price input: the engine's ns per copy, measured

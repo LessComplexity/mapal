@@ -2,7 +2,8 @@
 //   chase   dependent ld.global.cg latency (ns) vs footprint, 1 / 8 / 32 warps per SM (lane 0 of each warp chases)
 //   bw      achieved read GB/s vs active SMs x warps/SM x 16 B loads in flight per thread, DRAM (1 GiB) and L2 (8 MiB, re-read)
 //   loaded  dependent-load latency of one warp while the other SMs stream DRAM (nstream SMs; achieved GB/s printed)
-//   lds     ld.shared.b32 / v2 / v4 conflict-free throughput, bytes per SM clock (clock64) and GB/s per SM
+//   lds     ld.shared.b32 / v2 / v4 conflict-free throughput, bytes per SM clock (clock64) and GB/s per SM; and the
+//           streamed attention's broadcast 16-byte loads (`bcast`): warp loads an SM a clock, `lsu_ipc_pm`
 //   gsync   kernel-merging `calls`: one grid barrier of a co-resident grid (the emitted barrier: block barrier, one
 //           arrival per block on a flip-bit counter, acquire spin; `fenced` = the fence + relaxed form) vs one dependent
 //           launch of the same grid (an empty kernel back to back on one stream, device-bound behind a long kernel; `pdl`:
@@ -227,6 +228,58 @@ template <int W> static void lds_one() {
         double bytes = (double)thr * W * 4 * 8 * iters; // per block (one block per SM)
         printf("lds width=%d bits thr=%d bytes_per_clk=%.1f gbs_per_sm=%.1f\n", W * 32, thr, bytes / cy, bytes / (cy / (clk_khz * 1e3)) / 1e9);
     }
+}
+
+// attention-chains `lds bcast`: the streamed attention's 16-byte shared loads (`stream.rs`), their LSU issue rate —
+// a warp of `32 / g` row groups of `g` lanes; `col`: lane `x` of every group reads row `x` of a window whose rows are
+// 132 words apart (the producer's padded rows: distinct 16-byte chunks on distinct banks, the groups' identical:
+// broadcast); `row`: each group reads its own row's chunk (one address a group). Warp loads an SM a clock (clock64,
+// 8 warps a block, 2 blocks an SM: every part holds both). `lsu_ipc_pm` = the `col` load at g = 8 (the
+// stream-shaped issue `DeviceCost::lsu_ipc_pm` prices).
+template <int ROW> __global__ void ldsb(unsigned* out, long long* cyc, int iters, int g) {
+    extern __shared__ unsigned sm[];  // 33 KB: 64 rows of 132 words
+    for (int i = threadIdx.x; i < 64 * 132; i += blockDim.x) sm[i] = i;
+    __syncthreads();
+    const unsigned lane = threadIdx.x & 31, x = lane % g, grp = lane / g;
+    unsigned acc = 0, k = 0;
+    long long t0 = clock64();
+    for (int i = 0; i < iters; i++) {
+#pragma unroll
+        for (int j = 0; j < 8; j++) {
+            const unsigned row = ROW ? (grp + 8 * j) & 63 : (x + 8 * j) & 63;
+            const unsigned ad = (row * 132 + ((k + 4 * j) & 127)) * 4;
+            unsigned a, b, c, d;
+            asm volatile("ld.shared.v4.b32 {%0,%1,%2,%3}, [%4];" : "=r"(a), "=r"(b), "=r"(c), "=r"(d) : "r"(ad));
+            acc ^= a ^ b ^ c ^ d;
+        }
+        k += 32;
+    }
+    long long t1 = clock64();
+    __syncthreads();
+    if (threadIdx.x == 0) cyc[blockIdx.x] = t1 - t0;
+    if (acc == 0x12345678) out[0] = acc;
+}
+static void ldsb_run() {
+    unsigned* o; long long* c; CK(cudaMalloc(&o, 4)); CK(cudaMalloc(&c, 4096 * 8));
+    const int thr = 256, per = 2, iters = 20000, smem = 64 * 132 * 4;
+    CK(cudaFuncSetAttribute(ldsb<0>, cudaFuncAttributeMaxDynamicSharedMemorySize, smem));
+    CK(cudaFuncSetAttribute(ldsb<1>, cudaFuncAttributeMaxDynamicSharedMemorySize, smem));
+    double col8 = 0;
+    for (int row = 0; row < 2; row++)
+        for (int g : {4, 8, 16, 32}) {
+            for (int rep = 0; rep < 2; rep++) {
+                if (row) ldsb<1><<<sms * per, thr, smem>>>(o, c, iters, g);
+                else ldsb<0><<<sms * per, thr, smem>>>(o, c, iters, g);
+                CK(cudaDeviceSynchronize());
+            }
+            std::vector<long long> h(sms * per); CK(cudaMemcpy(h.data(), c, sms * per * 8, cudaMemcpyDeviceToHost));
+            std::sort(h.begin(), h.end());
+            const double cy = (double)h[h.size() / 2], instr = (double)per * thr / 32 * 8 * iters;
+            printf("lds bcast=%s g=%d warp_loads_per_clk=%.3f\n", row ? "row" : "col", g, instr / cy);
+            if (!row && g == 8) col8 = instr / cy;
+        }
+    printf("lds lsu_ipc_pm=%.0f\n", col8 * 1000);
+    CK(cudaFree(o)); CK(cudaFree(c));
 }
 
 // kernel-merging `calls`: the grid barrier `func/calls.rs` emits (`@mapal_gsync`), in CUDA. Block 0 adds
@@ -750,7 +803,7 @@ int main(int argc, char** argv) {
     if (on("chase")) chase_run();
     if (on("bw")) bw_run();
     if (on("loaded")) loaded_run();
-    if (on("lds")) { lds_one<1>(); lds_one<2>(); lds_one<4>(); }
+    if (on("lds")) { lds_one<1>(); lds_one<2>(); lds_one<4>(); ldsb_run(); }
     if (on("gsync")) gsync_run();
     if (on("copy")) copy_run();
     if (on("ffma")) ffma_run(p.major * 10 + p.minor);

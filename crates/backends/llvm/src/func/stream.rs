@@ -16,7 +16,8 @@
 //! Thread layout: `threads = (b ÷ rt) · g` — a row group of `g` lanes (one
 //! warp's aligned `g`, a power of two) holds `rt` rows; lane `x` the window
 //! columns `x + g·z` (`z < kb ÷ g`) of its rows and the consumer columns
-//! `x·oc + q` (contiguous, 16-byte loads) or `x + g·q`. A window's row
+//! `4x + 4g·⌊q÷4⌋ + q%4` (16-byte chunks interleaved across the group: one
+//! load's `g` lanes read consecutive bytes) or `x + g·q`. A window's row
 //! extreme is a butterfly over the group's lanes; every other fold keeps a
 //! lane's partial, combined once after the last window.
 //!
@@ -528,8 +529,11 @@ impl<'a> FnEmit<'a> {
                         if !g.is_power_of_two() || g > gpu.warp || g > kb || g < 4 {
                             continue;
                         }
-                        if let Some((fb, fk, fr, _)) = forced
-                            && (fb != b || fk != kb || (fr > 0 && fr != rt))
+                        if let Some((fb, fk, fr, _, ft)) = forced
+                            && (fb != b
+                                || fk != kb
+                                || (fr > 0 && fr != rt)
+                                || (ft > 0 && ft != threads))
                         {
                             continue;
                         }
@@ -544,7 +548,7 @@ impl<'a> FnEmit<'a> {
                             {
                                 continue;
                             }
-                            if let Some((_, _, _, fs)) = forced
+                            if let Some((_, _, _, fs, _)) = forced
                                 && fs > 0
                                 && fs != sp
                             {
@@ -680,8 +684,18 @@ impl<'a> FnEmit<'a> {
         let flops =
             ((2 * rows * w * fma + rows * w * cells * STREAM_CELL_FLOPS) as f64 * seen) as u64;
         let win_bytes = (win_bytes as f64 * seen) as u64;
-        // The waves: a partial last wave runs at its busiest SM's pace.
-        let fill = (waves * slots) as f64 / blocks as f64;
+        // attention-chains: the busiest SM — its `⌈blocks / sms⌉` blocks
+        // carry their share of the products at the SM's rate (a partial wave
+        // of `per_sm`-block slots no slower: one block alone on an SM issues
+        // at the SM's rate), unless its resident warps leave a scheduler
+        // fewer than two (a grid smaller than the SMs' slots: its blocks
+        // stall on every load and barrier, `starve` ×). The A100's 64-block
+        // grids of 256 threads ran 0.60× the slot-filled price (attn 2048 ×
+        // 128 `b64xkb32:s2`: 0.445 ms against 0.740 priced).
+        let busiest = blocks.div_ceil(gpu.sms);
+        let warps_res = busiest.min(per_sm) * st.threads / gpu.warp.max(1);
+        let starve = ((2 * gpu.schedulers.max(1)) as f64 / warps_res.max(1) as f64).max(1.0);
+        let fill = (busiest * gpu.sms) as f64 / blocks as f64 * starve;
         // `stream-mma`: the products at the matrix product's peak, at the
         // shipped FFMA tile's fraction of its own peak.
         let rate = match st
@@ -787,15 +801,38 @@ impl<'a> FnEmit<'a> {
             Some(op) => mma_flops as f64 / gpu.matrix_flops_per_clk(op).max(1) as f64,
             None => 0.0,
         };
-        let cycles = issue
-            .max(lds as f64)
-            .max(lsu as f64 / lsu_ipc)
-            .max(mma_cycles)
-            / eff
-            + bar_cycles;
+        // attention-chains: the FFMA window's products and their shared
+        // loads largely in series — a `k`-step's products wait on its loads,
+        // and at the stream's residency (two warps a scheduler) little other
+        // issue covers them: the window's cycles are the longer of its thread
+        // instructions at the FP32 lanes and its 16-byte warp loads at the
+        // part's broadcast-load rate (`lds_bcast_pm`, `calib.cu lds bcast`:
+        // 0.24–0.25 a clock on the RTX 5080 and the A100 alike), plus
+        // [`STREAM_LOAD_SERIAL`] of the shorter. The larger of the two at the
+        // FFMA tile's efficiency priced the A100's one-row-a-thread
+        // geometries 1.5–1.9× fast — its 64 FP32 lanes double the issue
+        // term, which hid the loads (attn 2048 × 128 `b8xkb32:rt1g8t64`:
+        // 0.479 ms against 0.256 priced; the four-row `b32xkb32:rt4g16t128`
+        // 0.316 against 0.314). `stream-mma`: the matrix pipe's issue as
+        // before.
+        let cycles = match mma_op {
+            Some(_) => {
+                issue
+                    .max(lds as f64)
+                    .max(lsu as f64 / lsu_ipc)
+                    .max(mma_cycles)
+                    / eff
+                    + bar_cycles
+            }
+            None => {
+                let loads = lsu as f64 / d.lds_bcast(gpu.warp);
+                (issue.max(loads) + issue.min(loads) * STREAM_LOAD_SERIAL).max(lds as f64)
+                    + bar_cycles
+            }
+        };
         // Every resident block of an SM shares its pipes: a wave of `per_sm`.
         let windows = (blocks as f64 / gpu.sms as f64).ceil() * nb as f64 * seen;
-        let pipe_ns = cycles * windows * 1e6 / gpu.clock_khz.max(1) as f64;
+        let pipe_ns = cycles * windows * starve * 1e6 / gpu.clock_khz.max(1) as f64;
         let fma_ns = fma_ns.max(pipe_ns);
         let l2_ns = (blocks * win_bytes) as f64 / d.l2_bytes_per_ns.max(1) as f64;
         let res = self.ir.residence_plan(self.f);
@@ -945,6 +982,16 @@ impl<'a> FnEmit<'a> {
         Some(split)
     }
 }
+
+/// attention-chains: the share of the shorter of a stream window's two
+/// issue streams — its products' thread instructions at the FP32 lanes, its
+/// 16-byte shared loads at the broadcast-load rate — that adds to the
+/// longer (0: they overlap; 1: in series). ½: the geometry sweeps of
+/// `attn_2048_128` / `attn_2048_64` / `attn_1024_64` / `llm_pre_t8192` on two
+/// A100 SXM4 boxes and of `attn_2048_128` on the RTX 5080 fit within an rms
+/// of 1.13 / 1.07 of their geomean at ½ (in series 1.14 / 1.05, overlapped
+/// 1.18 / 1.11; `attention-chains.md`).
+pub(crate) const STREAM_LOAD_SERIAL: f64 = 0.5;
 
 /// The flops one axis cell's evaluation is priced at against the products:
 /// the default face's `exp` (22 SASS on the RTX 5080, `exp.md`) and its
@@ -1468,10 +1515,7 @@ impl UnitGen<'_> {
                                     let x2 = self.op("mul", &x, 2);
                                     self.op("add", &x2, MMA_N * (q / 2) + q % 2)
                                 }
-                                (None, true) => {
-                                    let c0 = self.op("mul", &x, oc);
-                                    self.op("add", &c0, q)
-                                }
+                                (None, true) => self.chunk_col(&x, q, g),
                                 (None, false) => self.op("add", &x, g * q),
                             };
                             // Its own row's output cell; the epilogue there.
@@ -1580,7 +1624,7 @@ impl UnitGen<'_> {
                                     let x2 = self.op("mul", x, 2);
                                     self.op("add", &x2, MMA_N * (q / 2) + q % 2)
                                 }
-                                None => self.split_col(x, q, oc, contig, g, site.c),
+                                None => self.split_col(x, q, contig, g, site.c),
                             };
                             let at = self.op("add", &base, &col);
                             let v = self.tmp();
@@ -1708,7 +1752,7 @@ impl UnitGen<'_> {
                                     let x2 = self.op("mul", x, 2);
                                     self.op("add", &x2, MMA_N * (q / 2) + q % 2)
                                 }
-                                None => self.split_col(x, q, oc, contig, g, site.c),
+                                None => self.split_col(x, q, contig, g, site.c),
                             };
                             let mut acc = "-0.0".to_string();
                             for z in 0..sp as usize {
@@ -1737,12 +1781,9 @@ impl UnitGen<'_> {
 
     /// A consumer column of the thread (clamped inside the row: a column
     /// past it is never stored).
-    fn split_col(&mut self, x: &str, q: u64, oc: u64, contig: bool, g: u64, c: u64) -> String {
+    fn split_col(&mut self, x: &str, q: u64, contig: bool, g: u64, c: u64) -> String {
         match contig {
-            true => {
-                let c0 = self.op("mul", x, oc);
-                self.op("add", &c0, q)
-            }
+            true => self.chunk_col(x, q, g),
             false => {
                 let col = self.op("add", x, g * q);
                 let ok = self.tmp();
@@ -1752,6 +1793,17 @@ impl UnitGen<'_> {
                 s
             }
         }
+    }
+
+    /// A contiguous consumer's column `q` of lane `x`: 16-byte chunks
+    /// interleaved across the row group — chunk `q ÷ 4` of lane `x` at
+    /// `4x + 4g·(q ÷ 4)`, so a chunk's `g` lanes read `g · 16` consecutive
+    /// bytes (one wavefront per 128, no bank conflict; lane-contiguous
+    /// `x·oc` put every lane `oc · 4` bytes apart: `oc` = 16 meant a 4-way
+    /// conflict on each 16-byte load, `attention-chains`).
+    fn chunk_col(&mut self, x: &str, q: u64, g: u64) -> String {
+        let c0 = self.op("mul", x, 4);
+        self.op("add", &c0, 4 * g * (q / 4) + q % 4)
     }
 
     /// Each fold's final value per row of the thread: its lanes' states
@@ -2661,10 +2713,7 @@ impl UnitGen<'_> {
         // never stored).
         let cols: Vec<String> = (0..oc)
             .map(|q| match contig {
-                true => {
-                    let c0 = self.op("mul", x, oc);
-                    self.op("add", &c0, q)
-                }
+                true => self.chunk_col(x, q, g),
                 false => {
                     let col = self.op("add", x, g * q);
                     let ok = self.tmp();
@@ -2707,11 +2756,11 @@ impl UnitGen<'_> {
                 let vrow = gg.op("mul", &jr, cpd);
                 let vs: Vec<String> = match contig {
                     true => {
-                        let c0 = gg.op("mul", &x, oc);
+                        let c0 = gg.op("mul", &x, 4);
                         let base = gg.op("add", &vrow, &c0);
                         let mut out = Vec::new();
                         for q4 in 0..oc / 4 {
-                            let i = gg.op("add", &base, q4 * 4);
+                            let i = gg.op("add", &base, q4 * 4 * g);
                             let p = gg.smem(voff, "float", &i);
                             let v = gg.tmp();
                             gg.line(format!(
