@@ -268,10 +268,11 @@ const MODES: [[(&str, &str); 2]; 3] = [
     [("MAPAL_EMU_SERIAL", "0"), ("MAPAL_EMU_REVERSE", "1")],
 ];
 
-/// The part's L2 keep overridden so the emulator's extents stream from
-/// "DRAM", and its loaded latency so their panels outlast their products:
-/// `mma-fly` acts.
-const FLY: [&str; 2] = ["--cost=l2_keep_bytes=65536", "--cost=lat_ns=100000"];
+/// The part's L2 keep and DRAM rate overridden so the emulator's extents
+/// stream from "DRAM" and their S52 panel's load outlasts its products
+/// (`T` 1310 ns ≤ `t` 1672 < `T` + 573 at 300 B/ns, the ring's `bk` 16
+/// panel 836 ns ≥ the latency): `mma-fly` acts on the 16-bit tile.
+const FLY: [&str; 2] = ["--cost=l2_keep_bytes=65536", "--cost=dram_bytes_per_ns=300"];
 
 /// The keep and the DRAM rate overridden so row-major's `b` re-reads leave
 /// the site DRAM-bound: the grouped walk acts.
@@ -279,9 +280,9 @@ const REREAD: [&str; 2] = ["--cost=l2_keep_bytes=65536", "--cost=dram_bytes_per_
 
 /// **Values through the emulator.** 6 generated GEMMs at runnable extents
 /// (`m` 512, `n` 6144: 192 tiles past the 168-block wave; `k` 64), each
-/// product set: the ring (`mma-fly`) and the grouped walk on, the emulated
-/// device equal to the interpreter in every emulator mode, and the OFF arm
-/// too.
+/// product set: the ring (`mma-fly`, the 16-bit programs) and the grouped
+/// walk on, the emulated device equal to the interpreter in every emulator
+/// mode, and the OFF arm too.
 #[test]
 fn tensor_tile_values_through_the_emulator() {
     let Some(cc) = emu::clang() else {

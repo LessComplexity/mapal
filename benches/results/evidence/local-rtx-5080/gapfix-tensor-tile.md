@@ -23,8 +23,11 @@ Tests: `cargo test -p mapal-backend-llvm --lib` 129 pass (`rung_rules_replay` 16
 open); `tests/tensor_tile.rs`: plans over 64 generated GEMMs × {`bf16 | f32`, `tf32 | f32`} × the RTX 5080 / 4090 /
 A100 / H100 properties — 193 tensor kernels, 17 rings (14 at the S52 residency), 22 walks grouped by the reuse
 gate, 13 re-reading grids the pipe hides kept row-major; values: 6 generated GEMMs (`512 × 6144 × 64`, the L2 keep /
-latency / DRAM rate overridden by `--cost=` so both rules act), 6 ring kernels and 6 grouped walks, 18 emulated runs
-equal to the interpreter (serial, serial-2, reversed; OFF arm too).
+DRAM rate overridden by `--cost=` so both rules act), 3 ring kernels (the 16-bit programs) and 6 grouped walks, 24
+emulated runs equal to the interpreter (serial, serial-2, reversed; the OFF arm too). Plan-level suites re-run green:
+`split_tile` (4 plan tests), `large_gemm` (rules + stream-K price on generated shapes), `half_tile` (3 plan tests),
+`streamk_epi`, `hopper_tma` (`ws_kernel_text_on_sm_90a`), `hardware_properties`, `device_geometry`; their emulator
+runs on small programs were not re-run (no small program's emission changes: neither rule acts below the L2 keep).
 
 ## Intent → realized → explained
 
