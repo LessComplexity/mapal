@@ -3855,6 +3855,7 @@ impl CategoryIr {
                     | Operation::Zip
                     | Operation::Enumerate
                     | Operation::Map { .. }
+                    | Operation::Proj { .. }
             ) {
                 continue;
             }
@@ -3863,6 +3864,59 @@ impl CategoryIr {
             }
         }
         plan
+    }
+
+    /// gapfix `iota-law`: **an element law through a capture** — the law of
+    /// a body fn's capture `Proj` of its input parameter, from the value every
+    /// site of the body passes in that slot (its own fn's [`Self::elem_plan`],
+    /// itself through captures one level further out). Only a law that names
+    /// nothing of the enclosing fn crosses (`Index`, and pairs of such): a
+    /// `Broadcast` / `Load` / `Apply` refers to objects the body cannot reach.
+    /// Every site must agree (a body shared by sites passing different
+    /// arrays has no one law). `None`: the cut — the capture is loaded.
+    fn capture_law(&self, o: ObjectId) -> Option<ElemSrc> {
+        let m = self.in_edges(o).first().copied()?;
+        let pm = self.morphisms.get(m)?;
+        let Operation::Proj { index } = pm.op else {
+            return None;
+        };
+        if self.objects.get(pm.source)?.kind != ObjectKind::Parameter {
+            return None;
+        }
+        let of = self.try_owner(pm.source)?;
+        if self.func(of)?.input != pm.source {
+            return None;
+        }
+        fn closed(l: &ElemSrc) -> bool {
+            match l {
+                ElemSrc::Index => true,
+                ElemSrc::Pair(a, b) => closed(a) && closed(b),
+                _ => false,
+            }
+        }
+        let mut law: Option<ElemSrc> = None;
+        for (_, morph) in self.morphisms() {
+            let k = match morph.op {
+                Operation::Map { body, captures } | Operation::Fold { body, captures }
+                    if body == of =>
+                {
+                    captures
+                }
+                _ => continue,
+            };
+            // Capture positions are 0..k (map: element at k; fold: acc at k).
+            if index >= k {
+                return None;
+            }
+            let outer = self.pair_slot_source(morph.source, index)?;
+            let owner = self.try_owner(outer)?;
+            let l = self.elem_plan(owner).src(outer).cloned().filter(closed)?;
+            match &law {
+                Some(p) if *p != l => return None,
+                _ => law = Some(l),
+            }
+        }
+        law
     }
 
     /// `elem_law_local` plus the three guards, recursing through structural
@@ -3891,6 +3945,9 @@ impl CategoryIr {
         let morph = self.morphisms.get(*definer)?;
         match morph.op {
             Operation::Iota | Operation::Fill => self.elem_law_local(arr),
+            // gapfix `iota-law`: a capture of a body fn, by the law of what
+            // its sites pass (a fold over a captured `iota`: no load).
+            Operation::Proj { .. } => self.capture_law(arr),
             // `Zip`'s source is the 2-tuple product of the two arrays (ADR-0018).
             Operation::Zip => Some(ElemSrc::Pair(
                 Box::new(self.elem_component(morph.source, 0, in_loop, depth + 1)),
