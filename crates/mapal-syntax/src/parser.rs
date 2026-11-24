@@ -456,11 +456,17 @@ impl<'a> Parser<'a> {
         Item::Error(self.node_span(start))
     }
 
-    /// `fn-decl := 'fn' IDENT '(' params? ')' ( '->' type )? block`.
+    /// `fn-decl := 'fn' IDENT sizes? '(' params? ')' ( '->' type )? block`.
     fn parse_fn_decl(&mut self) -> FnDecl {
         let start = self.cur_span().start;
         self.bump(); // `fn`
         let name = self.expect_name("function name");
+        // ADR-0047 D1: the size parameters `<rows, columns>`.
+        let sizes = if self.at(TokenKind::Lt) {
+            self.parse_size_params()
+        } else {
+            Vec::new()
+        };
         let params = if self.at(TokenKind::LParen) {
             self.parse_params()
         } else {
@@ -485,11 +491,49 @@ impl<'a> Parser<'a> {
         let span = self.node_span_covering(start, body.span);
         FnDecl {
             name,
+            sizes,
             params,
             ret_ty,
             body,
             span,
         }
+    }
+
+    /// `sizes := '<' IDENT (',' IDENT)* ','? '>'` (ADR-0047 D1) — caller has
+    /// checked the `<`. An empty list is P0001; a missing `>` is P0002.
+    fn parse_size_params(&mut self) -> Vec<Name> {
+        self.bump(); // `<`
+        let mut sizes = Vec::new();
+        while self.at(TokenKind::Ident) {
+            sizes.push(Name {
+                span: self.bump().span,
+            });
+            if self.eat(TokenKind::Comma).is_none() {
+                break;
+            }
+        }
+        if sizes.is_empty() {
+            self.diag(
+                "P0001",
+                self.cur_span(),
+                "expected a size parameter name: `fn f<n>(x: [f32; n])` (ADR-0047)",
+            );
+        }
+        if self.eat(TokenKind::Gt).is_none() {
+            self.diag(
+                "P0002",
+                self.cur_span(),
+                "unclosed `<` in the size parameter list",
+            );
+            // Recover at the parameter list or the body.
+            while !matches!(
+                self.kind(),
+                TokenKind::LParen | TokenKind::LBrace | TokenKind::Eof | TokenKind::KwFn
+            ) {
+                self.bump();
+            }
+        }
+        sizes
     }
 
     /// `compute := ':' member ('|' member)*` when the cursor is at `:` before
@@ -732,17 +776,14 @@ impl<'a> Parser<'a> {
         let elem = self.parse_type();
         if self.at(TokenKind::Semi) {
             self.bump();
-            // Length must be an INT literal.
-            let (len, len_span) = if self.at(TokenKind::Int) {
-                let span = self.bump().span;
-                (self.parse_int(span), span)
-            } else {
-                self.diag(
-                    "P0001",
-                    self.cur_span(),
-                    "array length must be an integer literal",
-                );
-                (0, self.here())
+            // The length: an integer literal or a size expression (ADR-0047 D2).
+            let (len, len_span, size) = match self.parse_size_expr() {
+                Some(SizeExpr {
+                    kind: SizeKind::Int(n),
+                    span,
+                }) => (n, span, None),
+                Some(e) => (0, e.span, Some(e)),
+                None => (0, self.here(), None),
             };
             if self.eat(TokenKind::RBracket).is_none() {
                 self.diag("P0002", self.cur_span(), "unclosed `[` in array type");
@@ -753,6 +794,7 @@ impl<'a> Parser<'a> {
                     elem: Box::new(elem),
                     len,
                     len_span,
+                    size,
                 },
                 span,
             }
@@ -772,6 +814,118 @@ impl<'a> Parser<'a> {
                 kind: TyKind::Dynamic(Box::new(elem)),
                 span,
             }
+        }
+    }
+
+    /// `size := term (('+' | '-') term)*` (ADR-0047 D2). `None` (with P0001)
+    /// when no length is there at all; `/` and `%` are P0119.
+    fn parse_size_expr(&mut self) -> Option<SizeExpr> {
+        if !self.enter() {
+            self.leave();
+            return None;
+        }
+        let out = self.parse_size_sum();
+        self.leave();
+        out
+    }
+
+    fn parse_size_sum(&mut self) -> Option<SizeExpr> {
+        let mut lhs = self.parse_size_term()?;
+        loop {
+            let op = match self.kind() {
+                TokenKind::Plus => SizeOp::Add,
+                TokenKind::Minus => SizeOp::Sub,
+                _ => break,
+            };
+            self.bump();
+            let rhs = self.parse_size_term()?;
+            lhs = Self::size_binary(op, lhs, rhs);
+        }
+        Some(lhs)
+    }
+
+    fn parse_size_term(&mut self) -> Option<SizeExpr> {
+        let mut lhs = self.parse_size_atom()?;
+        loop {
+            match self.kind() {
+                TokenKind::Star => {
+                    self.bump();
+                    let rhs = self.parse_size_atom()?;
+                    lhs = Self::size_binary(SizeOp::Mul, lhs, rhs);
+                }
+                TokenKind::Slash | TokenKind::Percent => {
+                    let sp = self.cur_span();
+                    self.diag(
+                        "P0119",
+                        sp,
+                        "a size expression takes `+`, `-` and `*` only: `/` and `%` are not \
+                         invertible, so a call could not infer the size (ADR-0047)",
+                    );
+                    self.bump();
+                    let _ = self.parse_size_atom();
+                }
+                _ => break,
+            }
+        }
+        Some(lhs)
+    }
+
+    fn parse_size_atom(&mut self) -> Option<SizeExpr> {
+        let sp = self.cur_span();
+        match self.kind() {
+            TokenKind::Int => {
+                self.bump();
+                Some(SizeExpr {
+                    kind: SizeKind::Int(self.parse_int(sp)),
+                    span: sp,
+                })
+            }
+            TokenKind::Ident => {
+                self.bump();
+                Some(SizeExpr {
+                    kind: SizeKind::Name(Name { span: sp }),
+                    span: sp,
+                })
+            }
+            TokenKind::LParen => {
+                let start = sp.start;
+                self.bump();
+                let inner = self.parse_size_expr()?;
+                if self.eat(TokenKind::RParen).is_none() {
+                    self.diag(
+                        "P0002",
+                        self.cur_span(),
+                        "unclosed `(` in a size expression",
+                    );
+                }
+                // Parentheses only group: the node keeps the inner shape with
+                // the parenthesized span.
+                Some(SizeExpr {
+                    kind: inner.kind,
+                    span: self.node_span_covering(start, inner.span),
+                })
+            }
+            _ => {
+                self.diag(
+                    "P0001",
+                    sp,
+                    "array length must be an integer literal or a size expression \
+                     (`[f32; 4096]`, `[f32; rows * columns]`)",
+                );
+                None
+            }
+        }
+    }
+
+    fn size_binary(op: SizeOp, lhs: SizeExpr, rhs: SizeExpr) -> SizeExpr {
+        let span = SourceLoc::new(lhs.span.start, rhs.span.end.max(lhs.span.end));
+        SizeExpr {
+            kind: SizeKind::Binary {
+                op,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            },
+            span,
         }
     }
 

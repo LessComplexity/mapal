@@ -935,6 +935,7 @@ end with the horizon, e.g. "out of Mapal-Core (HANDOFF §4); planned for Core+1"
 | P0115 | anonymous block stage (`-> { expr } -> r`, user-guide §8.3) | parsed as StmtBlock; flagged to Sapir (scope reading) |
 | P0116 | destructuring op-block parameter (`map { (x, y) -> … }`) | |
 | P0117 | a non-chain statement (`x <- e` rebind, `loop { }`) inside a fanout block (`void { … }` — the sole `parse_fanout_block` caller after ADR-0019 moved `seq` to a statement block) | **structural, not out-of-Core**: only chains are fanout branches; each dropped statement draws P0117 at its span (replacing the old silent `filter_map` drop, ADR-0019 defect #3 — reported by direct push, not `self.diag`, so the cursor-settled cooldown cannot collapse the 2nd+ drops into silence). All chains are kept as branches, including a final branch written without a trailing `;` (the block tail, likewise no longer silently dropped); stray/spaced arms already carry P0004/P0005/P0006 and stay silent here |
+| P0119 | `/` or `%` in an array length (`[f32; n / 2]`) — a size expression takes `+`, `-`, `*` only, the operators a call can invert (ADR-0047 D2) | **structural**: reported at the operator; parsing continues past its operand |
 
 In expression position, generic-argument syntax (`channel<i32>` as an *expression*) is
 indistinguishable from comparisons and surfaces as P0007/P0001 — documented imprecision

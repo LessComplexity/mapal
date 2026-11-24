@@ -191,6 +191,17 @@ syn match flowOperator "[+\-*/%=!<>]\|==\|!=\|<=\|>=\|&&\|||"
 syn match flowArrow "->\|<-"
 
 " ---------------------------------------------------------------------------
+" Size parameters (ADR-0047)  (DEFINED AFTER operators so `<` / `>` read as
+" the list's delimiters, not comparisons)
+" ---------------------------------------------------------------------------
+" `fn project<rows, columns>(…)`: the list right after a function's name. The
+" names are the instance's sizes — integer constants in the body — so they read
+" as Constant; the angle brackets as Delimiter. Lookbehind starts the match at
+" the `<` (flowFnName owns the name before it).
+syn match flowSizeList "\%(\<fn\s\+\h\w*\s*\)\@<=<[^<>]*>" contains=flowSizeParam
+syn match flowSizeParam contained "\h\w*"
+
+" ---------------------------------------------------------------------------
 " Guard arrows  (DEFINED LAST so they win over flowArrow and the `-` operator)
 " ---------------------------------------------------------------------------
 " SPLIT COLORING (CHANGE 1): the outer flowGuardArrow match links to Statement,
@@ -259,6 +270,8 @@ hi default link flowBinding    Identifier
 hi default link flowLabel      Label
 hi default link flowLabelJump  Label
 hi default link flowOperator   Operator
+hi default link flowSizeList   Delimiter
+hi default link flowSizeParam  Constant
 hi default link flowArrow      Statement
 " Guard CHROME reads as flow plumbing — same as flowArrow (CHANGE 1).
 hi default link flowGuardArrow    Statement

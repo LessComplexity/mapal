@@ -43,3 +43,7 @@ fn extras(n: i32, arr: [i32; 4]) -> i32 {
         -[head, ...tail]-> split;
     n -> ret;
 }
+
+fn scale<rows, columns>(x: [f32; rows * columns]) -> [f32; rows] {
+    rows -> iota -> map { r -> x[r * columns] } -> ret;
+}

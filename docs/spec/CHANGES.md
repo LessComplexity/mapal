@@ -231,6 +231,20 @@ the threshold; L1616 otherwise) and `w -> widen_f32` / `widen_f64` widen exactly
 site: the device's one-thread-per-cell kernel loads the 2-byte format, the register-staged tile widens its panels as
 it copies them; the cost model prices operand bytes per format. fp8 and 16-bit tensor-core products are decided in ADR-0043 and open.
 
+### 9.5 Size-generic functions (ADR-0047, 2026-11-25)
+
+**Before.** An array's size is part of its type, so a function over arrays served one shape: the readable Llama
+model wrote `project_64_to_64`, `project_64_to_32`, … — one copy of the same body per shape.
+
+**After.** `fn project<rows, columns>(weight: [bf16; rows * columns], x: [f32; columns]) -> [f32; rows]` declares size
+parameters after the name; array lengths are size expressions (`+`, `-`, `*`; `/` `%` are P0119). A call stays
+`(a, b) -> project -> y;`: lowering infers the sizes from the argument's type (bare names bind, compound dimensions
+are inverted exactly, `n * n` by bisection, an output-only size from the result's annotation; L1701–L1707) and
+monomorphizes — one fixed-size function `project<4096, 4096>` per size tuple, so the IR, every fact and every backend
+are unchanged (the lowered IR is the hand-specialized program's; tested with its twin on the interpreter, native CPU,
+the RTX 5080 and every emulator mode, and on generated programs). In the body a size is an integer literal.
+`examples/matmul4_loop.mapal` is written over `n`; the formatter keeps `fn f<a, b>(` tight; Neovim highlights the list.
+
 ---
 
 **Version:** 0.2 · **Status:** Design specification.

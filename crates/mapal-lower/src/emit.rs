@@ -7,7 +7,8 @@
 //! (LD12): a `TypeMismatch`/`NotAProduct`/etc. that corresponds to a user
 //! condition is mapped to its L-code; anything truly unexpected is L1901.
 
-use std::collections::BTreeMap;
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet};
 
 use mapal_ir::{
     CategoryIr, Dest, FnBuilder, FuncId, FuncKind, IrBuilder, IrError, ObjectId, Operation, Ty,
@@ -21,8 +22,30 @@ use mapal_syntax::{
 use crate::diag::{LCode, diag};
 use crate::effects::Effects;
 use crate::scope::ScopeStack;
+use crate::sizes::{Generics, Instance, SiteKey, SizeEnv};
 use crate::typing::{FnSig, TypeInfo};
 use crate::tys::{TypeTable, ir_loc, name_text, src_slice};
+
+/// ADR-0047 D5: the instances a round declares, by generic function (sorted
+/// size tuples with their names), and the log emission keeps of its calls.
+pub struct Mono<'a> {
+    pub generics: &'a Generics<'a>,
+    pub instances: &'a BTreeMap<String, Vec<(Vec<u64>, String)>>,
+    pub log: &'a RefCell<CallLog>,
+    /// The typing walk erred where a generic call was untyped: emit every
+    /// unit as far as it goes, to log the calls (the result is discarded).
+    pub probe: bool,
+}
+
+/// What emission found at the calls to generic functions: each site's binding
+/// (from the builder's exact argument type), the instances called, and the
+/// ones called but not declared this round.
+#[derive(Default)]
+pub struct CallLog {
+    pub sites: BTreeMap<SiteKey, Vec<u64>>,
+    pub called: BTreeSet<Instance>,
+    pub requested: BTreeSet<Instance>,
+}
 
 /// A surface-bound symbol (DESIGN §3).
 #[derive(Clone)]
@@ -80,6 +103,10 @@ struct Emitter<'a> {
     /// ADR-0041 D2: the precisions this scope's products admit (the innermost
     /// `: compute` around it; `{f32}` without one).
     prec: mapal_ir::Precision,
+    /// ADR-0047: the generic functions, the round's instances and call log.
+    mono: &'a Mono<'a>,
+    /// ADR-0047 D4: the instance's size values (empty in a fixed-size fn).
+    sizes: &'a SizeEnv,
 }
 
 /// A body's `: compute` as the IR's set; `outer` where it has none.
@@ -163,25 +190,40 @@ pub fn lower_program(
     effects: &Effects,
     fn_sigs: &BTreeMap<String, FnSig>,
     typing: &BTreeMap<String, TypeInfo>,
+    mono: &Mono,
 ) -> Result<CategoryIr, Vec<syn::Diagnostic>> {
     let mut b = IrBuilder::new();
+
+    // The units to declare and build, in source order: a fixed-size fn, or
+    // each instance of a generic one at its position, by size tuple (ADR-0047
+    // D6), with its size environment.
+    let mut units: Vec<(&syn::FnDecl, String, SizeEnv)> = Vec::new();
+    for item in &program.items {
+        if let syn::Item::Fn(fd) = item {
+            let name = name_text(source, fd.name).to_string();
+            if fd.sizes.is_empty() {
+                units.push((fd, name, SizeEnv::new()));
+            } else {
+                for (vs, iname) in mono.instances.get(&name).into_iter().flatten() {
+                    units.push((fd, iname.clone(), crate::sizes::env_of(source, fd, vs)));
+                }
+            }
+        }
+    }
 
     // Pass C: declare every surface fn in source order with its IR tys (§6.2).
     let mut fn_ids: BTreeMap<String, FuncId> = BTreeMap::new();
     let mut main_id: Option<FuncId> = None;
-    for item in &program.items {
-        if let syn::Item::Fn(fd) = item {
-            let name = name_text(source, fd.name).to_string();
-            let sig = fn_sigs.get(&name).expect("fn sig");
-            let (in_ty, out_ty) = ir_signature(sig);
-            let fid = b
-                .declare(FuncKind::Named, &name, in_ty, out_ty, ir_loc(fd.span))
-                .map_err(|e| vec![ir_err(e, fd.span)])?;
-            if name == "main" {
-                main_id = Some(fid);
-            }
-            fn_ids.insert(name, fid);
+    for (fd, name, _) in &units {
+        let sig = fn_sigs.get(name).expect("fn sig");
+        let (in_ty, out_ty) = ir_signature(sig);
+        let fid = b
+            .declare(FuncKind::Named, name, in_ty, out_ty, ir_loc(fd.span))
+            .map_err(|e| vec![ir_err(e, fd.span)])?;
+        if name == "main" {
+            main_id = Some(fid);
         }
+        fn_ids.insert(name.clone(), fid);
     }
     let main_id = main_id.ok_or_else(|| {
         vec![diag(
@@ -191,55 +233,82 @@ pub fn lower_program(
         )]
     })?;
 
-    // Pass D: per fn in source order — D2 (bodies) then D3 (outer).
-    for item in &program.items {
-        if let syn::Item::Fn(fd) = item {
-            let name = name_text(source, fd.name).to_string();
-            let info = typing.get(&name).expect("typing info");
+    // Pass D: per fn in source order — D2 (bodies) then D3 (outer). A probe
+    // (ADR-0047 D5) keeps going past a unit's error and returns the first.
+    let mut first_err: Option<Vec<syn::Diagnostic>> = None;
+    for (fd, name, env) in &units {
+        let fd = *fd;
+        let info = typing.get(name).expect("typing info");
+        // An error inside an instance names it (ADR-0047 D5).
+        let note = |mut d: syn::Diagnostic| {
+            if !fd.sizes.is_empty() {
+                d.message = format!("{} (in `{name}`)", d.message);
+            }
+            vec![d]
+        };
 
-            // D2: declare + build every map/fold body, innermost-first.
-            let mut body_ids: BTreeMap<(u32, u32), FuncId> = BTreeMap::new();
-            let prec = ir_prec(fd.body.compute, mapal_ir::Precision::F32);
-            build_bodies(
-                source,
-                types,
-                effects,
-                &fn_ids,
-                fn_sigs,
-                info,
-                &name,
-                &fd.body,
-                &mut b,
-                &mut body_ids,
-                prec,
-            )
-            .map_err(|d| vec![d])?;
-
-            // D3: build the outer fn body.
-            let fid = fn_ids[&name];
-            let mut em = Emitter {
+        // D2: declare + build every map/fold body, innermost-first.
+        let mut body_ids: BTreeMap<(u32, u32), FuncId> = BTreeMap::new();
+        let prec = ir_prec(fd.body.compute, mapal_ir::Precision::F32);
+        let built = build_bodies(
+            &Shared {
                 source,
                 types,
                 effects,
                 fn_ids: &fn_ids,
                 fn_sigs,
                 info,
-                body_ids: &body_ids,
-                owner_name: name.clone(),
-                token: None,
-                scope: ScopeStack::new(),
-                obj_ty: BTreeMap::new(),
-                loop_depth: 0,
-                decl_seq: 0,
-                derived: std::collections::BTreeSet::new(),
-                enclosing_token_loop: false,
-                outer_carried: std::collections::BTreeSet::new(),
-                captures: std::collections::BTreeSet::new(),
-                prec,
-            };
-            let fb = b.build_fn(fid).map_err(|e| vec![ir_err(e, fd.span)])?;
-            em.emit_fn(fd, fb).map_err(|d| vec![d])?;
+                owner: name,
+                mono,
+                sizes: env,
+            },
+            &fd.body,
+            &mut b,
+            &mut body_ids,
+            prec,
+        )
+        .map_err(note);
+        if let Err(e) = built {
+            if !mono.probe {
+                return Err(e);
+            }
+            first_err.get_or_insert(e);
         }
+
+        // D3: build the outer fn body.
+        let fid = fn_ids[name];
+        let mut em = Emitter {
+            source,
+            types,
+            effects,
+            fn_ids: &fn_ids,
+            fn_sigs,
+            info,
+            body_ids: &body_ids,
+            owner_name: name.clone(),
+            token: None,
+            scope: ScopeStack::new(),
+            obj_ty: BTreeMap::new(),
+            loop_depth: 0,
+            decl_seq: 0,
+            derived: std::collections::BTreeSet::new(),
+            enclosing_token_loop: false,
+            outer_carried: std::collections::BTreeSet::new(),
+            captures: std::collections::BTreeSet::new(),
+            prec,
+            mono,
+            sizes: env,
+        };
+        let fb = b.build_fn(fid).map_err(|e| vec![ir_err(e, fd.span)])?;
+        if let Err(e) = em.emit_fn(fd, fb).map_err(note) {
+            if !mono.probe {
+                return Err(e);
+            }
+            first_err.get_or_insert(e);
+        }
+    }
+    if let Some(e) = first_err {
+        return Err(e);
     }
 
     // Pass E: seal.
@@ -279,21 +348,38 @@ fn ir_signature(sig: &FnSig) -> (Ty, Ty) {
     }
 }
 
+/// What every body built for one function (or instance) shares.
+struct Shared<'a> {
+    source: &'a str,
+    types: &'a TypeTable,
+    effects: &'a Effects,
+    fn_ids: &'a BTreeMap<String, FuncId>,
+    fn_sigs: &'a BTreeMap<String, FnSig>,
+    info: &'a TypeInfo,
+    owner: &'a str,
+    mono: &'a Mono<'a>,
+    sizes: &'a SizeEnv,
+}
+
 /// D2: declare and build every map/fold body in `block`, innermost-first.
-#[allow(clippy::too_many_arguments)]
 fn build_bodies(
-    source: &str,
-    types: &TypeTable,
-    effects: &Effects,
-    fn_ids: &BTreeMap<String, FuncId>,
-    fn_sigs: &BTreeMap<String, FnSig>,
-    info: &TypeInfo,
-    owner: &str,
+    sh: &Shared,
     block: &Block,
     b: &mut IrBuilder,
     out: &mut BTreeMap<(u32, u32), FuncId>,
     outer: mapal_ir::Precision,
 ) -> ER<()> {
+    let Shared {
+        source,
+        types,
+        effects,
+        fn_ids,
+        fn_sigs,
+        info,
+        owner,
+        mono,
+        sizes,
+    } = *sh;
     // Find every MapFold stage by walking the tree; for each, recurse into its
     // body first (innermost-first), then declare+build it.
     let stages = collect_mapfold_stages(block);
@@ -301,9 +387,7 @@ fn build_bodies(
         // ADR-0041 D2: innermost wins — the step's own, a block's around it, then `outer`.
         let prec = ir_prec(body.compute, ir_prec(around, outer));
         // Recurse into nested map/fold inside this body first.
-        build_bodies(
-            source, types, effects, fn_ids, fn_sigs, info, owner, body, b, out, prec,
-        )?;
+        build_bodies(sh, body, b, out, prec)?;
 
         let sig = info
             .block(stage.span)
@@ -346,6 +430,8 @@ fn build_bodies(
             outer_carried: std::collections::BTreeSet::new(),
             captures: std::collections::BTreeSet::new(),
             prec,
+            mono,
+            sizes,
         };
         let fb = b.build_fn(bid).map_err(|e| ir_err(e, stage.span))?;
         em.emit_body(
@@ -473,6 +559,88 @@ fn internal(span: syn::SourceLoc, msg: &str) -> syn::Diagnostic {
 // ===========================================================================
 
 impl Emitter<'_> {
+    /// Whether `text` names a function — fixed-size or generic (ADR-0047).
+    fn is_fn(&self, text: &str) -> bool {
+        self.fn_ids.contains_key(text) || self.mono.generics.contains_key(text)
+    }
+
+    /// ADR-0047 D4: the value of a size parameter named `text` (no local
+    /// shadows one: L1703).
+    fn size_value(&self, text: &str) -> Option<u64> {
+        if self.scope.resolve(text).is_some() {
+            return None;
+        }
+        self.sizes.get(text).copied()
+    }
+
+    /// D3 at a call to a generic function (emission side, authoritative): the
+    /// sizes from the wire's exact type (and the next stage's annotation), the
+    /// instance's id — or, when this round did not declare it, the request
+    /// that makes the next round declare it.
+    fn generic_callee(
+        &mut self,
+        text: &str,
+        wire: ObjectId,
+        next: Option<&Stage>,
+        sp: syn::SourceLoc,
+    ) -> ER<(FuncId, String)> {
+        let fd = self.mono.generics[text];
+        let arg = self.tyq(wire);
+        let expected = match next.map(|s| &s.kind) {
+            Some(StageKind::Bind { ty: Some(t), .. }) => {
+                self.types
+                    .resolve_sized(self.source, t, self.sizes, &mut Vec::new())
+            }
+            Some(StageKind::Ret { proj: None }) => self
+                .fn_sigs
+                .get(&self.owner_name)
+                .and_then(|s| s.ret.clone()),
+            _ => None,
+        };
+        let values = crate::sizes::infer(self.source, fd, &arg, expected.as_ref(), sp)?;
+        let name = crate::sizes::instance_name(text, &values);
+        let inst: Instance = (text.to_string(), values.clone());
+        let mut log = self.mono.log.borrow_mut();
+        log.sites
+            .insert((self.owner_name.clone(), sp.start, sp.end), values);
+        match self.fn_ids.get(&name) {
+            Some(&fid) => {
+                log.called.insert(inst);
+                Ok((fid, name))
+            }
+            None => {
+                log.requested.insert(inst);
+                Err(internal(
+                    sp,
+                    &format!("instance `{name}` not declared this round (ADR-0047 D5)"),
+                ))
+            }
+        }
+    }
+
+    /// D4: an integer expression over size parameters and literals, folded.
+    fn size_fold(&self, e: &Expr) -> Option<i128> {
+        if self.sizes.is_empty() {
+            return None;
+        }
+        crate::sizes::fold_value(self.source, e, &|t| self.size_value(t))
+    }
+
+    /// A size written as a value — `-n`, `rows * columns` — is a constant
+    /// like `-4096` (a pre-existing object, never a lookahead `Dest`; D4).
+    fn is_size_literal(&self, e: &Expr) -> bool {
+        match &e.kind {
+            ExprKind::Unary {
+                op: UnOp::Neg,
+                operand,
+                ..
+            } => matches!(&operand.kind, ExprKind::Var(n)
+                if self.size_value(name_text(self.source, *n)).is_some()),
+            ExprKind::Binary { .. } => self.size_fold(e).is_some(),
+            _ => false,
+        }
+    }
+
     /// Build a surface function body (D3).
     fn emit_fn(&mut self, fd: &syn::FnDecl, mut fb: FnBuilder) -> ER<()> {
         let name = self.owner_name.clone();
@@ -836,7 +1004,7 @@ impl Emitter<'_> {
         let head_is_value = chain
             .head
             .as_ref()
-            .map(|h| expr_is_value_producing(&h.kind))
+            .map(|h| expr_is_value_producing(&h.kind) && !self.is_size_literal(h))
             .unwrap_or(false);
         // A bare pre-existing-object tail (`fn f(x: i32) -> i32 { x }` / a body
         // tail `{ … x }`) must route through `output()` / `emit_ret_existing`
@@ -990,7 +1158,7 @@ impl Emitter<'_> {
                     cur.ok_or_else(|| diag(LCode::HeadlessChain, sp, "bind with no wire"))?;
                 let bty = if let Some(annot) = ty {
                     self.types
-                        .resolve(self.source, annot, &mut Vec::new())
+                        .resolve_sized(self.source, annot, self.sizes, &mut Vec::new())
                         .unwrap_or_else(|| self.ty_of(fb, wire))
                 } else {
                     self.ty_of(fb, wire)
@@ -1117,12 +1285,17 @@ impl Emitter<'_> {
                     let ty = self.ty_of(fb, wire);
                     self.rebind(&text, wire, ty, true);
                     Ok(Some(wire))
-                } else if let Some(&fid) = self.fn_ids.get(&text) {
-                    // call.
+                } else if self.fn_ids.contains_key(&text) || self.mono.generics.contains_key(&text)
+                {
+                    // call (ADR-0047: a generic one calls its instance).
                     let wire =
                         wire.ok_or_else(|| diag(LCode::HeadlessChain, e.span, "call with no arg"))?;
+                    let (fid, callee) = match self.fn_ids.get(&text) {
+                        Some(&fid) => (fid, text.clone()),
+                        None => self.generic_callee(&text, wire, next, e.span)?,
+                    };
                     let dest = self.lookahead_dest(next, ctx, next.is_none())?;
-                    let r = self.emit_call(fb, fid, &text, wire, dest, e.span)?;
+                    let r = self.emit_call(fb, fid, &callee, wire, dest, e.span)?;
                     if let Some(r) = r {
                         self.maybe_bind_next(fb, next, r);
                     }
@@ -1189,7 +1362,7 @@ impl Emitter<'_> {
                 // fn.param → L1106; else L1302.
                 if let (ExprKind::Var(bn), MemberField::Named(_)) = (&base.kind, field) {
                     let bt = name_text(self.source, *bn);
-                    if self.fn_ids.contains_key(bt) {
+                    if self.is_fn(bt) {
                         return Err(diag(
                             LCode::NamedParamApplication,
                             e.span,
@@ -1237,7 +1410,7 @@ impl Emitter<'_> {
                     if let ExprKind::Var(n) = &e.kind {
                         let text = name_text(self.source, *n);
                         // bare name binding (unbound or mut) → name it.
-                        if !self.fn_ids.contains_key(text)
+                        if !self.is_fn(text)
                             && !crate::is_print_builtin(text)
                             && !crate::is_time_builtin(text)
                             && !crate::is_pure_builtin(text)
@@ -1275,7 +1448,10 @@ impl Emitter<'_> {
         {
             let bty = ty
                 .as_ref()
-                .and_then(|t| self.types.resolve(self.source, t, &mut Vec::new()))
+                .and_then(|t| {
+                    self.types
+                        .resolve_sized(self.source, t, self.sizes, &mut Vec::new())
+                })
                 .unwrap_or_else(|| self.ty_of(fb, obj));
             let bn = name_text(self.source, *name).to_string();
             self.bind_new(&bn, obj, bty, mut_span.is_some());
@@ -1342,7 +1518,12 @@ impl Emitter<'_> {
     }
 
     fn in_effectful_fn(&self) -> bool {
-        self.effects.is_effectful(&self.owner_name)
+        // An instance is its generic's effect (ADR-0047 D7): its signature
+        // carries the flag under its own name.
+        self.fn_sigs.get(&self.owner_name).map_or_else(
+            || self.effects.is_effectful(&self.owner_name),
+            |s| s.effectful,
+        )
     }
 
     /// A value-less `-> ret` marker (no wire), §8.3 (ATK-09/ATK-10). The
@@ -1492,8 +1673,15 @@ impl Emitter<'_> {
                         sp,
                         format!("`{text}` read after its loop; bind the exit value instead"),
                     )),
+                    None if self.sizes.contains_key(text) => {
+                        // ADR-0047 D4: a size is an integer literal.
+                        let v = self.sizes[text];
+                        let ty = self.lit_ty(sp).unwrap_or_else(|| Ty::index_ty(v));
+                        let val = self.int_value(v, &ty, sp, false)?;
+                        self.constant(fb, val, sp)
+                    }
                     None => {
-                        if self.fn_ids.contains_key(text) {
+                        if self.is_fn(text) {
                             Err(diag(
                                 LCode::FunctionAsValue,
                                 sp,
@@ -1512,10 +1700,16 @@ impl Emitter<'_> {
             ExprKind::Hole => Err(internal(sp, "bare Hole in expression position")),
             ExprKind::Unary { op, operand, .. } => match op {
                 UnOp::Neg => {
-                    // Fold negative literals (pin 3).
-                    if let ExprKind::Int(v) = &operand.kind {
+                    // Fold negative literals (pin 3) — a size parameter is
+                    // one (ADR-0047 D4).
+                    let lit = match &operand.kind {
+                        ExprKind::Int(v) => Some(*v),
+                        ExprKind::Var(n) => self.size_value(name_text(self.source, *n)),
+                        _ => None,
+                    };
+                    if let Some(v) = lit {
                         let ty = self.lit_ty(operand.span).unwrap_or_else(Ty::i32);
-                        let val = self.int_value(*v, &ty, operand.span, true)?;
+                        let val = self.int_value(v, &ty, operand.span, true)?;
                         return self.constant(fb, val, sp);
                     }
                     if let ExprKind::Float = &operand.kind {
@@ -1537,6 +1731,12 @@ impl Emitter<'_> {
                 rhs,
                 op_span,
             } => {
+                // ADR-0047 D4: a size expression is one integer literal.
+                if let Some(v) = self.size_fold(expr) {
+                    let ty = self.lit_ty(sp).unwrap_or_else(Ty::i32);
+                    let val = self.int_value(v.unsigned_abs() as u64, &ty, sp, v < 0)?;
+                    return self.constant(fb, val, sp);
+                }
                 let l = self.emit_expr(fb, lhs)?;
                 let r = self.emit_expr(fb, rhs)?;
                 self.binop(fb, map_binop(*op), l, r, dest, *op_span)
@@ -3409,7 +3609,7 @@ impl Emitter<'_> {
         if let ExprKind::Var(n) = &e.kind {
             let text = name_text(self.source, *n);
             if self.scope.resolve(text).is_none()
-                && !self.fn_ids.contains_key(text)
+                && !self.is_fn(text)
                 && !crate::is_print_builtin(text)
                 && !crate::is_time_builtin(text)
                 && !crate::is_pure_builtin(text)

@@ -32,6 +32,9 @@ pub struct Program {
 
 /// A top-level item: a function or type declaration (DESIGN §14.1). `Error`
 /// holds a recovery region (e.g. a top-level statement, ⟦P0012⟧).
+// One `FnDecl` per function and a handful per file: boxing it would cost every
+// consumer a deref for no measurable saving.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Item {
     Fn(FnDecl),
@@ -39,10 +42,14 @@ pub enum Item {
     Error(SourceLoc),
 }
 
-/// `fn-decl := 'fn' IDENT '(' params? ')' ( '->' type )? block` (DESIGN §14.1).
+/// `fn-decl := 'fn' IDENT sizes? '(' params? ')' ( '->' type )? block`
+/// (DESIGN §14.1; `sizes := '<' IDENT (',' IDENT)* ','? '>'`, ADR-0047 D1).
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct FnDecl {
     pub name: Name,
+    /// ADR-0047: the size parameters `<rows, columns>` in declared order;
+    /// empty for a fixed-size function.
+    pub sizes: Vec<Name>,
     pub params: Vec<Param>,
     pub ret_ty: Option<Ty>,
     pub body: Block,
@@ -114,12 +121,48 @@ pub enum TyKind {
     Tuple(Vec<Ty>),
     Array {
         elem: Box<Ty>,
+        /// The length when written as one integer literal (`[T; 4096]`); 0
+        /// when `size` holds an expression.
         len: u64,
         len_span: SourceLoc,
+        /// ADR-0047 D2: a length written as a size expression
+        /// (`[T; rows * columns]`, `[T; 64 * 64]`); `None` for a literal.
+        size: Option<SizeExpr>,
     },
     /// `[T]` — kept, P0104 reported.
     Dynamic(Box<Ty>),
     Error,
+}
+
+/// ADR-0047 D2: an array length over integer literals and the function's
+/// size parameters — `size := term (('+' | '-') term)*`, `term := atom ('*'
+/// atom)*`, `atom := INT | IDENT | '(' size ')'`. Parentheses only group.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct SizeExpr {
+    pub kind: SizeKind,
+    pub span: SourceLoc,
+}
+
+/// The shape of a [`SizeExpr`].
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum SizeKind {
+    Int(u64),
+    /// A size parameter (resolved by lowering; an undeclared one is L1701).
+    Name(Name),
+    Binary {
+        op: SizeOp,
+        lhs: Box<SizeExpr>,
+        rhs: Box<SizeExpr>,
+    },
+}
+
+/// The operators a size expression admits: the ones whose unknown operand is
+/// recovered exactly from the result (ADR-0047 D2; `/` and `%` are P0119).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SizeOp {
+    Add,
+    Sub,
+    Mul,
 }
 
 /// `block := '{' block-item* tail? '}'` (DESIGN §14.3).

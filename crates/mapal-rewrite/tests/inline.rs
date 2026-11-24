@@ -433,6 +433,64 @@ fn call_writing_return_inlines() {
 }
 
 #[test]
+fn inlined_callee_returning_an_inlined_call_substitutes_both() {
+    // inc(x) = x + 1; twice(x) = call inc(x) → ret; main calls twice twice
+    // (so twice inlines per site). Inlining `twice` meets its Return writer:
+    // a Call that is itself inlined — replayed as `Call(inc)` it named a
+    // function the plan had dropped (the size-generics generator's `norm` →
+    // `dot`, `fn norm<n>(x) { (x, x) -> dot -> ret; }`, found it).
+    let mut b = IrBuilder::new();
+    let inc = b
+        .declare(FuncKind::Named, "inc", Ty::i32(), Ty::i32(), L)
+        .unwrap();
+    {
+        let mut fb = b.build_fn(inc).unwrap();
+        let x = fb.input();
+        let one = fb.constant(Value::I32(1), L).unwrap();
+        fb.binop(Operation::Add, x, one, Dest::Ret { slot: None }, L)
+            .unwrap();
+        fb.finish().unwrap();
+    }
+    let twice = b
+        .declare(FuncKind::Named, "twice", Ty::i32(), Ty::i32(), L)
+        .unwrap();
+    {
+        let mut fb = b.build_fn(twice).unwrap();
+        let x = fb.input();
+        fb.call(inc, x, Dest::Ret { slot: None }, L).unwrap();
+        fb.finish().unwrap();
+    }
+    let main = b
+        .declare(FuncKind::Named, "main", Ty::i32(), Ty::i32(), L)
+        .unwrap();
+    {
+        let mut fb = b.build_fn(main).unwrap();
+        let x = fb.input();
+        let a = fb.call(twice, x, Dest::Fresh(None), L).unwrap();
+        fb.call(twice, a, Dest::Ret { slot: None }, L).unwrap();
+        fb.finish().unwrap();
+    }
+    let ir = b.seal(main).unwrap();
+
+    let out = replay(&ir, &analyze_inline(&ir)).unwrap();
+    assert!(validate(&out).is_empty());
+    assert_eq!(call_count(&out), 0);
+    let before = eval_call(&ir, main, scalar(4), BUDGET);
+    let after = eval_call(&out, out.entry(), scalar(4), BUDGET);
+    assert_eq!(before, Outcome::Done(scalar(6)));
+    assert_eq!(after, before);
+    // The surface form, through the whole rewrite.
+    let src = "fn sq(x: f32) -> f32 { x * x -> ret; }
+fn twice(x: f32) -> f32 { x -> sq -> ret; }
+fn main() { 2.0 -> twice -> a; a -> println; 3.0 -> twice -> b; b -> println; }";
+    let po = mapal_syntax::parse(src);
+    let ir = mapal_lower::lower(src, &po.program).unwrap();
+    let out = rewrite(ir).ir;
+    assert_eq!(call_count(&out), 0);
+    assert_eq!(run(&out, BUDGET).output, "4\n9\n");
+}
+
+#[test]
 fn default_rewrite_inlines_call_inside_map_body() {
     // helper(x) = x + 1; body(x) = helper(x); main(a) = map(body, a).
     let mut b = IrBuilder::new();
