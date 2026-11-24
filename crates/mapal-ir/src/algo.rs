@@ -4422,41 +4422,6 @@ impl CategoryIr {
             }
         }
 
-        // plan-time-builtin: `TimeMs` is the first host-spine op producing a
-        // VALUE (milliseconds) rather than only a token. A task cannot read it
-        // — tasks are dispatched at launch and the host writes that frame slot
-        // later, on the spine — so a task consuming it races the write (§4.5
-        // Law 1: no transformation reads data not present at its location; the
-        // symptom is a NEGATIVE elapsed). Its whole consumer cone therefore
-        // stays on the spine. The cone is scalar arithmetic in practice, so
-        // this costs nothing; a bulk op fed by a clock read would be pinned
-        // sequential, which is correct before it is fast.
-        let mut host_value: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
-        let mut host_cone: SecondaryMap<MorphismId, ()> = SecondaryMap::new();
-        for &m in &topo {
-            let morph = &self.morphisms[m];
-            if matches!(morph.op, Operation::TimeMs) {
-                host_value.insert(morph.target, ());
-            } else if host_value.contains_key(morph.source) {
-                host_cone.insert(m, ());
-                host_value.insert(morph.target, ());
-            }
-        }
-
-        // plan-s33b: a clock read is a DAG node, not a spine instruction. It is
-        // token-bearing, so it would be host by `is_token` — but then the only
-        // ordering it has is `before` (the source-order fence below), and the
-        // tasks written AFTER it are free to start the moment their data is
-        // ready, which is before the host reaches the read. Making it a task
-        // gives it `after` too, as ordinary dependency edges (§3: one mechanism,
-        // not two). A clock inside an effectful loop region stays host —
-        // `host_loop_member` still claims it — and keeps its checkpoint.
-        let is_clock = |m: MorphismId| matches!(self.morphisms[m].op, Operation::TimeMs);
-        let is_host = |m: MorphismId| {
-            (is_token(m) && !is_clock(m))
-                || host_loop_member.contains_key(m)
-                || host_cone.contains_key(m)
-        };
         // plan-s39: guard-arm-owned morphisms fold into their Phi's Seq task —
         // a Split site cannot be gated (it is dispatched at launch, before the
         // condition's value exists), so a gated bulk op runs sequentially
@@ -4471,6 +4436,93 @@ impl CategoryIr {
                 }
             }
             g
+        };
+        let is_bulk = |m: MorphismId| {
+            matches!(
+                self.morphisms[m].op,
+                Operation::Map { .. }
+                    | Operation::Fold { .. }
+                    | Operation::Zip
+                    | Operation::Enumerate
+                    | Operation::Iota
+                    | Operation::Fill
+            )
+        };
+
+        // plan-time-builtin, generalized (structure: host-value cone): a
+        // value the host spine writes — a clock read, a token operation's
+        // product (an effectful call's result, the payload a printing loop
+        // exits with), a host loop's state — exists only once the host
+        // reaches its producer, while tasks are dispatched at launch. A task
+        // reading one races the write (§4.5 Law 1: no transformation reads
+        // data not present at its location; the symptoms: a NEGATIVE elapsed,
+        // a stale index trapping out of bounds, a null view). So the consumer
+        // cone follows the host: a scalar consumer joins the spine (scalar
+        // arithmetic in practice, so this costs nothing), a loop reading one
+        // runs as a host loop, and an ungated bulk op reading one stays a task
+        // pinned to the spine at its own topo position, after the producer —
+        // sequential, which is correct before it is fast.
+        let is_clock = |m: MorphismId| matches!(self.morphisms[m].op, Operation::TimeMs);
+        // The function's input and what a `Proj` takes out of it exist at entry
+        // (a token product's array field included): not host values.
+        let mut at_entry: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
+        if let Some(fd) = self.func(f) {
+            at_entry.insert(fd.input, ());
+        }
+        for &m in &topo {
+            let morph = &self.morphisms[m];
+            if matches!(morph.op, Operation::Proj { .. }) && at_entry.contains_key(morph.source) {
+                at_entry.insert(morph.target, ());
+            }
+        }
+        let mut host_value: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
+        let mut host_cone: SecondaryMap<MorphismId, ()> = SecondaryMap::new();
+        let mut host_read_bulk: SecondaryMap<MorphismId, ()> = SecondaryMap::new();
+        loop {
+            let mut grew = false;
+            for &m in &topo {
+                let morph = &self.morphisms[m];
+                let on_host = (is_token(m) && !is_clock(m))
+                    || is_clock(m)
+                    || host_loop_member.contains_key(m)
+                    || host_cone.contains_key(m);
+                if on_host {
+                    if !at_entry.contains_key(morph.target) {
+                        grew |= host_value.insert(morph.target, ()).is_none();
+                    }
+                    continue;
+                }
+                if !host_value.contains_key(morph.source) || host_read_bulk.contains_key(m) {
+                    continue;
+                }
+                grew = true;
+                if let Some(&id) = loop_of.get(m) {
+                    for &x in &loop_members[id] {
+                        host_loop_member.insert(x, ());
+                    }
+                } else if is_bulk(m) && !gated.contains_key(m) {
+                    host_read_bulk.insert(m, ());
+                } else {
+                    host_cone.insert(m, ());
+                }
+            }
+            if !grew {
+                break;
+            }
+        }
+
+        // plan-s33b: a clock read is a DAG node, not a spine instruction. It is
+        // token-bearing, so it would be host by `is_token` — but then the only
+        // ordering it has is `before` (the source-order fence below), and the
+        // tasks written AFTER it are free to start the moment their data is
+        // ready, which is before the host reaches the read. Making it a task
+        // gives it `after` too, as ordinary dependency edges (§3: one mechanism,
+        // not two). A clock inside an effectful loop region stays host —
+        // `host_loop_member` still claims it — and keeps its checkpoint.
+        let is_host = |m: MorphismId| {
+            (is_token(m) && !is_clock(m))
+                || host_loop_member.contains_key(m)
+                || host_cone.contains_key(m)
         };
         // plan-s40: an arm-owned loop (its LoopEnter handle is gated) must not
         // mint its own launch-dispatched Seq task — like a gated bulk op, its
@@ -4726,8 +4778,9 @@ impl CategoryIr {
                 // The read runs on the host spine at its own topo position, the
                 // same as a trap-capable call: a worker running it would put the
                 // clock wherever the pool happened to be, which is the ordering
-                // this task exists to remove.
-                if matches!(morph.op, Operation::TimeMs) {
+                // this task exists to remove. A bulk op reading a host value
+                // runs there too (the host-value cone above).
+                if matches!(morph.op, Operation::TimeMs) || host_read_bulk.contains_key(member) {
                     task.pinned = true;
                 }
             }
@@ -4800,6 +4853,50 @@ impl CategoryIr {
         }
 
         let mut checkpoints = Vec::new();
+        // The tasks an ungated earlier checkpoint already waited to complete:
+        // a later host read of their objects needs no wait of its own.
+        let mut waited: Vec<bool> = vec![false; tasks.len()];
+        // The host-built edges a checkpoint's wait already precedes: the
+        // `Pair` / `Proj` edges its value is assembled through (the emitter
+        // injects the wait before the earliest of them), except — for a
+        // checkpoint inside a loop, whose wait is hoisted to the loop's entry —
+        // the edges outside that loop, which run before the entry.
+        let mut member_loop: SecondaryMap<MorphismId, usize> = SecondaryMap::new();
+        for (id, members) in loop_members.iter().enumerate() {
+            for &m in members {
+                member_loop.entry(m).expect("live key").or_insert(id);
+            }
+        }
+        let mut covered: SecondaryMap<MorphismId, ()> = SecondaryMap::new();
+        for &m in &topo {
+            let morph = &self.morphisms[m];
+            let checkpoint = matches!(morph.op, Operation::Print { .. })
+                || matches!(morph.op, Operation::TimeMs) && !task_of.contains_key(m)
+                || matches!(morph.op, Operation::Call(_)) && is_token(m);
+            if !checkpoint {
+                continue;
+            }
+            let home = member_loop.get(m).copied();
+            let mut seen: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
+            let mut stack = vec![morph.source];
+            while let Some(o) = stack.pop() {
+                if seen.insert(o, ()).is_some() || producer.contains_key(o) {
+                    continue;
+                }
+                for &incoming in self.in_edges(o) {
+                    if !matches!(
+                        self.morphisms[incoming].op,
+                        Operation::Pair { .. } | Operation::Proj { .. }
+                    ) {
+                        continue;
+                    }
+                    if home.is_none() || member_loop.get(incoming).copied() == home {
+                        covered.insert(incoming, ());
+                    }
+                    stack.push(self.morphisms[incoming].source);
+                }
+            }
+        }
         for (i, &m) in topo.iter().enumerate() {
             let morph = &self.morphisms[m];
             // plan-s33b: a clock read that became a task carries its fence in
@@ -4812,6 +4909,28 @@ impl CategoryIr {
                 || matches!(morph.op, Operation::TimeMs) && !task_of.contains_key(m)
                 || matches!(morph.op, Operation::Call(_)) && is_token(m);
             if !checkpoint {
+                // structure (host reads): any other host-spine morphism that
+                // reads a task's object — a `Pair` building a printing loop's
+                // entry state from a struct a task filled, a `Proj` of it, the
+                // scalar host cone — waits for that task first. A checkpoint's
+                // wait list covers what it reaches through host-built edges; this
+                // covers the rest, once per task.
+                if is_host(m)
+                    && !covered.contains_key(m)
+                    && let Some(t) = producer.get(morph.source).copied()
+                    && !waited[t]
+                {
+                    if !gated.contains_key(m) {
+                        waited[t] = true;
+                    }
+                    checkpoints.push(Checkpoint {
+                        topo: i.min(u32::MAX as usize) as u32,
+                        wait: vec![WaitEntry {
+                            task: t,
+                            threshold: None,
+                        }],
+                    });
+                }
                 continue;
             }
             let point = i.min(u32::MAX as usize) as u32;
@@ -4884,6 +5003,11 @@ impl CategoryIr {
                 }
             }
             wait.sort_unstable_by_key(|entry| entry.task);
+            if !gated.contains_key(m) {
+                for entry in wait.iter().filter(|e| e.threshold.is_none()) {
+                    waited[entry.task] = true;
+                }
+            }
             checkpoints.push(Checkpoint { topo: point, wait });
         }
         checkpoints.push(Checkpoint {
