@@ -4,8 +4,12 @@
 //! values after compile-time evaluation (the oracle's, the cone dropped; a
 //! trap left to run time).
 
-use mapal_interp::{Outcome, run};
-use mapal_ir::{CategoryIr, Operation, Realize};
+mod testgen;
+
+use mapal_interp::{Outcome, eval_call, run};
+use mapal_ir::{CategoryIr, Operation, Realize, validate};
+use proptest::strategy::{Strategy, ValueTree};
+use proptest::test_runner::TestRunner;
 
 fn lower(src: &str) -> CategoryIr {
     let po = mapal_syntax::parse(src);
@@ -171,4 +175,71 @@ fn idx(b: bool) -> i32 { 2 -> ret; }";
     );
     let (_, out) = folded(src);
     assert_eq!(out, "12\n");
+}
+
+/// Equal outcomes (a trap is a trap; no verdict on a run out of budget).
+fn same(a: &Outcome, b: &Outcome) -> bool {
+    match (a, b) {
+        (Outcome::Diverged, _) | (_, Outcome::Diverged) => true,
+        (Outcome::Trapped(_), Outcome::Trapped(_)) => true,
+        _ => a == b,
+    }
+}
+
+/// Over the general generator's programs (closed and open, with and without
+/// traps — programs this change was not designed on): `fold_static` then
+/// `rewrite` keeps every outcome and output, the IR stays valid; coverage
+/// counters (roots embedded, programs changed) are non-zero.
+#[test]
+fn compile_time_evaluation_keeps_generated_programs_outcomes() {
+    let n: usize = std::env::var("MAPAL_TESTGEN_N")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(96);
+    let mut totals = [0usize; 4];
+    for (trap_free, open) in [(false, false), (true, false), (false, true), (true, true)] {
+        let mut runner = TestRunner::deterministic();
+        let strat = testgen::prog_strategy(trap_free, open);
+        let progs: Vec<_> = (0..n)
+            .map(|_| strat.new_tree(&mut runner).unwrap().current())
+            .collect();
+        let counts = testgen::par_count(&progs, |_, p| {
+            let orig = testgen::build(p);
+            let (folded, report) = mapal_rewrite::fold_static(testgen::build(p).ir);
+            assert!(validate(&folded).is_empty(), "{:?}", validate(&folded));
+            let folded = mapal_rewrite::rewrite(folded).ir;
+            if orig.open {
+                for a in &orig.args {
+                    let want = eval_call(&orig.ir, orig.entry, a.clone(), 200_000);
+                    let got = eval_call(&folded, folded.entry(), a.clone(), 200_000);
+                    assert!(same(&got, &want), "{want:?} != {got:?}\n{p:?}");
+                }
+            } else {
+                let want = run(&orig.ir, 200_000);
+                let got = run(&folded, 200_000);
+                assert!(
+                    same(&got.outcome, &want.outcome),
+                    "{want:?} != {got:?}\n{p:?}"
+                );
+                if matches!(want.outcome, Outcome::Done(_)) {
+                    assert_eq!(got.output, want.output, "{p:?}");
+                }
+            }
+            [
+                1,
+                report.embedded as usize,
+                usize::from(report.embedded > 0),
+                report.failed as usize,
+            ]
+        });
+        for (t, c) in totals.iter_mut().zip(counts) {
+            *t += c;
+        }
+    }
+    let [programs, embedded, changed, failed] = totals;
+    eprintln!(
+        "compile-time evaluation: {programs} generated programs, {changed} changed, {embedded} \
+         roots embedded, {failed} left to run (trap or budget)"
+    );
+    assert!(embedded > 0 && changed > 0);
 }
