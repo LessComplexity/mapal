@@ -238,8 +238,9 @@ fn reconstruct_a(
                 done.insert(o, true);
                 return;
             }
-            if is_internal_pack(ir, o) {
-                // Rebuilt internally by its consuming primitive; not materialized.
+            if is_internal_pack(ir, o) || flat_skip(ir, o) {
+                // Rebuilt internally by its consuming primitive (a flattened
+                // loop's state: `flat_pack`); not materialized.
                 done.insert(o, true);
                 return;
             }
@@ -307,10 +308,24 @@ fn reconstruct_loop(
     // init → begin_loop. The init is loop-invariant (topo defers LoopEnter), so
     // it is already mapped.
     let init = lp.init;
+    // The state's leaves when a slot is itself a product (`mut kv: KvCache`):
+    // the loop carries the leaves (scalar replacement of the state), each
+    // product-typed view rebuilt as a pack of leaf views (`flat_views`).
+    let leaves = flat_state(ir, merge);
+    let init_new = match &leaves {
+        Some(ls) => flat_pack(fb, ir, plan, remap, init, ls, merge_obj.loc),
+        None => feed(plan, remap, init),
+    };
     let lh = fb
-        .begin_loop(feed(plan, remap, init), merge_obj.loc)
+        .begin_loop(init_new, merge_obj.loc)
         .expect("replay: begin_loop");
-    remap.insert(merge, fb.merge_of(&lh));
+    let merge_new = fb.merge_of(&lh);
+    match &leaves {
+        Some(ls) => flat_views(fb, ir, merge, merge_new, ls, remap, done),
+        None => {
+            remap.insert(merge, merge_new);
+        }
+    }
     done.insert(merge, true);
 
     // Body objects, in the global topo suborder of the canonical driver region.
@@ -330,13 +345,12 @@ fn reconstruct_loop(
     let back_route = lp.back_route;
     let bf = slot_feeders(ir, back_route);
     let back_loc = back_morph_loc(ir, merge);
-    fb.loop_back(
-        &lh,
-        feed(plan, remap, bf[0]),
-        feed(plan, remap, bf[1]),
-        back_loc,
-    )
-    .expect("replay: loop_back");
+    let next = match &leaves {
+        Some(ls) => flat_pack(fb, ir, plan, remap, bf[0], ls, back_loc),
+        None => feed(plan, remap, bf[0]),
+    };
+    fb.loop_back(&lh, next, feed(plan, remap, bf[1]), back_loc)
+        .expect("replay: loop_back");
 
     // Exit edge: the single attributed LoopExit, leaving the SCC.
     let exit_route = lp.exit_route;
@@ -375,6 +389,178 @@ fn reconstruct_loop(
     }
 
     fb.end_loop(lh).expect("replay: end_loop");
+}
+
+/// Scalar replacement of a loop state: the leaf paths of a tuple state one of
+/// whose slots is itself a product (a struct of arrays), when every use of the
+/// merge is a slot view. `None`: the state is carried as it is.
+fn flat_state(ir: &CategoryIr, merge: ObjectId) -> Option<Vec<Vec<u32>>> {
+    let ty = &ir.object(merge)?.ty;
+    let mapal_ir::Ty::Tuple(parts) = ty else {
+        return None;
+    };
+    let product =
+        |t: &mapal_ir::Ty| matches!(t, mapal_ir::Ty::Tuple(_) | mapal_ir::Ty::Struct { .. });
+    if !parts.iter().any(product) {
+        return None;
+    }
+    let views = ir
+        .out_edges(merge)
+        .iter()
+        .all(|&m| matches!(ir.morphism(m).map(|x| x.op), Some(Operation::Proj { .. })));
+    if !views {
+        return None;
+    }
+    fn walk(t: &mapal_ir::Ty, at: &mut Vec<u32>, out: &mut Vec<Vec<u32>>) {
+        match t {
+            mapal_ir::Ty::Tuple(_) | mapal_ir::Ty::Struct { .. } => {
+                for k in 0..t.product_arity_u32().unwrap_or(0) {
+                    at.push(k);
+                    walk(t.component_ty(k).expect("component"), at, out);
+                    at.pop();
+                }
+            }
+            _ => out.push(at.clone()),
+        }
+    }
+    let mut out = Vec::new();
+    walk(ty, &mut Vec::new(), &mut out);
+    Some(out)
+}
+
+/// `o` (a state value: the init, the next state) as the flat tuple of its
+/// leaves: each leaf through the packs that build `o` in the input graph
+/// (their slot feeders — such a pack is not replayed, [`flat_skip`]), then
+/// `Proj`s of the first object no pack builds, one per path prefix (a linear
+/// token leaf is taken once).
+fn flat_pack(
+    fb: &mut mapal_ir::FnBuilder<'_>,
+    ir: &CategoryIr,
+    plan: &RewritePlan,
+    remap: &SecondaryMap<ObjectId, ObjectId>,
+    o: ObjectId,
+    leaves: &[Vec<u32>],
+    loc: mapal_ir::SourceLoc,
+) -> ObjectId {
+    let mut made: Vec<(ObjectId, Vec<u32>, ObjectId)> = Vec::new();
+    let mut comps = Vec::new();
+    for p in leaves {
+        let mut x = plan.resolve_alias(o);
+        let mut rest: &[u32] = p;
+        while let Some((&k, tail)) = rest.split_first() {
+            if !is_pack_built(ir, x) {
+                break;
+            }
+            x = plan.resolve_alias(slot_feeders(ir, x)[k as usize]);
+            rest = tail;
+        }
+        let mut y = feed(plan, remap, x);
+        for i in 0..rest.len() {
+            let prefix = rest[..=i].to_vec();
+            y = match made.iter().find(|(b, q, _)| *b == x && *q == prefix) {
+                Some(&(_, _, z)) => z,
+                None => {
+                    let z = fb
+                        .proj(y, rest[i], Dest::Fresh(None), loc)
+                        .expect("replay: state leaf proj");
+                    made.push((x, prefix, z));
+                    z
+                }
+            };
+        }
+        comps.push(y);
+    }
+    fb.pack(&comps, Dest::Fresh(None), loc)
+        .expect("replay: flat state pack")
+}
+
+/// Every in-edge of `o` is a `Pair`: a pack.
+fn is_pack_built(ir: &CategoryIr, o: ObjectId) -> bool {
+    let ins = ir.in_edges(o);
+    !ins.is_empty()
+        && ins
+            .iter()
+            .all(|&m| matches!(ir.morphism(m).unwrap().op, Operation::Pair { .. }))
+}
+
+/// A pack whose one reader is a flattened loop's entry (its init) or back
+/// route (its next state): [`flat_pack`] reads its feeders, so it is not
+/// replayed (a token it holds is taken once).
+fn flat_skip(ir: &CategoryIr, o: ObjectId) -> bool {
+    if !is_pack_built(ir, o) {
+        return false;
+    }
+    let [m] = ir.out_edges(o) else {
+        return false;
+    };
+    let mo = ir.morphism(*m).unwrap();
+    match mo.op {
+        Operation::LoopEnter => flat_state(ir, mo.target).is_some(),
+        Operation::Pair { slot: 0, .. } => ir.out_edges(mo.target).iter().any(|&b| {
+            let bm = ir.morphism(b).unwrap();
+            bm.op == Operation::LoopBack && flat_state(ir, bm.target).is_some()
+        }),
+        _ => false,
+    }
+}
+
+/// Each slot view of the flattened `merge`: a leaf slot's view is the new
+/// merge's leaf view; a product slot's is the pack (struct or tuple) of its
+/// leaves' views, which `proj∘pack` then forwards to the leaves.
+fn flat_views(
+    fb: &mut mapal_ir::FnBuilder<'_>,
+    ir: &CategoryIr,
+    merge: ObjectId,
+    merge_new: ObjectId,
+    leaves: &[Vec<u32>],
+    remap: &mut SecondaryMap<ObjectId, ObjectId>,
+    done: &mut SecondaryMap<ObjectId, bool>,
+) {
+    fn build(
+        fb: &mut mapal_ir::FnBuilder<'_>,
+        merge_new: ObjectId,
+        leaves: &[Vec<u32>],
+        at: &mut Vec<u32>,
+        ty: &mapal_ir::Ty,
+        dest: Dest,
+        loc: mapal_ir::SourceLoc,
+    ) -> ObjectId {
+        if let Some(i) = leaves.iter().position(|p| p == at) {
+            return fb
+                .proj(merge_new, i as u32, dest, loc)
+                .expect("replay: flat leaf view");
+        }
+        let mut comps = Vec::new();
+        for k in 0..ty.product_arity_u32().unwrap_or(0) {
+            at.push(k);
+            let t = ty.component_ty(k).expect("component").clone();
+            comps.push(build(fb, merge_new, leaves, at, &t, Dest::Fresh(None), loc));
+            at.pop();
+        }
+        match ty {
+            mapal_ir::Ty::Struct { .. } => fb.pack_struct(ty.clone(), &comps, dest, loc),
+            _ => fb.pack(&comps, dest, loc),
+        }
+        .expect("replay: flat product view")
+    }
+    for &m in ir.out_edges(merge) {
+        let mo = ir.morphism(m).expect("merge view");
+        let Operation::Proj { index } = mo.op else {
+            continue;
+        };
+        let v = ir.object(mo.target).expect("view");
+        let new = build(
+            fb,
+            merge_new,
+            leaves,
+            &mut vec![index],
+            &v.ty,
+            Dest::Fresh(v.name.clone()),
+            v.loc,
+        );
+        remap.insert(mo.target, new);
+        done.insert(mo.target, true);
+    }
 }
 
 /// Replace one planned loop SCC with `const K → Iota(K) → Map/Fold`, wiring the

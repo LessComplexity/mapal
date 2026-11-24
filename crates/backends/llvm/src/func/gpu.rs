@@ -4938,9 +4938,12 @@ pub(crate) fn device_module(
     }
 
     // `devmap`: each body once (shared with `devgen`'s), then its kernel.
+    let mut emitted = std::collections::BTreeSet::new();
     for (fns, kernel) in cells {
         let name = kernel_symbol(kernel);
-        if !live.contains(name) {
+        // One kernel per id: cells of one body, extent and variant (map
+        // sites a body is shared by, an inlined layer's copies) launch it.
+        if !live.contains(name) || !emitted.insert(name) {
             continue;
         }
         for (callee, text) in fns {

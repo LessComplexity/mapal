@@ -16,7 +16,8 @@ use std::collections::BTreeMap;
 use slotmap::SecondaryMap;
 
 use mapal_ir::{
-    CategoryIr, FuncId, MorphismId, ObjectId, ObjectKind, Operation, ty_contains_token, ty_label,
+    CategoryIr, FuncId, MorphismId, ObjectId, ObjectKind, Operation, Ty, ty_contains_token,
+    ty_label,
 };
 
 use crate::plan::RewritePlan;
@@ -216,7 +217,17 @@ pub fn analyze_dce(ir: &CategoryIr) -> RewritePlan {
                 && fwd.contains_key(o)
                 && tainted.contains_key(o)
             {
-                roots.push(o);
+                // A dead token-free tuple / struct pack observes nothing
+                // itself when each feeder is read elsewhere too (so it is
+                // materialized for that reader, its cone surviving) or is
+                // such a pack read by this one alone: the feeders are the
+                // sinks and the packs go — a scalar-replaced loop state, an
+                // inlined call's result tuple, a rebuilt struct no field
+                // read reaches any more.
+                match dead_pack_feeders(ir, o) {
+                    Some(feeders) => roots.extend(feeders),
+                    None => roots.push(o),
+                }
             }
         }
     }
@@ -229,6 +240,40 @@ pub fn analyze_dce(ir: &CategoryIr) -> RewritePlan {
         }
     }
     plan
+}
+
+/// The feeders a dead pack `o` stands for ([`analyze_dce`]'s verdict sinks):
+/// through every token-free tuple / struct pack read by its consumer pack
+/// alone, the objects other morphisms read too. `None` when a feeder is read
+/// by its pack alone and is no such pack (the pack keeps its cone alive).
+fn dead_pack_feeders(ir: &CategoryIr, o: ObjectId) -> Option<Vec<ObjectId>> {
+    let pack = |x: ObjectId| {
+        let ins = ir.in_edges(x);
+        !ins.is_empty()
+            && ins
+                .iter()
+                .all(|&m| matches!(ir.morphism(m).expect("in").op, Operation::Pair { .. }))
+            && ir.object(x).is_some_and(|ob| {
+                matches!(ob.ty, Ty::Tuple(_) | Ty::Struct { .. }) && !ty_contains_token(&ob.ty)
+            })
+    };
+    if !pack(o) {
+        return None;
+    }
+    let (mut out, mut stack) = (Vec::new(), vec![o]);
+    while let Some(x) = stack.pop() {
+        for &m in ir.in_edges(x) {
+            let f = ir.morphism(m).expect("in").source;
+            if ir.out_edges(f).len() > 1 {
+                out.push(f);
+            } else if pack(f) {
+                stack.push(f);
+            } else {
+                return None;
+            }
+        }
+    }
+    Some(out)
 }
 
 /// Whether `op` is a pure, total value op: its only effect is its result, it
