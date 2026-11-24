@@ -25,8 +25,8 @@
 use super::resident::Window;
 use super::*;
 use crate::profile::{
-    Face, GPU_RESIDENT_BLOCKS, GPU_VEC_BYTES, Gpu, GpuMmaTile, GpuTile, GpuWgmmaTile, Home, MMA_K,
-    MMA_M, MMA_N, MMA_SYNC_16, MmaFmt, NAIVE_UNROLL, PlanComb, PlanCost, PlanShape,
+    Depth, Face, GPU_RESIDENT_BLOCKS, GPU_VEC_BYTES, Gpu, GpuMmaTile, GpuTile, GpuWgmmaTile, Home,
+    MMA_K, MMA_M, MMA_N, MMA_SYNC_16, MmaFmt, NAIVE_UNROLL, PlanComb, PlanCost, PlanShape,
     WARPGROUP_WARPS, WGMMA_ATOM_ROWS, WGMMA_K, WGMMA_M, WGMMA_SWIZZLE_BYTES, bank_degree,
     fma_held_regs,
 };
@@ -970,18 +970,30 @@ pub(crate) fn launch_split(
     let grows = row_group(site);
     let (blocks, threads) = fill_grid(site, profile);
     let wps = gpu.warps_per_scheduler(blocks, threads);
-    let raster = |rungs: crate::GpuRungs, bm: u64, bn: u64, per_sm: u64| match rungs.raster {
-        true => gpu.raster(
-            bm,
-            bn,
-            gpu.sms * per_sm,
-            site.rows,
-            site.c,
-            site.k,
-            e,
-            rungs.l2_gate,
-        ),
-        false => 1,
+    // gapfix tensor-tile (C11): the tile's `b` element as staged and its
+    // pipe's rate price row-major's `b` re-reads ([`Gpu::raster`]).
+    let raster =
+        |rungs: crate::GpuRungs, bm: u64, bn: u64, per_sm: u64, eb: u64, rate: u64| match rungs
+            .raster
+        {
+            true => gpu.raster(
+                bm,
+                bn,
+                gpu.sms * per_sm,
+                site.rows,
+                site.c,
+                site.k,
+                e,
+                rungs.l2_gate,
+                eb,
+                rate,
+            ),
+            false => 1,
+        };
+    let matrix_rate = |fmt: MmaFmt, home: Home| {
+        gpu.caps
+            .matrix_op(fmt, home)
+            .map_or(0, |op| gpu.matrix_flops_per_ns(&op))
     };
     // Attempt tensor geometry under its own policy. Permission alone is not
     // an emitted face: rejection must fall through to the scalar policy.
@@ -1015,7 +1027,7 @@ pub(crate) fn launch_split(
                     ea,
                     eb,
                     bt,
-                    rungs.mma_depth,
+                    Depth::of(&rungs),
                     None,
                 )
             })
@@ -1050,7 +1062,14 @@ pub(crate) fn launch_split(
                 gy: site.rows / m.bm(),
                 block: m.threads(gpu.warp),
                 smem: m.smem_bytes(),
-                raster: raster(rungs, m.bm(), m.bn(), m.blocks_per_sm),
+                raster: raster(
+                    rungs,
+                    m.bm(),
+                    m.bn(),
+                    m.blocks_per_sm,
+                    m.eb,
+                    matrix_rate(fmt, Home::Regs),
+                ),
                 rungs,
                 combine: Combine::None,
                 cells: 1,
@@ -1113,7 +1132,14 @@ pub(crate) fn launch_split(
                     gy,
                     block: w.threads(gpu.warp),
                     smem: w.smem_bytes(),
-                    raster: raster(rungs, w.bm(), w.bn(), w.blocks_per_sm),
+                    raster: raster(
+                        rungs,
+                        w.bm(),
+                        w.bn(),
+                        w.blocks_per_sm,
+                        4,
+                        matrix_rate(MmaFmt::Tf32, Home::Smem),
+                    ),
                     rungs,
                     combine: Combine::None,
                     cells: 1,
@@ -1125,7 +1151,7 @@ pub(crate) fn launch_split(
                 site.k,
                 rungs.wide,
                 rungs.fill,
-                rungs.mma_depth,
+                Depth::of(&rungs),
             );
             if let Some(m) = mma {
                 return Launch {
@@ -1143,7 +1169,14 @@ pub(crate) fn launch_split(
                         } else {
                             0
                         },
-                    raster: raster(rungs, m.bm(), m.bn(), m.blocks_per_sm),
+                    raster: raster(
+                        rungs,
+                        m.bm(),
+                        m.bn(),
+                        m.blocks_per_sm,
+                        4,
+                        matrix_rate(MmaFmt::Tf32, Home::Regs),
+                    ),
                     rungs,
                     combine: Combine::None,
                     cells: 1,
@@ -1169,7 +1202,7 @@ pub(crate) fn launch_split(
                     site.k,
                     rungs.wide,
                     rungs.fill,
-                    rungs.mma_depth,
+                    Depth::of(&rungs),
                 ),
                 _ => profile.gpu_mma16_tile(
                     grows,
@@ -1181,7 +1214,7 @@ pub(crate) fn launch_split(
                     ea,
                     eb,
                     bt,
-                    rungs.mma_depth,
+                    Depth::of(&rungs),
                     Some(split_parts(kind, ea, eb)),
                 ),
             })
@@ -1202,7 +1235,14 @@ pub(crate) fn launch_split(
                 gy: site.rows / m.bm(),
                 block: m.threads(gpu.warp),
                 smem: m.smem_bytes(),
-                raster: raster(rungs, m.bm(), m.bn(), m.blocks_per_sm),
+                raster: raster(
+                    rungs,
+                    m.bm(),
+                    m.bn(),
+                    m.blocks_per_sm,
+                    m.eb,
+                    matrix_rate(m.fmt, Home::Regs) / SplitForm::of(kind).products().max(1),
+                ),
                 rungs,
                 combine: Combine::None,
                 cells: 1,
@@ -1389,7 +1429,14 @@ pub(crate) fn launch_split(
             gy: site.rows / g.bm(),
             block: g.threads(),
             smem: g.smem_bytes(e),
-            raster: raster(rungs, g.bm(), g.bn(), g.blocks_per_sm),
+            raster: raster(
+                rungs,
+                g.bm(),
+                g.bn(),
+                g.blocks_per_sm,
+                site.b.narrow.map_or(e, |n| n.bytes()),
+                gpu.plan_cost().flops_per_ns,
+            ),
             rungs,
             combine: Combine::None,
             cells: 1,
@@ -12089,9 +12136,14 @@ mod tests {
                     let at = |a| launch(&s, p, contract, a, reduced);
                     let why = format!("{} {n} {contract} {reduced:?}", p.name);
                     let derived = at(arms(false));
+                    // gapfix tensor-tile (C11): beyond the one-block gate
+                    // (the 3090 at 8192), only the H100 PCIe's 8192 TF32
+                    // square — its `wgmma` pipe against 2 TB/s re-reads `b`
+                    // past its keep in 4 of 5 waves: DRAM-bound — groups.
+                    let reuse = p.name == "h100-pcie" && n == 8192 && reduced.is_some();
                     assert_eq!(
                         derived.raster > 1,
-                        p.name == "rtx-3090" && n == 8192,
+                        (p.name == "rtx-3090" && n == 8192) || reuse,
                         "{why}"
                     );
                     // The tile grid's height (a persistent walk launches
@@ -12107,7 +12159,7 @@ mod tests {
                     assert!(gy(&ungated) % ungated.raster == 0, "{why}");
                     let shipped = at(crate::GpuArms::default());
                     if shipped.raster > 1 {
-                        assert!(p.name == "rtx-3090" && n == 8192, "{why}");
+                        assert!((p.name == "rtx-3090" && n == 8192) || reuse, "{why}");
                     }
                     assert!(gy(&shipped) % shipped.raster == 0, "{why}");
                 }

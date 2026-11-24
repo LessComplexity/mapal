@@ -735,7 +735,7 @@ mod tests {
         }
         assert_eq!(open, OPEN.to_vec(), "measurements the rules do not pick");
         // The counts the evidence file reports.
-        assert_eq!((picked, null, mixed, open.len()), (158, 74, 16, 23));
+        assert_eq!((picked, null, mixed, open.len()), (163, 74, 16, 23));
     }
 
     /// hopper-launch `ws-persist`, hand-worked on the H100 SXM: the 2048 ×

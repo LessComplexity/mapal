@@ -969,6 +969,16 @@ pub struct GpuRungs {
     /// ship it off on every part (it lost every measured site); `--gpu-on=
     /// mma-depth` measures it.
     pub mma_depth: bool,
+    /// gapfix tensor-tile (C3) `mma-fly`: where a tensor tile's panel loads
+    /// outlast the products that cover them (an operand past the L2 keep,
+    /// fragments read as stored, the S52 panel's DRAM time within its
+    /// products' but not their latency: `profile::TargetProfile::gpu_mma_fly`)
+    /// its ring keeps the part's in-flight bytes
+    /// (`profile::Gpu::stream_fly_per_sm`) past its wait on every SM — the
+    /// residency, panel depth and stages of `profile::mma_fly_pick`;
+    /// elsewhere the S52 panel. Off (`--gpu-off=mma-fly`): the S52 panel on
+    /// every site.
+    pub mma_fly: bool,
     /// sweep-gemm `round-store` (ADR-0041 D5 `round_at` over arrays): an f32
     /// array a map produces whose every element read is a multiplicand of a
     /// product admitting `bf16` ([`mapal_ir::PrecisionPlan::store`]) is
@@ -1197,6 +1207,7 @@ impl GpuRungs {
         split_issue: true,
         split_least: true,
         mma_depth: true,
+        mma_fly: true,
         round_store: true,
         warm_zero: true,
         streamk_price: true,
@@ -1211,7 +1222,7 @@ impl GpuRungs {
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 143] = [
+    pub const NAMES: [&'static str; 144] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1342,6 +1353,7 @@ impl GpuRungs {
         "split-issue",
         "split-least",
         "mma-depth",
+        "mma-fly",
         "unit-uniform",
         "round-store",
         "stream-mma",
@@ -1493,6 +1505,7 @@ impl GpuRungs {
             "split-issue" => &mut self.split_issue,
             "split-least" => &mut self.split_least,
             "mma-depth" => &mut self.mma_depth,
+            "mma-fly" => &mut self.mma_fly,
             "round-store" => &mut self.round_store,
             "warm-zero" => &mut self.warm_zero,
             "streamk-price" => &mut self.streamk_price,
