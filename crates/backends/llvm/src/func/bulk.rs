@@ -286,7 +286,7 @@ impl<'a> FnEmit<'a> {
         } else {
             self.pair_source(source, captures)
         };
-        let law = mapped.and_then(|o| self.elem.src(o)).cloned();
+        let law = mapped.and_then(|o| self.elem_law(o));
         let inlined = law
             .filter(|l| !matches!(l, ElemSrc::Load { .. }))
             .zip(arr_ty.component_ty(0).cloned())
@@ -396,7 +396,7 @@ impl<'a> FnEmit<'a> {
         // accumulator chain is untouched — order and arity are exactly as
         // before, so the fold's value semantics cannot move.
         let folded = self.pair_source(source, captures + 1);
-        let law = folded.and_then(|o| self.elem.src(o)).cloned();
+        let law = folded.and_then(|o| self.elem_law(o));
         let inlined = law
             .filter(|l| !matches!(l, ElemSrc::Load { .. }))
             .zip(arr_ty.component_ty(0).cloned())

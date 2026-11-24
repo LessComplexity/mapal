@@ -831,8 +831,13 @@ fn check_kdec(clang: &str, p: &testgen::KdecProg) -> Vec<(&'static str, u64)> {
     };
     let on = emission(&ir, None, &[]);
     let off = emission(&ir, None, &["kmajor-b"]);
+    // gapfix `kvec-swizzle`: the copies' scattered stores spread over the
+    // banks; its OFF arm the dense panel (the same plans, other text).
+    let unswz = emission(&ir, None, &["kvec-swizzle"]);
     let (n_on, n_off) = (kvb(&on), kvb(&off));
     assert_eq!(n_off, 0, "kmajor-b off: no vector copies\n{src}");
+    assert_eq!(kvb(&unswz), n_on, "kvec-swizzle moves no plan\n{src}");
+    let swizzled = n_on > 0 && unswz.device != on.device;
     let mut out = vec![
         ("programs", 1),
         ("kvb tiles", n_on),
@@ -841,8 +846,13 @@ fn check_kdec(clang: &str, p: &testgen::KdecProg) -> Vec<(&'static str, u64)> {
         ("kvb f32", u64::from(n_on > 0 && !p.narrow)),
         ("kvb group>1", u64::from(n_on > 0 && p.g > 1)),
         ("kvb d128", u64::from(n_on > 0 && p.d == 128)),
+        ("kvb swizzled", u64::from(swizzled)),
     ];
-    for (arm, em) in [("on", &on), ("kmajor-b off", &off)] {
+    let mut arms = vec![("on", &on), ("kmajor-b off", &off)];
+    if swizzled {
+        arms.push(("kvec-swizzle off", &unswz));
+    }
+    for (arm, em) in arms {
         let ex = emu::build_emulated(clang, &em.text, em.device.as_deref().unwrap_or(""));
         let modes: &[[(&str, &str); 2]] = match arm {
             "on" if n_on > 0 => &MODES,
@@ -894,6 +904,7 @@ fn kmajor_b_on_generated_decode() {
         "kvb f32",
         "kvb group>1",
         "kvb d128",
+        "kvb swizzled",
         "runs",
     ] {
         assert!(c.get(key).copied().unwrap_or(0) > 0, "{key}: {c:?}");

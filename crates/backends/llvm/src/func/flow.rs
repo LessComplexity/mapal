@@ -2475,6 +2475,8 @@ impl<'a> FnEmit<'a> {
             panel: geo.panel,
             free: self.order == crate::Order::Free,
             fma: self.contract && self.gpu_arms.pairs,
+            shfl: super::gpu::host_rungs(self.profile, self.contract, self.gpu_arms).shfl_tree
+                && self.profile.gpu().is_some_and(|g| g.warp == 32),
             name: name.clone(),
             subst: Vec::new(),
             alphas: Vec::new(),
@@ -3000,6 +3002,9 @@ struct UnitGen<'u> {
     /// The order is free (tile k-slices regroup); the face contracts.
     free: bool,
     fma: bool,
+    /// gapfix `shfl-tree`: a lane tree combines in registers inside a warp
+    /// (`shfl.sync.bfly`) and across warps through one shared exchange.
+    shfl: bool,
     /// long-rows `row-slices`: the kernel's name (its workspaces and grid
     /// barrier counter), and `(member, slot, literal)`: a cell's read a fold's
     /// partials take as its law's identity.
@@ -3750,8 +3755,20 @@ impl UnitGen<'_> {
 
     /// The lanes' partials `p` in shared memory at `off`, halved per step
     /// (labels `<tag>_<step>`): the total every lane reads (no seed).
+    ///
+    /// gapfix `shfl-tree` (gaps-disasm C7): an `f32` tree combines inside
+    /// each warp by butterfly shuffles — each pair in its lower lane's order,
+    /// so both lanes hold the same bits — and, past a warp, each warp's
+    /// first lane posts its partial, one barrier, and every lane combines the
+    /// row's warp partials as a balanced tree in registers: one barrier where
+    /// the shared tree took one a level (`log₂ lanes + 1`; a 256-lane row
+    /// 9 → 1). The tree's depth is the shared tree's, so the default face's
+    /// bound is unchanged; a tree exists only where the order is free.
     fn tree_total(&mut self, tag: &str, off: u64, t: &str, p: &str, op: RowFoldOp) -> String {
         let lanes = self.lanes;
+        if self.shfl && t == "float" && lanes >= 2 && lanes.is_power_of_two() {
+            return self.tree_total_shfl(tag, off, t, p, op);
+        }
         let mine = self.smem(off, t, "%l");
         self.line(format!("store {t} {p}, ptr addrspace(3) {mine}"));
         self.barrier();
@@ -3779,6 +3796,70 @@ impl UnitGen<'_> {
         let tot = self.tmp();
         self.line(format!("{tot} = load {t}, ptr addrspace(3) {p0}"));
         tot
+    }
+
+    /// [`Self::tree_total`] by warp shuffles and one shared exchange.
+    fn tree_total_shfl(&mut self, tag: &str, off: u64, t: &str, p: &str, op: RowFoldOp) -> String {
+        const WARP: u64 = 32;
+        let lanes = self.lanes;
+        let lane = self.lane.clone();
+        let mut x = p.to_string();
+        let mut s = lanes.min(WARP) / 2;
+        while s >= 1 {
+            let y = self.tmp();
+            self.line(format!(
+                "{y} = call float @llvm.nvvm.shfl.sync.bfly.f32(i32 -1, float {x}, i32 {s}, i32 31)"
+            ));
+            // The lower lane's partial first: the shared tree's operand order.
+            let (m, hi) = (self.tmp(), self.tmp());
+            self.line(format!("{m} = and i64 {lane}, {s}"));
+            self.line(format!("{hi} = icmp ne i64 {m}, 0"));
+            let (lo_v, hi_v, z) = (self.tmp(), self.tmp(), self.tmp());
+            self.line(format!("{lo_v} = select i1 {hi}, {t} {y}, {t} {x}"));
+            self.line(format!("{hi_v} = select i1 {hi}, {t} {x}, {t} {y}"));
+            self.step(&op, t, &lo_v, &hi_v, &z);
+            x = z;
+            s /= 2;
+        }
+        if lanes <= WARP {
+            return x;
+        }
+        // One exchange: warp `w`'s partial at slot `%l / 32`; every lane
+        // reads its row's `lanes / 32` partials from the row's first warp.
+        let nw = lanes / WARP;
+        let wi = self.op("udiv", "%l", WARP);
+        let li = self.op("urem", "%l", WARP);
+        let first = self.tmp();
+        self.line(format!("{first} = icmp eq i64 {li}, 0"));
+        let (yes, end) = (format!("{tag}_xw"), format!("{tag}_xwe"));
+        self.line(format!("br i1 {first}, label %{yes}, label %{end}"));
+        self.label(&yes);
+        let at = self.smem(off, t, &wi);
+        self.line(format!("store {t} {x}, ptr addrspace(3) {at}"));
+        self.line(format!("br label %{end}"));
+        self.label(&end);
+        self.barrier();
+        let base = self.lane_base.clone();
+        let w0 = self.op("udiv", &base, WARP);
+        let mut level: Vec<String> = (0..nw)
+            .map(|j| {
+                let i = self.op("add", &w0, j);
+                let at = self.smem(off, t, &i);
+                let v = self.tmp();
+                self.line(format!("{v} = load {t}, ptr addrspace(3) {at}"));
+                v
+            })
+            .collect();
+        while level.len() > 1 {
+            let mut next = Vec::new();
+            for pair in level.chunks(2) {
+                let z = self.tmp();
+                self.step(&op, t, &pair[0], &pair[1], &z);
+                next.push(z);
+            }
+            level = next;
+        }
+        level.pop().expect("a warp partial")
     }
 
     /// compile-time-graph A: tile member `k` over the block's `b` rows. A

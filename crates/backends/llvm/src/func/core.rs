@@ -465,6 +465,23 @@ impl<'a> FnEmit<'a> {
         Some((cllt, v))
     }
 
+    /// The element law of `arr` this emission reads (`elem_plan`), or `None`
+    /// to load it. gapfix `iota-law`: a capture's law (`elem_plan` through
+    /// captures — an object a `Proj` of the body's input defines) is read
+    /// unless `--gpu-off=iota-law`, the measurement arm that loads it.
+    pub(super) fn elem_law(&self, arr: ObjectId) -> Option<ElemSrc> {
+        let law = self.elem.src(arr)?;
+        let capture = self.ir.in_edges(arr).first().is_some_and(|&m| {
+            self.ir
+                .morphism(m)
+                .is_some_and(|pm| matches!(pm.op, Operation::Proj { .. }))
+        });
+        if capture && self.gpu_arms.off.iota_law {
+            return None;
+        }
+        Some(law.clone())
+    }
+
     /// Whether this backend consumes `ElemSrc::Apply` (recomputing a
     /// classifiable `Map` producer at the read site). Off: see the refusal arm in
     /// [`FnEmit::emit_elem`] for the measurement. Legality lives in mapal-ir;

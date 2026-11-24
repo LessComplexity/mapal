@@ -377,6 +377,24 @@ INTENT = {
         ('the k-major b copied in vectors along k: a vector global load in PTX', 'ptx.ld_global_vec > 0'),
         ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')],
         applies_off="plan.kind == 'tile'", off=[('no vector copies of a k-major b', "'kvb' not in plan")]),
+    # gapfix `stream-ld` (func/gpu.rs `Kernel::streams`, gaps-disasm C2): an FMA tile / GEMV operand the grid reads
+    # once whose bytes exceed `Gpu::l2_keep_bytes` loads `ld.global.cs` (SASS LDG.E.EF) — `evict=a|b|ab` on the plan
+    # line; every other operand (and the OFF arm) the default policy.
+    'stream-ld': dict(applies=SCALAR + " and 'evict' in plan", on=[
+        ('the read-once operand streams: LDG.E.EF in the hot loop', 'sass.hot.ldg_ef > 0'),
+        ('only its loads: no more EF loads than global loads', 'sass.ldg_ef <= sass.ldg')],
+        applies_off=SCALAR, off=[('the default L2 policy: no LDG.E.EF', 'sass.ldg_ef == 0')]),
+    # gapfix `kvec-swizzle` (func/gpu.rs `kvec_swizzle`, C12): the kmajor-b copy's scattered STS spread over the banks
+    # (`swz=GxS`). A bank replay has no static SASS signature: the bank model (`panel_excess`, unit test
+    # kvec_swizzle_spreads_the_scattered_stores) is the evidence; here the copy keeps its scalar-store shape.
+    'kvec-swizzle': dict(applies="plan.kind == 'tile' and 'swz' in plan", on=[
+        ('the scattered copy: scalar STS (one per element) and vector LDS fragments', 'sass.sts > 0 and sass.lds > 0'),
+        ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')]),
+    # gapfix `shfl-tree` (func/flow.rs `tree_total`, C7) and `iota-law` (mapal-ir `elem_plan` through captures, C8):
+    # unit / cell-body realizations with no plan line of their own — the arm's diff is the evidence (BAR / SHFL counts
+    # of the unit kernel; the norm cell's loads), per gapfix-rows-operands.md.
+    'shfl-tree': dict(applies="plan.kind == 'flow'", note='unit lane trees: BAR / SHFL counts of the arm diff'),
+    'iota-law': dict(applies=ANY, note='a captured iota read by its law: the cell body\'s loads, the arm diff'),
     # sweep-attention `unit-uniform` (a fact arm): a stream unit whose tile reads an operand a captured number moves
     # (a head-group loop's counter) takes it as a pointer the launch moves (`moved=`); the kernel is the unmoved
     # group's stream. `.off-unit-uniform`: no unit holds such a tile (the split realization, each site alone).

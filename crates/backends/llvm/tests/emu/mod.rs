@@ -158,6 +158,16 @@ pub fn host_device(dev: &str) -> String {
                 l = format!("{}add {ty} {v}, 0", &l[..i]);
             }
         }
+        // gapfix `stream-ld`: a streaming load (`ld.global.cs.nc`, the L2's
+        // eviction priority) is a plain load of the same words.
+        if let Some(i) = l.find(" asm \"ld.global.cs.nc.")
+            && let Some(call) = l[..i].rfind("call ")
+            && let Some((_, p)) = l[i..].rsplit_once("(ptr ")
+        {
+            let ty = l[call + "call ".len()..i].to_string();
+            let p = p.trim_end_matches(')');
+            l = format!("{}load {ty}, ptr {p}", &l[..call]);
+        }
         // tile-efficiency T2: `cp.async.{ca,cg}.shared.global.<n>(dst, src)`
         // queues an `n`-byte copy; commit and wait drive the queue.
         if let Some(i) = l.find("@llvm.nvvm.cp.async.")
