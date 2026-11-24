@@ -54,8 +54,12 @@ fn sms(n: u64) -> CostOver {
 /// candidate.
 fn emission(ir: &CategoryIr, target: &'static str, n: u64, off: &[&str]) -> (String, String) {
     let mut gpu = GpuArms::default();
+    // `+name`: the rung forced on (hopper-launch `ws-persist`'s ON arm).
     for r in ["place", "pdl", "horizontal", "calls"].iter().chain(off) {
-        *gpu.off.rung(r).expect("rung") = true;
+        match r.strip_prefix('+') {
+            Some(on) => *gpu.on.rung(on).expect("rung") = true,
+            None => *gpu.off.rung(r).expect("rung") = true,
+        }
     }
     gpu.site_cands = 1;
     let e = emit_detailed(
@@ -257,12 +261,21 @@ struct Cover {
     wraps: u64,
     s53_fallback: u64,
     other_kernel: u64,
+    /// hopper-launch `ws-persist`: kernels on a persistent walk, walks of 3+
+    /// tiles a CTA, walks whose ring turns over inside a tile's steps.
+    persist: u64,
+    long_walks: u64,
+    ring_across_tiles: u64,
 }
 
 /// Generated TF32 GEMMs on the H100 at 1, 2 and 8 SMs: every
 /// warp-specialized kernel equals the S53 kernel byte for byte where the S53
 /// derivation takes the site, and stays within D3's bound of the interpreter,
-/// in every emulator mode; every coverage counter non-zero.
+/// in every emulator mode; every coverage counter non-zero. hopper-launch:
+/// a kernel on a persistent walk (`--gpu-on=ws-persist`: more tiles than
+/// the SMs at one CTA each) equals the shipped CTA-a-tile kernel byte for
+/// byte in every mode — the walk's ring steps, barrier phases and
+/// per-tile seeds and epilogues change no value.
 #[test]
 fn generated_ws_kernels_equal_the_s53_kernel() {
     let Some(clang) = emu::clang() else {
@@ -294,6 +307,22 @@ fn generated_ws_kernels_equal_the_s53_kernel() {
             return c;
         }
         c.ws = 1;
+        // hopper-launch: the shipped kernel is a CTA a tile; the walk is
+        // `ws-persist`'s ON arm, wherever its price takes the site.
+        assert!(!ws[0].contains(" persist="), "{src}");
+        let (wh, wd) = emission(&ir, "h100", n_sms, &["+ws-persist"]);
+        let wl = ws_lines(&wd);
+        let walk = wl.first().is_some_and(|l| l.contains(" persist="));
+        if walk {
+            let (ctas, tiles) = (field(wl[0], "persist"), field(wl[0], "tiles"));
+            c.persist = 1;
+            c.long_walks = u64::from(tiles >= 3 * ctas);
+            // The ring of `stages` turns over a tile boundary when a tile's
+            // `nk` steps are not a whole number of turns.
+            let nk = k / field(wl[0], "bk");
+            c.ring_across_tiles = u64::from(!nk.is_multiple_of(field(wl[0], "stages")));
+        }
+        let one = walk.then(|| emu::build_emulated(&clang, &wh, &wd));
         c.two_consumers = u64::from(field(ws[0], "groups") == 2);
         c.wraps = u64::from(k / field(ws[0], "bk") > 2 * field(ws[0], "stages"));
         // Every other program also runs the per-slab boxes (`tma-digits` off):
@@ -315,6 +344,9 @@ fn generated_ws_kernels_equal_the_s53_kernel() {
             let (a, _) = on.run(&mode);
             if let Some(sl) = &slabs {
                 assert_eq!(a, sl.run(&mode).0, "3-d vs 2-d boxes {mode:?}\n{src}");
+            }
+            if let Some(one) = &one {
+                assert_eq!(a, one.run(&mode).0, "walk vs a CTA a tile {mode:?}\n{src}");
             }
             if let Some(off) = &off {
                 let (b, _) = off.run(&mode);
@@ -344,6 +376,9 @@ fn generated_ws_kernels_equal_the_s53_kernel() {
         c.wraps += k.wraps;
         c.s53_fallback += k.s53_fallback;
         c.other_kernel += k.other_kernel;
+        c.persist += k.persist;
+        c.long_walks += k.long_walks;
+        c.ring_across_tiles += k.ring_across_tiles;
     }
     eprintln!("wgmma-ws generated: {c:?}");
     assert!(
@@ -352,7 +387,10 @@ fn generated_ws_kernels_equal_the_s53_kernel() {
             && c.vs_s53 > 0
             && c.two_consumers > 0
             && c.wraps > 0
-            && c.s53_fallback + c.other_kernel > 0,
+            && c.s53_fallback + c.other_kernel > 0
+            && c.persist > 0
+            && c.long_walks > 0
+            && c.ring_across_tiles > 0,
         "{c:?}"
     );
 }
@@ -412,6 +450,31 @@ fn protocol_mutations_fail() {
     );
     let early = early.replacen("  add i64 0, 0\n", "", 1);
     assert!(fails(&early), "an early release must fail");
+    // 3. hopper-launch `ws-persist`: a tile's last stage never released —
+    // the walk's producer waits for it on the next tile (exit 108: a phase
+    // that never completes). One SM: its CTA walks both 256 × 128 tiles.
+    let (host, dev) = emission(&ir, "h100", 1, &["+ws-persist"]);
+    assert!(ws_lines(&dev)[0].contains(" persist="), "the 1-SM walk");
+    let walk = emu::build_emulated(&clang, &host, &dev);
+    assert!(
+        MODES.iter().all(|m| walk.run(m).0 == want),
+        "the walk's bits"
+    );
+    let fails = |dev: &str| {
+        let x = emu::build_emulated(&clang, &host, dev);
+        MODES.iter().any(|m| {
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| x.run(m).0))
+                .map_or(true, |o| o != want)
+        })
+    };
+    let i = dev.find("\ncdr:\n").expect("the end-of-tile release");
+    let j = i + dev[i..]
+        .find("mbarrier.arrive.shared::cta.b64")
+        .expect("its arrive");
+    let line0 = dev[..j].rfind('\n').expect("a line") + 1;
+    let line1 = j + dev[j..].find('\n').expect("a line end") + 1;
+    let kept = format!("{}{}", &dev[..line0], &dev[line1..]);
+    assert!(fails(&kept), "an unreleased last stage must fail");
 }
 
 /// R1's priced depth: with the H100's measured `tma_copy_ns` (kept with

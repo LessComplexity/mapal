@@ -2149,6 +2149,10 @@ pub struct GpuWgmmaTile {
     /// R3 (`ws-regs`): the producer's and each consumer's register count
     /// under `setmaxnreg` (`None`: every thread keeps the launch's count).
     pub realloc: Option<(u64, u64)>,
+    /// hopper-launch `ws-persist`: the persistent grid — `ctas` CTAs
+    /// (`sms × blocks_per_sm`), each walking the tiles `cta, cta + ctas, …`
+    /// on one stage ring ([`crate::rules::ws_persist_pays`]). 0: a CTA a tile.
+    pub ctas: u64,
 }
 
 impl GpuWgmmaTile {
@@ -3858,6 +3862,7 @@ impl TargetProfile {
                         blocks_per_sm: 1,
                         ws: true,
                         realloc: regs,
+                        ctas: 0,
                     };
                     let per = geom.ws_stage_bytes() + 24;
                     let stages = (g.smem_per_block / per).min(k / bk);
@@ -3986,6 +3991,7 @@ impl TargetProfile {
                     blocks_per_sm,
                     ws: false,
                     realloc: None,
+                    ctas: 0,
                 };
                 // Whole 16-byte chunks per thread, and whole swizzle rows.
                 let whole = (n * bk / 4).is_multiple_of(threads)

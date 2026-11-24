@@ -1002,6 +1002,28 @@ pub struct GpuRungs {
     /// (`--gpu-off=streamk-epi`): the group's ordered kernel, as before (a
     /// measurement flag; the stream-K rule decides where it applies).
     pub streamk_epi: bool,
+    /// hopper-launch `tma-warm`: a module carrying a kernel that reads
+    /// tensor maps (the `<kernel>_tmap` recipes the runtime finds in its
+    /// text at load) has the runtime launch its own one-box TMA kernel once
+    /// on the `eager-init` thread, before the clock: the driver readies a
+    /// context's tensor-copy path at the first launch of a kernel holding a
+    /// `cp.async.bulk.tensor` (CUDA 13: 1.34–1.49 ms that host call on the
+    /// RTX 5080, against 3–4 µs after; on the H100 the 120–270 µs a
+    /// `wgmma-ws` call spent outside its kernel, cross-arch 5fcb401b), which
+    /// a one-call program otherwise pays inside its timed region. Host only
+    /// (the module's flag word); off (`--gpu-off=tma-warm`): the first TMA
+    /// launch pays it.
+    pub tma_warm: bool,
+    /// hopper-launch `ws-persist`: the warp-specialized `wgmma` kernel as a
+    /// persistent grid — `sms × blocks_per_sm` CTAs each walking the tiles
+    /// `cta, cta + ctas, …` in raster order, the stage ring and its barrier
+    /// phases running on across tiles, so a CTA's producer copies the next
+    /// tile's boxes under this tile's epilogue and the pipeline fills once
+    /// a CTA — where [`crate::rules::ws_persist_pays`] prices the fills and
+    /// epilogues the walk overlaps above its tail. The rules ship it off (its
+    /// H100 measurement is mixed, the separating fact open: `rules::rungs`);
+    /// `--gpu-on=ws-persist` measures the walk. Off: a CTA a tile.
+    pub ws_persist: bool,
 }
 
 impl GpuRungs {
@@ -1144,11 +1166,13 @@ impl GpuRungs {
         warm_zero: true,
         streamk_price: true,
         streamk_epi: true,
+        tma_warm: true,
+        ws_persist: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 137] = [
+    pub const NAMES: [&'static str; 139] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1286,6 +1310,8 @@ impl GpuRungs {
         "warm-zero",
         "streamk-price",
         "streamk-epi",
+        "tma-warm",
+        "ws-persist",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -1428,6 +1454,8 @@ impl GpuRungs {
             "warm-zero" => &mut self.warm_zero,
             "streamk-price" => &mut self.streamk_price,
             "streamk-epi" => &mut self.streamk_epi,
+            "tma-warm" => &mut self.tma_warm,
+            "ws-persist" => &mut self.ws_persist,
             _ => return None,
         })
     }
