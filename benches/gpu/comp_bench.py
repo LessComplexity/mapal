@@ -271,8 +271,8 @@ def main():
                 peak = (torch.cuda.max_memory_allocated() - base_b) / 2 ** 20 if dev == 'cuda' else float('nan')
                 print(f'comp prog={stem} leg={leg} family={fam} prec={prec} n={len(ts)} min_ms={ts[0]:.4f} '
                       f'med_ms={ts[len(ts) // 2]:.4f} max_ms={ts[-1]:.4f} within={ok} maxdev={dv:.3e} tol={tol:g} '
-                      f'setup_s={setup:.1f} peak_mb={peak:.1f} values={",".join(f"{v:.6g}" for v in vals)}',
-                      flush=True)
+                      f'setup_s={setup:.1f} peak_mb={peak:.1f} values={",".join(f"{v:.6g}" for v in vals)}'
+                      f'{tb.dev_med()}', flush=True)
             except Exception as ex:  # noqa: BLE001 — one leg's failure is a row, not the session
                 print(f'comp prog={stem} leg={leg} family={fam} prec={prec} FAILED {type(ex).__name__}: '
                       f'{str(ex)[:200]}', flush=True)
