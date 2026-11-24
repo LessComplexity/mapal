@@ -176,15 +176,27 @@ Current: the cross-part matrix against every competitor leg ([matrix](benches/re
 (efficient / cuDNN), hand-written Triton, Liger, FlashAttention-2/3, FlashInfer
 ([competitors](benches/results/evidence/local-rtx-5080/competitors.md); TensorRT-LLM does not install on torch 2.11;
 the rented parts on the final code: [cross-arch 3a8e654f](benches/results/evidence/cross-arch/README.md#3a8e654f-final-code-all-competitors);
-every part re-timed on `5fcb401b`: [cross-arch 5fcb401b](benches/results/evidence/cross-arch/README.md#5fcb401b-confirmation-all-competitors)).
+every part re-timed on `5fcb401b`: [cross-arch 5fcb401b](benches/results/evidence/cross-arch/README.md#5fcb401b-confirmation-all-competitors);
+on the integrated fixes `f1d3a04f`: [cross-arch f1d3a04f](benches/results/evidence/cross-arch/README.md#f1d3a04f-confirmation-all-competitors)).
 
-| geomean Mapal / best, every leg (win / even / loss) | 86 rows, 3a8e654f | 86 rows, 5fcb401b | 34 bf16-storage rows, 3a8e654f → 5fcb401b | all 120 rows, 3a8e654f → 5fcb401b |
+| geomean Mapal / best, every leg (win / even / loss) | 86 rows, 5fcb401b | 86 rows, f1d3a04f | 34 bf16-storage rows, 5fcb401b → f1d3a04f | all 120 rows, 5fcb401b → f1d3a04f |
 | --- | ---: | ---: | ---: | ---: |
-| RTX 5080 (local) | 0.993 (19 / 19 / 48) | **0.945** (23 / 28 / 35) | 1.318 → **1.068** (7 / 11 / 16) | 1.076 → **0.979** (30 / 39 / 51) |
-| RTX 3090 (350 → 250 W box) | 1.008 (16 / 19 / 51) | **0.952** (35 / 12 / 39) | 1.495 → **1.171** (8 / 5 / 21) | 1.127 → **1.009** (43 / 17 / 60) |
-| A100 SXM4 40 GB (300 → 400 W) | 1.200 (13 / 14 / 59) | **1.188** (18 / 4 / 63; 85) | 2.613 → **1.388** (6 / 5 / 23) | 1.496 → **1.242** (24 / 9 / 86; 119) |
-| RTX 4090 (450 W box) | 1.061 (17 / 21 / 48) | **0.946** (22 / 21 / 43) | 1.228 → **0.952** (14 / 6 / 14) | 1.106 → **0.948** (36 / 27 / 57) |
-| H100 SXM (500 → 700 W box) | 1.223 (14 / 4 / 68) | **1.181** (15 / 2 / 69) | 2.923 → **1.740** (7 / 1 / 26) | 1.566 → **1.318** (22 / 3 / 95) |
+| RTX 5080 (local) | 0.945 (23 / 28 / 35) | **0.934** (24 / 29 / 33) | 1.068 → **1.048** (8 / 8 / 18) | 0.979 → **0.965** (32 / 37 / 51) |
+| RTX 3090 (250 → 270 W box) | 0.952 (35 / 12 / 39) | **0.943** (34 / 12 / 40) | 1.171 → **1.147** (8 / 6 / 20) | 1.009 → **0.997** (42 / 18 / 60) |
+| A100 SXM4 40 GB (400 W, another box) | 1.188 (18 / 4 / 63; 85) | **1.089** (36 / 2 / 47; 85) | 1.388 → 1.463 (5 / 4 / 25) | 1.242 → **1.185** (41 / 6 / 72; 119) |
+| RTX 4090 (450 W; this box clock-locked at 1.2 GHz) | 0.946 (22 / 21 / 43) | **0.935** (29 / 18 / 39) | 0.952 → 1.003 (13 / 8 / 13) | 0.948 → 0.954 (42 / 26 / 52) |
+| H100 SXM (700 → 500 W box) | 1.181 (15 / 2 / 69) | **1.075** (18 / 7 / 61) | 1.740 → **1.605** (7 / 0 / 27) | 1.318 → **1.204** (25 / 7 / 88) |
+
+The integrated fixes on the hardware (competitor legs first on each box, then the Mapal legs on `f1d3a04f`; no Mapal
+value failure on any part): the 4090's fp8 rows load and pass (PTX 8.1 for sm_89); tf32x3 split tiles 1.44–1.70× the
+FFMA tile on the A100's GEMM-heavy rows (A100 f32 1.104 → 0.953, MLP 1.537 → 1.263, fan / loops 1.494 → 1.019, 20
+losses closed); the bf16-weight prefills 1.95–2.42× faster on the A100; the H100's warp-specialized TF32 kernels lose
+nowhere (4 wins / 8 null, TF32 class 2.625 → 1.688: a call's time outside its kernel 120–270 → 2–15 µs); the streamed
+attention wins at long rows on the HBM parts too (prefill T8192 against Liger: A100 3.15 → 1.59, H100 3.35 → 1.28).
+New losers: `streamk-epi` on the H100 (`epi_4096` / `loop_4096` 0.82 / 0.835: a 3.9-wave grid's 3 % tail against the
+walk's cost), the A100's split tile just under one wave (`pj_m128_n6144_k4096` 0.74); the A100 box ran the same kernels
+1.25–1.45× slower by process (its TF32 / bf16 columns), the 4090 box ran at 39 % of its clock. Every losing row (up to
+40 a part) has its leader's kernels captured next to Mapal's (nsys, both sides' SASS; `ncu` refused on vast).
 
 The confirmation round (every leg re-timed on each box; 7 fp8-weight decode rows added, no fp8 leg exists): the B1
 decode's split launches (H100 0.326 → 0.110 ms a step, 0.57× torch-compile-cg), the bf16 KV cache now beats the f32
