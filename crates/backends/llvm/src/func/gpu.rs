@@ -6294,7 +6294,15 @@ impl Kernel<'_> {
             true => (&s.b, s.k * s.c),
             false => (&s.a, s.rows * s.k),
         };
+        // A mixed-radix operand's bytes span its batch digits, which `k·c` /
+        // `rows·k` do not count: no share is claimed for it.
+        let rx = s.radix.as_deref();
+        let radix = match b_side {
+            true => rx.and_then(|x| x.b.as_ref()).is_some(),
+            false => rx.and_then(|x| x.a.as_ref()).is_some(),
+        };
         self.rungs.stream_ld
+            && !radix
             && reuse == 1
             && crate::rules::stream_ld_pays(g, cells.saturating_mul(r.elem_bytes(&s.elem)))
     }

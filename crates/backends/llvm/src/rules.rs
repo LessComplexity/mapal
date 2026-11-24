@@ -427,18 +427,32 @@ pub fn rungs(g: &Gpu, wps: u64, face: Face) -> GpuRungs {
 
 /// gapfix `stream-ld` (gaps-disasm C2): **an operand the grid reads once
 /// streams past the L2's eviction priority** where its bytes exceed the
-/// cyclic set the L2 keeps ([`Gpu::l2_keep_bytes`]) and the part has the
-/// policy ([`crate::profile::Caps::l2_evict`]): those bytes come from DRAM
-/// whatever the policy (a later reader of a set past the keep re-streams it),
-/// and the default policy lets them displace what the L2 does keep. The
-/// RTX 5080 (64.6 MiB keep): the 100 MiB `b` of `pj_m1_n6144_k4096` 0.084 →
-/// 0.073 ms, `pj_m16_n6144_k4096` 0.0995 → 0.0787, `pj_m1_n4096_k14336`
-/// (235 MB) 0.247 → 0.229, `pj_m128_n6144_k4096` 0.207 → 0.200; the 67 MB
-/// `pj_m1_n4096_k4096` under the keep null (gaps-disasm C2): the SASS moves
-/// only the `b` loads to `LDG.E.EF` (gapfix-rows-operands.md).
+/// cyclic set the L2 keeps ([`Gpu::l2_keep_bytes`]) — re-read in order it
+/// thrashes the default policy — yet by no more than [`STREAM_KEEP_SHARE`]
+/// times, and the part has the policy ([`crate::profile::Caps::l2_evict`]).
+/// Evict-first lines do not displace the ones the L2 holds, so a share
+/// `keep ÷ bytes` of the operand survives to its next read (the program's
+/// next call, a loop's next trip) where the default policy keeps almost none.
+/// The RTX 5080 (64.6 MiB keep): the 100 MiB `b` of `pj_m1_n6144_k4096`
+/// (share 0.65) 0.084 → 0.073 ms — 1.19 → 1.37 TB/s, past the DRAM's 0.96:
+/// L2 hits —, `pj_m16_n6144_k4096` 0.0995 → 0.0787, `pj_m128_n6144_k4096`
+/// 0.207 → 0.200; `pj_m1_n4096_k14336` (235 MB, share 0.27) 0.247 → 0.229
+/// (0.95 → 1.03 TB/s); the 67 MB `pj_m1_n4096_k4096` under the keep null.
+/// The RTX 3090 (6.5 MB keep, shares 0.03–0.11): `pj_m1_n6144_k4096`,
+/// `pj_m1_n2048_k7168` null, `pj_m1_n4096_k4096` 1.025 and
+/// `pj_m1_n4096_k14336` 1.047 (its GEMV 0.284 → 0.289 ms) — nothing kept,
+/// the hint's cost alone (gapfix-rows-operands.md). The SASS moves only the
+/// operand's loads to `LDG.E.EF`.
 pub fn stream_ld_pays(g: &Gpu, read_once_bytes: u64) -> bool {
-    g.caps.l2_evict && read_once_bytes > g.l2_keep_bytes()
+    let keep = g.l2_keep_bytes();
+    g.caps.l2_evict && read_once_bytes > keep && read_once_bytes <= STREAM_KEEP_SHARE * keep
 }
+
+/// gapfix `stream-ld`: the most an operand may exceed the L2's keep by and
+/// still stream ([`stream_ld_pays`]): the L2 then keeps at least a quarter of
+/// it across reads. Measured: shares 0.27–0.65 win on the RTX 5080, 0.03–0.11
+/// null or lose on the RTX 3090.
+pub const STREAM_KEEP_SHARE: u64 = 4;
 
 #[cfg(test)]
 mod tests {
@@ -759,7 +773,7 @@ mod tests {
         }
         assert_eq!(open, OPEN.to_vec(), "measurements the rules do not pick");
         // The counts the evidence file reports.
-        assert_eq!((picked, null, mixed, open.len()), (162, 77, 16, 23));
+        assert_eq!((picked, null, mixed, open.len()), (165, 81, 16, 23));
     }
 
     /// hopper-launch `ws-persist`, hand-worked on the H100 SXM: the 2048 ×

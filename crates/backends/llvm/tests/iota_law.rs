@@ -79,7 +79,7 @@ fn norm_src(p: &NormProg) -> String {
         0 => format!("    {d} -> iota -> rD;\n"),
         1 => String::new(),
         _ => format!(
-            "    {d} -> iota -> iD;\n    iD -> map {{ i -> (i * {m}) % {d} }} -> rD;\n",
+            "    {d} -> iota -> iD;\n    iD -> map {{\n        i -> (i * {m}) % {d}\n    }} -> rD;\n",
             m = if p.d % p.mul == 0 { 1 } else { p.mul }
         ),
     };
@@ -90,7 +90,7 @@ fn norm_src(p: &NormProg) -> String {
     // The Newton fold's own captured range: an `iota`, or (the control) a
     // mapped permutation, so the control captures no closed law at all.
     let r4 = match p.law {
-        2 => "    4 -> iota -> i4;\n    i4 -> map { i -> (i * 3) % 4 } -> r4;\n",
+        2 => "    4 -> iota -> i4;\n    i4 -> map {\n        i -> (i * 3) % 4\n    } -> r4;\n",
         _ => "    4 -> iota -> r4;\n",
     };
     format!(
@@ -162,6 +162,8 @@ struct Cover {
 
 fn check(clang: &str, p: &NormProg) -> Cover {
     let src = norm_src(p);
+    let formatted = mapal_syntax::format_source(&src).expect("formats");
+    assert_eq!(formatted, src, "the generator writes formatted source");
     let ir = lower(&src);
     let rr = run(&ir, 2_000_000_000);
     assert!(matches!(rr.outcome, Outcome::Done(_)), "{src}");

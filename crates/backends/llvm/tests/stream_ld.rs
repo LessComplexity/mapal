@@ -102,16 +102,34 @@ fn streams(dev: &str) -> usize {
 
 /// Whether a kernel's grid reads one of its operands once: `b` by one row
 /// block (a thread a cell: one row), `a` by one column block.
-fn read_once(l: &str) -> bool {
+fn read_once(l: &str) -> [bool; 2] {
     let (rows, c) = (field(l, "rows").unwrap_or(0), field(l, "c").unwrap_or(0));
     match l.contains(" kind=tile ") {
         true => {
             let br = field(l, "ty").unwrap_or(1) * field(l, "tm").unwrap_or(1);
             let bc = field(l, "tx").unwrap_or(1) * field(l, "tn").unwrap_or(1);
-            rows <= br || c <= bc
+            [c <= bc, rows <= br]
         }
-        false => rows == 1 || (c == 1 && field(l, "cells").unwrap_or(1) == 1),
+        false => [c == 1 && field(l, "cells").unwrap_or(1) == 1, rows == 1],
     }
+}
+
+/// `rules::STREAM_KEEP_SHARE` (the crate keeps its rules private): the most
+/// an operand may exceed the keep by and still stream.
+const STREAM_KEEP_SHARE: u64 = 4;
+
+/// Whether a kernel's operand (`a`, `b`) qualifies at L2 keep `keep`: read
+/// once, its f32 bytes past the keep and within [`STREAM_KEEP_SHARE`] times it
+/// (`rules::stream_ld_pays`).
+fn qualifies(l: &str, keep: u64) -> [bool; 2] {
+    let (rows, c, k) = (
+        field(l, "rows").unwrap_or(0),
+        field(l, "c").unwrap_or(0),
+        field(l, "k").unwrap_or(0),
+    );
+    let share = |b: u64| b > keep && b <= STREAM_KEEP_SHARE * keep;
+    let [ra, rb] = read_once(l);
+    [ra && share(rows * k * 4), rb && share(k * c * 4)]
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -121,6 +139,7 @@ struct Cover {
     tile_stream: u64,
     reread_refused: u64,
     keep_refused: u64,
+    share_refused: u64,
 }
 
 impl std::ops::AddAssign for Cover {
@@ -130,6 +149,7 @@ impl std::ops::AddAssign for Cover {
         self.tile_stream += o.tile_stream;
         self.reread_refused += o.reread_refused;
         self.keep_refused += o.keep_refused;
+        self.share_refused += o.share_refused;
     }
 }
 
@@ -139,7 +159,7 @@ const MODES: [[(&str, &str); 2]; 3] = [
     [("MAPAL_EMU_REVERSE", "1"), ("MAPAL_EMU_GRID", "1")],
 ];
 
-fn check(clang: &str, src: &str) -> Cover {
+fn check(clang: &str, src: &str, b_bytes: u64) -> Cover {
     let ir = lower(src);
     let rr = run(&ir, 2_000_000_000);
     assert!(matches!(rr.outcome, Outcome::Done(_)), "{src}");
@@ -157,9 +177,22 @@ fn check(clang: &str, src: &str) -> Cover {
         "below the keep: the default policy\n{src}"
     );
     c.keep_refused = u64::from(!kernels(bdev).is_empty());
-    // A keep of one byte: every operand read once qualifies.
+    // A keep of an eighth of `b`: past the share, the default policy.
+    let far = emission(&ir, EmitOpts::exact(), (b_bytes / 8).max(1), &[]);
+    let fdev = far.device.as_deref().unwrap_or("");
+    let fks = kernels(fdev);
+    for (l, s) in &fks {
+        assert_eq!(
+            *s,
+            qualifies(l, (b_bytes / 8).max(1)).contains(&true),
+            "{l}\n{src}"
+        );
+    }
+    c.share_refused = u64::from(fks.iter().any(|(l, s)| !s && read_once(l)[1]));
+    // A keep of half of `b`: `b`, where read once, within the share.
+    let keep = (b_bytes / 2).max(1);
     for off in [&[][..], &["stream-ld"][..]] {
-        let e = emission(&ir, EmitOpts::exact(), 1, off);
+        let e = emission(&ir, EmitOpts::exact(), keep, off);
         let dev = e.device.as_deref().unwrap_or("").to_string();
         let ks = kernels(&dev);
         if !off.is_empty() {
@@ -169,16 +202,13 @@ fn check(clang: &str, src: &str) -> Cover {
             // The plan line names what the kernel streams (`evict=`).
             assert_eq!(*s, l.contains(" evict="), "plan line vs text: {l}\n{src}");
             if off.is_empty() {
-                // Sound: never an operand a second block re-reads.
-                assert!(!s || read_once(l), "a re-read operand streamed: {l}\n{src}");
-                // Complete: an f32 FMA kernel reading an operand once streams it.
-                assert!(
-                    *s || !read_once(l),
-                    "a read-once operand not streamed: {l}\n{src}"
-                );
+                // Sound and complete: an f32 FMA kernel streams exactly the
+                // operands read once whose bytes the rule admits.
+                let q = qualifies(l, keep).contains(&true);
+                assert_eq!(*s, q, "streamed {s}, qualifies {q}: {l}\n{src}");
                 c.naive_stream += u64::from(*s && l.contains(" kind=naive "));
                 c.tile_stream += u64::from(*s && l.contains(" kind=tile "));
-                c.reread_refused += u64::from(!s && !read_once(l));
+                c.reread_refused += u64::from(!s && !read_once(l)[1]);
             }
         }
         let built = emu::build_emulated(clang, &e.text, &dev);
@@ -200,7 +230,7 @@ fn stream_ld_on_generated_programs() {
         return;
     };
     let mut runner = TestRunner::deterministic();
-    let progs: Vec<String> = (0..40u8)
+    let progs: Vec<(String, u64)> = (0..40u8)
         .map(|i| {
             let p = testgen::gemm_prog_strategy()
                 .new_tree(&mut runner)
@@ -210,10 +240,10 @@ fn stream_ld_on_generated_programs() {
             let m = pick(p.dims[0] ^ i, &[1, 1, 2, 5, 8, 16, 16, 40, 70]);
             let n = pick(p.dims[1], &[64, 96, 256, 1024, 2048]);
             let k = pick(p.dims[2], &[16, 64, 100, 128]);
-            testgen::gemm_src_at(&p, m, n, k)
+            (testgen::gemm_src_at(&p, m, n, k), k * n * 4)
         })
         .collect();
-    let covers = testgen::par_check(&progs, |_, s| check(&clang, s));
+    let covers = testgen::par_check(&progs, |_, (s, b)| check(&clang, s, *b));
     let mut c = Cover::default();
     for k in covers {
         c += k;
@@ -225,6 +255,7 @@ fn stream_ld_on_generated_programs() {
         c.tile_stream,
         c.reread_refused,
         c.keep_refused,
+        c.share_refused,
     ];
     assert!(all.iter().all(|&x| x > 0), "{c:?}");
 }
