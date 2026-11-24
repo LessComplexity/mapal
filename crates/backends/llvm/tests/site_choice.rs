@@ -495,6 +495,13 @@ fn candidate_zero_is_the_pre_sprint_emission() {
             // gaps-disasm C1: the zero kernel's init flag and the table
             // registry change the host text by design; off, the one before.
             "--gpu-off=zero-host,zero-hoist,load-dispatch",
+            // gapfix rows-operands: `iota-law` computes a captured iota's
+            // element where the host and device folds loaded it (all 204
+            // rows: the un-rewritten programs' host folds), `stream-ld` loads
+            // read-once operands evict-first (3 rows), `shfl-tree` combines
+            // a unit's lanes by shuffles (4 rows); off, the one before
+            // (`mma-fly` and `kvec-swizzle` move none of these rows).
+            "--gpu-off=iota-law,stream-ld,shfl-tree",
         ]
         .iter()
         .chain(face_flags)
