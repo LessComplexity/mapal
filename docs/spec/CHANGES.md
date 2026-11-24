@@ -231,6 +231,26 @@ the threshold; L1616 otherwise) and `w -> widen_f32` / `widen_f64` widen exactly
 site: the device's one-thread-per-cell kernel loads the 2-byte format, the register-staged tile widens its panels as
 it copies them; the cost model prices operand bytes per format. fp8 and 16-bit tensor-core products are decided in ADR-0043 and open.
 
+### 9.3 `sqrt`, `sin`, `cos` and one builtin-realization framework (ADR-0046, 2026-11-25)
+
+**Before.** `exp` was the only math builtin, its algorithm spelled by hand four times (the interpreter's Rust, the
+LLVM host and device text in three realizations, the CUDA C), its one hardware form a `Caps::ex2` field; a norm's
+square root or a rotary embedding's `sin` / `cos` had no spelling, and a target with different (or no) function units
+had no way to say so.
+
+**After.** `x -> sqrt`, `x -> sin`, `x -> cos` are pure pipeline builtins like `exp` (L1615 for a non-float operand,
+reserved names), IR `Operation::Math(MathFn)` (`Operation::Exp` = `Math(Exp)`). Each builtin has a contract (the
+exact faces the reference's bits; the default face a relative bound with the special values fixed — `sqrt` 2⁻²²,
+`sin` / `cos` 2⁻²¹ over the whole f32 range, f64 2⁻⁵¹ / 2⁻⁵⁰), a reference definition written once in plain
+operations (`mapal-ir/src/math.rs`: `sqrt` a correctly rounded digit recurrence, `sin` / `cos` an integer
+Payne–Hanek reduction for every `|x| ≥ π/4` and Cephes / fdlibm polynomials) that the interpreter runs natively and
+every backend prints from its trace, and target realizations as capability data — `Unit`s (an instruction with its
+measured or proved error, domain and cost) and `TargetDef`s (a routine the target supplies), admitted per face by
+the contract and chosen by cost, never by name. `exp` moved onto it with its module text byte-identical. The RTX
+5080's calibration (`calib.cu math`) admits `sqrt.approx.f32` (2⁻²³·²⁵) and `cos.approx.f32` (2⁻²¹·⁵⁸, the `cos r`
+part of a trig form) and refuses `sin.approx.f32` (absolute error only); a host without a `sqrt` instruction
+(`plain-fp`) runs every reference from plain operations with the same bits. OFF arm `--no-math-hw`.
+
 ---
 
 **Version:** 0.2 · **Status:** Design specification.
