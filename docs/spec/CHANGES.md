@@ -231,6 +231,21 @@ the threshold; L1616 otherwise) and `w -> widen_f32` / `widen_f64` widen exactly
 site: the device's one-thread-per-cell kernel loads the 2-byte format, the register-staged tile widens its panels as
 it copies them; the cost model prices operand bytes per format. fp8 and 16-bit tensor-core products are decided in ADR-0043 and open.
 
+### 9.3 `read` — loading an array from a file (ADR-0045, 2026-11-25)
+
+**Before.** A program observed nothing outside its source: `main` takes no parameters and the only effects were
+`print` / `println` and `time`. Model-scale benchmarks synthesized their weights from closed-form laws — arrays the
+compiler can rebuild where they are read, so loading and uploading real data was never measured.
+
+**After.** `"weights/embedding.bin" -> read -> token_embedding: [bf16; n];` is an effectful pipeline builtin (IR
+`Operation::Read : (IoToken × Str) → (IoToken × [T; n])`): a string literal path, the binding's required array
+annotation (L1617 otherwise; L1618 for a path that is not a string literal), elements `i32 i64 u8 f32 f64 bf16 f16`
+as raw little-endian bytes, exactly `n·|T|` of them. Failures exit 103 with one message on every backend. A relative
+path resolves against `$MAPAL_DATA_DIR`, else the source directory recorded at compile time, else the working
+directory. The value is an ordinary immutable array to every fact; the host reads the file once into it, a GPU
+build uploads it once. Editors highlight `read`; the random program generator draws chains whose operands are read
+from files (`read_chain_strategy`).
+
 ---
 
 **Version:** 0.2 · **Status:** Design specification.
