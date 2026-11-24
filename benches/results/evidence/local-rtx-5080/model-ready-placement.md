@@ -84,8 +84,8 @@ weights: 4.9 ms is inside 1.1–1.6× of them; the gap is §4's.
   launched once plus its operand uploaded once — 2 first-trip items, 1 with `trip-cells` off; `fit-smaller` also
   counted on the `trip-cells`-off placement), `differential` (the single-range-cell launch bound is `range-chain`
   off's; with it on, no loop moves more bytes per trip).
-- `mapal-rewrite` (102 tests incl. the open/closed property hammers) pass; the full backend run's results are in the
-  hand-off note.
+- `cargo test --release -p mapal-ir -p mapal-rewrite -p mapal-backend-llvm --no-fail-fast` at the final commit: 847
+  passed, 0 failed (82 test targets, emulator modes included).
 - Suite: `benches/local/suite_diff.py --base-emit <b23750db emitter>` — 35 programs + 2 cells × 5 faces, **same=45**
   (host and device text equal): null by construction, nothing to time.
 
