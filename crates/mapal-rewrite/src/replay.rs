@@ -218,6 +218,26 @@ fn reconstruct_a(
             remap.insert(o, new);
             done.insert(o, true);
         }
+        ObjectKind::LoopMerge if plan.drop_loops.contains_key(o) => {
+            // ADR-0048 D3: a loop compile-time evaluation ran to its end that
+            // nothing reads: not replayed (its read exits are constants).
+            let lp = ir.loop_plan(ir.owner(o), o).expect("canonical loop");
+            done.insert(o, true);
+            for &x in &lp.scc_objects {
+                done.insert(x, true);
+            }
+            for &m in lp
+                .decide_order
+                .iter()
+                .chain(&lp.advance_order)
+                .chain(&lp.exits)
+            {
+                let t = ir.morphism(m).expect("loop edge").target;
+                if !plan.constify.contains_key(t) && !plan.embed.contains_key(t) {
+                    done.insert(t, true);
+                }
+            }
+        }
         ObjectKind::LoopMerge => {
             reconstruct_loop(
                 fb, ir, plan, fmap, fused, lifted, remap, done, obj_order, o, ret_obj, ret_dest,

@@ -72,18 +72,42 @@ pub fn fold_static(ir: CategoryIr) -> (CategoryIr, StaticReport) {
 
 /// The cones of the embedded roots `done`, evaluated without a trap, that
 /// nothing else reads: dropped (their may-trap work — an index, a division —
-/// is proven not to trap, which DCE alone could not assume). Loop members
-/// stay (replay rebuilds a loop as a unit; DCE drops a dead one).
+/// is proven not to trap, and a loop among them to terminate, which DCE alone
+/// could not assume). A loop goes whole (`drop_loops`) or stays whole.
 fn drop_cones(ir: &CategoryIr, f: mapal_ir::FuncId, done: &[ObjectId], plan: &mut RewritePlan) {
     use slotmap::SecondaryMap;
-    let mut in_loop: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
+    // Each loop's values (SCC, decide, advance and exit work), by merge.
+    let mut loop_of: SecondaryMap<ObjectId, ObjectId> = SecondaryMap::new();
+    let mut members: Vec<(ObjectId, Vec<ObjectId>)> = Vec::new();
     for scc in ir.loop_structure(f) {
-        for o in scc.objects {
-            in_loop.insert(o, ());
+        for &mg in &scc.merges {
+            let mut ms: Vec<ObjectId> = scc.objects.clone();
+            ms.push(mg);
+            if let Some(lp) = ir.loop_plan(f, mg) {
+                for &m in lp
+                    .decide_order
+                    .iter()
+                    .chain(&lp.advance_order)
+                    .chain(&lp.exits)
+                {
+                    if let Some(mm) = ir.morphism(m) {
+                        ms.push(mm.target);
+                    }
+                }
+            }
+            for &o in &ms {
+                loop_of.insert(o, mg);
+            }
+            members.push((mg, ms));
         }
     }
+    // The loops an evaluated root leaves: run to the end without a trap.
+    let evaluated: Vec<ObjectId> = members
+        .iter()
+        .filter(|(mg, _)| done.iter().any(|&r| loop_of.get(r) == Some(mg)))
+        .map(|(mg, _)| *mg)
+        .collect();
     let output = ir.func(f).map(|d| d.output);
-    // Candidates: the cones' temporaries.
     let mut cone: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
     let mut stack: Vec<ObjectId> = Vec::new();
     for &r in done {
@@ -95,9 +119,15 @@ fn drop_cones(ir: &CategoryIr, f: mapal_ir::FuncId, done: &[ObjectId], plan: &mu
     }
     while let Some(o) = stack.pop() {
         let Some(obj) = ir.object(o) else { continue };
-        if obj.kind != mapal_ir::ObjectKind::Temporary
-            || in_loop.contains_key(o)
+        let looped = loop_of.get(o).copied();
+        let droppable = match looped {
+            Some(mg) => evaluated.contains(&mg),
+            None => obj.kind == mapal_ir::ObjectKind::Temporary,
+        };
+        if !droppable
             || Some(o) == output
+            || plan.constify.contains_key(o)
+            || plan.embed.contains_key(o)
             || cone.insert(o, ()).is_some()
         {
             continue;
@@ -106,6 +136,12 @@ fn drop_cones(ir: &CategoryIr, f: mapal_ir::FuncId, done: &[ObjectId], plan: &mu
             if let Some(mm) = ir.morphism(m) {
                 stack.push(mm.source);
             }
+        }
+        // A loop goes whole: every member is a candidate.
+        if let Some(mg) = looped
+            && let Some((_, ms)) = members.iter().find(|(m, _)| *m == mg)
+        {
+            stack.extend(ms.iter().copied());
         }
     }
     // Keep a candidate any other value still reads (and, through it, its
@@ -120,7 +156,25 @@ fn drop_cones(ir: &CategoryIr, f: mapal_ir::FuncId, done: &[ObjectId], plan: &mu
         })
     };
     loop {
-        let live: Vec<ObjectId> = cone.keys().filter(|&o| !dead(o, &cone)).collect();
+        let mut live: Vec<ObjectId> = cone.keys().filter(|&o| !dead(o, &cone)).collect();
+
+        // A loop with a live member (or one left out) stays whole.
+        for (_, ms) in &members {
+            let kept = |o: &ObjectId| {
+                live.contains(o)
+                    || !(cone.contains_key(*o)
+                        || plan.constify.contains_key(*o)
+                        || plan.embed.contains_key(*o))
+            };
+            if ms.iter().any(|o| cone.contains_key(*o)) && ms.iter().any(kept) {
+                let rest: Vec<ObjectId> = ms
+                    .iter()
+                    .copied()
+                    .filter(|o| cone.contains_key(*o))
+                    .collect();
+                live.extend(rest);
+            }
+        }
         if live.is_empty() {
             break;
         }
@@ -128,8 +182,21 @@ fn drop_cones(ir: &CategoryIr, f: mapal_ir::FuncId, done: &[ObjectId], plan: &mu
             cone.remove(o);
         }
     }
+    for (mg, ms) in &members {
+        if ms.iter().all(|o| {
+            cone.contains_key(*o) || plan.constify.contains_key(*o) || plan.embed.contains_key(*o)
+        }) && cone.contains_key(*mg)
+        {
+            plan.drop_loops.insert(*mg, ());
+        }
+    }
     for (o, ()) in cone {
-        if !plan.constify.contains_key(o) && !plan.embed.contains_key(o) {
+        let scc_member = loop_of.get(o).is_some_and(|mg| {
+            ir.loop_structure(f)
+                .iter()
+                .any(|scc| scc.merges.contains(mg) && scc.objects.contains(&o))
+        });
+        if !scc_member && !plan.constify.contains_key(o) && !plan.embed.contains_key(o) {
             plan.drop.insert(o, ());
         }
     }

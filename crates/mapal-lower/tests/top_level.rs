@@ -308,6 +308,17 @@ fn rejections_of_generic_types_l1809_l1702_l1706() {
 }
 
 #[test]
+fn an_error_where_underscore_could_apply_says_so() {
+    let m = message(
+        "type S { _: [f32; 3], scale: f32 }
+fn four(x: [f32; 4]) -> f32 { x[0] -> ret; }
+fn main() { S { _: [1.0, 2.0, 3.0], scale: 0.5 } -> s; s -> four -> println; }",
+        "L1201",
+    );
+    assert!(m.contains("default field `_: [f32; 3]`"), "{m}");
+}
+
+#[test]
 fn a_program_without_top_level_bindings_is_unchanged() {
     let codes = lower_err_codes("fn main() { x -> println; }");
     assert_eq!(codes, vec!["L1101".to_string()]);

@@ -1320,7 +1320,11 @@ impl Walk<'_> {
                                     .unwrap_or(WTy::Unknown),
                             })
                             .unwrap_or(WTy::Unknown);
-                        tys.push(self.wty_to_ty(&w));
+                        // A literal field (no type yet) carries no size.
+                        tys.push(match &w {
+                            WTy::Var(_) => Some(Ty::i32()),
+                            _ => self.wty_to_ty(&w),
+                        });
                         ws.push(w);
                     }
                     let Some(tys) = tys.into_iter().collect::<Option<Vec<Ty>>>() else {

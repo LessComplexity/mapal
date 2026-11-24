@@ -86,6 +86,10 @@ pub struct RewritePlan {
     /// product (array, tuple, struct) of constants packed slot by slot; its
     /// defining cone is not replayed for it. Scalars go to `constify`.
     pub embed: SecondaryMap<ObjectId, mapal_interp::RValue>,
+    /// `drop_loops` (ADR-0048 D3): a loop (its `LoopMerge`) not replayed at
+    /// all — compile-time evaluation ran it to its end and nothing reads it
+    /// any more (its non-SCC values are in `drop`, its read exits constified).
+    pub drop_loops: SecondaryMap<ObjectId, ()>,
 }
 
 impl RewritePlan {
@@ -104,6 +108,7 @@ impl RewritePlan {
             && self.inline.is_empty()
             && self.lift.is_empty()
             && self.embed.is_empty()
+            && self.drop_loops.is_empty()
     }
 
     /// Resolve an `alias` chain transitively to its terminal object (DESIGN §1).
@@ -154,6 +159,11 @@ impl RewritePlan {
         }
         for (o, _) in self.embed.iter() {
             if !is_temp(o) || scc_of.get(o).is_some() {
+                return false;
+            }
+        }
+        for (o, _) in self.drop_loops.iter() {
+            if ir.object(o).map(|x| x.kind) != Some(ObjectKind::LoopMerge) {
                 return false;
             }
         }

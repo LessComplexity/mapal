@@ -385,6 +385,26 @@ fn ir_signature(sig: &FnSig) -> (Ty, Ty) {
     }
 }
 
+/// ADR-0048 D5: what an error message says about `_` at a value of type
+/// `before` that was read as `after` — `_` read through, or (`before ==
+/// after`) a struct with a `_` none of whose chain fits.
+fn default_note(before: &Ty, after: &Ty) -> Option<String> {
+    let label = |t: &Ty| mapal_ir::ty_label(t);
+    if before != after {
+        return Some(format!(
+            "`_` was applied: the `{}` value was read as its `_`, `{}`",
+            label(before),
+            label(after)
+        ));
+    }
+    let inner = TypeTable::default_of(before)?;
+    Some(format!(
+        "`{}` has a default field `_: {}`, but neither fits here",
+        label(before),
+        label(inner)
+    ))
+}
+
 /// What every body built for one function (or instance) shares.
 struct Shared<'a> {
     source: &'a str,
@@ -2134,9 +2154,18 @@ impl Emitter<'_> {
             [one] => Some(one.clone()),
             ps => Some(Ty::Tuple(ps.to_vec())),
         };
-        let arg = match want {
-            Some(w) => self.coerce(fb, arg, &w, sp)?,
+        let before = self.ty_of(fb, arg);
+        let arg = match &want {
+            Some(w) => self.coerce(fb, arg, w, sp)?,
             None => arg,
+        };
+        // D5: an error at this call says whether `_` was read.
+        let after = self.ty_of(fb, arg);
+        let note = |mut d: syn::Diagnostic| {
+            if let Some(n) = default_note(&before, &after) {
+                d.message = format!("{} ({n})", d.message);
+            }
+            d
         };
         if csig.effectful {
             let tok = self.consume_token(sp)?;
@@ -2147,7 +2176,7 @@ impl Emitter<'_> {
                 .map_err(|e| ir_err(e, sp))?;
             let r = fb
                 .call(callee, arg2, Dest::Fresh(None), ir_loc(sp))
-                .map_err(|e| ir_err(e, sp))?;
+                .map_err(|e| note(ir_err(e, sp)))?;
             // Derives-from-merge: any derived operand ⇒ derived result (§7.3).
             // The call result derives from its argument (the packed `(tok, arg)`);
             // propagate to the result and both projs (ATK-12).
@@ -2172,7 +2201,7 @@ impl Emitter<'_> {
             let out = csig.ret.clone().unwrap_or(Ty::Unit);
             let r = fb
                 .call(callee, arg, dest, ir_loc(sp))
-                .map_err(|e| ir_err(e, sp))?;
+                .map_err(|e| note(ir_err(e, sp)))?;
             self.record(r, out);
             // Derives-from-merge: a pure-call result derives from its argument
             // (§7.3 / ATK-12), so a guard cond flowing through a pure call passes
@@ -2892,7 +2921,15 @@ impl Emitter<'_> {
                 let wty = self.ty_of(fb, wire);
                 let size = match &wty {
                     Ty::Array { size, .. } => *size,
-                    _ => return Err(diag(LCode::MapNonArray, sp, "map applied to a non-array")),
+                    _ => {
+                        let n =
+                            default_note(&wty, &wty).map_or(String::new(), |n| format!(" ({n})"));
+                        return Err(diag(
+                            LCode::MapNonArray,
+                            sp,
+                            format!("map applied to a non-array{n}"),
+                        ));
+                    }
                 };
                 let out = Ty::Array {
                     elem: Box::new(sig.as_ref().map(|s| s.body_out.clone()).unwrap_or(Ty::Unit)),

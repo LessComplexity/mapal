@@ -145,6 +145,8 @@ impl CategoryIr {
         }
         // A loop is computable as a unit: every member of its plan, or none.
         let mut in_loop: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
+        // A loop's exit values leave it: roots when computable.
+        let mut exits: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
         let mut has_loop = false;
         for scc in self.loop_structure(f) {
             has_loop = true;
@@ -161,6 +163,11 @@ impl CategoryIr {
                 {
                     if let Some(mm) = self.morphism(m) {
                         members.push(mm.target);
+                    }
+                }
+                for &m in &plan.exits {
+                    if let Some(mm) = self.morphism(m) {
+                        exits.insert(mm.target, ());
                     }
                 }
                 let whole = members.iter().all(|o| fixed.contains_key(*o));
@@ -251,7 +258,10 @@ impl CategoryIr {
                 continue;
             }
             let Some(obj) = self.object(o) else { continue };
-            if obj.kind != ObjectKind::Temporary || in_loop.contains_key(o) || o == fd.output {
+            if obj.kind != ObjectKind::Temporary
+                || (in_loop.contains_key(o) && !exits.contains_key(o))
+                || o == fd.output
+            {
                 continue;
             }
             // A product assembled slot by slot: its components are the roots.
