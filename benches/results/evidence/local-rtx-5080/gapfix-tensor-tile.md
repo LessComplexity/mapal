@@ -29,8 +29,8 @@ equal to the interpreter (serial, serial-2, reversed; OFF arm too).
 ## Intent → realized → explained
 
 **C11.** Intent: the kernel body is unchanged (the raster maps `ctaid` to tiles); DRAM traffic drops from `(rereads
-+ 1)·|b|` to about `|b|`. Realized (box `ptxas` + SASS, both arms): identical instruction counts, `DEPBAR` operands and
-registers on every part (e.g. 4090 bf16: 128 HMMA, 16 LDGSTS, `DEPBAR.LE SB0, 0x0`, 220 registers both arms; H100
++ 1)·|b|` to about `|b|`. Realized (box `ptxas` + SASS, both arms): identical HMMA / LDGSTS counts, `DEPBAR` operands and
+registers on every part (the walk adds its index arithmetic at entry: 520 → 544 instructions on the 5080) (e.g. 4090 bf16: 128 HMMA, 16 LDGSTS, `DEPBAR.LE SB0, 0x0`, 220 registers both arms; H100
 TF32 `wgmma-ws`: 16 HGMMA, 255 registers both). Explained: 2048 × 28672 × 4096 re-reads its 235 MB (bf16) / 470 MB
 (TF32) `b` once per block-row in row-major (224 blocks a row past the wave): 15 re-reads; grouped, once. The H100's
 128-row TF32 projections (`gx` 64 within its 132-CTA wave, 2 waves) re-read `b` once past its keep.
@@ -54,7 +54,8 @@ TF32 `wgmma-ws`: 16 HGMMA, 255 registers both). Explained: 2048 × 28672 × 4096
 **C3.** Intent: the 2-stage ring waits `DEPBAR.LE SB0, 0x0` (one panel in flight, drained at every wait); the ring
 keeps `stages − 2` panels in flight through the wait. Realized (RTX 5080, `sassum.sh` on the arm PTX): S52 `bk` 32 × 2
 at 2 blocks — `DEPBAR.LE SB0, 0x0`, 16 LDGSTS + 64 HMMA a panel (ptxas duplicates the loop: 128 HMMA); the ring `bk`
-16 × 4 at 2 blocks — `DEPBAR.LE SB0, 0x2`, 8 LDGSTS + 32 HMMA a panel, 41 984 B shared memory. Explained: the panel's
+16 × 4 at 2 blocks — `DEPBAR.LE SB0, 0x2`, 4 LDGSTS + 32 HMMA a panel (one loop copy), 41 984 B shared memory
+(`sass_local_5080.txt`). Explained: the panel's
 8 KiB of streamed `b` for 2 blocks takes 1546 ns at the SM's 10.6 B/ns, its products 1672 ns, the load 573 ns more —
 exposed at every wait; four stages keep two panels in flight through it.
 
