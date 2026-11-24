@@ -425,6 +425,21 @@ pub fn rungs(g: &Gpu, wps: u64, face: Face) -> GpuRungs {
     }
 }
 
+/// gapfix `stream-ld` (gaps-disasm C2): **an operand the grid reads once
+/// streams past the L2's eviction priority** where its bytes exceed the
+/// cyclic set the L2 keeps ([`Gpu::l2_keep_bytes`]) and the part has the
+/// policy ([`crate::profile::Caps::l2_evict`]): those bytes come from DRAM
+/// whatever the policy (a later reader of a set past the keep re-streams it),
+/// and the default policy lets them displace what the L2 does keep. The
+/// RTX 5080 (64.6 MiB keep): the 100 MiB `b` of `pj_m1_n6144_k4096` 0.084 →
+/// 0.073 ms, `pj_m16_n6144_k4096` 0.0995 → 0.0787, `pj_m1_n4096_k14336`
+/// (235 MB) 0.247 → 0.229, `pj_m128_n6144_k4096` 0.207 → 0.200; the 67 MB
+/// `pj_m1_n4096_k4096` under the keep null (gaps-disasm C2): the SASS moves
+/// only the `b` loads to `LDG.E.EF` (gapfix-rows-operands.md).
+pub fn stream_ld_pays(g: &Gpu, read_once_bytes: u64) -> bool {
+    g.caps.l2_evict && read_once_bytes > g.l2_keep_bytes()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -585,6 +600,7 @@ mod tests {
             let mut split = None;
             let mut operands = None;
             let mut issue = None;
+            let mut read_once = None;
             // hopper-launch `ws-persist`: the site's tiles, stage depth and
             // tile bytes (the CTAs are the part's SMs at one a tile).
             let mut tiles = None;
@@ -608,6 +624,9 @@ mod tests {
                     "tiles" => tiles = Some(v.parse::<u64>().expect("tiles")),
                     "stages" => stages = Some(v.parse::<u64>().expect("stages")),
                     "tile_bytes" => tile_bytes = Some(v.parse::<u64>().expect("tile_bytes")),
+                    // gapfix `stream-ld`: the bytes of an operand the grid
+                    // reads once.
+                    "read_once" => read_once = Some(v.parse::<u64>().expect("read_once")),
                     _ => {
                         let n: u64 = v.parse().expect(line);
                         let mut over = [None; DeviceCost::NAMES.len()];
@@ -685,6 +704,11 @@ mod tests {
                         // (`issue=`, per mille; none: the rate alone).
                         v = v && split_rate_pays(&g, &op, p, issue.unwrap_or(1000));
                     }
+                    // gapfix `stream-ld`: the read-once operand against the
+                    // L2's keep.
+                    if let (Some(b), "stream-ld") = (read_once, e.rung) {
+                        v = v && stream_ld_pays(&g, b);
+                    }
                     // bugs-properties `streamk-epi`: the group's operands
                     // against the part's L2.
                     if let (Some(b), "streamk-epi") = (operands, e.rung) {
@@ -735,7 +759,7 @@ mod tests {
         }
         assert_eq!(open, OPEN.to_vec(), "measurements the rules do not pick");
         // The counts the evidence file reports.
-        assert_eq!((picked, null, mixed, open.len()), (158, 74, 16, 23));
+        assert_eq!((picked, null, mixed, open.len()), (162, 77, 16, 23));
     }
 
     /// hopper-launch `ws-persist`, hand-worked on the H100 SXM: the 2048 ×

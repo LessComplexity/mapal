@@ -6295,9 +6295,8 @@ impl Kernel<'_> {
             false => (&s.a, s.rows * s.k),
         };
         self.rungs.stream_ld
-            && g.caps.l2_evict
             && reuse == 1
-            && cells.saturating_mul(r.elem_bytes(&s.elem)) > g.l2_keep_bytes()
+            && crate::rules::stream_ld_pays(g, cells.saturating_mul(r.elem_bytes(&s.elem)))
     }
 
     /// The plan line's ` evict=a|b|ab` (the first line of the text): the

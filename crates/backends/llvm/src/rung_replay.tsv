@@ -284,3 +284,10 @@ split-least	h100-pcie	A	C	on	-	tensor-cores-2 rented H100 PCIe, bf16x3n (OFF) / 
 split-tile	rtx-5080	F	C	off	split=tf32x3,issue=160	tensor-cores-2 local ABBA 9 reps, forced ON (split-issue tf32x3) / FFMA: pj_m2048_n4096_k4096 1.953, mlp_2048 2.093 (the integer cut: 2.24 at 5fcb401b's cut; TF32 256 = FFMA 256)
 split-tile	rtx-5080	F	C	on	split=bf16x2n,issue=375	tensor-cores-2 local ABBA 9 reps, forced ON bf16x2n / FFMA tile: llm_pre_t2048_bf16w 0.757 (6.834 -> 5.17 ms; QKV kernel 2.6-3.9 -> 1.86 ms traced), llm_dec_b32_l2048_bf16w 1.022 (null 1.016) — the rule refuses (512 / 2 against 1.6 x 256): open
 split-tile	h100-pcie	F	C	off	split=tf32x3,issue=1288	tensor-cores-2 rented H100 PCIe, 7 reps ABBA, forced ON (split-issue tf32x3) / FFMA tile: pj_m2048_n4096_k4096 1.220 (1.941 ms FFMA), n6144 1.211, mlp_2048 1.200 — the measured mma.sync 1351 at issue 1.29 (sm_90 SASS: 10.1 slots an HMMA against 7.8 priced) under 1.6 x 3 x 256
+stream-ld	rtx-5080	A	C	on	read_once=100663296	benches/results/evidence/local-rtx-5080/gapfix-rows-operands.md (pj_m1_n6144_k4096 0.869, pj_m16_n6144_k4096 0.791, pj_m128_n6144_k4096 0.963: the b loads LDG.E.EF)
+stream-ld	rtx-5080	A	C	on	read_once=234881024	benches/results/evidence/local-rtx-5080/gapfix-rows-operands.md (pj_m1_n4096_k14336 0.929)
+stream-ld	rtx-5080	A	C	null	read_once=67108864	benches/results/evidence/local-rtx-5080/gaps-disasm.md (C2: n4096_k4096 null; under the 64.6 MiB keep the rule leaves it)
+shfl-tree	rtx-5080	A	C	on		benches/results/evidence/local-rtx-5080/gapfix-rows-operands.md (attn_1024_64 0.936, attn_2048_64 0.959, lsm_32_8192 unit kernel 3.04 -> 2.30 us: BAR 19 -> 3)
+shfl-tree	rtx-5080	A	C	null		benches/results/evidence/local-rtx-5080/gapfix-rows-operands.md (softmax_rows_4096 1.003, rowsum_4096 0.997, attn_2048_128 0.991: GEMM-bound programs)
+iota-law	rtx-5080	A	C	on		benches/results/evidence/local-rtx-5080/gapfix-rows-operands.md (llm_dec_b32_l2048_bf16kv norm 17.6 -> 6.8 us a step, program 0.974)
+kvec-swizzle	rtx-5080	A	C	null		benches/results/evidence/local-rtx-5080/gapfix-rows-operands.md (llm_dec_b32_l8192_bf16kv scores kernel 777 vs 776 us: the stores are off its critical path)
