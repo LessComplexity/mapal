@@ -162,6 +162,7 @@ fn edge_label(op: &Operation) -> String {
         Operation::Print { newline: true } => "Println".into(),
         Operation::Print { newline: false } => "Print".into(),
         Operation::TimeMs => "TimeMs".into(),
+        Operation::Read => "Read".into(),
         Operation::LoopEnter => "LoopEnter".into(),
         Operation::LoopBack => "LoopBack ↩".into(),
         Operation::LoopExit => "LoopExit".into(),

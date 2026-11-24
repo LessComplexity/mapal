@@ -325,6 +325,7 @@ fn generated_programs_keep_values_and_invariants() {
                 c[7] = 1;
                 return c;
             }
+            mapal_interp::Outcome::ReadFailed(m) => panic!("{tag}: a generated program reads: {m}"),
         }
         let out =
             |ll: &str| run_native(clang, ll, &tag).unwrap_or_else(|| panic!("{tag} trap\n{src}"));

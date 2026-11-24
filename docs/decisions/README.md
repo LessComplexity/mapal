@@ -95,6 +95,7 @@ ADR-NNNN-short-slug-candidate.md    while the decision is still open
 | [0041](ADR-0041-compute-precision-permission-candidate.md) | Compute precision as a permission on compute nodes — `tf32 \| f32` | 2026-10-25 | accepted-for-implementation |
 | [0042](ADR-0042-exp-builtin.md) | `exp` — a pipeline builtin, the oracle's algorithm, a bounded default face, the rescale law | 2026-11-21 | accepted-for-implementation |
 | [0043](ADR-0043-narrow-float-storage.md) | Narrow float storage — `bf16`, `f16`, `f8e4m3`, `f8e5m2`: one rounding in, exact widening out, f32 compute | 2026-11-21 | accepted-for-implementation (slice 1 implemented) |
+| [0045](ADR-0045-read-builtin.md) | `read` — a pipeline builtin that loads an array from a file | 2026-11-25 | accepted-for-implementation (implemented) |
 
 Errata **E1–E5** predate the ADR numbering; ADR-0002 … ADR-0006 encode them one-for-one. The
 historical ledger — including which errata were patched back into the spec text — is the

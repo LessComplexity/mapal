@@ -194,6 +194,7 @@ impl CategoryIr {
             entry: self.entry,
             facts,
             precision: self.precision.clone(),
+            data_dir: self.data_dir.clone(),
         }
     }
 

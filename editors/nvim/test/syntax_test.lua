@@ -63,6 +63,11 @@ local cases = {
   -- them unchanged. The leading `-` is different — it falls to flowOperator the moment
   -- the guard rule stops matching. Found by deliberately breaking a guard and watching
   -- this suite pass.
+  -- ADR-0045: the file read is a builtin stage fed by a string literal.
+  { 48, "read", "flowBuiltin", "read (ADR-0045)" },
+  { 48, '"', "flowString", "the path literal" },
+  { 49, "widen_f32", "flowBuiltin", "widening a read bf16" },
+
   { 18, 9, "flowGuardArrow", "chrome of -true->" },
   { 38, 9, "flowGuardArrow", "chrome of -0->" },
   { 41, 9, "flowGuardArrow", "chrome of -Some(x)->" },

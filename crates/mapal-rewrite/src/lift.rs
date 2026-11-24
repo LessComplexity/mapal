@@ -244,6 +244,7 @@ fn body_cone(
             if matches!(
                 morph.op,
                 Operation::Print { .. }
+                    | Operation::Read
                     | Operation::LoopEnter
                     | Operation::LoopBack
                     | Operation::LoopExit

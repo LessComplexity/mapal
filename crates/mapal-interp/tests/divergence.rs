@@ -92,6 +92,7 @@ fn sum_to_n_budget_boundary() {
             Outcome::Done(other) => panic!("unexpected Done value: {other:?}"),
             Outcome::Diverged => {}
             Outcome::Trapped(k) => panic!("unexpected trap: {k:?}"),
+            Outcome::ReadFailed(m) => panic!("unexpected read failure: {m}"),
         }
     }
     let min_done = min_done.expect("sum_to_n(10) never completed within 2000 budget");

@@ -591,6 +591,24 @@ impl Emulated {
         )
     }
 
+    /// One run with `env` set, whatever its exit: stdout, stderr and the
+    /// exit code (ADR-0045: a failed read exits 103 with its message).
+    #[allow(dead_code)]
+    pub fn run_status(&self, env: &[(&str, &str)]) -> (String, String, i32) {
+        let _slot = slot();
+        let out = Command::new(self.dir.path().join("x"))
+            .env("MAPAL_PAR", "2")
+            .env("MAPAL_SPIN", "0")
+            .envs(env.iter().copied())
+            .output()
+            .unwrap();
+        (
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+            String::from_utf8_lossy(&out.stderr).into_owned(),
+            out.status.code().unwrap_or(-1),
+        )
+    }
+
     /// [`Emulated::run`] once per environment (the emulator's modes), the
     /// runs side by side — each holds one of [`job_slots`] — their stdout
     /// and stderr in `envs`' order.

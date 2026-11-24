@@ -1,0 +1,72 @@
+// ADR-0045 golden program: one file of every element type `read` takes,
+// each consumed by bulk work (a device site on a GPU profile) and printed.
+// The files are raw little-endian elements, exactly n x sizeof(T) bytes
+// (`read.rs` regenerates them and checks the committed bytes).
+
+fn main() {
+    "i32.bin" -> read -> counts: [i32; 8];
+    counts -> map {
+        c -> c * 3 + 1
+    } -> scaled_counts;
+    (0, counts) -> fold {
+        total, c -> total + c / 1024
+    } -> count_sum;
+    count_sum -> println;
+    scaled_counts[0] -> println;
+    scaled_counts[3] -> println;
+    scaled_counts[7] -> println;
+
+    "i64.bin" -> read -> offsets: [i64; 8];
+    offsets -> map {
+        o -> o * 2 - 1
+    } -> shifted_offsets;
+    shifted_offsets[2] -> println;
+    shifted_offsets[4] -> println;
+    shifted_offsets[7] -> println;
+
+    "u8.bin" -> read -> pixels: [u8; 8];
+    pixels -> map {
+        p -> p + p
+    } -> doubled_pixels;
+    doubled_pixels[3] -> println;
+    doubled_pixels[7] -> println;
+
+    "f32.bin" -> read -> samples: [f32; 8];
+    samples -> map {
+        s -> s * 0.5 + 1.0
+    } -> shifted_samples;
+    (0.0, samples) -> fold {
+        total, s -> total + s * s
+    } -> energy;
+    energy -> println;
+    shifted_samples[1] -> println;
+    shifted_samples[2] -> println;
+    samples[5] -> println;
+
+    "f64.bin" -> read -> precise: [f64; 8];
+    precise -> map {
+        p -> p * p
+    } -> squared;
+    squared[2] -> println;
+    squared[6] -> println;
+    precise[7] -> println;
+
+    "bf16.bin" -> read -> brain_floats: [bf16; 8];
+    brain_floats -> map {
+        b -> b -> widen_f32 -> wide;
+        wide * 2.0
+    } -> doubled_brain;
+    doubled_brain[0] -> println;
+    doubled_brain[2] -> println;
+    doubled_brain[3] -> println;
+    brain_floats[4] -> widen_f32 -> println;
+
+    "f16.bin" -> read -> half_floats: [f16; 8];
+    half_floats -> map {
+        h -> h -> widen_f64
+    } -> wide_halves;
+    wide_halves[2] -> println;
+    wide_halves[3] -> println;
+    wide_halves[5] -> println;
+    wide_halves[6] -> println;
+}

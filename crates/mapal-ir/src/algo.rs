@@ -4239,7 +4239,7 @@ impl CategoryIr {
         let effectful = def.morphisms.iter().any(|m| {
             matches!(
                 self.morphisms.get(*m).map(|x| x.op),
-                Some(Operation::Print { .. } | Operation::TimeMs)
+                Some(Operation::Print { .. } | Operation::TimeMs | Operation::Read)
             )
         });
         !effectful
@@ -4452,8 +4452,23 @@ impl CategoryIr {
         // not two). A clock inside an effectful loop region stays host —
         // `host_loop_member` still claims it — and keeps its checkpoint.
         let is_clock = |m: MorphismId| matches!(self.morphisms[m].op, Operation::TimeMs);
+        // ADR-0045 D8: a file read is a DAG node too, for the opposite reason
+        // to the clock: its value is an array the program's bulk work reads,
+        // and a task reading a spine-written value races the write (the
+        // clock's cone could stay on the spine; a model's weights cannot).
+        // As a task — the read and the `Proj` of its array out of the
+        // `(token, array)` pair — its readers depend on it by ordinary
+        // dataflow edges, and it starts as soon as the run launches (a file
+        // loads beside the work that does not read it). A failed read is a
+        // trap site: it records its failure at its topo position, like a
+        // task's trap, and the first checkpoint past it delivers it — after
+        // every output and trap the oracle gives before it.
+        let is_read = |m: MorphismId| {
+            matches!(self.morphisms[m].op, Operation::Read)
+                || self.read_of(self.morphisms[m].target).is_some()
+        };
         let is_host = |m: MorphismId| {
-            (is_token(m) && !is_clock(m))
+            (is_token(m) && !is_clock(m) && !is_read(m))
                 || host_loop_member.contains_key(m)
                 || host_cone.contains_key(m)
         };
@@ -4488,6 +4503,7 @@ impl CategoryIr {
         let is_scalar = |m: MorphismId| {
             !is_host(m)
                 && !is_clock(m)
+                && !is_read(m)
                 // A gated loop's whole region is scalar — bulk ops inside it
                 // run sequentially under the driver, under the gate.
                 && (in_gated_loop(m)
@@ -4561,6 +4577,16 @@ impl CategoryIr {
                         // arithmetic around it — the whole point is that its edges
                         // fence work, and a shared task would drag that work inside.
                         Operation::TimeMs => (TaskKind::Seq { morphisms: vec![m] }, 1),
+                        // ADR-0045 D8: the read and its array's `Proj`, alone.
+                        Operation::Read => {
+                            let mut morphisms = vec![m];
+                            morphisms.extend(
+                                self.out_edges(self.morphisms[m].target)
+                                    .iter()
+                                    .filter(|&&p| self.read_of(self.morphisms[p].target).is_some()),
+                            );
+                            (TaskKind::Seq { morphisms }, 1)
+                        }
                         _ => {
                             if scalar_seen.contains_key(m) {
                                 continue;
@@ -4808,8 +4834,12 @@ impl CategoryIr {
             // wait list here would be the same ordering stated twice (§3).
             // A clock left on the spine (inside an effectful loop) keeps its
             // checkpoint, which is the only fence it has.
+            // ADR-0045 D8: a read left on the spine (in an effectful loop)
+            // can fail there, so it observes like a print: every earlier
+            // trap is decided and delivered before it runs.
             let checkpoint = matches!(morph.op, Operation::Print { .. })
-                || matches!(morph.op, Operation::TimeMs) && !task_of.contains_key(m)
+                || matches!(morph.op, Operation::TimeMs | Operation::Read)
+                    && !task_of.contains_key(m)
                 || matches!(morph.op, Operation::Call(_)) && is_token(m);
             if !checkpoint {
                 continue;
@@ -6338,6 +6368,9 @@ impl CategoryIr {
             Operation::Call(g)
             | Operation::Map { body: g, .. }
             | Operation::Fold { body: g, .. } => capable.get(g).copied().unwrap_or(true),
+            // ADR-0045 D4: a read fails where its file is missing or of
+            // another length.
+            Operation::Read => true,
             _ => false,
         }
     }

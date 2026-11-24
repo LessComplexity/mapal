@@ -125,7 +125,8 @@ pub fn replay(ir: &CategoryIr, plan: &RewritePlan) -> Result<CategoryIr, ReplayE
 
     let entry = fmap[ir.entry()];
     Ok(b.seal(entry)
-        .expect("replay: seal rejected a builder-built graph"))
+        .expect("replay: seal rejected a builder-built graph")
+        .with_data_dir(ir.data_dir().map(str::to_string)))
 }
 
 /// Rebuild one function's body (DESIGN §1.1). Phase A reconstructs body objects
@@ -677,6 +678,18 @@ fn emit_op(
             fb.time_ms(feed(plan, remap, src), loc)
                 .expect("replay: time_ms")
         }
+        Read => {
+            // ADR-0045: (token, path) → the fresh `(IoToken, array)` pair,
+            // the array type the original target's. Effectful: rebuilt as is.
+            let f = slot_feeders(ir, src);
+            let (tok, path) = (feed(plan, remap, f[0]), feed(plan, remap, f[1]));
+            let array = ir
+                .object(target)
+                .and_then(|o| o.ty.component_ty(1))
+                .cloned()
+                .expect("replay: a read's target is (token, array)");
+            fb.read(tok, path, &array, loc).expect("replay: read")
+        }
         Pair { .. } | Output | LoopEnter | LoopBack | LoopExit => {
             unreachable!("emit_op: {op:?} is not an object-defining primitive")
         }
@@ -925,6 +938,7 @@ fn reads_packed_source(op: Operation) -> bool {
         | Zip
         | Update
         | Print { .. }
+        | Read
         | LoopBack
         | LoopExit => true,
         Map { captures, .. } | Fold { captures, .. } => captures > 0,

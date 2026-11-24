@@ -53,9 +53,10 @@ syn keyword flowKeyword fn type loop seq mut void
 "   iota/fill          procedural sources (ADR-0029 stage 2)
 "   widen_i64/f32/f64  the widening family (ADR-0029 amendment)
 "   time               clock read (plan-time-builtin); no CUDA seam
+"   read               file read (ADR-0045): "file.bin" -> read -> name: [T; n]
 "   print/println      the two effects (ADR-0015 — println appends a newline)
 syn keyword flowBuiltin map fold print println zip enumerate iota fill
-syn keyword flowBuiltin widen_i64 widen_f32 widen_f64 exp to_bf16 to_f16 time
+syn keyword flowBuiltin widen_i64 widen_f32 widen_f64 exp to_bf16 to_f16 time read
 
 " Boolean literals.
 syn keyword flowBoolean true false

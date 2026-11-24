@@ -33,6 +33,7 @@ mod graph;
 mod loc;
 mod mermaid;
 pub mod narrow;
+pub mod read;
 mod residence;
 pub mod split;
 mod ty;
