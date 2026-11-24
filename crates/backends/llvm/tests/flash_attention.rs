@@ -217,6 +217,56 @@ fn streamed_attention_values() {
     }
 }
 
+/// review-fixes: **the stream is priced on every part** — a part whose
+/// profile measured only some plan rates (the 3090, A100, H100 SXM and PCIe)
+/// prices the streamed unit on the rates its properties derive
+/// (`TargetProfile::priced`) instead of keeping the split realization
+/// unweighed (`stream=s:unpriced`, sweep-attention's replay). The 2048-token
+/// prefill streams on each by its price; the scaled-down attention's values
+/// under each part's own rule match the interpreter in every emulator mode.
+#[test]
+fn stream_priced_on_every_part() {
+    let on = |ir: &CategoryIr, target: &'static str| {
+        let mut gpu = GpuArms::default();
+        gpu.on.flow = true;
+        for r in ["place", "pdl", "streams", "pinned", "horizontal", "calls"] {
+            *gpu.off.rung(r).expect("rung") = true;
+        }
+        let opts = EmitOpts {
+            host: "generic",
+            target,
+            gpu,
+            ..EmitOpts::default()
+        };
+        emit_detailed(ir, &opts).expect("emits")
+    };
+    let pre = lower(&program("pt_llm_pre_t2048"));
+    let small = lower(&program("px_attn_64_16"));
+    let rr = run(&small, 2_000_000_000);
+    let Outcome::Done(_) = rr.outcome else {
+        panic!("interp")
+    };
+    let clang = emu::clang();
+    for part in ["rtx-3090", "a100", "h100", "h100-pcie"] {
+        let em = on(&pre, part);
+        let dev = em.device.as_deref().unwrap_or("");
+        assert!(!dev.contains("stream=s:unpriced"), "{part}");
+        assert_eq!(stream_lines(&em).len(), 1, "{part}: the prefill streams");
+        let Some(clang) = clang.as_deref() else {
+            continue;
+        };
+        let em = on(&small, part);
+        let ex = emu::build_emulated(clang, &em.text, em.device.as_deref().unwrap_or(""));
+        for (mode, (got, _)) in MODES.iter().zip(ex.run_each(&MODES)) {
+            assert!(
+                within(&got, &rr.output),
+                "{part} {mode:?}: {got:?} vs {:?}",
+                rr.output
+            );
+        }
+    }
+}
+
 /// One generated program's checks and coverage counts.
 fn check_flash(clang: &str, i: usize, p: &testgen::FlashProg) -> Vec<(&'static str, u64)> {
     let src = testgen::flash_src(p);

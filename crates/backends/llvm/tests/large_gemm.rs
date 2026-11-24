@@ -352,8 +352,11 @@ fn emission_cost(ir: &CategoryIr, off: &[&str], cost: &[&str]) -> Emission {
 /// `--gpu-off=streamk-price` (the panel-count rule of the classes that ship
 /// `streamk`), keeps the launched tile and grid (`gx·gy` tiles), walks every
 /// slot once (`ctas ≤ sms × blocks_per_sm`) and folds at least one panel a
-/// CTA; and on a part without the rates (`--cost=atomic_ops_per_ns=0`) no
-/// under-filled site streams by price. Values through the emulator at
+/// CTA; and a part without the `red` rate (`--cost=atomic_ops_per_ns=0`) is
+/// priced on the one its properties derive (review-fixes-2, `Gpu::plan_cost`:
+/// the L2 rate's adds per byte — on the 5080, the reference part, exactly its
+/// measured rate), so it streams the same sites: never the old rule where
+/// unmeasured. Values through the emulator at
 /// extents it runs (256–512 each side), the `red` rate raised and the zero
 /// pass zeroed (`--cost=`) so the walk pays where the grid quantizes badly:
 /// ON (free threads, serialized in thread order, reversed) against the
@@ -400,9 +403,9 @@ fn streamk_price_on_generated_shapes() {
             }
             under += 1;
             let (t_sk, o_sk) = (t["combine"] == "streamk", o["combine"] == "streamk");
-            assert!(
-                !(b["combine"] == "streamk" && !o_sk),
-                "{ctx} streams by price without the rates {b:?}"
+            assert_eq!(
+                b["combine"], t["combine"],
+                "{ctx} the derived `red` rate prices as the measured {b:?}"
             );
             if !t_sk || o_sk {
                 continue;

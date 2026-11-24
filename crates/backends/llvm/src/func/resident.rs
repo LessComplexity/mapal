@@ -1042,24 +1042,50 @@ impl<'a> FnEmit<'a> {
     }
 
     /// Does anything but the morphisms `ms` read `o` (through a product or
-    /// directly)?
+    /// directly)? A value made here that outlives the call (`last_use_plan`'s
+    /// `escapes`: paired into the function's result) is read by the caller,
+    /// as [`Self::uses`] counts it — a product with no reader in the function
+    /// is the return tuple, not an unread value.
     pub(super) fn read_outside(&self, o: ObjectId, ms: &[MorphismId]) -> bool {
-        self.ir.out_edges(o).iter().any(|&m| {
-            let mo = self.ir.morphism(m).expect("morphism resolves");
-            match mo.op {
-                Operation::Pair { .. } => self
-                    .ir
-                    .out_edges(mo.target)
-                    .iter()
-                    .any(|m2| !ms.contains(m2)),
-                _ => !ms.contains(&m),
-            }
-        })
+        let returned = self.lup.escapes(o)
+            && self.ir.try_owner(o) == Some(self.f)
+            && self
+                .ir
+                .object(o)
+                .is_some_and(|x| x.kind != ObjectKind::Parameter);
+        returned
+            || self.ir.out_edges(o).iter().any(|&m| {
+                let mo = self.ir.morphism(m).expect("morphism resolves");
+                match mo.op {
+                    Operation::Pair { .. } => self
+                        .ir
+                        .out_edges(mo.target)
+                        .iter()
+                        .any(|m2| !ms.contains(m2)),
+                    _ => !ms.contains(&m),
+                }
+            })
     }
 
     /// Where each morphism runs: straight-line (`(None, _)`), or one phase of
     /// one loop (`(Some(merge), advance)`). A morphism in neither (a guard
     /// arm, loop machinery) is absent.
+    /// review-fixes-2: **how many times a launch in region `merge` runs a
+    /// call** — once outside every loop (`None`); a counted loop's trips
+    /// (`trip_split`: its constant `[lo, hi)`); 0 for a loop no fact counts.
+    /// What shares the process's first cooperative launch (`coop_first_ns`:
+    /// each launch its `1 / n`, a loop of unknown trips no term).
+    pub(super) fn launches_in(&self, merge: Option<ObjectId>) -> u64 {
+        let Some(mg) = merge else {
+            return 1;
+        };
+        self.ir
+            .trip_split(self.f)
+            .iter()
+            .find(|t| t.merge == mg)
+            .map_or(0, |t| (t.hi - t.lo).max(1) as u64)
+    }
+
     pub(super) fn regions(&self) -> SecondaryMap<MorphismId, (Option<ObjectId>, bool)> {
         let mut region = SecondaryMap::new();
         for m in self.straight_line().keys() {

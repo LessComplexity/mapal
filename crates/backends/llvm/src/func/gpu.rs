@@ -2925,11 +2925,14 @@ fn combine(
 }
 
 /// **sweep-gemm-2 `streamk-price`: does stream-K beat the S63 count at this
-/// site, its fixed costs priced by the part's measured rates?** `None` where
-/// the part has none of them (`DeviceCost`: the FMA tile's `flops_per_ns`,
-/// `red.global.add.f32`'s `atomic_ops_per_ns`, the zero pass's `zero_ns`) or
-/// the element is not `f32` (the rates are f32's): the panel-count rule
-/// `iters + 1 < split` stands there.
+/// site, its fixed costs priced by the part's rates?** The FMA tile's
+/// `flops_per_ns`, `red.global.add.f32`'s `atomic_ops_per_ns` and the zero
+/// pass's `zero_ns` where the part measured them, else derived from its
+/// properties ([`Gpu::plan_cost`]: review-fixes — the 3090 / A100 / H100
+/// profiles measured none of the three, and the panel-count rule this price
+/// replaced, measured losing, stood there). `None` only where the element is
+/// not `f32` (the rates are f32's) or the part gives no factor to derive
+/// them from (no clock): the panel-count rule `iters + 1 < split` there.
 ///
 /// One block's panel takes `t = 2·bm·bn·bk / (flops_per_ns / wave)` — the
 /// tile's FMAs at its share of the part's FMA tile rate. Stream-K walks
@@ -2955,7 +2958,7 @@ fn streamk_priced(
     s: u64,
     split: u64,
 ) -> Option<bool> {
-    let d = profile.gpu()?.cost?;
+    let d = profile.gpu()?.plan_cost();
     let e = elem_bytes_of(&site.elem);
     if e != 4 || d.flops_per_ns == 0 || d.atomic_ops_per_ns == 0 || d.zero_ns == 0 {
         return None;
@@ -10842,7 +10845,7 @@ mod tests {
     /// rule (no under-filled stream-K).
     #[test]
     fn streamk_price_separates_the_measured_sites() {
-        use crate::profile::{A100, RTX_5080};
+        use crate::profile::{A100, H100, H100_PCIE, RTX_3090, RTX_4090, RTX_5080, RTX_5090};
         let free = |s: &TileSite, p: &TargetProfile, arms| {
             launch_in(s, p, true, arms, None, Order::Free).combine
         };
@@ -10860,14 +10863,53 @@ mod tests {
             let s = site(m, n, k, true, true, Ty::f32());
             assert!(!sk(free(&s, &RTX_5080, arms)), "{m}x{n}x{k}");
         }
-        // A part without the rates: the classes' rule, priced or not.
-        let s = site(1024, 1024, 1024, true, true, Ty::f32());
-        assert_eq!(free(&s, &A100, arms), free(&s, &A100, unpriced));
-        assert!(
-            A100.gpu()
-                .and_then(|g| g.cost)
-                .is_none_or(|d| d.atomic_ops_per_ns == 0)
-        );
+        // review-fixes: a part that measured none of the three rates is
+        // priced on the ones its properties derive (`Gpu::plan_cost`) —
+        // never left unpriced (the OFF arm is the class's rule); the 512³
+        // cells' 8 panels a tile refuse there as on the 5080.
+        for p in [&A100, &H100, &H100_PCIE, &RTX_3090] {
+            let g = p.gpu().expect("gpu");
+            assert!(
+                g.cost
+                    .is_none_or(|d| d.atomic_ops_per_ns == 0 || d.zero_ns == 0),
+                "{}: unmeasured",
+                p.name
+            );
+            let d = g.plan_cost();
+            assert!(
+                d.flops_per_ns > 0 && d.atomic_ops_per_ns > 0 && d.zero_ns > 0,
+                "{}: {d:?}",
+                p.name
+            );
+            // The FMA tile (the A100's contract face takes TF32x3 there).
+            let mut fma = arms;
+            *fma.off.rung("split-tile").expect("a rung") = true;
+            let l = launch_in(&loopmm, p, true, fma, None, Order::Free);
+            let t = l.tiled.expect("an FMA tile");
+            let wave = l.wave(g);
+            let blocks = l.gx * l.gy;
+            assert!(
+                streamk_priced(p, &loopmm, &t, wave, blocks, wave, 1, 1, 1).is_some(),
+                "{}: priced",
+                p.name
+            );
+            assert!(
+                !sk(free(&loopmm, p, unpriced)),
+                "{}: OFF the class's rule",
+                p.name
+            );
+            let s = site(512, 512, 512, true, true, Ty::f32());
+            assert!(!sk(free(&s, p, arms)), "{}: 512³", p.name);
+        }
+        // The measured parts' rates are their own.
+        for p in [&RTX_5080, &RTX_4090, &RTX_5090] {
+            let g = p.gpu().expect("gpu");
+            let (d, m) = (g.plan_cost(), g.cost.expect("measured"));
+            assert_eq!(
+                (d.flops_per_ns, d.atomic_ops_per_ns, d.zero_ns),
+                (m.flops_per_ns, m.atomic_ops_per_ns, m.zero_ns)
+            );
+        }
     }
 
     /// sweep-gemm-2 `warm-zero`: the init flag is set exactly for a module

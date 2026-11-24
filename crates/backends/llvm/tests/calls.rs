@@ -129,6 +129,48 @@ fn specs(em: &Emission) -> Vec<String> {
         .collect()
 }
 
+/// review-fixes-2: **a counted loop's trips share the process's first
+/// cooperative launch** (`trip_split`'s `[lo, hi)`), not "shared, no term".
+/// The rtx-5080's two programs `calls-issue` moved (`px_rt_mlp2_128`,
+/// `px_rg_mlp2_128`, 2 trips) formed their chain with the first launch
+/// priced at 0; timed, the first cooperative launch took 57 against 14 µs and
+/// the chains ran 1.77× / 1.48× their separate launches. Shipped (the rules'
+/// emission, `place` off) neither forms a chain now: no cooperative launch,
+/// and the host intent line prices them refused; `--calls=force` still
+/// forms them (the measurement arm).
+#[test]
+fn counted_trips_share_the_first_cooperative_launch() {
+    let shipped = |ir: &CategoryIr, force: bool| {
+        let mut gpu = GpuArms {
+            calls_force: force,
+            ..GpuArms::default()
+        };
+        for r in ["place", "async", "pdl", "streams", "pinned"] {
+            *gpu.off.rung(r).unwrap() = true;
+        }
+        emit_detailed(
+            ir,
+            &EmitOpts {
+                host: "generic",
+                target: "rtx-5080",
+                gpu,
+                ..EmitOpts::default()
+            },
+        )
+        .expect("emits")
+    };
+    for name in ["px_rt_mlp2_128", "px_rg_mlp2_128"] {
+        let ir = bench(name);
+        let f = ir.entry();
+        let trips: Vec<(i64, i64)> = ir.trip_split(f).iter().map(|t| (t.lo, t.hi)).collect();
+        assert_eq!(trips, [(0, 2)], "{name}: one counted loop of 2 trips");
+        let em = shipped(&ir, false);
+        assert_eq!(coop_launches(&em), 0, "{name}: {}", host_line(&em));
+        assert!(specs(&em).is_empty(), "{name}");
+        assert!(coop_launches(&shipped(&ir, true)) > 0, "{name}: forced");
+    }
+}
+
 /// `pt_decode_1024_256` on the rtx-5080: the trip's rows and query (one
 /// `horizontal` group, level 0), `s` (reads `kk` and `q`: level 1, its zero
 /// pass at level 0) and `o` (reads `s` and `vv`: level 2, zero at level 1)

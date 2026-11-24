@@ -5175,6 +5175,21 @@ pub fn half_src(p: &HalfProg) -> (String, (usize, u64, u64)) {
 /// product's operands have no f32 reader — every element read of an f32
 /// operand rounds to the set's member (`PrecisionPlan::store`).
 pub fn half_src_with(p: &HalfProg, once: bool) -> (String, (usize, u64, u64)) {
+    half_src_full(p, once, false)
+}
+
+/// [`half_src_with`]`(p, true)` with the GEMM in a callee the inliner keeps
+/// (a counted loop) that returns its operand `a` beside `y` and the
+/// magnitudes (review-fixes: `round-store` must not store an array that
+/// escapes its function). Two elements of the returned `a` are printed after
+/// the cells' pairs, each beside a magnitude of 0 (exact: the caller reads
+/// the producer's f32 values). Not for attention programs.
+pub fn half_src_escaping(p: &HalfProg) -> (String, (usize, u64, u64)) {
+    assert!(!p.attn, "a GEMM program");
+    half_src_full(p, true, true)
+}
+
+fn half_src_full(p: &HalfProg, once: bool, ret: bool) -> (String, (usize, u64, u64)) {
     let pick = |d: u8, v: &[u64]| v[usize::from(d) % v.len()];
     let set = match p.set {
         1 => ": bf16 | f32",
@@ -5214,9 +5229,32 @@ pub fn half_src_with(p: &HalfProg, once: bool) -> (String, (usize, u64, u64)) {
             m * n / 2 + 1,
             m * n - 1 - u64::from(p.law[1]) % n,
         ];
-        let mut src = format!(
-            "fn main() {{
-    {mk} -> iota -> ia;
+        let head = if ret {
+            let ta = half_fmt(p.fa).unwrap_or("f32");
+            format!(
+                "fn gemm(n: i32) -> ([{ta}; {mk}], [f32; {mn}], [f32; {mn}], i32) {{
+    mut s: i32 <- 0;
+    mut z: i32 <- 0;
+    loop {{
+        (s < n) -> {{
+            -true-> {{
+                z + s -> z;
+                s + 1 -> s;
+                -> loop;
+            }}
+            -false-> z -> zz;
+        }}
+    }}
+",
+                mk = m * k,
+                mn = m * n,
+            )
+        } else {
+            "fn main() {\n".to_string()
+        };
+        let mut src = head
+            + &format!(
+                "    {mk} -> iota -> ia;
     ia -> map {{ t -> (t * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0{sa} }} -> a;
     {kn} -> iota -> ib;
     ib -> map {{ t -> (t * {a2} + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0{sb} }} -> b;
@@ -5249,12 +5287,34 @@ pub fn half_src_with(p: &HalfProg, once: bool) -> (String, (usize, u64, u64)) {
             "    ic -> map: f32 {{ t -> t / {n} -> i; t % {n} -> j; (0.0, kr) -> fold {{ acc, q -> {am} -> x; {bm} -> y; x * y -> pv; {abs} }} }} -> mag;
 "
         );
+        if ret {
+            src += "    a -> ret.0;
+    y -> ret.1;
+    mag -> ret.2;
+    zz -> ret.3;
+}
+fn main() {
+    1 -> gemm -> r;
+    r.0 -> ao;
+    r.1 -> y;
+    r.2 -> mag;
+";
+        }
         // An epilogue's `0.5·u + r`: M scales by one half, `r` exact.
         for c in cells {
             src += &format!("    y[{c}] -> println;\n    mag[{c}] -> println;\n");
         }
+        let mut pairs = cells.len();
+        if ret {
+            let widen = if p.fa > 0 { " -> widen_f32" } else { "" };
+            for x in [u64::from(p.law[1]) * 5 % (m * k), m * k - 1] {
+                src += &format!("    ao[{x}]{widen} -> println;\n    0.0 -> println;\n");
+            }
+            src += "    r.3 -> println;\n";
+            pairs += 2;
+        }
         src += "}\n";
-        return (src, (cells.len(), k, 0));
+        return (src, (pairs, k, 0));
     }
     let s = pick(p.dims[0], &[16, 32, 64]);
     let d = pick(p.dims[1], &[16, 32, 64]);

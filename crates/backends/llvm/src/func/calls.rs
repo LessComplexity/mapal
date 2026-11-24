@@ -111,9 +111,10 @@ pub(crate) fn persistent_fit(levels: &[Vec<Shape>], gpu: &Gpu) -> Result<u64, Re
 /// separate)` — one cooperative dependent launch of `grid` blocks
 /// (`coop_launch_ns`), `barriers` grid barriers, the bodies' change inside
 /// one kernel ([`Gpu::coop_body_ns`]: measured, or derived from the
-/// rtx-5080's cycles at this part's clock) and, outside every loop (`looped`
-/// false: the chain runs once), the process's first cooperative launch
-/// (`coop_first_ns`), against one dependent launch per unit of `units` blocks
+/// rtx-5080's cycles at this part's clock) and its share of the process's
+/// first cooperative launch (`coop_first_ns` over `launches`, the chain's
+/// launches a call: 1 outside every loop, a counted loop's trips; 0 for a
+/// loop no fact counts — no term), against one dependent launch per unit of `units` blocks
 /// each, as the runtime issues them (`pdl`: programmatic dependent launches,
 /// where the part has them). `None` on a part without the measured barrier
 /// and launch costs.
@@ -160,7 +161,7 @@ pub(crate) fn chain_ns(
     barriers: u64,
     gpu: &Gpu,
     pdl: bool,
-    looped: bool,
+    launches: u64,
     rounds: u64,
     work_ns: f64,
     unit_ns: &[f64],
@@ -184,7 +185,12 @@ pub(crate) fn chain_ns(
         let work: f64 = unit_ns[..units.len() - 1].iter().sum();
         sep = sep.max(gaps[0] + s - work);
     }
-    let first = if looped { 0 } else { d.coop_first_ns };
+    // The process's first cooperative launch, shared by the chain's launches
+    // in one call (0: a loop no fact counts — shared, no term).
+    let first = match launches {
+        0 => 0,
+        n => d.coop_first_ns / n,
+    };
     let body = if rounds > 1 { gpu.coop_body_ns() } else { 0.0 }
         + work_ns * CALLS_PHASE_PM as f64 / 1000.0;
     let per = d.coop_launch_at(grid, gpu.sms)?
@@ -560,12 +566,25 @@ impl FnEmit<'_> {
         let barriers = u64::from(levels - 1);
         let pdl = gpu::pdl(self.ir, self.profile, self.contract, self.gpu_arms);
         // A chain inside a loop shares the process's first cooperative
-        // launch with its other trips.
+        // launch with its other trips: review-fixes — a counted loop's trips
+        // (`trip_split`: its constant `[lo, hi)`), each paying its share
+        // (the rtx-5080's 2-trip `px_rt_mlp2_128` / `px_rg_mlp2_128`: the
+        // first launch 57 against 14 µs, the chains formed with no share
+        // measured 1.77× / 1.48× their separate launches); a loop no fact
+        // counts shares it as before (0: no term); outside every loop the
+        // chain pays it whole (1).
         let region = self.regions();
-        let looped = c.members.iter().any(|&(i, ..)| match seq[i] {
-            Step::Op(m) => region.get(m).is_some_and(|r| r.0.is_some()),
-            Step::Loop(_) => true,
-        });
+        let mut launches = 1u64;
+        for &(i, ..) in &c.members {
+            let n = match seq[i] {
+                Step::Op(m) => self.launches_in(region.get(m).and_then(|r| r.0)),
+                Step::Loop(_) => 0,
+            };
+            launches = match (launches, n) {
+                (_, 0) | (0, _) => 0,
+                (a, b) => a.max(b),
+            };
+        }
         let rounds = chain_rounds(&lv, grid);
         stats.rounds = stats.rounds.max(rounds);
         let member_ns = |i: usize| match seq[i] {
@@ -590,7 +609,7 @@ impl FnEmit<'_> {
             barriers,
             gpu,
             pdl,
-            looped,
+            launches,
             rounds,
             work,
             &unit_ns,
@@ -606,7 +625,7 @@ impl FnEmit<'_> {
             barriers,
             gpu,
             pdl,
-            looped,
+            launches,
             rounds,
             work,
             &[],
@@ -959,7 +978,7 @@ mod tests {
         barriers: u64,
         gpu: &Gpu,
         pdl: bool,
-        looped: bool,
+        launches: u64,
         rounds: u64,
         work_ns: f64,
     ) -> Option<(f64, f64)> {
@@ -969,12 +988,30 @@ mod tests {
             barriers,
             gpu,
             pdl,
-            looped,
+            launches,
             rounds,
             work_ns,
             &[],
             0.0,
         )
+    }
+
+    /// review-fixes-2: the process's first cooperative launch is shared by
+    /// the chain's launches in a call — whole outside every loop, a counted
+    /// loop's trips each their share, a loop no fact counts no term.
+    #[test]
+    fn first_cooperative_launch_shared_by_counted_trips() {
+        let g = gpu();
+        let first = g.chain_cost().0.coop_first_ns as f64;
+        assert!(first > 0.0);
+        let per = |n: u64| {
+            chain_ns0(&[3, 128, 128], 128, 2, g, false, n, 1, 0.0)
+                .unwrap()
+                .0
+        };
+        assert_eq!(per(1) - per(0), first);
+        assert_eq!(per(2) - per(0), (first as u64 / 2) as f64);
+        assert!(per(8) < per(2) && per(2) < per(1));
     }
 
     /// calls-issue: at `issue_ns` 0 the price is the price before the host
@@ -987,29 +1024,29 @@ mod tests {
     fn host_issue_prices_the_separate_form() {
         let g = gpu();
         let units = [3u64, 128, 128];
-        let (per0, sep0) = chain_ns0(&units, 128, 2, g, false, true, 1, 0.0).unwrap();
+        let (per0, sep0) = chain_ns0(&units, 128, 2, g, false, 0, 1, 0.0).unwrap();
         for d in [[0.0; 3], [500.0, 4000.0, 20.0], [1e6; 3]] {
-            let (per, sep) = chain_ns(&units, 128, 2, g, false, true, 1, 0.0, &d, 0.0).unwrap();
+            let (per, sep) = chain_ns(&units, 128, 2, g, false, 0, 1, 0.0, &d, 0.0).unwrap();
             assert_eq!((per, sep), (per0, sep0));
         }
         let d = [300.0, 900.0, 200.0];
         let mut last = sep0;
         for issue in [0.0, 500.0, 1690.0, 4000.0, 8000.0, 25_000.0] {
-            let (per, sep) = chain_ns(&units, 128, 2, g, false, true, 1, 0.0, &d, issue).unwrap();
+            let (per, sep) = chain_ns(&units, 128, 2, g, false, 0, 1, 0.0, &d, issue).unwrap();
             assert_eq!(per, per0, "the chain is one issue");
             assert!(sep >= last, "{issue}: {sep} < {last}");
             last = sep;
         }
         // Members longer than the issue: no host term.
         let long = [5000.0; 3];
-        let (_, sep) = chain_ns(&units, 128, 2, g, false, true, 1, 0.0, &long, 1690.0).unwrap();
+        let (_, sep) = chain_ns(&units, 128, 2, g, false, 0, 1, 0.0, &long, 1690.0).unwrap();
         assert_eq!(sep, sep0);
         // The decode chain's members (a few µs of work each): refused at
         // 1690 ns as before; formed on a host idling ~8 µs between them.
         let dec = [2500.0, 3000.0, 2000.0];
-        let (per, sep) = chain_ns(&units, 128, 2, g, false, true, 1, 0.0, &dec, 1690.0).unwrap();
+        let (per, sep) = chain_ns(&units, 128, 2, g, false, 0, 1, 0.0, &dec, 1690.0).unwrap();
         assert!(per > sep, "{per} {sep}");
-        let (per, sep) = chain_ns(&units, 128, 2, g, false, true, 1, 0.0, &dec, 12_000.0).unwrap();
+        let (per, sep) = chain_ns(&units, 128, 2, g, false, 0, 1, 0.0, &dec, 12_000.0).unwrap();
         assert!(per <= sep, "{per} {sep}");
     }
 
@@ -1074,7 +1111,7 @@ mod tests {
         let body = g.coop_body_ns();
         assert!((body - 4390.0 / 2.45).abs() < 0.5, "{body}");
         let at128 = 553.0 + 44.0 * 1.89;
-        let (per, sep) = chain_ns0(&[3, 128, 128], 128, 2, g, false, true, 1, 0.0).expect("priced");
+        let (per, sep) = chain_ns0(&[3, 128, 128], 128, 2, g, false, 0, 1, 0.0).expect("priced");
         assert!(
             (per - (2044.0 + 2.0 * at128)).abs() < 0.5 && (sep - 1950.0).abs() < 0.5,
             "{per} {sep}"
@@ -1082,24 +1119,23 @@ mod tests {
         assert!(per > sep);
         // The phases: 22 ‰ of their work at the part's peaks.
         let (long, _) =
-            chain_ns0(&[3, 128, 128], 128, 2, g, false, true, 1, 100_000.0).expect("priced");
+            chain_ns0(&[3, 128, 128], 128, 2, g, false, 0, 1, 100_000.0).expect("priced");
         assert!((long - per - 2200.0).abs() < 0.5, "{long} {per}");
         // The grid-stride form (more than one round) pays the bodies'
         // measured change (`calib.cu body`, 4 rounds: 1792 ns).
-        let (strided, _) =
-            chain_ns0(&[3, 512, 512], 128, 2, g, false, true, 4, 0.0).expect("priced");
+        let (strided, _) = chain_ns0(&[3, 512, 512], 128, 2, g, false, 0, 4, 0.0).expect("priced");
         assert!((strided - per - body).abs() < 0.5, "{strided} {per}");
         // Outside every loop it also pays the process's first cooperative
         // launch (38 us).
-        let (once, _) = chain_ns0(&[3, 128, 128], 128, 2, g, false, false, 1, 0.0).expect("priced");
+        let (once, _) = chain_ns0(&[3, 128, 128], 128, 2, g, false, 1, 1, 0.0).expect("priced");
         assert!((once - per - 38_000.0).abs() < 0.5, "{once} {per}");
         // Programmatic dependent launches (486 ns each): further apart.
-        let (_, sep) = chain_ns0(&[3, 128, 128], 128, 2, g, true, true, 1, 0.0).expect("priced");
+        let (_, sep) = chain_ns0(&[3, 128, 128], 128, 2, g, true, 0, 1, 0.0).expect("priced");
         assert!((sep - 1458.0).abs() < 0.5, "{sep}");
         // A long chain of one-block launches: twelve barriers of one block
         // (553 ns priced) against twelve more plain launches — still not
         // enough to pay the cooperative launch back here.
-        let (per, sep) = chain_ns0(&[1; 13], 1, 12, g, false, true, 1, 0.0).expect("priced");
+        let (per, sep) = chain_ns0(&[1; 13], 1, 12, g, false, 0, 1, 0.0).expect("priced");
         assert!(per > sep, "{per} {sep}");
         // Without the cooperative launch's price, the barriers alone win a
         // one-round chain; the grid-stride form's bodies keep it separate.
@@ -1109,11 +1145,9 @@ mod tests {
             cost: Some(cheap),
             ..*g
         };
-        let (per, sep) =
-            chain_ns0(&[3, 128, 128], 128, 2, &g2, false, true, 1, 0.0).expect("priced");
+        let (per, sep) = chain_ns0(&[3, 128, 128], 128, 2, &g2, false, 0, 1, 0.0).expect("priced");
         assert!(per <= sep, "{per} {sep}");
-        let (per, sep) =
-            chain_ns0(&[3, 512, 512], 128, 2, &g2, false, true, 4, 0.0).expect("priced");
+        let (per, sep) = chain_ns0(&[3, 512, 512], 128, 2, &g2, false, 0, 4, 0.0).expect("priced");
         assert!(per > sep, "{per} {sep}");
         assert!((d.gsync_at(504, g.sms).unwrap() - (553.0 + 420.0 * 1.89)).abs() < 0.5);
         // open-rules: a part without the measured barrier and launch costs
@@ -1133,7 +1167,7 @@ mod tests {
             ),
             (562, 660, 494, 2078)
         );
-        let (per, sep) = chain_ns0(&[3, 128, 128], 128, 2, p5090, true, true, 1, 0.0).unwrap();
+        let (per, sep) = chain_ns0(&[3, 128, 128], 128, 2, p5090, true, 0, 1, 0.0).unwrap();
         assert!(
             per > sep,
             "the 5090 prices decode as the 5080 does: {per} {sep}"
@@ -1162,20 +1196,20 @@ mod tests {
         };
         for (n, dec_save) in [("rtx-4090", 656.0), ("rtx-3090", 522.0)] {
             let g = part(n);
-            let (per, sep) = chain_ns0(&[3, 128, 128], 128, 2, &g, false, true, 1, 0.0).unwrap();
+            let (per, sep) = chain_ns0(&[3, 128, 128], 128, 2, &g, false, 0, 1, 0.0).unwrap();
             assert!(
                 (sep - per - dec_save).abs() < 1.0,
                 "{n} decode: {per} {sep}"
             );
             let (per, sep) =
-                chain_ns0(&[3, 128, 1, 4, 1, 32], 128, 5, &g, false, true, 1, 0.0).unwrap();
+                chain_ns0(&[3, 128, 1, 4, 1, 32], 128, 5, &g, false, 0, 1, 0.0).unwrap();
             assert!(per < sep, "{n} causal: {per} {sep}");
         }
         let a100 = part("a100");
         let causal = [3, 128, 1, 4, 1, 32];
-        let (per, sep) = chain_ns0(&causal, 128, 5, &a100, false, true, 1, 0.0).unwrap();
+        let (per, sep) = chain_ns0(&causal, 128, 5, &a100, false, 0, 1, 0.0).unwrap();
         assert!((sep - per - 2021.0).abs() < 1.0, "{per} {sep}");
-        let (per, sep) = chain_ns0(&causal, 128, 5, &a100, false, true, 4, 0.0).unwrap();
+        let (per, sep) = chain_ns0(&causal, 128, 5, &a100, false, 0, 4, 0.0).unwrap();
         assert!(
             per > sep && (a100.coop_body_ns() - 3113.0).abs() < 1.0,
             "{per} {sep}"
@@ -1184,7 +1218,7 @@ mod tests {
         let flops = 2.0 * (4096.0 * 256.0 * 1024.0) * 2.0;
         let work = flops / h100.ffma_flops_per_ns() as f64;
         assert!(work > 70_000.0, "{work}");
-        let (per, sep) = chain_ns0(&[256, 256], 256, 1, &h100, false, true, 1, work).unwrap();
+        let (per, sep) = chain_ns0(&[256, 256], 256, 1, &h100, false, 0, 1, work).unwrap();
         assert!(
             per > sep && sep - (per - work * 0.022) > 600.0,
             "{per} {sep}"

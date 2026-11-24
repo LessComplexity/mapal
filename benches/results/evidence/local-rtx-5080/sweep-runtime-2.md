@@ -60,7 +60,10 @@ stored directly and the slot-sized workspace removed the cost the walk added; ev
 pieces add, one ticket a piece, one wave, no local memory in the hot loop. Evidence run: 9 609 checks, 175
 mismatch (the pre-existing classes; 173 on the first cut), 0 in `streamk-epi`.
 
-**Time (changed programs, ABBA 8 reps; 12 programs differ, 3 of them equal up to kernel names; null ≤ 1.2 %).**
+**Time (changed programs, ABBA 5 reps; 12 programs differ, 3 of them equal up to kernel names; null ≤ 1.2 %).**
+(Corrected by review-fixes-2: the run passed `REPS` 8 to `gpu_run.sh`, but the probe section repeats
+`PROBE_REPS` times, default 5 — the raw `sk-epi` / `sk-epi2` results hold rep 1–5 of every program and arm; the
+medians below are those 5.)
 
 | workload | OFF (`--gpu-off=streamk-epi`) | ON | fastest competitor (leg) | explanation |
 | --- | ---: | ---: | ---: | --- |

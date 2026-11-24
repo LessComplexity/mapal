@@ -63,7 +63,7 @@ matrix's (a loaded box); the OFF/ON ratio is the decision.
 | pj_m128_n4096_k4096_bf16 | 0.0754 | **0.0640** | 1.18 | 0.0532 (torch-bf16-compile-ro) | 1.20 (was 1.45) | 2-byte `a` panel: `bk` 64, LDSM, no F2FP |
 | pj_m128_n4096_k14336_bf16 | 0.2515 | **0.2221** | 1.13 | 0.170 (torch-bf16-compile-cg) | 1.31 (1.46) | as above |
 | pj_m128_n6144_k4096_bf16 | 0.1051 | **0.0947** | 1.11 | 0.0881 (torch-bf16) | 1.07 (1.22) | as above, cut S = 8 |
-| pj_m128_n28672_k4096_bf16 | **0.3914** | 0.4037 | 0.97 | 0.3174 (triton-bf16) | 1.27 (1.21) | **loss**: the panel rule's `bk` 32 × 2 over the 2-byte panels against `bk` 16 × 3 (§2) |
+| pj_m128_n28672_k4096_bf16 | **0.3846** | 0.3996 | 0.96 | 0.3174 (triton-bf16) | 1.26 (1.21) | **loss**: the panel rule's `bk` 32 × 2 over the 2-byte panels against `bk` 16 × 3 (§2); 12-rep ABBA re-measured in review-fixes-2 |
 | pj_m2048_n6144_k4096_bf16 | 1.079 | **0.938** | 1.15 | 0.8865 (torch-bf16-compile-ro) | 1.06 (1.22) | `bk` 32, LDSM |
 | pj_m2048_n4096_k4096_bf16 | 0.718 | **0.696** | 1.03 | 0.598 (torch-bf16-compile-cg) | 1.16 (1.19) | |
 | pj_m2048_n4096_k14336_bf16 | 2.282 | **2.253** | 1.01 | 2.097 (torch-bf16-compile-cg) | 1.07 (1.09) | |
@@ -113,7 +113,9 @@ on bf16 projections) are measured at the next round; the H100's gap is mostly th
 
 ## 2. The 2-byte panels' depth (attempted, open — the one row round-store moved slower)
 
-`pj_m128_n28672_k4096_bf16` ON 0.4037 vs OFF 0.3914 (12-rep ABBA, kernel 0.396 / 0.382). The tile is the same
+`pj_m128_n28672_k4096_bf16` ON 0.3996 vs OFF 0.3846, null 0.3995 (12-rep ABBA, kernel 0.399 / 0.383;
+review-fixes-2, raw `review-fixes-2/rs12` — the 12-rep 0.4037 / 0.3914 first quoted here had no raw run; this
+sweep's traceable run, `sweep-gemm/rs`, 6 reps: 0.3991 / 0.3850, null 0.3984). The tile is the same
 (128 × 128, 224 blocks, two an SM); the panel rule (`gpu_mma_panels`: the deepest `bk` two stages fit, S52) now
 fits `bk` 32 × 2 where the 4-byte `a` left `bk` 16 × 3. Forced arms (`--geom=bk=16,stages=3|4`, ABBA 10 reps): `bk`
 16 × 3 0.3628, **16 × 4 0.3431** (0.88× OFF, 1.08× triton-bf16). `mma-depth` (the most bytes in flight) picks 16 × 4

@@ -494,6 +494,8 @@ struct StoreCover {
     /// Refused: an f32 operand under `{f32}` or `: f16 | f32`.
     refused: u64,
     post: u64,
+    /// An `a` the fact would store, returned from its function: kept f32.
+    escaped: u64,
 }
 
 impl std::ops::AddAssign for StoreCover {
@@ -505,6 +507,7 @@ impl std::ops::AddAssign for StoreCover {
         self.fma_reads += o.fma_reads;
         self.refused += o.refused;
         self.post += o.post;
+        self.escaped += o.escaped;
     }
 }
 
@@ -513,8 +516,11 @@ impl std::ops::AddAssign for StoreCover {
 /// (the arrays rounded by their producers) in every emulator mode, and on
 /// the OFF arm (`round-store`: each reader rounds its copy), against the
 /// weakest member's interpreter within D3 from both sides.
-fn check_store(clang: &str, p: &testgen::HalfProg) -> StoreCover {
-    let (src, (pairs, k, _)) = testgen::half_src_with(p, true);
+fn check_store(clang: &str, p: &testgen::HalfProg, esc: bool) -> StoreCover {
+    let (src, (pairs, k, _)) = match esc {
+        true => testgen::half_src_escaping(p),
+        false => testgen::half_src_with(p, true),
+    };
     let ir = lower(&src);
     let weak = floats(&run_weakest(&ir, 4_000_000_000, &[]).output);
     let unit = match p.set {
@@ -541,9 +547,10 @@ fn check_store(clang: &str, p: &testgen::HalfProg) -> StoreCover {
         .sum();
     // The fact: an f32 operand under `: bf16 | f32` is stored rounded; one
     // under `{f32}` / `: f16 | f32`, or already narrow, is not.
-    // An epilogue reads `a` itself (`u·0.5 + a[i·k]`): an f32 reader.
-    let expect =
-        usize::from(p.set == 1 && p.fa == 0 && !p.post) + usize::from(p.set == 1 && p.fb == 0);
+    // An epilogue reads `a` itself (`u·0.5 + a[i·k]`): an f32 reader. A
+    // returned `a` escapes its function: its caller reads f32.
+    let a_rounds = p.set == 1 && p.fa == 0 && !p.post;
+    let expect = usize::from(a_rounds && !esc) + usize::from(p.set == 1 && p.fb == 0);
     assert_eq!(stored, expect, "{src}");
     assert_eq!(ir.narrow_stored().is_some(), stored > 0);
     if let Some(g) = ir.narrow_stored() {
@@ -587,14 +594,16 @@ fn check_store(clang: &str, p: &testgen::HalfProg) -> StoreCover {
             * (narrow_line("a:bf16") | narrow_line("b:bf16")),
         refused: u64::from(p.set != 1 && (p.fa == 0 || p.fb == 0)),
         post: u64::from(stored > 0 && p.post),
+        escaped: u64::from(esc && a_rounds),
     }
 }
 
 /// sweep-gemm `round-store` on 40 generated GEMMs (f32 / bf16 / f16 storage
 /// under `{f32}`, `: bf16 | f32`, `: f16 | f32`; `b` k × n or n × k;
-/// epilogues): the fact per operand, the rewritten graph valid and
-/// idempotent, values within the bound on the emulated device in every mode
-/// and under the OFF arm; every coverage counter non-zero.
+/// epilogues; one in five in a kept callee returning its `a`): the fact per
+/// operand (a returned `a` escapes: never stored), the rewritten graph valid
+/// and idempotent, values within the bound on the emulated device in every
+/// mode and under the OFF arm; every coverage counter non-zero.
 #[test]
 fn round_store_on_generated_programs() {
     let Some(clang) = emu::clang() else {
@@ -623,7 +632,8 @@ fn round_store_on_generated_programs() {
             p
         })
         .collect();
-    let covers = testgen::par_check(&progs, |_, p| check_store(&clang, p));
+    // One program in five returns its GEMM's `a` from a kept callee.
+    let covers = testgen::par_check(&progs, |i, p| check_store(&clang, p, i % 5 == 1));
     let mut c = StoreCover::default();
     for k in covers {
         c += k;
@@ -637,6 +647,7 @@ fn round_store_on_generated_programs() {
         c.fma_reads,
         c.refused,
         c.post,
+        c.escaped,
     ];
     assert!(all.iter().all(|&x| x > 0), "{c:?}");
 }

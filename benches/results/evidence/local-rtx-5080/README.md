@@ -332,3 +332,13 @@ among several, table-launched groups, `kmajor-b`'s 8-byte bf16 vectors: bS 321 �
 the full suite + model scale + every competitor leg in one session, the GPU's clocks now recorded by the model-scale
 script too. 5080 column 1.021 → **0.973** (30 / 38 / 52); equal-code programs 0.990. Open: `kmajor-b`'s per-row
 64-bit addresses and B1 prefetch cover, the f8w B1 decode's slow state (0.848 ms here at P0 / P1).
+
+**review-fixes-2** (`review-fixes-2.md`): the second sweep's review. `round-store` no longer stores an array that
+escapes its function (a kept callee returned `[bf16; n]` to an f32 caller); found with it, an epilogue group's output
+that escapes through a return was never stored (the device left it zero). The priced rungs no longer fall back where a
+rate is unmeasured: `Gpu::plan_cost` derives each missing plan rate from the 5080's at the part's properties
+(`streamk-price`, the `stream` rule on the 3090 / A100 / H100), and the first cooperative launch is priced — derived
+where unmeasured, shared by a counted loop's trips (`trip_split`), not free in any loop (calls-issue's two 5080
+programs had lost 1.77× / 1.48× to it; refused now). 13 replay lines (243: 140 / 72 / 10 / 21). The streamk-epi table
+is 5 reps (not 8); round-store's m128 n28672 loss re-measured, 12 reps: OFF 0.3846 / ON 0.3996. 5080 text unchanged
+on all 199 programs; 18–50 programs move on each rented part (unmeasured: next rented round).

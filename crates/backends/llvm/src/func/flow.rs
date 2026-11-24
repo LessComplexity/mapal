@@ -1436,7 +1436,7 @@ impl<'a> FnEmit<'a> {
             }
         }
         // long-rows `row-slices`: few long rows over several blocks each.
-        let slices = self.row_slices(&members, rows, &gmem, rs.0.is_some());
+        let slices = self.row_slices(&members, rows, &gmem, self.launches_in(rs.0));
         let key = match &slices {
             None => format!("unit|{members:?}|{rows}|{}", self.profile.name),
             Some(sl) => format!(
@@ -1469,8 +1469,9 @@ impl<'a> FnEmit<'a> {
     /// the co-resident blocks), floored by the unit's bytes at the rate of
     /// where they live (`residence_plan`), plus the launch — programmatic
     /// for one phase, cooperative and `phases − 1` grid barriers for more,
-    /// and outside a loop the process's first cooperative launch
-    /// (`coop_first_ns`, the driver's one-time setup).
+    /// and its share of the process's first cooperative launch
+    /// (`coop_first_ns`, the driver's one-time setup, over `launches`: 1
+    /// outside every loop, a counted loop's trips, 0 for unknown trips).
     /// The cheapest `s` wins where it beats one block a row; a part without
     /// `row_iter_ns`, `gsync_ns` or `coop_launch_ns` slices nothing.
     pub(crate) fn row_slices(
@@ -1478,7 +1479,7 @@ impl<'a> FnEmit<'a> {
         members: &[UMember],
         rows: u64,
         gmem: &[ObjectId],
-        looped: bool,
+        launches: u64,
     ) -> Option<Slices> {
         let rungs = gpu::host_rungs(self.profile, self.contract, self.gpu_arms);
         let force = self.gpu_arms.row_slices_s;
@@ -1635,7 +1636,12 @@ impl<'a> FnEmit<'a> {
             // may be the process's first (`coop_first_ns`); a loop's trips
             // share that cost. long-prefill `slice-launches`: or one launch a
             // phase, each a kernel boundary in place of a grid barrier.
-            let first = if looped { 0 } else { d.coop_first_ns };
+            // review-fixes-2: a counted loop's trips each pay their share
+            // (`launches_in`); a loop of unknown trips no term.
+            let first = match launches {
+                0 => 0,
+                n => d.coop_first_ns / n,
+            };
             let one_launch = d.launch_at(grid, gpu.sms, rungs.pdl)?;
             let (launch, launches) = match s > 1 && phases > 1 {
                 true => {

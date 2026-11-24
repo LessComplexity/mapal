@@ -45,6 +45,8 @@ pub struct PrecisionPlan {
     /// they are stored ([`CategoryIr::narrow_stored`]): half the bytes, the
     /// conversion out of every reader. `bf16` only: an `f16` member rounds no
     /// f32 operand (ADR-0043 D4 needs a value-range fact, none is stated).
+    /// An array that escapes its function (`last_use_plan`) is never stored
+    /// narrow: its caller's type is f32.
     pub store: Vec<NarrowStore>,
 }
 
@@ -183,7 +185,9 @@ impl CategoryIr {
     /// [`PrecisionPlan::store`]'s entry for `o`: an f32 array one `Map`
     /// writes (its body's one f32 result), every element read of which is a
     /// multiplicand of a product admitting `bf16`; `None` when any use of the
-    /// array (or a capture of it) is something else.
+    /// array (or a capture of it) is something else, or when it escapes its
+    /// function (`last_use_plan`: a callee's return carries it to a caller
+    /// that reads f32).
     fn narrow_store(&self, o: ObjectId) -> Option<NarrowStore> {
         let Some(Ty::Array { elem, .. }) = self.objects.get(o).map(|x| &x.ty) else {
             return None;
@@ -211,6 +215,20 @@ impl CategoryIr {
             reads: Vec::new(),
         };
         if !self.store_carriers(o, &mut s) || s.reads.is_empty() {
+            return None;
+        }
+        // The array, or a product carrying it, outlives its function
+        // (`last_use_plan` rule 2: reaches the fn's output through `Pair`
+        // fields — an un-inlined callee's return): its caller reads the f32
+        // array, so the bytes stay f32. A body's input is a borrowed
+        // parameter (always escaping) and carries nothing out by itself.
+        let escapes = s.carriers.iter().any(|&(c, _)| {
+            self.objects[c].kind != ObjectKind::Parameter
+                && self
+                    .try_owner(c)
+                    .is_some_and(|f| self.last_use_plan(f).escapes(c))
+        });
+        if escapes {
             return None;
         }
         // Every element feeds products only (through the product a binary op

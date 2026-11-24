@@ -430,6 +430,11 @@ impl<'a> FnEmit<'a> {
             return Ok(None);
         }
         let gpu = self.profile.gpu().ok_or("unpriced")?;
+        // review-fixes: priced on every part — its measured plan rates, else
+        // the ones its properties derive (`TargetProfile::priced`): a part
+        // without a calibration no longer keeps the split realization
+        // unweighed.
+        let priced = self.profile.priced();
         // What this realization emits: f32 values, plain tile sites whose
         // operands are memory, no per-row work outside the windows.
         let f32t = mapal_ir::Ty::f32();
@@ -579,7 +584,9 @@ impl<'a> FnEmit<'a> {
                                 let ns = match forced {
                                     Some(_) => 0.0,
                                     None => {
-                                        match self.stream_ns(&st, members, rows, gmem, lay.total) {
+                                        match self
+                                            .stream_ns(&priced, &st, members, rows, gmem, lay.total)
+                                        {
                                             Some(x) => x,
                                             None => {
                                                 why = "unpriced";
@@ -605,7 +612,9 @@ impl<'a> FnEmit<'a> {
         if forced.is_some() {
             return Ok(Some(forced_mma.unwrap_or(st)));
         }
-        let split = self.split_ns(members, rows, gmem).ok_or("unpriced")?;
+        let split = self
+            .split_ns(&priced, members, rows, gmem)
+            .ok_or("unpriced")?;
         st.ns = (ns.round() as u64, split.round() as u64);
         self.stream_priced.set(Some((st.ns.0, st.ns.1)));
         if ns >= split {
@@ -625,13 +634,14 @@ impl<'a> FnEmit<'a> {
     /// `nb · waves · 4 · bar_ns`.
     fn stream_ns(
         &self,
+        priced: &crate::profile::TargetProfile,
         st: &Stream,
         members: &[UMember],
         rows: u64,
         gmem: &[ObjectId],
         smem: u64,
     ) -> Option<f64> {
-        let (gpu, d) = self.profile.plan_rates()?;
+        let (gpu, d) = priced.plan_rates()?;
         if d.flops_per_ns == 0 {
             return None;
         }
@@ -835,8 +845,14 @@ impl<'a> FnEmit<'a> {
     /// the members between tiles as one launch a segment reading and writing
     /// the axis-wide rows at the rate of where they live — `block_cost`'s
     /// split side, independent of any block.
-    fn split_ns(&self, members: &[UMember], rows: u64, gmem: &[ObjectId]) -> Option<f64> {
-        let (gpu, d) = self.profile.plan_rates()?;
+    fn split_ns(
+        &self,
+        priced: &crate::profile::TargetProfile,
+        members: &[UMember],
+        rows: u64,
+        gmem: &[ObjectId],
+    ) -> Option<f64> {
+        let (gpu, d) = priced.plan_rates()?;
         let free = self.order == crate::Order::Free;
         let res = self.ir.residence_plan(self.f);
         let at = |o: ObjectId| match res.at(o, gpu.l2_bytes) {
@@ -845,7 +861,7 @@ impl<'a> FnEmit<'a> {
         };
         let roof = |f: u64, by_ns: f64| (f as f64 / d.flops_per_ns.max(1) as f64).max(by_ns);
         let launch = |prev: f64| {
-            self.profile
+            priced
                 .op_ns(prev, 0)
                 .map_or(d.launch_ns as f64, |x| x.round())
         };
@@ -874,7 +890,7 @@ impl<'a> FnEmit<'a> {
                     .map(|c| c.cost.ns)
                     .or_else(|| {
                         let shape = gpu::plan_shape(site, &l, gpu::Combine::None, gpu);
-                        self.profile.site_ns(&shape).map(|c| c.ns)
+                        priced.site_ns(&shape).map(|c| c.ns)
                     })?;
                     // Its stored rows cross memory for the next segment.
                     // Its own launch's first loads wait a loaded latency,

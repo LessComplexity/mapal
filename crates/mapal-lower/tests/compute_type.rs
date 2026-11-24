@@ -207,4 +207,51 @@ fn precision_plan_store_narrow() {
         )),
         0
     );
+    // An array that escapes its function keeps its f32 bytes: a callee the
+    // inliner keeps (it has a loop) returning `a` beside the product's cell —
+    // its caller reads `[f32; 64]`. Returning only the cell, `a` is stored.
+    let callee = |ret: &str, read: &str| {
+        format!(
+            "fn mk(n: i32) -> {ret} {{
+                mut k: i32 <- 0;
+                mut z: i32 <- 0;
+                loop {{
+                    (k < n) -> {{
+                        -true-> {{
+                            z + k -> z;
+                            k + 1 -> k;
+                            -> loop;
+                        }}
+                        -false-> z -> zz;
+                    }}
+                }}
+                zz -> widen_f32 -> zf;
+                64 -> iota -> ia;
+                ia -> map {{ t -> t -> widen_f32 -> v; v / 7.0 + zf }} -> a;
+                256 -> iota -> ib;
+                ib -> map {{ t -> t -> widen_f32 -> v; v / 9.0 -> to_bf16 }} -> w;
+                4 -> iota -> o;
+                64 -> iota -> kk;
+                o -> map {{ j -> (0.0, kk) -> fold: bf16 | f32 {{ acc, q -> w[q * 4 + j] -> widen_f32 -> y; acc + a[q] * y }} }} -> c;
+                {read}
+            }}
+            fn main() {{ 3 -> mk -> r; {print} }}",
+            print = if ret.starts_with('(') {
+                "r.0 -> x; x[3] -> println; r.1 -> println;"
+            } else {
+                "r -> println;"
+            }
+        )
+    };
+    let escaping = callee("([f32; 64], f32)", "a -> ret.0; c[0] -> ret.1;");
+    let kept = callee("f32", "c[0] -> ret;");
+    let calls = |src: &str| {
+        let ir: CategoryIr = lower_ok(src);
+        ir.morphisms()
+            .filter(|(_, m)| matches!(m.op, Operation::Call(_)))
+            .count()
+    };
+    assert!(calls(&escaping) > 0, "the callee stays a call");
+    assert_eq!(stores(&escaping), 0, "`a` escapes through the return");
+    assert_eq!(stores(&kept), 1, "`a` dies in its callee: stored");
 }

@@ -218,7 +218,7 @@ The 32 programs whose code moved: geomean 0.934; each reproduces its step's ON t
 | pj_m2048_n6144_k4096_bf16 | 1.080 | 0.937 | 0.938 (gemm) | 0.883 (torch-bf16-compile-cg) | same |
 | llm_blkpre_t2048_bf16 | 11.62 | 10.74 | 10.75 (gemm) | 8.036 (torch-bf16-compile-cg) | stored activations + stream `minctasm` |
 | llm_blkdec_b1_l4096_bf16 (ms/step) | 0.615 | 0.582 | 0.580 (gemm) | 0.558 (torch-bf16-compile) | stored activations |
-| pj_m128_n28672_k4096_bf16 | 0.3844 | 0.3995 | 0.4037 (gemm) | 0.3174 (triton-bf16) | panel depth (sweep-gemm open, reproduced) |
+| pj_m128_n28672_k4096_bf16 | 0.3844 | 0.3995 | 0.3996 (gemm; review-fixes-2's 12-rep re-measure — the 0.4037 first cited had no raw run) | 0.3174 (triton-bf16) | panel depth (sweep-gemm open, reproduced) |
 
 **Unchanged code slower than 5 %: none from the merge.** Four rows ran > 5 % slower than integration 1's run with
 equal code; old (integration 1 bundle, its wisdom) against new binaries, same session, ABBA on CPUs 0–7:

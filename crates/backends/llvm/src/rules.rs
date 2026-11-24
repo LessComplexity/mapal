@@ -341,7 +341,7 @@ mod tests {
     /// `local-rtx-5080/hardware-properties.md`. The replay must find exactly
     /// these: a rule change that fixes one moves it out, one that breaks a
     /// measurement fails here.
-    const OPEN: [(&str, &str, &str, &str); 19] = [
+    const OPEN: [(&str, &str, &str, &str); 21] = [
         // The launch does not read whether its operands are in L2 (flushed
         // L2 wins, warm L2 and the composed MLP lose): `residence_plan`.
         ("asyncstage", "h100-pcie", "on", "l2-flushed"),
@@ -391,6 +391,21 @@ mod tests {
         // at the same grids were null / lost: the spread does not separate
         // it (its 32-trip partitions against 8 and 64).
         ("vec-cells", "h100", "on", "blocks=224,scalar=896"),
+        // review-fixes (replay lines for sweep-gemm's and hopper's rungs):
+        // `round-store`'s one loss, the 5080's 128 x 28672 x 4096 bf16
+        // projection — the stored 2-byte panel fits `bk` 32 x 2 where the
+        // f32 panel left 16 x 3 over a 1.33-wave grid streaming its `b` from
+        // DRAM: the tail wave's residency x the operand's residence against
+        // the stage depth (sweep-gemm §2, `mma-depth`'s split) is the open
+        // fact, not the storage.
+        ("round-store", "rtx-5080", "off", "blocks=224"),
+        // `wgmma-ws` on the H100's 128 x 4096 x 4096: its 256 CTAs at one an
+        // SM run 2 waves that each re-read the 64 MB `b` against the 50 MB
+        // L2 (S53's 2-3 blocks an SM hold them in one) — the operand's
+        // re-read across waves (`raster` answers 1 here) is the open fact
+        // (hopper.md open 5; the persistent grid in raster order or R6's
+        // split would read `b` once).
+        ("wgmma-ws", "h100", "off", "blocks=256"),
     ];
 
     /// **hardware-properties: every cited measurement, replayed.** For each
@@ -558,7 +573,7 @@ mod tests {
         }
         assert_eq!(open, OPEN.to_vec(), "measurements the rules do not pick");
         // The counts the evidence file reports.
-        assert_eq!((picked, null, mixed, open.len()), (130, 71, 10, 19));
+        assert_eq!((picked, null, mixed, open.len()), (140, 72, 10, 21));
     }
 
     /// No rule reads a name, an architecture string or a version: a part

@@ -1361,7 +1361,14 @@ impl Gpu {
     /// calibrated (the rtx-5090, the h100-pcie) is priced, not left out; its
     /// measurement replaces the derivation.
     pub fn chain_cost(&self) -> (DeviceCost, bool) {
-        let d = self.cost.unwrap_or(NO_PLAN);
+        let mut d = self.cost.unwrap_or(NO_PLAN);
+        // review-fixes-2: the process's first cooperative launch (host time,
+        // the driver's one-time setup) where measured, else the rtx-5080's
+        // as measured ([`SLICE_RTX_5080`], as [`Self::slice_cost`] takes
+        // it) — a chain is never priced as if it were free.
+        if d.coop_first_ns == 0 {
+            d.coop_first_ns = SLICE_RTX_5080[2];
+        }
         if d.gsync_ns > 0 && d.dep_launch_ns > 0 {
             return (d, true);
         }
@@ -1481,6 +1488,85 @@ impl Gpu {
             0 => self.l2_bytes,
             b => b,
         }
+    }
+
+    /// review-fixes: **the plan rates a part is priced on, never unpriced**
+    /// — each rate its profile measured ([`DeviceCost`]), every other one
+    /// derived from the rtx-5080's measurement at this part's own physical
+    /// properties, as [`Self::chain_cost`] and [`Self::bar_ns`] derive
+    /// theirs: the FMA tile at the 5080's fraction of its FFMA peak
+    /// ([`Self::ffma_flops_per_ns`]); the L2 read rate at its bytes an SM a
+    /// clock (`sms · clock_khz`); the DRAM rate at its fraction of the DRAM
+    /// peak ([`Self::dram_peak_bytes_per_ns`]); `red.global.add.f32` at its
+    /// adds per L2 byte (atomics resolve in the L2 slices: 400 / 4500 on the
+    /// 5080 and the 4090, 560 / 6500 on the 5090 — one ratio on three
+    /// parts); the zero pass's, the in-stream gap's and the loaded latency's
+    /// device time in the 5080's cycles at this part's clock; the host's
+    /// issue as measured (a host property); the tile's fitted efficiency
+    /// and the LSU issue a clock as the 5080's (per-SM fractions). The
+    /// fields no plan price reads, and those a consumer defaults itself
+    /// (`fill_bytes_per_ns`: the L2 rate), stay as given. A factor the part
+    /// does not give (no clock, no FP32 lanes, no DRAM interface) derives 0:
+    /// still unpriced there. What `streamk-price` and the `stream` rule read
+    /// on the 3090 / A100 / H100 profiles, which measured only some rates
+    /// (sweep-gemm-2, sweep-attention: until then the panel-count rule and
+    /// the split realization stood there, "off where unmeasured").
+    pub fn plan_cost(&self) -> DeviceCost {
+        let mut d = self.cost.unwrap_or(NO_PLAN);
+        let r = RTX_5080.gpu().expect("the reference part is a GPU");
+        let rc = r.cost.expect("the reference part is calibrated");
+        let scale = |x: u64, num: u64, den: u64| -> u64 {
+            match den {
+                0 => 0,
+                _ => (x as u128 * num as u128 / den as u128) as u64,
+            }
+        };
+        let at = |ns: u64| scale(ns, r.clock_khz, self.clock_khz);
+        let or = |v: &mut u64, x: u64| {
+            if *v == 0 {
+                *v = x;
+            }
+        };
+        or(
+            &mut d.flops_per_ns,
+            scale(
+                self.ffma_flops_per_ns(),
+                rc.flops_per_ns,
+                r.ffma_flops_per_ns(),
+            ),
+        );
+        or(
+            &mut d.l2_bytes_per_ns,
+            scale(
+                rc.l2_bytes_per_ns,
+                self.sms * self.clock_khz,
+                r.sms * r.clock_khz,
+            ),
+        );
+        or(
+            &mut d.dram_bytes_per_ns,
+            scale(
+                self.dram_peak_bytes_per_ns(),
+                rc.dram_bytes_per_ns,
+                r.dram_peak_bytes_per_ns(),
+            ),
+        );
+        let l2 = d.l2_bytes_per_ns;
+        or(
+            &mut d.atomic_ops_per_ns,
+            scale(l2, rc.atomic_ops_per_ns, rc.l2_bytes_per_ns),
+        );
+        if self.clock_khz > 0 {
+            or(&mut d.zero_ns, at(rc.zero_ns));
+            or(&mut d.gap_ns, at(rc.gap_ns));
+            or(&mut d.lat_ns, at(rc.lat_ns));
+        }
+        or(&mut d.issue_ns, rc.issue_ns);
+        or(&mut d.launch_ns, rc.launch_ns);
+        or(&mut d.eff_max_pm, rc.eff_max_pm);
+        or(&mut d.eff_half, rc.eff_half);
+        or(&mut d.lsu_ipc_pm, rc.lsu_ipc_pm);
+        d
     }
 
     /// hopper-wgmma-tma: **the bulk-copy engine's ns per copy** —
@@ -2623,6 +2709,28 @@ impl TargetProfile {
         };
         let dev = d.launch_ns + roofline_ns(flops, bytes, d.flops_per_ns, d.bytes_per_ns);
         dev < roofline_ns(flops, bytes, h.flops_per_ns, h.bytes_per_ns)
+    }
+
+    /// review-fixes: **this profile with its plan rates never unpriced** —
+    /// itself where it carries [`Self::plan_rates`], else its GPU's
+    /// [`Gpu::plan_cost`] (each measured rate kept, the rest derived from
+    /// the part's properties). What the priced rules that must not fall back
+    /// to an old behaviour on an unmeasured part read (`stream`'s unit
+    /// against its split realization); the plan tables keep D8.
+    pub fn priced(&self) -> TargetProfile {
+        if self.plan_rates().is_some() {
+            return *self;
+        }
+        match &self.machine {
+            Machine::Gpu(g) => TargetProfile {
+                machine: Machine::Gpu(Gpu {
+                    cost: Some(g.plan_cost()),
+                    ..*g
+                }),
+                ..*self
+            },
+            Machine::Cpu => *self,
+        }
     }
 
     /// **plan-cost: the part's calibrated plan rates**, `None` on a part
