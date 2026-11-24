@@ -130,9 +130,10 @@ run — what both halves of D3 call.
   `--static=off` because its whole 64³ program is computable.
 - `unchanged_plan`'s input masks were wrong for a function whose input is a tuple read whole (not through slot
   projections): such a value counted as the same at every call. Fixed: a whole-input read depends on every slot.
-- Found on the way, recorded as open (not ADR-0048's): a float literal in a top-level `map` body is typed standing
-  alone (`f64`), as in a function — an annotation on the binding does not reach the body (the scout's literal-width
-  item).
+- Found on the way (the scout's literal-width item, hit by a top-level table `4 -> iota -> map { i -> 1.0 } -> ones:
+  [f32; 4];`): a map whose body's value is an unpinned literal now keeps the literal's variable and settles the
+  width at the end of the typing walk, so the binding's annotation (or a use) pins it — it was `f64` and an L1201.
+  Still open: the same for a fold's seed and an array literal's elements read before their width is pinned.
 
 ## What would falsify it
 
