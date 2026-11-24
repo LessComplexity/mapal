@@ -96,8 +96,9 @@ pub fn run_weakest(
 /// cones alone, the rest of `f` never run. All roots are evaluated together
 /// under `budget`; when that aborts (a trap, the budget) each root is retried
 /// alone under the same budget so one root's trap does not hide another's
-/// value. `None` for a root whose cone reaches the input or an IO token (not
-/// computable before the program runs), or whose evaluation aborts.
+/// value (a run out of budget is not retried). `None` for a root whose cone
+/// reaches the input or an IO token (not computable before the program runs),
+/// or whose evaluation aborts.
 pub fn eval_values(
     ir: &CategoryIr,
     f: FuncId,
@@ -113,12 +114,17 @@ pub fn eval_values(
         }
     }
     let mut fuel = budget;
-    if let Ok(env) = eval::eval_cone(ir, f, &all, &mut fuel) {
-        return roots
-            .iter()
-            .zip(&cones)
-            .map(|(&r, c)| c.as_ref().and_then(|_| env.get(r).cloned()))
-            .collect();
+    match eval::eval_cone(ir, f, &all, &mut fuel) {
+        Ok(env) => {
+            return roots
+                .iter()
+                .zip(&cones)
+                .map(|(&r, c)| c.as_ref().and_then(|_| env.get(r).cloned()))
+                .collect();
+        }
+        // Out of budget: alone, each would spend it again.
+        Err(value::Abort::Diverged) => return vec![None; roots.len()],
+        Err(_) => {}
     }
     roots
         .iter()

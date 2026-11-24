@@ -53,7 +53,7 @@ replaced by its value.* Two places apply the rule:
 - *Top-level values, during lowering.* Their cones have no input and no effect by D1. Lowering computes them in
   rounds: each round lowers a synthetic program — the types and functions whose sizes are known so far and a `main`
   holding the bindings that can be lowered, in dependency order — and runs each scalar binding's cone on the
-  interpreter (`mapal_interp::eval_values`, budget `2²⁴` steps). A bare integer literal needs no evaluation. A scalar
+  interpreter (`mapal_interp::eval_values`, budget `2²⁰` steps). A bare integer literal needs no evaluation. A scalar
   that comes out is a **literal** from then on: unannotated, a literal in every respect (an integer's width from
   context, `Ty::index_ty` past 2³¹; a float's from context — a one-literal binding `0.1 -> tenth;` is that literal's
   own text at each use, a computed float its `f64` value rounded once to the use's format); annotated
@@ -77,12 +77,12 @@ replaced by its value.* Two places apply the rule:
 
   | realization | when | what happens |
   | --- | --- | --- |
-  | `Embed` | bytes ≤ 16 KiB, work ≤ 2²⁴ steps, work > cells | the oracle computes it; a scalar becomes a constant, a product a pack of constants; its cone, evaluated without a trap, is dropped |
-  | `Attempt` | bytes ≤ 16 KiB, work unknown (a loop that is not counted) | the function's attempts evaluated together under 2²² steps, once; embedded when they come out |
+  | `Embed` | bytes ≤ 16 KiB, work ≤ 2²⁰ steps, work > cells | the oracle computes it; a scalar becomes a constant, a product a pack of constants; its cone, evaluated without a trap, is dropped |
+  | `Attempt` | bytes ≤ 16 KiB, work unknown (a loop that is not counted) | the function's attempts evaluated together under 2¹⁸ steps, once; embedded when they come out |
   | `Compute` | otherwise: too large to embed, too much work while compiling, or no cheaper as a value than as its law — an array with a closed-form element law (`elem_plan`: the backends rebuild it where it is read, a device site where it runs), or no more work than cells (`iota`, `fill`, a pack of literals) | stays computed at run time — once, where the existing facts (`unchanged_plan`, `call_keep`, `elem_plan`) place it — and its computable operands are roots in turn |
 
   A root whose evaluation traps stays computed at run time (the trap is the program's meaning). 16 KiB bounds the
-  realization (one constant and one store per cell in the emitted code); 2²⁴ bounds the compiler's own time. Neither
+  realization (one constant and one store per cell in the emitted code); 2²⁰ bounds the compiler's own time. Neither
   is a hardware property.
 
 **D4 — Size-generic types.** `type Matrix<rows, columns> { _: [bf16; rows * columns] }` declares size parameters

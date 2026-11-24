@@ -33,9 +33,9 @@ use crate::diag::{LCode, diag};
 use crate::sizes::SizeEnv;
 use crate::tys::name_text;
 
-/// The interpreter steps one evaluation round may spend on a top-level value
-/// (the oracle runs at roughly 10⁷–10⁸ steps a second: well under a second).
-pub const EVAL_BUDGET: u64 = 1 << 24;
+/// The interpreter steps one evaluation round may spend on the top-level
+/// scalars (the graph rule's budget, `mapal_ir::EVAL_WORK`).
+pub const EVAL_BUDGET: u64 = mapal_ir::EVAL_WORK;
 
 /// A top-level scalar computed before the program runs (ADR-0048 D3).
 #[derive(Clone, Debug, PartialEq)]

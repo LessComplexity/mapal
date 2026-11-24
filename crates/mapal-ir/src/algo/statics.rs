@@ -50,12 +50,13 @@ use crate::ty::{Ty, ty_contains_token};
 pub const EMBED_BYTES: u64 = 16 << 10;
 
 /// The most oracle steps compile-time evaluation spends on one function's
-/// roots (2²⁴: well under a second).
-pub const EVAL_WORK: u64 = 1 << 24;
+/// roots (2²⁰: the oracle runs about 10⁶ steps a second on array programs —
+/// measured on the suite's `px_mlp2_64_f64` — so about a second).
+pub const EVAL_WORK: u64 = 1 << 20;
 
 /// The oracle steps an attempt (a root whose work is unknown before it runs)
 /// may spend, for all of one function's attempts together.
-pub const ATTEMPT_WORK: u64 = 1 << 22;
+pub const ATTEMPT_WORK: u64 = 1 << 18;
 
 /// How a computable root is realized (see the module doc).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
