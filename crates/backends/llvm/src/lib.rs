@@ -2153,6 +2153,14 @@ fn emit_module(
     if funcs.contains("@mapal_rt_alloc") {
         out.push_str(HEAP_DECLS);
     }
+    // ADR-0045: the read seam and the recorded data directory, gated on the
+    // emitted call (a module without a read is byte-identical to before).
+    if funcs.contains("@mapal_read(") {
+        out.push_str(crate::module::READ_DECL);
+    }
+    if funcs.contains("@mapal_read_task(") {
+        out.push_str(crate::module::READ_TASK_DECL);
+    }
     // fold-algebra: an explicit-face pair is one `llvm.fma` (gated on the call).
     for (call, decl) in [
         (
@@ -2240,7 +2248,10 @@ fn emit_module(
     }
     out.push('\n');
 
-    let sg = emit_str_globals(&strings);
+    let mut sg = emit_str_globals(&strings);
+    if funcs.contains(crate::module::DATA_DIR_GLOBAL) {
+        sg.push_str(&crate::module::data_dir_global(ir.data_dir().unwrap_or("")));
+    }
     if !sg.is_empty() {
         out.push_str(&sg);
         out.push('\n');

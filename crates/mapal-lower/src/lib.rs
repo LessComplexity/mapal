@@ -181,6 +181,13 @@ pub(crate) fn is_time_builtin(name: &str) -> bool {
     name == "time"
 }
 
+/// The `read` stage builtin (ADR-0045): effectful like `time` (it threads the
+/// IO token), value-producing, fed by a string literal path, typed by the
+/// binding's annotation — `"w.bin" -> read -> w: [f32; n]` is its only shape.
+pub(crate) fn is_read_builtin(name: &str) -> bool {
+    name == "read"
+}
+
 /// Target type selected by an ADR-0029 widening builtin name.
 pub(crate) fn widen_target(name: &str) -> Option<mapal_ir::Ty> {
     match name {
@@ -196,6 +203,7 @@ fn is_reserved(name: &str) -> bool {
     is_print_builtin(name)
         || is_pure_builtin(name)
         || is_time_builtin(name)
+        || is_read_builtin(name)
         || matches!(
             name,
             "i32" | "i64" | "u8" | "f32" | "f64" | "bf16" | "f16" | "f8e4m3" | "f8e5m2" | "bool"

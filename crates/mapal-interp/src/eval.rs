@@ -519,6 +519,39 @@ pub(crate) fn eval_morphism(
             );
             Ok(())
         }
+        Operation::Read => {
+            // `(IoToken, Str) → (IoToken, [T; n])` (ADR-0045): the file's
+            // `n · |T|` little-endian bytes, resolved against the graph's
+            // recorded directory; any other length, or no file, fails the run.
+            let src = read(ctx, source).clone();
+            let tok = component(&src, 0).clone();
+            let RValue::Scalar(Value::Str(path)) = component(&src, 1) else {
+                unreachable!("Read path is not a Str")
+            };
+            let arr_ty = ctx
+                .ty_of(target)
+                .component_ty(1)
+                .cloned()
+                .expect("Read target is (token, array)");
+            let Ty::Array { elem, .. } = &arr_ty else {
+                unreachable!("Read target value is not an array")
+            };
+            let bytes = mapal_ir::read::file_bytes(&arr_ty).expect("a readable array");
+            match mapal_ir::read::load(path, ctx.ir.data_dir(), bytes) {
+                Ok(b) => {
+                    let vals = mapal_ir::read::decode(&b, elem)
+                        .into_iter()
+                        .map(RValue::Scalar)
+                        .collect();
+                    write(ctx, target, RValue::Tuple(vec![tok, RValue::array(vals)]));
+                    Ok(())
+                }
+                Err(msg) => {
+                    crate::value::READ_FAILURE.with(|r| *r.borrow_mut() = Some(msg));
+                    Err(Abort::ReadFailed)
+                }
+            }
+        }
         Operation::Output => {
             let v = read(ctx, source).clone();
             write(ctx, target, v);

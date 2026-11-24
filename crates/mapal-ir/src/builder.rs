@@ -84,6 +84,9 @@ pub enum IrError {
     InvalidExp,
     /// ADR-0043: `to_bf16` / `to_f16` of anything but an `f32`.
     InvalidNarrow,
+    /// ADR-0045: a `read` target that is not a one-dimensional array of a
+    /// readable element type ([`crate::read::readable`]).
+    InvalidRead,
     /// `pack`/`pack_array` of zero components.
     EmptyProduct,
     /// `pack` of exactly one component (no 1-tuples).
@@ -283,6 +286,7 @@ impl IrBuilder {
             funcs,
             entry,
             precision: self.precision,
+            data_dir: None,
         };
 
         // Run the global graph-shape checks on the materialized graph.
@@ -2345,6 +2349,68 @@ impl FnBuilder<'_> {
             .b
             .mint_object(self.f, pair_ty, None, ObjectKind::Temporary, None, loc);
         self.b.add_edge(self.f, token, out, Operation::TimeMs, loc);
+        Ok(out)
+    }
+
+    /// `read` (ADR-0045): `(IoToken × Str) → (IoToken × [T; n])`. Builds the
+    /// internal `(IoToken, Str)` pair exactly as `print` does (the only
+    /// product a `Str` may join, I9s); the target is a fresh
+    /// `(IoToken, array)` pair the caller projs apart (token rebind, array
+    /// value). `array` must be a one-dimensional array of a readable element
+    /// type ([`crate::read::readable`]); `path` a `Str` constant.
+    pub fn read(
+        &mut self,
+        token: ObjectId,
+        path: ObjectId,
+        array: &Ty,
+        loc: SourceLoc,
+    ) -> Result<ObjectId, IrError> {
+        self.check_obj(token)?;
+        self.check_obj(path)?;
+        let tty = self.ty_of(token);
+        if tty != Ty::IoToken {
+            return Err(IrError::TypeMismatch {
+                expected: Ty::IoToken,
+                found: tty,
+                loc,
+            });
+        }
+        let pty = self.ty_of(path);
+        if pty != Ty::Str {
+            return Err(IrError::TypeMismatch {
+                expected: Ty::Str,
+                found: pty,
+                loc,
+            });
+        }
+        if !crate::read::readable(array) {
+            return Err(IrError::InvalidRead);
+        }
+        let src_ty = Ty::Tuple(vec![Ty::IoToken, Ty::Str]);
+        let pair_ty = Ty::Tuple(vec![Ty::IoToken, array.clone()]);
+        self.b.intake_ty(&src_ty)?;
+        self.b.intake_ty(&pair_ty)?;
+        let src = self
+            .b
+            .mint_object(self.f, src_ty, None, ObjectKind::Temporary, None, loc);
+        self.b.add_edge(
+            self.f,
+            token,
+            src,
+            Operation::Pair { slot: 0, arity: 2 },
+            loc,
+        );
+        self.b.add_edge(
+            self.f,
+            path,
+            src,
+            Operation::Pair { slot: 1, arity: 2 },
+            loc,
+        );
+        let out = self
+            .b
+            .mint_object(self.f, pair_ty, None, ObjectKind::Temporary, None, loc);
+        self.b.add_edge(self.f, src, out, Operation::Read, loc);
         Ok(out)
     }
 

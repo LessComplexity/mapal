@@ -925,6 +925,15 @@ impl<'a> FnEmit<'a> {
                     loc,
                 });
             }
+            // ADR-0045: the file read is the llvm backend's (`mapal_read` in
+            // mapal-rt, then the residency machinery's upload); this
+            // backend's arrays are device handles with no host read seam.
+            Operation::Read => {
+                return Err(EmitError::Unsupported {
+                    feature: "the `read` builtin (no CUDA read seam)".into(),
+                    loc,
+                });
+            }
             Operation::Output => {
                 if let Some((_, val)) = self.load_whole(source) {
                     self.store_obj(target, &val);

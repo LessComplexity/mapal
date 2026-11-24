@@ -146,6 +146,21 @@ fn at(file: &str, lines: &LineIndex<'_>, offset: u32) -> String {
     format!("{file}:{}:{}", lc.line, lc.col)
 }
 
+/// ADR-0045 D5: the directory a relative `read` path resolves against — the
+/// source file's own, absolute, recorded in the IR (and so in every program
+/// built from it) at compile time.
+fn source_dir(file: &str) -> Option<String> {
+    let dir = Path::new(file).parent()?;
+    let dir = if dir.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        dir
+    };
+    std::fs::canonicalize(dir)
+        .ok()
+        .map(|d| d.display().to_string())
+}
+
 /// parse → lower → check: the checked, lowered IR (the oracle's input).
 fn frontend(a: &Args) -> Res<CategoryIr> {
     let src = std::fs::read_to_string(&a.file).map_err(|e| {
@@ -168,10 +183,12 @@ fn frontend(a: &Args) -> Res<CategoryIr> {
     if po.diagnostics.iter().any(|d| d.severity == Severity::Error) {
         return Err(1);
     }
-    let ir = mapal_lower::lower(&src, &po.program).map_err(|ds| {
-        report("lower", &ds);
-        1
-    })?;
+    let ir = mapal_lower::lower(&src, &po.program)
+        .map_err(|ds| {
+            report("lower", &ds);
+            1
+        })?
+        .with_data_dir(source_dir(&a.file));
     let ds = mapal_check::check(&src, &po.program, &ir);
     if !ds.is_empty() {
         report("check", &ds);
@@ -464,12 +481,17 @@ fn run_cmd(a: &Args) -> Res<u8> {
         return Err(1);
     };
     print!("{}", out.unwrap_or_default());
-    if let Outcome::Trapped(k) = rr.outcome {
-        let what = match k {
-            TrapKind::DivZero => "division/modulo by zero",
-            TrapKind::IndexOob => "array index out of bounds",
-        };
-        eprintln!("mapal: trapped — {what} (ADR-0013).");
+    match &rr.outcome {
+        Outcome::Trapped(k) => {
+            let what = match k {
+                TrapKind::DivZero => "division/modulo by zero",
+                TrapKind::IndexOob => "array index out of bounds",
+            };
+            eprintln!("mapal: trapped — {what} (ADR-0013).");
+        }
+        // ADR-0045 D4: the compiled program's message, verbatim.
+        Outcome::ReadFailed(msg) => eprintln!("{msg}"),
+        _ => {}
     }
     Ok(code as u8)
 }

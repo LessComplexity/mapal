@@ -435,6 +435,10 @@ impl Walk<'_> {
                     } else if crate::is_print_builtin(text) {
                         // print sink; result is "no value".
                         WTy::Unknown
+                    } else if crate::is_read_builtin(text) {
+                        // ADR-0045: the binding's annotation types the array
+                        // (emit owns L1617 / L1618); nothing to unify here.
+                        WTy::Unknown
                     } else if crate::is_time_builtin(text) {
                         // `() -> time` (plan-time-builtin): no source, f64
                         // milliseconds out. `cur` is whatever the wire-less
@@ -1395,7 +1399,11 @@ fn body_effect_span(
         {
             let text = name_text(source, *n);
             let effectful = fn_sigs.get(text).map(|s| s.effectful).unwrap_or(false);
-            if crate::is_print_builtin(text) || crate::is_time_builtin(text) || effectful {
+            if crate::is_print_builtin(text)
+                || crate::is_time_builtin(text)
+                || crate::is_read_builtin(text)
+                || effectful
+            {
                 found = Some(stage.span);
             }
         }
@@ -1601,6 +1609,7 @@ fn capture_chain(
                         && fn_sigs.get(text).is_none()
                         && !crate::is_print_builtin(text)
                         && !crate::is_time_builtin(text)
+                        && !crate::is_read_builtin(text)
                     {
                         if acc.seen.contains(text) {
                             acc.record_write(text, e.span);

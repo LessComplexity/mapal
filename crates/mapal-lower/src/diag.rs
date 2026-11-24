@@ -77,6 +77,8 @@ pub enum LCode {
     InvalidWiden,          // L1614
     InvalidExp,            // L1615
     InvalidNarrow,         // L1616
+    ReadAnnotation,        // L1617
+    ReadSource,            // L1618
     Internal,              // L1901
 }
 
@@ -148,6 +150,8 @@ impl LCode {
             LCode::InvalidWiden => "L1614",
             LCode::InvalidExp => "L1615",
             LCode::InvalidNarrow => "L1616",
+            LCode::ReadAnnotation => "L1617",
+            LCode::ReadSource => "L1618",
             LCode::Internal => "L1901",
         }
     }

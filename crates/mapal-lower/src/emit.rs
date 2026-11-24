@@ -138,6 +138,11 @@ fn ir_err(e: IrError, span: syn::SourceLoc) -> syn::Diagnostic {
             LCode::InvalidExp,
             "`exp` takes an `f32` or `f64`".to_string(),
         ),
+        IrError::InvalidRead => (
+            LCode::ReadAnnotation,
+            "`read` yields a one-dimensional array of i32, i64, u8, f32, f64, bf16 or f16"
+                .to_string(),
+        ),
         IrError::InvalidNarrow => (
             LCode::InvalidNarrow,
             "`to_bf16` / `to_f16` take an `f32`".to_string(),
@@ -950,7 +955,10 @@ impl Emitter<'_> {
             StageKind::Expr(e) => {
                 if let ExprKind::Var(n) = &e.kind {
                     let text = name_text(self.source, *n);
-                    if crate::is_pure_builtin(text) || crate::is_time_builtin(text) {
+                    if crate::is_pure_builtin(text)
+                        || crate::is_time_builtin(text)
+                        || crate::is_read_builtin(text)
+                    {
                         return true;
                     }
                     if let Some(sig) = self.fn_sigs.get(text) {
@@ -1132,6 +1140,18 @@ impl Emitter<'_> {
                         .ok_or_else(|| diag(LCode::HeadlessChain, e.span, "print with no value"))?;
                     self.emit_print(fb, wire, text == "println", e.span)?;
                     Ok(None) // print is a sink; chain ends.
+                } else if crate::is_read_builtin(&text) {
+                    // ADR-0045: `"file" -> read -> name: [T; n]`.
+                    let wire = wire.ok_or_else(|| {
+                        diag(
+                            LCode::ReadSource,
+                            e.span,
+                            "`read` takes a file path: write `\"file.bin\" -> read -> name: [T; n]`",
+                        )
+                    })?;
+                    let r = self.emit_read(fb, wire, next, ctx, e.span)?;
+                    self.maybe_bind_next(fb, next, r);
+                    Ok(Some(r))
                 } else if crate::is_time_builtin(&text) {
                     // `() -> time` (plan-time-builtin): the ONE stage that
                     // takes no wire — the source is the IO token, not a value.
@@ -1240,6 +1260,7 @@ impl Emitter<'_> {
                         if !self.fn_ids.contains_key(text)
                             && !crate::is_print_builtin(text)
                             && !crate::is_time_builtin(text)
+                            && !crate::is_read_builtin(text)
                             && !crate::is_pure_builtin(text)
                         {
                             return Ok(Dest::Fresh(Some(text.to_string())));
@@ -1829,6 +1850,69 @@ impl Emitter<'_> {
             .map_err(|e| ir_err(e, sp))?;
         self.record(ms, Ty::f64());
         Ok(ms)
+    }
+
+    /// `read` (ADR-0045): the wire is the path — a string literal, the only
+    /// `Str` there is (L1618 otherwise); the next stage is the binding whose
+    /// annotation types the array (L1617 when it is missing or is not a
+    /// one-dimensional array of `i32`, `i64`, `u8`, `f32`, `f64`, `bf16` or
+    /// `f16`). Then as `time`: consume the token, emit `Read`, split the
+    /// `(IoToken, array)` pair — slot 0 rebinds the token, slot 1 is the
+    /// array the binding names.
+    fn emit_read(
+        &mut self,
+        fb: &mut FnBuilder,
+        wire: ObjectId,
+        next: Option<&Stage>,
+        ctx: &ChainCtx,
+        sp: syn::SourceLoc,
+    ) -> ER<ObjectId> {
+        if !matches!(self.tyq(wire), Ty::Str) {
+            return Err(diag(
+                LCode::ReadSource,
+                sp,
+                format!(
+                    "`read` takes a string literal path, found `{}`",
+                    ty_name(&self.tyq(wire))
+                ),
+            ));
+        }
+        let shape = "`read` needs its binding's array type: \
+                     `\"file.bin\" -> read -> name: [T; n]`, T one of \
+                     i32, i64, u8, f32, f64, bf16, f16";
+        let annot = match next.map(|n| &n.kind) {
+            Some(StageKind::Bind {
+                ty: Some(annot), ..
+            }) => annot,
+            _ => return Err(diag(LCode::ReadAnnotation, sp, shape)),
+        };
+        let ty = self
+            .types
+            .resolve(self.source, annot, &mut Vec::new())
+            .ok_or_else(|| diag(LCode::ReadAnnotation, sp, shape))?;
+        if !mapal_ir::read::readable(&ty) {
+            return Err(diag(
+                LCode::ReadAnnotation,
+                sp,
+                format!("{shape}; found `{}`", ty_name(&ty)),
+            ));
+        }
+        let tok = self.consume_token(sp)?;
+        let pair = fb
+            .read(tok, wire, &ty, ir_loc(sp))
+            .map_err(|e| ir_err(e, sp))?;
+        self.record(pair, Ty::Tuple(vec![Ty::IoToken, ty.clone()]));
+        let nt = fb
+            .proj(pair, 0, Dest::Fresh(None), ir_loc(sp))
+            .map_err(|e| ir_err(e, sp))?;
+        self.record(nt, Ty::IoToken);
+        self.token = Some(nt);
+        let dest = self.lookahead_dest(next, ctx, next.is_none())?;
+        let arr = fb
+            .proj(pair, 1, dest, ir_loc(sp))
+            .map_err(|e| ir_err(e, sp))?;
+        self.record(arr, ty);
+        Ok(arr)
     }
 
     // --- literals -----------------------------------------------------------
@@ -3412,6 +3496,7 @@ impl Emitter<'_> {
                 && !self.fn_ids.contains_key(text)
                 && !crate::is_print_builtin(text)
                 && !crate::is_time_builtin(text)
+                && !crate::is_read_builtin(text)
                 && !crate::is_pure_builtin(text)
             {
                 return Some(text.to_string());
@@ -3839,6 +3924,7 @@ fn scan_chain(
                     // L1605 check.
                     let effectful = crate::is_print_builtin(text)
                         || crate::is_time_builtin(text)
+                        || crate::is_read_builtin(text)
                         || fn_sigs.get(text).map(|s| s.effectful).unwrap_or(false);
                     if effectful {
                         if scan.effect_span.is_none() {
@@ -4003,7 +4089,11 @@ fn effect_chain(source: &str, chain: &Chain, fn_sigs: &BTreeMap<String, FnSig>, 
                 if let ExprKind::Var(n) = &e.kind {
                     let text = name_text(source, *n);
                     let effectful = fn_sigs.get(text).map(|s| s.effectful).unwrap_or(false);
-                    if crate::is_print_builtin(text) || crate::is_time_builtin(text) || effectful {
+                    if crate::is_print_builtin(text)
+                        || crate::is_time_builtin(text)
+                        || crate::is_read_builtin(text)
+                        || effectful
+                    {
                         *found = true;
                     }
                 }

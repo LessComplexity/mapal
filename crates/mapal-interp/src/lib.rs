@@ -111,6 +111,7 @@ pub fn native_observable(ir: &CategoryIr, rr: &RunResult) -> Option<(Option<Stri
     match &rr.outcome {
         Outcome::Diverged => None,
         Outcome::Trapped(_) => Some((None, 101)),
+        Outcome::ReadFailed(_) => Some((None, mapal_ir::read::EXIT_CODE)),
         Outcome::Done(v) => {
             let entry = ir.entry();
             let in_ty = &ir.object(ir.func(entry).unwrap().input).unwrap().ty;
