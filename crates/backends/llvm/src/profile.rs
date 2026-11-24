@@ -5998,7 +5998,6 @@ pub const PLAIN_FP: TargetProfile = TargetProfile {
 
 const PROFILES: [&TargetProfile; 16] = [
     &GENERIC,
-    &PLAIN_FP,
     &APPLE_M,
     &ZEN3,
     &CUDA_ADA,
@@ -6013,6 +6012,7 @@ const PROFILES: [&TargetProfile; 16] = [
     &RAPTORLAKE,
     &RAPTORLAKE_INLINE,
     &X86_64_V3,
+    &PLAIN_FP,
 ];
 
 /// Resolve a profile by name. `None` for an unknown name — never a silent
