@@ -122,7 +122,9 @@ faces only `Exact` realizations are admitted, so every target computes the same 
 f32 in its domain against the f64 function, whether it returns the contract's special values, and its throughput
 (cycles a warp instruction, clock64 over independent chains); and the composed forms' error over the whole f32 range
 beside CUDA's `sqrtf` / `sinf` / `cosf`. The profile stores the measured values (`Bound` with the calibration line as
-evidence); an unmeasured part's units carry no `Bound`, so it derives the reference.
+evidence): the hand profile and the native profile build the same units from the calibration line's names
+(`sqrt_approx_rel_e12`, `sin_approx_rel_e12`, `sin_approx_abs_e12`, `cos_approx_rel_e12`, `math_specials`;
+`profile::MathUnits`); a part whose line has none declares no approximate unit, so it derives the references.
 
 **D9 — `precision_plan`.** Beside `exp(m)` (ADR-0042 D6, unchanged) the fact carries `math(m)` for every math op: the
 builtin, its width and its contract. A value gate composes a default-face path through a builtin as ADR-0042 did for

@@ -66,5 +66,7 @@ sin 10, cos 17, f64 9, fold 10, huge / inf 24, NaN 24, subnormal 24, device unit
   realization the framework can take once its error is stated (the step language is straight-line; a branch is the
   missing piece).
 - `MathForm::compose` states the condition-number composition; no value gate reads it yet (as `exp`'s).
-- The native profile reads no `math` calibration line: a part other than the RTX 5080 has the SM's `ex2` and
-  `sqrt.rn` only (its approximate units unmeasured → the references), until its calibration is parsed into units.
+- The native profile reads the units from its calibration line (`sqrt_approx_rel_e12`, `sin_approx_rel_e12`,
+  `sin_approx_abs_e12`, `cos_approx_rel_e12`, `math_specials`; `calib/rtx-5080.calib` carries the 5080's): a part
+  whose line has none keeps the SM's `ex2` and `sqrt.rn` only — its approximate units unmeasured, the references.
+  `calib.cu math` prints the measurements; turning its output into the line is by hand (as for the other rates).

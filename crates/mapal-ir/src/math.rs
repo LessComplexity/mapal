@@ -1915,7 +1915,7 @@ pub fn forms(f: MathFn, bits: u32, target: &Target) -> Vec<Form> {
 }
 
 /// A form's error from its units' (ADR-0046 D5).
-fn form_err(f: MathFn, bits: u32, form: &Form) -> Err {
+fn form_err(bits: u32, form: &Form) -> Err {
     let u = 2f64.powi(if bits == 64 { -53 } else { -24 });
     match form {
         Form::ExpEx2(e) => match e.err {
@@ -1946,7 +1946,6 @@ fn form_err(f: MathFn, bits: u32, form: &Form) -> Err {
                 }) => (*rel, *abs),
             };
             let ((rs, as_), (rc, ac)) = (part(s), part(c));
-            let _ = f;
             Err::Bound {
                 rel: rs.max(rc) + 2.0 * u,
                 abs: as_.max(ac).max(tiny(bits)),
@@ -2030,7 +2029,7 @@ pub fn candidates(f: MathFn, bits: u32, target: &Target, fuse: bool) -> Vec<Choi
                 }
             }
         };
-        out.push(mk(Real::Form(form), form_err(f, bits, &form), ev));
+        out.push(mk(Real::Form(form), form_err(bits, &form), ev));
     }
     for (i, d) in target.defs.iter().enumerate() {
         if d.f == f && d.bits == bits {

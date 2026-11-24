@@ -424,6 +424,16 @@ INTENT = {
         ('MUFU.EX2 in SASS', 'sass.mufu_ex2 > 0')],
         applies_off='mod.exp32 > 0', off=[
         ("the oracle's steps: no ex2.approx, no MUFU.EX2", 'ptx.ex2 == 0 and sass.mufu_ex2 == 0')]),
+    # math (ADR-0046) `math-hw`: on an order-free face an f32 `sqrt` / `sin` / `cos` on the device takes the cheapest
+    # realization its contract admits from the part's declared units — `sqrt.approx.f32` (MUFU.SQRT) where its
+    # measured error is within 2^-22, `cos.approx.f32` as the `cos r` part of a trig form within 2^-21 — never a unit
+    # outside the bound (`sin.approx`: absolute error). The exact faces and `--gpu-off=math-hw`: the references or an
+    # `Exact` unit (`sqrt.rn`).
+    'math-hw': dict(applies_on='mod.math32 > 0 and mod.hw_math == 1', on=[
+        ('an admitted approximate unit in the PTX', 'ptx.math_approx > 0'),
+        ('MUFU.SQRT / MUFU.COS in SASS', 'sass.mufu_math > 0')],
+        applies_off='mod.math32 > 0', off=[
+        ('no approximate unit: the references or sqrt.rn', 'mod.hw_math == 0 and ptx.math_approx == 0')]),
     # kernel-merging `zero-fold` (func/zero.rs): an atomic site's zero pass is the grid-stride tail of an earlier kernel
     # the dependency fact orders after the output's last earlier access; the site launches flagged ZEROED.
     'zero-fold': dict(host=True, applies='host.zero.folded > 0', on=[

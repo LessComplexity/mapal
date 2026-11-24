@@ -893,59 +893,141 @@ pub const MATH_RTX_5080: MathTarget = MathTarget {
     defs: &[],
 };
 
+/// ADR-0046 D8: **the approximate math units a calibration measured**, as
+/// the calibration line spells them (errors × 10¹², `calib.cu math`; 0 = not
+/// measured): the hand profile and the native profile build the same units
+/// from them ([`Gpu::with_cost`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MathUnits {
+    pub sqrt_rel_e12: u64,
+    pub sin_rel_e12: u64,
+    pub sin_abs_e12: u64,
+    pub cos_rel_e12: u64,
+    /// 1: the units return the contract's special values (`calib.cu math`'s
+    /// `specials=ok`).
+    pub specials: u64,
+}
+
+const fn e12(v: u64) -> f64 {
+    v as f64 / 1e12
+}
+
+const MATH_EVIDENCE: &str =
+    "the calibration line's calib.cu math measurement (every f32 of the unit's domain)";
+
 /// `sqrt.approx.f32` (MUFU, subnormal operands kept — the `.ftz` form
-/// flushes them: relative error 1) on the RTX 5080: worst relative error
-/// 1.0001e-7 = 2^−23.253 over every positive f32, the contract's special
-/// values returned (`±0`, `+∞`, NaN for negatives); 8.13 cycles a warp
-/// instruction against FFMA's 1.06 — one issue slot inside a form (`calib.cu
-/// math`, `local-rtx-5080/math.md`).
-pub const SQRT_APPROX_RTX_5080: MathUnit = MathUnit {
-    op: UnitOp::Sqrt,
-    bits: 32,
-    sym: "llvm.nvvm.sqrt.approx.f",
-    err: MathErr::Bound {
-        rel: 1.0001e-7,
-        abs: 0.0,
-    },
-    lo: 0.0,
-    hi: f64::INFINITY,
-    cost: 1,
-    specials: true,
-    evidence: "calib.cu math, RTX 5080 2026-11-25: sqrt.approx.f32 rel 2^-23.253 over every positive f32, specials ok",
-};
+/// flushes them: relative error 1) with its measured relative error over
+/// every positive f32.
+pub const fn sqrt_approx_unit(rel_e12: u64, specials: bool) -> MathUnit {
+    MathUnit {
+        op: UnitOp::Sqrt,
+        bits: 32,
+        sym: "llvm.nvvm.sqrt.approx.f",
+        err: MathErr::Bound {
+            rel: e12(rel_e12),
+            abs: 0.0,
+        },
+        lo: 0.0,
+        hi: f64::INFINITY,
+        cost: 1,
+        specials,
+        evidence: MATH_EVIDENCE,
+    }
+}
 
-/// `sin.approx.f32` (MUFU.SIN) on the RTX 5080 over `[−0.7854, 0.7854]` (the
-/// Payne–Hanek remainder's range, a little past `π/4`): absolute
-/// error 3.4745e-7 = 2^−21.457, relative error 1 (it is not relative near 0)
-/// — no `sin` form takes it (ADR-0046 D3's bound is relative).
-pub const SIN_APPROX_RTX_5080: MathUnit = MathUnit {
-    op: UnitOp::Sin,
-    bits: 32,
-    sym: "llvm.nvvm.sin.approx.f",
-    err: MathErr::Bound {
-        rel: 1.0,
-        abs: 3.4745e-7,
-    },
-    lo: -0.7854,
-    hi: 0.7854,
-    cost: 1,
-    specials: true,
-    evidence: "calib.cu math, RTX 5080 2026-11-25: sin.approx.f32 over every f32 of [-0.7854, 0.7854] abs 2^-21.457, rel 1",
-};
+/// `sin.approx.f32` / `cos.approx.f32` (MUFU.SIN / MUFU.COS) on the
+/// Payne–Hanek remainder's range `[−0.7854, 0.7854]` (a little past `π/4`).
+pub const fn trig_approx_unit(cos: bool, rel_e12: u64, abs_e12: u64, specials: bool) -> MathUnit {
+    MathUnit {
+        op: if cos { UnitOp::Cos } else { UnitOp::Sin },
+        bits: 32,
+        sym: if cos {
+            "llvm.nvvm.cos.approx.f"
+        } else {
+            "llvm.nvvm.sin.approx.f"
+        },
+        err: MathErr::Bound {
+            rel: e12(rel_e12),
+            abs: e12(abs_e12),
+        },
+        lo: -0.7854,
+        hi: 0.7854,
+        cost: 1,
+        specials,
+        evidence: MATH_EVIDENCE,
+    }
+}
 
-/// `cos.approx.f32` (MUFU.COS) on the RTX 5080 over `[−0.7854, 0.7854]`: relative
-/// error 3.1899e-7 = 2^−21.580 (absolute 2^−22.003) — inside the bound with
-/// the remainder's rounding (`2^−21.12`): the `cos r` part of a trig form.
-pub const COS_APPROX_RTX_5080: MathUnit = MathUnit {
-    op: UnitOp::Cos,
-    sym: "llvm.nvvm.cos.approx.f",
-    err: MathErr::Bound {
-        rel: 3.1899e-7,
-        abs: 0.0,
-    },
-    evidence: "calib.cu math, RTX 5080 2026-11-25: cos.approx.f32 over every f32 of [-0.7854, 0.7854] rel 2^-21.580",
-    ..SIN_APPROX_RTX_5080
-};
+impl MathUnits {
+    /// [`MATH_SM`] and the measured units.
+    pub fn target(&self) -> MathTarget {
+        let sp = self.specials == 1;
+        let mut v: Vec<MathUnit> = MATH_SM.to_vec();
+        if self.sqrt_rel_e12 > 0 {
+            v.push(sqrt_approx_unit(self.sqrt_rel_e12, sp));
+        }
+        if self.sin_rel_e12 > 0 || self.sin_abs_e12 > 0 {
+            v.push(trig_approx_unit(
+                false,
+                self.sin_rel_e12,
+                self.sin_abs_e12,
+                sp,
+            ));
+        }
+        if self.cos_rel_e12 > 0 {
+            v.push(trig_approx_unit(true, self.cos_rel_e12, 0, sp));
+        }
+        // A profile is built once a process (`native_gpu`'s `OnceLock`).
+        MathTarget {
+            units: Box::leak(v.into_boxed_slice()),
+            defs: &[],
+        }
+    }
+
+    /// The measured units of `t`, as the calibration line spells them.
+    pub fn of(t: &MathTarget) -> MathUnits {
+        let mut m = MathUnits::default();
+        let x = |v: f64| (v * 1e12).round() as u64;
+        for u in t.units {
+            let (rel, abs) = match u.err {
+                MathErr::Bound { rel, abs } => (rel, abs),
+                MathErr::Exact => continue,
+            };
+            match u.op {
+                UnitOp::Sqrt => m.sqrt_rel_e12 = x(rel),
+                UnitOp::Sin => (m.sin_rel_e12, m.sin_abs_e12) = (x(rel), x(abs)),
+                UnitOp::Cos => m.cos_rel_e12 = x(rel),
+                _ => continue,
+            }
+            m.specials = u64::from(u.specials);
+        }
+        m
+    }
+
+    fn get(&self, name: &str) -> u64 {
+        match name {
+            "sqrt_approx_rel_e12" => self.sqrt_rel_e12,
+            "sin_approx_rel_e12" => self.sin_rel_e12,
+            "sin_approx_abs_e12" => self.sin_abs_e12,
+            "cos_approx_rel_e12" => self.cos_rel_e12,
+            "math_specials" => self.specials,
+            _ => 0,
+        }
+    }
+}
+
+/// The RTX 5080's measured units (`calib.cu math`, 2026-11-25,
+/// `local-rtx-5080/math.md`; its calibration line spells the same):
+/// `sqrt.approx.f32` relative 1.0001e-7 = 2^−23.253 over every positive f32
+/// (8.13 cycles a warp op against FFMA's 1.06 — one issue slot inside a
+/// form); `sin.approx.f32` absolute 3.4745e-7 = 2^−21.457, relative 1 (not
+/// relative near 0: no `sin` form takes it — the bound is relative);
+/// `cos.approx.f32` relative 3.1899e-7 = 2^−21.580 (the `cos r` part of a trig
+/// form: `2^−21.58 + 2⁻²³ = 2^−21.12 ≤ 2⁻²¹`); every one returns the
+/// contract's special values.
+pub const SQRT_APPROX_RTX_5080: MathUnit = sqrt_approx_unit(100_010, true);
+pub const SIN_APPROX_RTX_5080: MathUnit = trig_approx_unit(false, 1_000_000_000_000, 347_450, true);
+pub const COS_APPROX_RTX_5080: MathUnit = trig_approx_unit(true, 318_990, 0, true);
 
 /// ADR-0046 D7: the host's math units — a correctly rounded `sqrt` (IEEE 754
 /// `squareRoot`: LLVM's `llvm.sqrt` without fast-math flags is that operation
@@ -1228,7 +1310,7 @@ impl DeviceCost {
     /// overrides by name ([`Gpu::fp32_lanes`], [`Gpu::clock_khz`], and the
     /// hardware-properties the rung rules read: SMs, L2, shared memory,
     /// threads, registers and blocks per SM, the DRAM interface).
-    pub const NAMES: [&'static str; 44] = [
+    pub const NAMES: [&'static str; 49] = [
         "flops_per_ns",
         "bytes_per_ns",
         "launch_ns",
@@ -1273,6 +1355,14 @@ impl DeviceCost {
         "mma_tf32_per_clk",
         "mma_half_per_clk",
         "wgmma_tf32_per_clk",
+        // ADR-0046 D8: the SM's approximate math units (`calib.cu math`),
+        // errors × 10¹² ([`MathUnits`]); `math_specials=1`: they return the
+        // contract's special values.
+        "sqrt_approx_rel_e12",
+        "sin_approx_rel_e12",
+        "sin_approx_abs_e12",
+        "cos_approx_rel_e12",
+        "math_specials",
     ];
 
     /// kernel-merging `calls`: one grid barrier of `blocks` co-resident
@@ -1325,6 +1415,7 @@ impl Gpu {
     /// This part with the overrides in `over` applied (a part without a
     /// [`DeviceCost`] takes one from [`NO_PLAN`]).
     pub fn with_cost(mut self, over: &CostOver) -> Self {
+        let mut math = MathUnits::default();
         let mut d = self.cost.unwrap_or(NO_PLAN);
         for (name, v) in DeviceCost::NAMES.iter().zip(over) {
             let Some(v) = *v else { continue };
@@ -1372,8 +1463,17 @@ impl Gpu {
                 "mma_tf32_per_clk" => &mut self.mma_tf32_per_clk,
                 "mma_half_per_clk" => &mut self.mma_half_per_clk,
                 "wgmma_tf32_per_clk" => &mut self.wgmma_tf32_per_clk,
+                "sqrt_approx_rel_e12" => &mut math.sqrt_rel_e12,
+                "sin_approx_rel_e12" => &mut math.sin_rel_e12,
+                "sin_approx_abs_e12" => &mut math.sin_abs_e12,
+                "cos_approx_rel_e12" => &mut math.cos_rel_e12,
+                "math_specials" => &mut math.specials,
                 _ => &mut self.mem_bus_bits,
             } = v;
+        }
+        // ADR-0046 D8: the measured approximate units join the SM's.
+        if math != MathUnits::default() {
+            self.caps.math = math.target();
         }
         // The `DeviceCost` fields: every name but the last two (`Gpu`'s).
         if over.iter().take(Self::NAMES_COST).any(Option::is_some) {
@@ -1430,6 +1530,9 @@ impl Gpu {
             "mma_tf32_per_clk" => self.mma_tf32_per_clk,
             "mma_half_per_clk" => self.mma_half_per_clk,
             "wgmma_tf32_per_clk" => self.wgmma_tf32_per_clk,
+            n if n.ends_with("_e12") || n == "math_specials" => {
+                MathUnits::of(&self.caps.math).get(n)
+            }
             _ => 0,
         }
     }

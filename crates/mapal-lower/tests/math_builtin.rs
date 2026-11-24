@@ -84,3 +84,30 @@ fn formatter_keeps_the_stages() {
         "fn main() {\n    2.0 -> sqrt -> r;\n    r -> sin -> s;\n    s -> cos -> println;\n}\n";
     assert_eq!(mapal_syntax::format_source(src).expect("formats"), src);
 }
+
+/// ADR-0046 D9: `precision_plan.math` records each math builtin with its
+/// width's contract (and `exp` keeps ADR-0042's `exp` entry).
+#[test]
+fn precision_plan_records_each_builtin_and_its_contract() {
+    let ir = lower_ok(
+        "fn main() { 2.0 -> x: f32; x -> sqrt -> a; x -> sin -> b; 3.0 -> cos -> c; x -> exp -> d; \
+         a + b + d -> println; c -> println; }",
+    );
+    let plan = ir.precision_plan(ir.entry());
+    let mut got: Vec<(MathFn, u32, f64)> = plan
+        .math
+        .values()
+        .map(|m| (m.f, m.bits, m.contract.rel))
+        .collect();
+    got.sort_by(|a, b| a.0.cmp(&b.0));
+    assert_eq!(
+        got,
+        [
+            (MathFn::Exp, 32, 2f64.powi(-21)),
+            (MathFn::Sqrt, 32, 2f64.powi(-22)),
+            (MathFn::Sin, 32, 2f64.powi(-21)),
+            (MathFn::Cos, 64, 2f64.powi(-50)),
+        ]
+    );
+    assert_eq!(plan.exp.len(), 1);
+}

@@ -168,7 +168,6 @@ pub(crate) fn print(def: &Def, sym: &str, contracted: bool) -> String {
     for (i, st) in def.steps.iter().enumerate() {
         let n = &names[i];
         let a = |k: usize| names[st.args[k].0 as usize].as_str();
-        let aty = |k: usize| vty(def.steps[st.args[k].0 as usize].ty);
         let fl = if contracted && st.contract {
             " contract"
         } else {
@@ -270,7 +269,6 @@ pub(crate) fn print(def: &Def, sym: &str, contracted: bool) -> String {
             },
             Op::Unit(_, u) => format!("{n} = call {t} @{u}({t} {})", a(0)),
         };
-        let _ = aty;
         s.push_str("  ");
         s.push_str(&line);
         s.push('\n');
