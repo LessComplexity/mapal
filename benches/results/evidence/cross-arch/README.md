@@ -4,9 +4,9 @@ Branch `local-rtx-5080` @ `8bba2a50` (kernel merging, hardware properties, model
 this round's tooling (`f4e6e270` vast wrappers, `3968f59c` / `bd9ae103` / `73360fbc` calibration on the box,
 `72ee9297` per-instance ssh key). Four vast.ai boxes in parallel, CUDA 13.0.2 devel image, torch 2.11.0+cu130.
 
-Cross-part matrix (the 3a8e654f round's 120 rows, every competitor leg, five parts with the RTX 5080), Mapal vs the
-fastest same-precision competitor: [matrix.md](../matrix.md); the latest round:
-[3a8e654f (final code, all competitors)](#3a8e654f-final-code-all-competitors).
+Cross-part matrix (120 rows + 7 fp8-weight rows, every competitor leg, five parts with the RTX 5080, all on
+`5fcb401b`), Mapal vs the fastest same-precision competitor: [matrix.md](../matrix.md); the latest round:
+[5fcb401b (confirmation, all competitors)](#5fcb401b-confirmation-all-competitors).
 
 **Bundle, one per part** (`integrated_bundle.sh`, built locally, `LADDER=1`): the README GPU suite (35 programs and
 the two GEMM cells of `benches/local/gpu_bundle.sh`); the model-scale suite — the 12 natural Llama-layer programs
@@ -1264,3 +1264,284 @@ output), `rtx-5080/` (resS / resM, the re-timed resS2 / resM2, torch-peak-proc.t
 ms, cm, cmtab, peaks, xcmp, arms, bf16tab, keyrows, evidence-sum), `scripts/` (stems, build, build_all, launch,
 watchdog, ops_nsys, leads, local_bundle, local_run, local_rerun(M), arms_bundle, decarms, push_decarms, analyze, xcmp,
 armtab, decsum, kfacts, bf16tab, keyrows, cost, peaks, cmtab, evsum, legcount).
+
+## 5fcb401b (confirmation, all competitors)
+
+Branch `local-rtx-5080` @ `5fcb401b`: the 3a8e654f round's losers attacked (`370637ed` regressions: the B1 decode's
+O-projection split launched through its table — `post-table` —, the bf16 cache's 16-byte narrow loads, `vec-cells` by
+the grid's spread — `vec-spread`), f32 on tensor cores (`dfdcb5e1`: `split-tile` tf32x3 / narrow1, `mma-combine`),
+Hopper `wgmma` fed by TMA (`3092b270`: `wgmma-ws`, `tma-digits`, `ws-regs`), fp8 storage + leftovers (`ad451a13`: the
+`_f8w` rows), the two open-problems sweeps (`unit-uniform`, `round-store`, `stream-mma`, `kmajor-b`, `warm-zero`,
+`streamk-price`, `streamk-epi`) and the review fixes (`5fcb401b`: unmeasured parts priced from the 5080's rates). The
+3a8e654f round repeated on its tooling — four vast.ai boxes, CUDA 13.0.2 devel image, torch 2.11.0+cu130 (Triton
+3.6.0), Liger 0.8.5, FlashInfer 0.7.5.post1, flash-attn v2.8.3.post2 built on every box (`NVCC_THREADS=2`), FA3 on the
+H100, TensorRT-LLM not installable on torch 2.11 (skipped) — and the RTX 5080 locally on the same code with every leg.
+Matrix over all five parts on 5fcb401b (`--skip 'llm_kv[xn]_'`, the bf16kv / bf16 / f8w classes): [matrix.md](../matrix.md).
+
+**Bundle, one per part** (137 timed programs + the two GEMM cells, `LADDER=1`): the 3a8e654f set (130) + the **7
+`_f8w` decode rows** (f8e4m3 weights, per-channel scales, f32 compute; no fp8 leg exists: `(no leg)` in the matrix, their
+`_bf16w` twin's bf16 leg a reference) and 18 px differentials (2 new). `TORCH_SKIP` adds `_f8w`. **Arms** — the rules
+since 3a8e654f, OFF, built where the part's emission differs (77 / 69 / 52 / 78 on the 3090 / A100 / 4090 / H100):
+`post-table` (B1 decode), `kmajor-b` (decode B ≥ 8 / L8192), `vec-spread` + `vec-cells` (the six m = 1 GEMVs),
+`wgmma-ws` (the TF32 rows), `split-tile` (f32 GEMMs / MLPs), `mma-combine` (TF32 / bf16 tiles), `stream` +
+`unit-uniform` (prefills, attention), `stream-mma` (bf16 prefills), `streamk-price` + `streamk-epi` (README suite),
+`warm-zero` (m1 / m16 GEMVs), `round-store` (bf16 rows). **On each box** as 3a8e654f (`box_run.sh` REPS=30, probes
+ABBA × 5 with a traced process, the tune pass now with `confirm_pick.py`, `TORCH_MIN=100`, the FA builds alone on the
+GPU, `comp_bench.py`), then `ops_nsys.sh` + **`l2keep.cu`** (the L2's keep of a cyclic stream, `calib-l2keep` lines),
+torch peaks one process per (program, leg). `calib.cu` (every kind incl. `bar`, `body`, `fly`, `matrix`), `exp_calib`
+and `tma_calib` (H100; it does not build below sm_90) ran on every box.
+
+**Run notes.** (1) **H100 market**: verified H100 SXM offers stood at $4.4–5.1/h when the round started; a $2.47
+offer (EPYC 9684X, 700 W) appeared while the bundles built and was rented before its bundle finished (`vast_run.sh`
+`WAIT_FILE`, preflight run by hand; 14 min held, $0.6). Its profile pass was cut to `ops_nsys.sh`'s calibration and
+peaks (`box_profile_h100.sh`: the budget left ten minutes after `box_run`). (2) **RTX 4090, four rentals**: box 1
+never reached running (22 min); box 2 stopped at the differential — the `_f8w` programs do not load on sm_89
+(**finding 1**); the f8w programs were moved out of the 4090 bundle and box 3 (the same Ryzen 3900X host) ran 29 min
+of probes until its GPU hung in `pt_llm_pre_t2048_bf16.off-stream` rep 4 (3 reps before ran 5.9 ms; the process
+spinning 38 min, `nvidia-smi` in D state, no inter-block wait in that arm's kernels: the host) — destroyed by hand;
+box 4 (Xeon E5-2640 v4, 20 threads, 450 W) ran the whole bundle; its `RUN_MIN` (175, set for the budget at the
+relaunch) was held by stopping `vast_run`'s `timeout` (`extend_4090.sh`) once the H100 had ended; FA2 took 2 367 s
+there; its profile pass hit 25 min before the tar (no `prof-rtx-4090.tgz`; peaks and `calib-l2keep` are in the results
+file). Its torch section timed the bf16-storage twins too (130 programs; the matrix takes a row's own bf16 legs where
+present — the same computation as its twin's). (3) **Power limits / hosts** (like-for-like within a part, not across
+rounds): 3090 250 W (3a8e654f 350; sustained 1 424 MHz), A100 400 W (300), 4090 450 W (450; sustained 2 224 MHz on the
+Broadwell host), H100 700 W (500; best ms ×0.82 against 3a8e654f's box). (4) **RTX 5080**: `local_run.sh` S, M, peaks
+under the bench lock at load < 3 (resS 10 min, resM 37 min); no competitor leg with max > 2 × med or med > 1.3 × min
+(257 / 522 legs): no re-timing this round.
+
+### Boxes and cost
+
+| part | GPU (driver, power limit) | host CPU | offer | $/h | hours | cost | status |
+|---|---|---|---|---:|---:|---:|---|
+| rtx-3090 | RTX 3090 24 GB (580.159.03, 250 W) | Ryzen 9 3950X | 44880349 | 0.249 | 2.96 | $0.74 | done |
+| a100 | A100-SXM4-40GB (595.91.07, 400 W) | EPYC 9124 | 54218901 | 0.716 | 2.64 | $1.89 | done |
+| (4090 box 1) | — | EPYC 7K62 | 59820949 | 0.473 | 0.31 | $0.15 | never reached running |
+| (4090 box 2) | RTX 4090 24 GB | Ryzen 9 3900X | 51365776 | 0.484 | 0.08 | $0.04 | stopped at the differential: f8w PTX rejected on sm_89 |
+| (4090 start) | — | — | 54464714 | 0.428 | 0.00 | $0.00 | not started |
+| (4090 box 3) | RTX 4090 24 GB | Ryzen 9 3900X | 51365776 | 0.484 | 1.15 | $0.56 | GPU hung mid-probes — destroyed |
+| rtx-4090 | RTX 4090 24 GB (595.91.07, 450 W) | Xeon E5-2640 v4 | 57617079 | 0.422 | 3.80 | $1.60 | done (`RUN_MIN` held; profile cut) |
+| h100 | H100 80GB HBM3 SXM (615.71.09, 700 W) | EPYC 9684X | 56442966 | 2.578 | 3.55 | $9.14 | done (rented while its bundle built) |
+| **total** | | | | | | **$14.12** | every `mapal-xarch-*` instance destroyed (checked by label) |
+
+Budget $15 (watchdog at $14.5, raised to $14.9 after the second 4090 replacement). The account's credit fell $97.3 over
+the window (424.55 → 327.22): other projects' instances bill through it.
+
+### Value gates
+
+| part | differential | probe gates (programs) | arms · candidates within D2/D3 | device-exact oracles | split programs | gemm_lib legs within | torch legs within | competitor legs within |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| rtx-5080 | 128 / 128 | 137 / 137 | 1205 / 1205 | 136 / 136 | 8 / 8 | 112 / 112 | 618 / 650 | 131 / 136 |
+| rtx-3090 | 80 / 80 | 137 / 137 | 1198 / 1198 | 136 / 136 | 8 / 8 | 112 / 112 | 622 / 650 | 132 / 136 |
+| a100 | 64 / 64 | 137 / 137 | 944 / 944 | 136 / 136 | 8 / 8 | 112 / 112 | 626 / 650 | 133 / 136 |
+| rtx-4090 | 104 / 104 (box 2: 10 f8w FAIL) | 130 / 130 | 1157 / 1157 | 129 / 129 | 8 / 8 | 112 / 112 | 969 / 994 | 132 / 136 |
+| h100 | 113 / 113 | 137 / 137 | 1227 / 1227 | 136 / 136 | 8 / 8 | 112 / 112 | 626 / 650 | 149 / 153 |
+
+**Finding 1 — a Mapal failure: the `_f8w` programs do not load on the RTX 4090 (sm_89).** Every f8w PTX (25: the 7
+rows, their arms and the 2 px twins) carries `.version 7.8 .target sm_89` and `cvt.rn.f16x2.e4m3x2` (76 in
+`pt_llm_dec_b1_l2048_f8w`); `cuModuleLoadData` fails ("a PTX JIT compilation failed", process exit 102). Repro:
+`ptxas -arch=sm_89 target/xarch-4090-f8w/rtx-4090/pt_llm_dec_b1_l2048_f8w.ptx` → `Feature 'cvt.f16x2.e4m3x2 on sm_89'
+requires PTX ISA .version 8.1 or later` (157 errors; `rtx-4090/f8w-ptxas-sm89.txt`). `Caps::cvt_f8` (cc ≥ 89) is right
+about the instruction, but the capability also carries the PTX ISA that encodes it: `llc -mcpu=sm_89` defaults to
+PTX 7.8 (sm_120: 8.7, sm_90a: 8.0 — why the 5080 and H100 load the same text). **Points at**: the capability's PTX ISA
+(`+ptx81` on the device module wherever the cvt is emitted for sm_89), and a preflight check on `ptxas` errors — the
+bundle's evidence pass logged all 25 errors at build time and nothing read them. The 3090 / A100 widen in software
+(no cvt) and pass. The 4090's f8w rows are `-` in the matrix.
+
+No other Mapal value failed on any part, face, arm or candidate. **Harness, not Mapal**: the A100's GEMM cell
+`mm_4096x4096x4096` (now `split-tile` tf32x3) fails `tile_bench`'s gate — `bit_exact_vs_reference=NO
+within_bound=yes` (maxrel 3.0·10⁻⁴ vs f64): the gate holds non-atomic arms to the in-order fold's bits, and a split
+realization's bits are the default face's own (D2 holds); the matrix drops that cell. Competitor legs outside: torch's
+TF32 legs at 1e-3 (as every round), `triton` on `lsm_1_131072` / `lsm_4_32768` (OutOfResources), `triton-tf32` on
+the TF32 MLPs, the 5080's Liger decode B32 L8192 (out of memory, 16 GB) and four SDPA-math legs.
+
+### Performance — 3a8e654f → 5fcb401b (every leg, same precision; even = |ratio − 1| ≤ max(null, 5 %))
+
+| part | all | f32 | tf32 | bf16w | bf16kv | bf16 | GEMM | MLP | attention | LLM | conv | fan / loops | W / E / L |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| rtx-5080 | 1.076 → **0.979** | 0.898 → **0.869** | 1.287 → **1.186** | 1.938 → **1.662** | 1.375 → **1.043** | 1.195 → **0.982** | 1.108 → **1.045** | 1.090 → **1.054** | 0.838 → 0.858 | 1.312 → **1.036** | 0.508 → 0.529 | 1.075 → **1.032** | 25/21/74 → 30/39/51 |
+| rtx-3090 | 1.127 → **1.009** | 0.924 → **0.893** | 1.172 → **1.148** | 2.066 → **1.498** | 1.623 → **1.000** | 1.356 → **1.134** | 1.113 → **1.099** | 1.133 → **1.119** | 0.764 → 0.827 | 1.458 → **1.004** | 0.741 → 0.833 | 1.057 → **0.977** | 16/21/83 → 43/17/60 |
+| a100 | 1.501 → **1.242** | 1.040 → 1.104 | 1.702 → **1.646** | 3.559 → **2.156** | 2.990 → **1.124** | 2.206 → **1.228** | 1.391 → **1.288** | 1.248 → 1.537 | 0.992 → 1.029 | 2.285 → **1.232** | 0.950 → 0.978 | 1.205 → 1.494 | 13/14/92 → 24/9/86 |
+| rtx-4090 | 1.106 → **0.948** | 0.978 → **0.868** | 1.356 → 1.366 | 1.807 → **1.379** | 1.122 → **0.826** | 1.146 → **0.898** | 1.195 → **1.104** | 1.205 → **1.155** | 0.742 → **0.600** | 1.217 → **0.908** | 0.815 → **0.739** | 1.105 → 1.102 | 25/24/71 → 36/27/57 |
+| h100 | 1.566 → **1.318** | 1.051 → **1.006** | 1.918 → 2.625 | 3.168 → **2.194** | 2.900 → **1.103** | 2.634 → **1.646** | 1.647 → **1.623** | 1.545 → 1.617 | 0.986 → **0.935** | 2.101 → **1.215** | 0.876 → 0.942 | 1.165 → 1.201 | 14/4/102 → 22/3/95 |
+
+Geomean Mapal / best over the rows both matrices hold (120; the A100 119: its GEMM cell's gate, above); bold = better.
+The 86 rows of the competitors step / the 34 bf16-storage rows: 5080 0.993 → **0.945** / 1.318 → **1.068**, 3090
+1.008 → **0.952** / 1.495 → **1.171**, A100 1.200 → **1.188** / 2.613 → **1.388**, 4090 1.061 → **0.946** / 1.228 →
+**0.952**, H100 1.223 → **1.181** / 2.923 → **1.740**. Mapal ms geomean new / old: 0.916 / 0.955 / 0.883 / 0.944 /
+0.690 (the H100 box at 700 W: its best legs ×0.82). The A100's f32 / MLP / fan rows and the H100's TF32 rows moved the
+other way: findings 2 and 3.
+
+### The rules on the hardware (same-box arms; cell: geomean OFF / ON, > 1 = the shipped ON faster, [range], W / null / L)
+
+| rule (OFF arm) | rtx-3090 | a100 | rtx-4090 | h100 | predicted (step) | verdict |
+|---|---|---|---|---|---|---|
+| `post-table` (B1 decode, 6 rows) | 1.63 [1.25–3.42] 6/0/0 | 3.54 [2.65–6.13] 3/0/0 | = shipped | 3.12 [1.37–7.04] 6/0/0 | the planned split launched on the 3090 / A100 / H100, the 4090 unchanged (regressions 1) | **confirmed** |
+| `vec-spread` (m = 1 GEMVs) | = shipped | 1.07 [1.03–1.14] 5/0/0 | = shipped | 1.13 [1.07–1.29] 5/0/0 | the scalar grid on the HBM parts' losers (regressions 3) | **confirmed** |
+| `vec-cells` (the same) | 1.01 0/6/0 | 1.00 0/1/0 | 1.02 3/3/0 | 0.99 0/3/0 | no loss left | **confirmed** (3a8e654f: 3–4 losses a part) |
+| `kmajor-b` (decode B ≥ 8, L8192) | 1.30 [1.22–1.36] 5/0/0 | 1.19 [1.02–1.41] 4/1/0 | 1.21 [1.07–1.32] 5/0/0 | 1.13 [1.04–1.22] 5/0/0 | 5080 1.45 (B32 L8192 bf16kv, sweep-attention-2) | **confirmed** |
+| `stream-mma` (bf16 prefills) | 1.24 [1.11–1.38] | 2.54 [1.78–3.64] | 1.32 [1.13–1.55] | 1.86 [1.45–2.39] | 5080 1.12–1.43 | **confirmed** |
+| `round-store` (12 bf16 rows) | 1.02 4/7/1 | 1.12 7/5/0 | 1.08 6/6/0 | 1.17 11/1/0 | 5080 1.01–1.19, m128 n28672 0.97 | **confirmed** (3090 one loss: m128 n6144 0.96) |
+| `warm-zero` (m1 / m16 GEMVs) | 1.02 2/10/0 | 1.06 8/4/0 | 1.07 6/6/0 | 1.06 7/5/0 | 5080 1.02–1.30 on one-call atomic splits | **confirmed** (largest on m1 n2048 / n4096: 1.04–1.23) |
+| `streamk-price` | 1.07 3/2/0 | = shipped | = shipped | 1.76 1/0/0 | where the part's rates price an under-filled site | **confirmed** |
+| `streamk-epi` (epilogue groups) | 0.99 [0.74–1.13] 2/8/2 | = shipped | = shipped | 1.02 3/5/0 | 5080 1.04–1.10 | **mixed: 3090 loses** (finding 6) |
+| `stream` (prefills, attention) | 1.28 [0.96–2.04] 7/2/1 | 1.16 [0.43–3.27] 4/1/5 | 1.60 [0.82–3.37] 8/1/1 | 1.09 [0.65–2.47] 4/4/2 | priced on every part (review-fixes-2 §2), timed here first | **mixed: HBM parts lose at long rows** (finding 4) |
+| `unit-uniform` (prefill T8192) | 1.50 | 0.75 | 2.08 | 0.65 | 5080 1.85 | **mixed** (finding 4) |
+| `mma-combine` (TF32 / bf16 tiles) | 1.09 [0.93–1.49] 3/0/3 | 1.03 [0.84–1.34] 3/0/3 | 0.97 [0.86–1.09] 1/1/2 | 0.90 0/0/1 | 5080 1.02–1.30 (ON / OFF 0.77–0.985) | **mixed on every part** (finding 5) |
+| `split-tile` (f32 GEMMs, tf32x3) | = shipped | **0.70 [0.56–0.79] 0/0/12** | = shipped | = shipped | the rate rule takes tf32x3 on the A100 only (unmeasured) | **refuted** (finding 2) |
+| `wgmma-ws` (TF32 rows) | — | — | — | **0.76 [0.39–1.02] 0/3/9** | H100 1.01–1.25 (hopper.md) | **refuted in program time; confirmed per kernel** (finding 3) |
+
+Per row and part: `analysis/arms.md`, summary `analysis/armsum.md`.
+
+**The regressions' predictions, measured** (`analysis/feat.md`):
+
+| | rtx-5080 | rtx-3090 | a100 | rtx-4090 | h100 |
+|---|---|---|---|---|---|
+| `llm_dec_b1_l2048` ms/step 3a8e654f → now (/ best now) | 0.239 → 0.240 (0.92) | 0.326 → **0.269** (0.77) | 0.471 → **0.214** (0.80) | 0.243 → 0.270 (0.66) | 0.326 → **0.110** (0.57) |
+| `llm_blkdec_b1_l4096_bf16w` ms/step | 0.635 → 0.627 | 1.135 → **0.706** | 2.062 → **0.792** | 0.647 → 0.708 | 1.525 → **0.493** |
+| bf16 KV cache: `_bf16kv` / f32-cache twin, Mapal ms, geomean B ≥ 8 | 0.78 → **0.67** | 0.89 → **0.74** | 1.40 → **0.82** | 0.69 → 0.68 | 1.56 → **0.85** |
+
+The B1 decode is back below its 19a8a44e time on the 3090 / A100 / H100 (H100 0.115 then, 0.110 now) and wins against
+torch on every part; the 4090's 1.05–1.13 × 3a8e654f is its box (a Xeon E5-2640 v4 host against an EPYC 7702P;
+`post-table` = shipped there). The bf16 cache now pays on the HBM parts too (the scores kernel's 32 16-byte loads a thread), as predicted.
+
+### Properties: measured on the box against what the compiler prices (`analysis/props-<part>.md`)
+
+| property (priced: measured in profile.rs, else derived) | rtx-5080 | rtx-3090 | a100 | rtx-4090 | h100 |
+|---|---|---|---|---|---|
+| sustained clock MHz (profile) | 2 783 (2 450) | 1 424 (1 561) | 1 409 (1 410) | 2 224 (2 520) | 1 806 (1 807) |
+| DRAM read GB/s (plan rate) | 917 (890) | 892 (891) | 1 487 (1 488) | 855 (981) | 3 180 (3 186) |
+| in-flight knee KiB a SM (`fly`) | 8 (8) | 8 (8) | 16 (16) | 4 (4) | 32 (32) |
+| `bar_ns`, 256 threads (derived: 41 cycles at the clock) | 16.9 (17) | **33.5** (26) | **38.1** (29) | **22.5** (16) | 21.1 (22) |
+| `coop_body_cycles` (derived 4 390) | 2 879 (4 390) | 2 102 | 4 048 | **7 292** | 348 |
+| panel-load latency, 573 × idle DRAM latency / the 5080's (derived: 573 at the clock) | 573 | 515 (899) | 662 (995) | 409 (380) | 585 (776) |
+| `mma.sync` TF32 / 16-bit flops a SM a clock | 256 / 512 | 256 / 512 | 1 012 / 2 024 (1 024 / 2 048) | 256 / 512 | **1 351 / 2 702 (532 / 1 064)** |
+| tf32x3 issue pattern (`split3`) flops a SM a clock | 254 | 252 | 824 | 252 | 1 079 |
+| `tma_copy_ns` (box ≤ 4 KiB, depth ≥ 2) | 197 (197) | — | — | — | 158 (159) |
+| `l2_keep_bytes` (`l2keep.cu`; profile: nominal L2 on the rented parts) | — (profile 1.025 × L2) | **< 1.0 × L2** | **< 1.0 × L2** | 1.015 × L2 | **< 1.0 × L2** |
+| `pageable_pm` (`pinned` below 900) | 685 (695) | 951 (0) | 794 (0) | 741 (0) | 833 (0) |
+
+**Would a measured value flip a rule?** Replayed through the emitter (`replay_flip.sh`: the part's profile against the
+same profile with the measured value as `--cost=`): the **H100's measured `mma.sync` rates flip `split_rate_pays` for
+tf32x3** (1 351 ≥ 1.3 · 3 · 256) — `pj_m2048_n4096_k4096`, `mlp_2048`, `pj_m128_n6144_k4096` change emission — toward
+the realization that loses 12 / 12 on the A100 (finding 2): measuring the rate without fixing the split's staging
+would move the H100's f32 GEMMs onto it. `pinned` flips in the rule table on the A100 / 4090 / H100 (741–833 < 900) but
+moves no suite program (3 replayed per part). The measured `bar_ns` / panel latency / `l2_keep_bytes` (A100 stream,
+prefill and attention), `coop_body_cycles` (the `calls` programs on all four), the GeForce parts' sustained clocks and
+the 4090's DRAM rate move no emission. Two derivations are off by a stable factor: `bar_ns` (Ampere / Ada measure 54–57
+cycles, the 5080 / H100 41–45) and the latency (DRAM latency is ns, not SM cycles: the clock-scaled value is 1.3–1.8×
+the measured one); the L2 keeps less than its nominal size on the 3090 / A100 / H100 (a 1.0 × L2 cyclic stream re-reads
+at the DRAM rate), which the tune's cold flag reads as resident.
+
+### New losers and what they point at
+
+2. **`split-tile` on the A100 (tf32x3 on f32 GEMMs): OFF / ON 0.56–0.79 on all 12 programs** (f32 class 1.040 →
+   1.104, MLP 1.248 → 1.537, prefill T8192 132 → 209 ms with `stream` below). The rate rule's side holds — `calib.cu
+   matrix` measures the split's issue at 824 flops a SM a clock (2.1× the FFMA's useful rate) — the kernel does not:
+   `pj_m2048_n4096_k4096` runs 7.09 ms against the FFMA tile's 5.21 (19 % of the TF32 peak over three products). SASS:
+   the split kernel's hot loop has **40 LDG and 0 LDGSTS** (the intent "16-byte cp.async panels" fails on 113 A100
+   kernels, `evidence-a100.tsv`): its operand panels are register-staged (LDG → split → STS) at 2 stages, 3 blocks
+   an SM, 145 registers, where the FFMA tile streams them by `cp.async`. **Points at**: the split form's operand
+   staging (split on the fragment after an async panel copy) and `split_rate_pays` reading peak rates only — the
+   split tile's realized rate at its staging is the property the rule lacks; the H100 flip above makes it urgent.
+3. **`wgmma-ws` on the H100: per kernel it wins, per program it loses.** Traced kernel alone (`probe_kernels`): ON
+   0.073 / 0.096 + 0.094 / 0.092 / 1.845 ms against OFF 0.076 / 0.134 + 0.129 / 0.133 / 2.000 (m128 × 4096, the MLP,
+   m128 × 6144, m2048 × 28672: 1.04–1.45×, hopper.md's 1.01–1.25 confirmed on the device). The program's iteration:
+   ON 0.212 / 0.350 / 0.235 against OFF 0.083 / 0.265 / 0.145 ms — each ws call carries 120–270 µs outside its kernel
+   (OFF 2–7 µs),
+   varying by repetition (m2048 × 4096: ON 0.435–0.553 ms, the same build's null copy 0.417–0.476, OFF 0.303–0.311;
+   kernel 0.287 vs 0.296), absent in hopper.md's session (ON iteration = kernel). TF32 class 1.918 → 2.625. cuBLAS
+   runs `sm90_xmma_gemm_…_tilesize128x256x32_warpgroupsize2x1x1` on a persistent 66 × 2 grid (ktrace): our tile at 256
+   CTAs. **Points at**: the steady-state cost of a TMA kernel's launch (2 `__grid_constant__` tensor maps, 1 block a
+   SM at 196 KiB, `setmaxnreg`) that `MAPAL_GPU_TRACE`'s synchronized timing does not see — an nsys timeline of the
+   untraced loop names it; no `DeviceCost` property prices a TMA launch today.
+4. **`stream` at long rows on the HBM parts**: A100 `llm_pre_t8192` 0.75, `attn_2048_128` 0.43, prefill T2048 0.90–0.96;
+   H100 `llm_pre_t8192` 0.65, `attn_2048_64` 0.90 — while the GDDR parts win (3090 7/2/1, 4090 8/1/1: T8192 1.47 /
+   2.01) — a mixed result. The A100 takes row blocks of 8–32 on every streamed site (`b8xkb32:rt1g8t64:cp:s8` for
+   attention d = 128, `b16xkb64` at T8192, where the 3090 / 4090 take 64 and the H100 128). Its evidence line prices
+   the d = 128 stream at 0.256 ms against the split realization's 0.373 (`ns_stream` / `ns_split`); measured 0.732
+   against OFF's 0.317 — the stream priced 2.9× fast, the split 1.2× slow (T8192: priced 6.7 vs 13.2 ms a launch,
+   measured program ON 209 / OFF 157 ms; H100 2.2 vs 4.3, measured 86.6 / 56.5). The measured `bar_ns` / latency / L2
+   keep do not move it (replayed). The stream side is priced on derived plan rates on the A100 / H100 (no measured
+   FMA-tile fraction, LSU issue or stream rate; review-fixes-2 §2) and the materialized side's DRAM traffic is cheap
+   where `ffma_per_dram_byte` is 12.6 / 18 (A100 / H100) against 38–82 on the GDDR parts. **Points at**: a measured
+   stream rate per part (a `calib.cu` stream kind: the row-block kernel's issue at the part's lanes and LSU) and the
+   two sides' price at the part's FFMA / DRAM balance. Llama prefill T8192 against Liger: 3090 1.06, 4090 0.93, 5080
+   0.86, A100 3.15, H100 3.35.
+5. **`mma-combine` mixed on every part**: the TF32 MLP cuts lose on the 3090 / A100 (0.84–0.95), `pj_m128_n6144` cuts
+   win on the 3090 (1.27–1.49) and lose on the 4090 / H100 (0.86–0.92). The wave model `⌈blocks·S/slots⌉·(P/S +
+   stages)` counts waves, not the combine's `red` traffic (`atomic_ops_per_ns`, derived on the 3090 / A100 / H100) nor
+   the part's tile efficiency — the property that separates the parts.
+6. **`streamk-epi` on the 3090**: `loop_4096` 0.74, `epi_4096` 0.94 (H100 3 / 5 / 0, 5080 wins): the ticket's shared
+   tiles' partials against a 6 MiB L2 (75 KiB a SM, `grid-share` off) — unpriced.
+7. Unchanged / structural: the `_bf16w` prefills (f32 products on bf16 weights) 2.9–3.5× torch bf16 on the GeForce
+   parts, 11.8–17.5× on the A100 / H100 (tensor-core bf16 against FFMA); the H100's 16-bit tiles on `mma.sync` (pj
+   bf16 m2048 2.62×; no `wgmma` for 16-bit); `lsm_32_8192` 2.3–2.9×; `stream-fly`'s post-site intents now checked on
+   the HBM parts (A100 112, H100 226 misses: "a block on every SM", "the knee in flight").
+
+Key rows (Mapal / best, leg; `analysis/keyrows.md`; every row: matrix.md):
+
+| row | rtx-5080 | rtx-3090 | a100 | rtx-4090 | h100 |
+|---|---|---|---|---|---|
+| lsm_1_131072 | 0.78 compile-cg | 1.07 compile-ro | 1.00 compile-cg | 0.87 compile-ro | 1.45 compile-cg |
+| decode_1024_256 | 0.53 chain-cache | 0.74 chain-cache | 0.79 chain-cache | 0.35 chain-cache | 1.41 chain-cache |
+| llm_dec_b1_l2048 | 0.92 compile-ro | 0.77 compile | 0.80 compile | 0.66 compile | 0.57 compile-cg |
+| llm_dec_b32_l8192 (f32) | 0.29 compile-cg | 0.28 compile-ro | 0.30 compile-ro | 0.31 compile | 0.26 compile-cg |
+| llm_dec_b32_l8192_bf16kv | 1.16 bf16-compile | 1.18 bf16-cudnn | 1.45 bf16-cudnn | 1.17 bf16-compile | 1.63 bf16-compile-cg |
+| pj_m2048_n6144_k4096_bf16 | 1.06 bf16-compile-ro | 1.02 bf16-compile-ro | 1.48 bf16-compile-cg | 1.13 bf16-compile-cg | 2.54 bf16-compile |
+| pj_m2048_n4096_k4096_tf32 | 1.15 lt-tf32-fresh | 1.04 compile-ro-tf32 | 1.47 lt-tf32 | 1.13 lt-tf32 | 2.99 lt-tf32-fresh |
+| llm_pre_t8192 | 0.86 liger | 1.06 liger | 3.15 liger | 0.93 liger | 3.35 liger |
+| llm_pre_t2048_bf16 | 1.37 bf16-compile-cg | 1.26 bf16-compile-ro | 1.94 bf16-compile-cg | 1.41 bf16-compile-cg | 3.53 bf16-compile-ro |
+
+### Peak device memory, the automatic KV cache, the fp8 rows
+
+Peak (`mapal_gpu_peak` against torch one process per (program, leg), the fastest f32 leg measured; 22 KV-twin and f32
+layer rows): geomean Mapal / torch 5080 0.77 (21 lower; `dec_b1_l2048` 1.03), 3090 0.76, A100 0.75, 4090 0.73, H100 0.73
+— **lower on all 22 rows of every rented part** (3a8e654f: 0.84–0.89 with the prefills at 1.22–1.60): prefill T2048
+0.33–0.42, T8192 0.41, block prefill 0.64–0.73 — the streamed attention stores no score array (`analysis/peaks*.md`).
+
+Naive twins (Mapal naive ms (/ torch naive, / torch HF-cache f32); explicit / HF-cache; peak MB naive / torch naive):
+
+| shape | rtx-5080 | rtx-3090 | a100 | rtx-4090 | h100 |
+|---|---|---|---|---|---|
+| B1 L2048 | 6.4 (0.13, 0.92); 0.68; 286 / 313 | 8.9 (0.10, 1.16); 0.80; 286 / 313 | 11.2 (0.08, 1.71); 0.94; 286 / 322 | 6.1 (0.18, 0.85); 0.70; 285 / 353 | 3.9 (0.11, 0.95); 0.64; 291 / 356 |
+| B1 L8192 | 15.9 (0.09, 1.24); 0.73; 651 / 748 | 26.8 (0.08, 1.72); 0.85; 651 / 748 | 35.5 (0.08, 2.25); 1.01; 651 / 748 | 13.7 (0.11, 1.20); 0.77; 651 / 748 | 11.0 (0.08, 1.35); 0.64; 655 / 772 |
+| B8 L2048 | 27.9 (0.08, 1.12); 0.59; 1140 / 1321 | 66.5 (0.09, 2.03); 0.88; 1128 / 1321 | 70.2 (0.07, 1.98); 0.85; 1136 / 1321 | 23.6 (0.09, 1.08); 0.61; 1136 / 1321 | 21.3 (0.08, 1.63); 0.73; 1150 / 1345 |
+| B8 L8192 | 112 (0.07, 1.17); 0.50; 4031 / 4780 | 241 (0.09, 2.03); 0.82; 4023 / 4780 | 285 (0.06, 2.18); 0.76; 4031 / 4780 | 86.8 (0.09, 1.12); 0.55; 4031 / 4780 | 78.3 (0.07, 1.80); 0.72; 4041 / 4804 |
+| B32 L2048 | 107 (0.07, 1.16); 0.52; 4030 / 4778 | 229 (0.08, 1.95); 0.77; 4026 / 4778 | 284 (0.06, 2.38); 0.86; 4026 / 4778 | 88.0 (0.09, 1.21); 0.59; 4030 / 4778 | 78.4 (0.07, 1.76); 0.71; 4040 / 4802 |
+| block B1 L4096 | 23.0 (0.18, 1.13); 0.95; 1080 / 1130 | 28.5 (0.15, 1.20); 0.94; 1080 / 1130 | 30.7 (0.13, 1.55); 1.04; 1080 / 1130 | 22.6 (0.30, 1.00); 0.89; 1080 / 1154 | 13.3 (0.18, 1.45); 1.14; 1085 / 1154 |
+
+The naive program is 0.06–0.30× torch running it at 0.80–0.96× its peak, 0.85–2.38× torch's HF-cache program; the
+explicit twin 0.50–0.88× HF-cache at B ≥ 8 (`kmajor-b`: the 5080's B8 L8192 0.65 → 0.50). The A100 naive rows grew
+(B8 L8192 202 → 285 ms: its projections on `split-tile`, finding 2).
+
+fp8 rows (`analysis/f8tab.md`; Mapal ms a step / its `_bf16w` twin, geomean): 5080 0.74, 3090 1.03, A100 0.92, H100
+0.82 (B1 L2048: 5080 0.36, the others 0.87–0.92); against the bf16 reference leg 1.00–1.26 (B1 rows 0.37–0.90, B32 1.33–2.10). 4090:
+finding 1.
+
+### Evidence (intent check, `evidence-<part>.tsv`)
+
+5080 (bM) 120 191 checks / 5 755 mismatches, 3090 130 172 / 4 960, A100 116 728 / 8 670, 4090 138 067 / 5 167, H100
+140 971 / 9 034. This code's intents: `wgmma-ws` 81 / 81, `ws-regs` 22 / 22 (H100), `stream` 270–397 a part, `stream-mma`,
+`unit-uniform`, `mma-combine`, `vec-cells` and `round-store` 0 misses (H100 one); `kmajor-b` 0 on the 3090 / A100 /
+4090 (5080 12, H100 45); `streamk-epi` 13–14 on the A100 / H100; **`split-tile` 113 / 749 on the A100** (finding 2:
+no LDGSTS in the hot loop); `stream-fly` 34–226 (the post sites now checked on the HBM parts); the standing groups
+(`kmajor-a` 128-bit STS / LDS, `staged-regs` spills, `face-registers`, `prefetch` cover) as in 3a8e654f.
+
+### Open items (missing facts)
+
+1. The capability's PTX ISA (`cvt.f16x2.e4m3x2` on sm_89 needs PTX 8.1) and a preflight on `ptxas` errors (finding 1).
+2. The split realization's operand staging and its realized rate in `split_rate_pays` — before the H100's measured
+   `mma.sync` rate (1 351 / 2 702, profile 532 / 1 064) is put in its profile (finding 2).
+3. The TMA kernel's steady-state launch cost (`wgmma-ws`: 120–270 µs a call outside the kernel on the H100; finding 3).
+4. A measured stream rate per part and the two sides' price at the FFMA / DRAM balance (finding 4); `mma-combine`'s
+   combine traffic (5); `streamk-epi`'s shared tiles against the L2 (6).
+5. Derivations to replace by measurement: `bar_ns` (Ampere / Ada 54–57 cycles), the panel latency (ns, not cycles),
+   `l2_keep_bytes` (< 1.0 × L2 on the 3090 / A100 / H100), `coop_body_cycles` (348–7 292 measured, 4 390 derived).
+
+Raw (local, not in git): `.claude/raw-evidence/cross-arch/5fcb401b/<part>/` (results, run output, `calib-<part>.txt`,
+`evidence-<part>.tsv`, `prof-<part>.tgz`, torch / FA build logs, wisdom, tune; 4090: the f8w-abort and gpu-hang boxes'
+output, `f8w-ptxas-sm89.txt`, `extend.log`), `rtx-5080/` (resS, resM, torch-peak-proc.txt, the calibrations),
+`analysis/` (gates, props, gap, ms, cm, cmtab, peaks, xcmp, arms, armsum, feat, f8tab, bf16tab, keyrows, rowsets,
+evidence-sum, cost, matrix-3a8e654f.json), `scripts/` (stems, build, build_all, launch, watchdog, h100_wait,
+ready_when_built, box_profile_h100, extend_4090, ops_nsys, leads, local_bundle, local_run, analyze, props5, kplan,
+replay_stream, replay_flip, armtab, armsum, xcmp, feat, f8tab, rowsets, gates, peaks, cmtab, evsum, legcount, cost).

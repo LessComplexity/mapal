@@ -175,15 +175,25 @@ Current: the cross-part matrix against every competitor leg ([matrix](benches/re
 2026-11-23 the best competitor is the fastest real-world implementation — torch.compile with CUDA graphs, SDPA
 (efficient / cuDNN), hand-written Triton, Liger, FlashAttention-2/3, FlashInfer
 ([competitors](benches/results/evidence/local-rtx-5080/competitors.md); TensorRT-LLM does not install on torch 2.11;
-the rented parts on the final code: [cross-arch 3a8e654f](benches/results/evidence/cross-arch/README.md#3a8e654f-final-code-all-competitors)).
+the rented parts on the final code: [cross-arch 3a8e654f](benches/results/evidence/cross-arch/README.md#3a8e654f-final-code-all-competitors);
+every part re-timed on `5fcb401b`: [cross-arch 5fcb401b](benches/results/evidence/cross-arch/README.md#5fcb401b-confirmation-all-competitors)).
 
-| geomean Mapal / best, every leg (win / even / loss) | 86 rows, 19a8a44e | 86 rows, 3a8e654f (final code) | + 34 bf16-storage rows (tensor cores, bf16 KV cache) | all 120 rows |
+| geomean Mapal / best, every leg (win / even / loss) | 86 rows, 3a8e654f | 86 rows, 5fcb401b | 34 bf16-storage rows, 3a8e654f → 5fcb401b | all 120 rows, 3a8e654f → 5fcb401b |
 | --- | ---: | ---: | ---: | ---: |
-| RTX 5080 (local) | 1.001 (18 / 22 / 46) | 0.993 (19 / 19 / 48) | 1.318 (6 / 2 / 26) | 1.076 (25 / 21 / 74) |
-| RTX 3090 (350 W box) | 1.054 (32 / 9 / 45) | 1.008 (16 / 19 / 51) | 1.495 (0 / 2 / 32) | 1.127 (16 / 21 / 83) |
-| A100 SXM4 40 GB | 1.199 (16 / 13 / 57) | 1.200 (13 / 14 / 59) | 2.613 (0 / 0 / 34) | 1.496 (13 / 14 / 93) |
-| RTX 4090 (450 W box) | 1.081 (24 / 13 / 49) | 1.061 (17 / 21 / 48) | 1.228 (8 / 3 / 23) | 1.106 (25 / 24 / 71) |
-| H100 SXM (500 W box) | 1.203 (16 / 1 / 69) | 1.223 (14 / 4 / 68) | 2.923 (0 / 0 / 34) | 1.566 (14 / 4 / 102) |
+| RTX 5080 (local) | 0.993 (19 / 19 / 48) | **0.945** (23 / 28 / 35) | 1.318 → **1.068** (7 / 11 / 16) | 1.076 → **0.979** (30 / 39 / 51) |
+| RTX 3090 (350 → 250 W box) | 1.008 (16 / 19 / 51) | **0.952** (35 / 12 / 39) | 1.495 → **1.171** (8 / 5 / 21) | 1.127 → **1.009** (43 / 17 / 60) |
+| A100 SXM4 40 GB (300 → 400 W) | 1.200 (13 / 14 / 59) | **1.188** (18 / 4 / 63; 85) | 2.613 → **1.388** (6 / 5 / 23) | 1.496 → **1.242** (24 / 9 / 86; 119) |
+| RTX 4090 (450 W box) | 1.061 (17 / 21 / 48) | **0.946** (22 / 21 / 43) | 1.228 → **0.952** (14 / 6 / 14) | 1.106 → **0.948** (36 / 27 / 57) |
+| H100 SXM (500 → 700 W box) | 1.223 (14 / 4 / 68) | **1.181** (15 / 2 / 69) | 2.923 → **1.740** (7 / 1 / 26) | 1.566 → **1.318** (22 / 3 / 95) |
+
+The confirmation round (every leg re-timed on each box; 7 fp8-weight decode rows added, no fp8 leg exists): the B1
+decode's split launches (H100 0.326 → 0.110 ms a step, 0.57× torch-compile-cg), the bf16 KV cache now beats the f32
+cache on the HBM parts too (A100 / H100 1.40 / 1.56 → 0.82 / 0.85 of its twin's time), `vec-spread`, `kmajor-b`,
+`stream-mma`, `round-store` and `warm-zero` win where their rules take them, and peak memory is below torch on all 22
+layer rows of every rented part (the prefills 0.33–0.41×). Refuted on the hardware: tf32x3 split tiles on the A100
+(0.56–0.79× the FFMA tile: register-staged panels), the H100's warp-specialized TF32 kernels (faster per kernel, but
+120–270 µs a call outside it), the streamed attention at long rows on the A100 / H100 (0.43–0.75× its split form);
+the fp8 rows do not load on the 4090 (PTX ISA 7.8 for an sm_89 instruction that needs 8.1).
 
 On the final code the lsm rows split on every rented part (9.9–13.8× → 0.96–1.69× torch-compile-cg) and the 4090 /
 3090 decode chains form (0.41 / 0.75× the hand-written KV-cache decode); a GEMV epilogue site left unsplit makes B1
