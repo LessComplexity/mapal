@@ -145,4 +145,10 @@ if [ -f gemm_lib.cu ]; then
         fi
     done
 fi
+# review: the intent check over this run (evidence.py: the bundle's static facts, its rung table) — a run without
+# its evidence-<prof>.tsv is not a result (CLAUDE.md); vast_run.sh fetches /w/evidence-<prof>.tsv.
+if [ -f evidence.py ] && [ -f "$PROF/evidence/facts.json" ]; then
+    python3 evidence.py check "$PROF" "$LOG" > "evidence-$PROF.tsv" 2> evidence-check.err
+    say "evidence: $(tail -1 "evidence-$PROF.tsv")"
+fi
 say "== done"

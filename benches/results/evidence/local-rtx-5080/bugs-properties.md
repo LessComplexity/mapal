@@ -81,8 +81,9 @@ The SASS (above) refutes the round's diagnosis: the k loop streams its panels by
 **instruction issue**: per k-step of its 2 × 4 warp tile, 24 HMMA, 32 flushes (FADD) and ~352 instructions of the
 split itself (`hi = rna(x)` is an integer sequence on every SM — no F2F — plus the guard): 1 639 per 4 k-steps, 40
 useful flops per warp-instruction, a ceiling of 160 useful flops an SM a clock (4 schedulers) against the FFMA tile's
-128 on the A100's 64-lane SM, 256 on the others. It realized 63.6 (0.40 of the ceiling) against the FFMA tile's 86.6
-(0.68 of its peak). **Rule** `rules::split_issue_pays` (beside `split_rate_pays`, read by `split_pays` at the tile):
+128 on the A100's 64-lane SM, 256 on the others. It realized 86.6 (0.54 of the ceiling: 68.7 Gflop in 5.213 ms)
+against the FFMA tile's 117.7 (0.92 of its peak: 3.832 ms) — raw 5fcb401b `results-a100.txt`; the 63.6 / 86.6 first
+written here came from the base README's 7.09 / 5.21 ms pair, which no A100 round measured (review). **Rule** `rules::split_issue_pays` (beside `split_rate_pays`, read by `split_pays` at the tile):
 `schedulers · useful / insns ≥ 1.7 · 2 · fp32_lanes`, `insns = (P + 4)·mt·nt + 22 · (16·mt + 8·nt)·k/32` for a form that
 splits its operands (`SPLIT_ELEM_INSNS` 22 counted in the A100 kernel, the same PTX on sm_86 / 90 / 120 within 4 %),
 none for `narrow1`. The margin 1.7 = the A100's measured break-even (ceiling 1.25 × FFMA realized 0.73 ×). Replay:
@@ -136,7 +137,12 @@ Measured on the 3090: the stream-K and ordered kernels of `loop_4096` share thei
 LDG a trip; 230 / 224 registers, no spill), yet run 6.00–6.14 against 5.29–5.58 ms; the workspace's partials are ≤ 47
 µs. The walk's CTAs start `iters` units apart, so the blocks reading one panel read it at skewed `k`: its reuse is the
 L2's across the walk, where the ordered wave shares each panel in lockstep. On a 6 MiB L2 (75 KiB an SM) 128 MiB of
-operands lose it; 2 MiB keep it (`indep_512` 1.05, `mlp_512` 1.13). **Rule** `rules::streamk_epi_pays`: the walk
+operands lose it; 2 MiB keep it (`indep_512` 1.05, `mlp_512` 1.13). **Mechanism open** (review, evidence rule 3): the
+L2 reuse is inferred, not measured — the SASS is equal between the arms and no L2 hit rate or DRAM byte counter exists
+for any part (`ncu-rtx-3090.csv` is empty, as are the A100 / H100 captures; no `ncu` on the local box). The gate below
+ships because it keeps the measured side of every replayed arm; the next 3090 round's `ncu` pass
+(`lts__t_sector_hit_rate`, `dram__bytes_read`) on `loop_4096` walk / ordered decides whether it stands on this fact.
+**Rule** `rules::streamk_epi_pays`: the walk
 where `l2_bytes_per_sm ≥ L2_PER_SM` (`grid-share`'s property) or the site's operands fit `l2_keep_bytes`; else the
 group's ordered kernel (`epi_walk` → `epi_order`; `--gpu-on=streamk-epi` forces the walk). Replay: 3090 `loop_4096` /
 `epi_4096` off ✓, the 512s on ✓, the 2048s off (nulls); H100 (388 KiB) / 5080 / A100 / 4090 unchanged.

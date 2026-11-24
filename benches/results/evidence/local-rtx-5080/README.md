@@ -353,7 +353,8 @@ rates (H100 1351 / 2702, A100 1012 / 2024), `bar_cycles`, `lat_ns`, `coop_body_c
 
 **tensor-cores-2** (`fix/tensor-cores`, `tensor-cores-2.md`): split tiles priced at their issue (`split-issue`,
 `split_issue_pm`), the integer TF32 cut (792 instructions a 96-HMMA panel, was 1612), f32 × bf16 on the bf16 warp
-product (bf16x2n / bf16x3n, `split-least`); A100 tf32x3 1.43–1.54 over the FFMA tile (12 / 12 losers → winners),
+product (bf16x2n / bf16x3n, `split-least`); A100 tf32x3 1.43–1.54 over the FFMA tile (11 / 12 losers → winners;
+`pj_m128_n6144_k4096` still 0.809, open; the A100 box's probes at a ramp clock: ratios only, `tensor-cores-2.md`),
 bf16w prefills A100 1.74 / 2.67, H100 PCIe 1.69 / 2.16. Open: the GeForce bf16x2n tile's realized pipe fraction. $0.50.
 
 **hopper-launch** (`hopper-launch.md`): the TMA kernel's first-launch path (recipes from the module text, the map
@@ -373,4 +374,9 @@ line (158 / 74 / 16 / 23 open). Comparing each program's merged emission with ea
 interaction and it is fixed: `cut-price` weighed a split tile's waves at the matrix pipe's rate (3× fast for tf32x3) and
 refused the A100 cuts tensor-cores-2 timed winning; now at the realized rate. 1541 tests; the five rented parts' 685
 modules through ptxas; full suite + model scale + every competitor leg once: geomean 1.008 against 5fcb401b (126 of
-137 programs equal text), 5080 column 0.979 → **0.965** (32 / 37 / 51). Steps' rental $3.29.
+137 programs equal text), 5080 column 0.979 → **0.978** (30 / 39 / 51; review: the 0.965 first reported came from
+the 104 equal-text rows' session drift — Mapal ×0.990, best leg ×1.005 on the same objects — now held at their
+5fcb401b timing, null by construction; the 14 changed rows 1.288 → 1.280). Steps' rental $3.29. Review: the three
+hopper-launch H100 runs' evidence rebuilt from the deterministic emission (12 / 12 measured kernels named alike; the
+step's intents 0 mismatch, `hopper-launch.md`); the three attention-chains A100 runs have no evidence pass and are
+timing only — not results until the next round re-times them with one.

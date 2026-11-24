@@ -2818,9 +2818,15 @@ fn mma_pieces(l: &Launch, m: &GpuMmaTile, site: &TileSite, gpu: &Gpu) -> u64 {
     // ([`split_issue`]) — the rate its panels realize, the one its waves and
     // its cut's fixed work are weighed at. At the matrix pipe's rate the
     // A100's tf32x3 panels were priced 3× fast, so the cut's partials
-    // outweighed the waves it saves: `pj_m128_n4096_k4096` / `_k14336` and
-    // one `mlp_2048` GEMM went uncut where tensor-cores-2 measured their cuts
-    // winning (`S` 8 / 8 / 4: 1.105 / 1.055 / 1.428 over the FFMA tile).
+    // outweighed the waves it saves: `pj_m128_n4096_k4096` / `_k14336` went
+    // uncut where tensor-cores-2 measured their `S` = 8 cuts winning (1.105 /
+    // 1.055 over the FFMA tile); priced here, both cut again. The 2048-row
+    // tiles stay whole: tensor-cores-2's run timed the 2048³ tf32x3 tile both
+    // ways side by side (`mlp_2048` / `mlp2_2048`: whole 0.891–0.901 ms, `S`
+    // = 4 0.915–0.919, the same hot loop — the cut's `red` adds and zero pass
+    // cost more than the wave tail it saves). `pj_m2048_n4096_k4096` /
+    // `_k14336` (measured at `S` = 2, now whole) have no whole-tile timing:
+    // open until the next A100 round times them.
     let rate = match m.split {
         Some(kind) => {
             let issue = split_issue(site, gpu, m, kind, l.rungs.split_issue).max(1000);
@@ -8466,6 +8472,39 @@ impl Kernel<'_> {
         g
     }
 
+    /// review: **whether any accumulator of the thread's tiles is not
+    /// finite** after the `k` loop. A cut form multiplies every bf16 part of
+    /// the f32 operand by the narrow element: `±inf` times a part of `0`
+    /// (`rn(1 − 1)`) or of the other sign is a NaN the exact product does
+    /// not have — and every such product leaves its cell non-finite (`inf`
+    /// or NaN; NaN and `inf − inf` stay so). One test a cell, once a tile:
+    /// such a tile takes the guard (the FFMA cold path widens the narrow
+    /// operand), where a test of every narrow fragment register cost 6 % of
+    /// the hot loop's instructions (A100 `bf16x2n` 800 → 848, H100 PCIe 1368
+    /// → 1448).
+    fn acc_nonfinite(&mut self, n: usize, acc_slot: &dyn Fn(&mut Self, usize) -> String) -> String {
+        let mut any: Option<String> = None;
+        for idx in 0..n {
+            let p = acc_slot(self, idx);
+            let v = self.tmp();
+            self.line(format!("{v} = load float, ptr {p}, align 4"));
+            let (x, m) = (self.tmp(), self.tmp());
+            self.line(format!("{x} = bitcast float {v} to i32"));
+            self.line(format!("{m} = and i32 {x}, 2147483647"));
+            let t = self.tmp();
+            self.line(format!("{t} = icmp uge i32 {m}, 2139095040"));
+            any = Some(match any {
+                None => t,
+                Some(x) => {
+                    let o = self.tmp();
+                    self.line(format!("{o} = or i1 {x}, {t}"));
+                    o
+                }
+            });
+        }
+        any.expect("an accumulator")
+    }
+
     /// tensor-cores-2 `bf16x3n` / `bf16x2n`: an f32 pair's first `parts`
     /// bf16 parts (`mapal_ir::split::bf16_parts`, the lower `k` in each
     /// register's low half) — `p₀ = rn(x)`, `p₁ = rn(x − p₀)`, `p₂ = rn(x −
@@ -9155,6 +9194,10 @@ impl Kernel<'_> {
         let t2 = self.op("mul", &t4, 2);
         let ocol = self.op("add", &ocol, &t2);
         if let Some(flag) = &inf_slot {
+            // The narrow operand's non-finite elements: their cells
+            // ([`Self::acc_nonfinite`]).
+            let nf = self.acc_nonfinite(mt * nt * 4, &acc_slot);
+            self.or_guards(flag, &[nf]);
             self.split_cold(flag, &orow, &ocol, &seed, kext, (mt, nt), &acc_slot);
         }
         for mi in 0..mt {

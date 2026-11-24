@@ -197,10 +197,12 @@ the fp8 rows do not load on the 4090 (PTX ISA 7.8 for an sm_89 instruction that 
 
 Fixed since, on one branch ([confirmation-fixes merge](benches/results/evidence/local-rtx-5080/integration.md#confirmation-fixes-merge);
 single-session A/Bs on rented boxes, the rented columns move at the next round): the PTX ISA as a capability (the 4090's
-55 fp8 modules assemble), tf32x3 tiles at their issue (A100 1.43–1.54× the FFMA tile), bf16 weights on the bf16 warp
+55 fp8 modules assemble), tf32x3 tiles at their issue (A100 1.43–1.54× the FFMA tile on tensor-cores-2's kernels, 11 /
+12 programs; the merge runs 13 A100 programs' 2048-row tiles whole, timed whole only for 2048³), bf16 weights on the bf16 warp
 product (A100 / H100 PCIe prefills 1.69–2.67×), the TMA kernel's first launch off the clock (H100 `wgmma-ws` 11 / 12
-wins), the A100's streamed attention (0.94 → 0.30 ms at 2048 × 128). RTX 5080 at the merge, all 120 rows:
-**0.965** (32 / 37 / 51).
+wins), the A100's streamed attention (0.94 → 0.30 ms at 2048 × 128; timing only, no evidence pass). RTX 5080 at the
+merge, all 120 rows: **0.978** (30 / 39 / 51) — the 104 rows whose text equals 5fcb401b's held at that timing (null
+by construction); the merge's 14 changed rows 1.288 → 1.280.
 
 On the final code the lsm rows split on every rented part (9.9–13.8× → 0.96–1.69× torch-compile-cg) and the 4090 /
 3090 decode chains form (0.41 / 0.75× the hand-written KV-cache decode); a GEMV epilogue site left unsplit makes B1

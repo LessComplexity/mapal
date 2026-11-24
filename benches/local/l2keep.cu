@@ -1,7 +1,8 @@
 // integration: how much of a cyclic read stream larger than the L2 the L2 keeps — the bandwidth of re-reading a
 // working set of `ws` bytes back to back (each pass one kernel, as a program's repeated calls), ws / L2 at the given
-// ratios (the first is a warm-up). `l2_keep_bytes` (profile.rs `DeviceCost`) = the largest ws re-read at no less than
-// the midpoint of the L2 and DRAM rates (RTX 5080: 1.025 x the 64 MiB L2).
+// ratios (the first is a warm-up). `l2_keep_bytes` (profile.rs `DeviceCost`, `l2_keep_of_sweep`) = the largest ws
+// re-read at no less than the midpoint of the sweep's plateau (its highest rate: this stream's L2 rate, which on the
+// RTX 3090 is 1.2 TB/s, not the derived 2.4) and the DRAM rate (RTX 5080: 1.025 x the 64 MiB L2; RTX 3090: 1.03 x).
 // build: nvcc -O2 -arch=sm_120 l2keep.cu -o l2keep; run: ./l2keep
 #include <cstdio>
 #include <cuda_runtime.h>

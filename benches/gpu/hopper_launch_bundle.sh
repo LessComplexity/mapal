@@ -62,4 +62,10 @@ cmp -s <(git -C "$ROOT" show "$BASE:crates/mapal-rt/gpu/mapal_choice.h") "$ROOT/
 cp "$ROOT/target/release/libmapal_rt.a" "$ROOT/benches/gpu/gemm_lib.cu" "$ROOT/benches/local/ktrace.cpp" \
     "$ROOT/benches/local/tma_launch.c" "$OUT/"
 cp "$ROOT/benches/gpu/hopper_launch_box.sh" "$OUT/box_run.sh"
+# review: the evidence pass's inputs — the part's rung table, ptxas -v / SASS per PTX and the facts (the cubins are
+# rebuilt there), with the checker, so the box writes evidence-<part>.tsv (the three hopper-launch H100 runs had none).
+"$EMIT" --rungs "--target=$PART" > "$OUT/$PART/rungs.tsv"
+python3 "$ROOT/benches/gpu/evidence.py" static "$OUT/$PART" sm_90a
+python3 "$ROOT/benches/gpu/evidence.py" facts "$OUT/$PART" sm_90a
+cp "$ROOT/benches/gpu/evidence.py" "$ROOT/benches/gpu/intent.py" "$OUT/"
 echo "bundle: $(wc -l < "$OUT/arms") programs, $(ls "$OUT/$PART"/*.host.o | wc -l) objects"

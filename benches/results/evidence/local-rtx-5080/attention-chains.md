@@ -172,7 +172,10 @@ the 5080 and its Mapal ms the round's within null (attn_1024_64 0.0399 / 0.0393,
 The three boxes differ in pace (box 1 ran the sub-ms kernels ~1.3× slower than box 2: its probes' GPU clock); every
 comparison above is within one box. The boxes ran a lean harness (`tools/box_run.sh`: link on the box, one value run
 an arm, then ABBA rounds of an untraced and a traced process), no `evidence.py` pass; the A100 kernels' static facts
-(registers, no spill) are `ptxas -arch=sm_80` locally, and the intent check runs in the 5080 flow above.
+(registers, no spill) are `ptxas -arch=sm_80` locally, and the intent check runs in the 5080 flow above. Review: by
+CLAUDE.md a GPU run without its `evidence.tsv` is not a result — the three A100 boxes' times (the streamed attention
+1.17–2.8×, the MLP / fan / loop rows) are timing only until a round with the evidence pass re-times them; the
+integration and README cite them as such.
 
 ## Open
 

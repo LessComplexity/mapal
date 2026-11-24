@@ -1417,7 +1417,7 @@ torch on every part; the 4090's 1.05–1.13 × 3a8e654f is its box (a Xeon E5-26
 | `mma.sync` TF32 / 16-bit flops a SM a clock | 256 / 512 | 256 / 512 | 1 012 / 2 024 (1 024 / 2 048) | 256 / 512 | **1 351 / 2 702 (532 / 1 064)** |
 | tf32x3 issue pattern (`split3`) flops a SM a clock | 254 | 252 | 824 | 252 | 1 079 |
 | `tma_copy_ns` (box ≤ 4 KiB, depth ≥ 2) | 197 (197) | — | — | — | 158 (159) |
-| `l2_keep_bytes` (`l2keep.cu`; profile: nominal L2 on the rented parts) | — (profile 1.025 × L2) | **< 1.0 × L2** | **< 1.0 × L2** | 1.015 × L2 | **< 1.0 × L2** |
+| `l2_keep_bytes` (`l2keep.cu`; profile: nominal L2 on the rented parts) | — (profile 1.025 × L2) | **1.03 × L2** (review: the plateau's midpoint; < 1.0 read against the derived L2 rate) | **< 1.0 × L2** | 1.015 × L2 | **< 1.0 × L2** |
 | `pageable_pm` (`pinned` below 900) | 685 (695) | 951 (0) | 794 (0) | 741 (0) | 833 (0) |
 
 **Would a measured value flip a rule?** Replayed through the emitter (`replay_flip.sh`: the part's profile against the
@@ -1538,11 +1538,14 @@ no LDGSTS in the hot loop); `stream-fly` 34–226 (the post sites now checked on
 4. A measured stream rate per part and the two sides' price at the FFMA / DRAM balance (finding 4); `mma-combine`'s
    combine traffic (5); `streamk-epi`'s shared tiles against the L2 (6).
 5. Derivations to replace by measurement: `bar_ns` (Ampere / Ada 54–57 cycles), the panel latency (ns, not cycles),
-   `l2_keep_bytes` (< 1.0 × L2 on the 3090 / A100 / H100), `coop_body_cycles` (348–7 292 measured, 4 390 derived).
+   `l2_keep_bytes` (< 1.0 × L2 on the A100 / H100; the 3090's sweep read off its plateau: 1.03 × L2, review —
+   `l2_keep_of_sweep`), `coop_body_cycles` (348–7 292 measured, 4 390 derived).
 
 Status after the confirmation-fixes merge (`local-rtx-5080/integration.md` § Confirmation-fixes merge): 1 closed
 (`Ptx`, `Caps::ptx`, the `ptxas` preflight: bugs-properties); 2 closed (the split tile priced at its issue,
-`split_issue_pm`; the integer cut: A100 tf32x3 1.43–1.54× the FFMA tile — tensor-cores-2); 3 closed (the first TMA
+`split_issue_pm`; the integer cut: A100 tf32x3 1.43–1.54× the FFMA tile on 11 of its 12 programs — tensor-cores-2;
+review: `pj_m128_n6144_k4096` still loses 0.809 under the shipped tf32x3, so 2 stays **open** for that site, and the
+merge's whole 2048-row tiles are timed whole only at 2048³); 3 closed (the first TMA
 launch off the clock, recipes from the module text: hopper-launch); 4 closed for the A100 (the stream's interleaved
 chunks and half-serial price at `lds_bcast_pm`: attention-chains; `mma-combine` priced in ns: bugs-properties;
 `streamk-epi`'s L2 rule: bugs-properties), the H100's long-row stream open; 5 measured (`bar_cycles`, `lat_ns`,

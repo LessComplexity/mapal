@@ -454,7 +454,11 @@ split per kernel (`kern.py`): a kernel equal to some step's is a superposition, 
   the split tile's panels realize (`split_issue`, the existing fact); both cut again (test
   `split_cut_priced_at_the_realized_rate`). The 2048-row tiles stay whole: 4 waves against 13 of pieces saves 50 µs,
   16.8 M `red` adds past the 20 MiB the A100 keeps cost 68 µs — the mechanism the A100's TF32 MLP cuts measured losing
-  (0.84–0.91). Unmeasured on the split tile: next round's arm (`--splitk=4`, `mlp_2048` / `pj_m2048_n4096_k4096`).
+  (0.84–0.91). Review: tensor-cores-2's own run timed the 2048³ split tile both ways side by side (`mlp_2048` /
+  `mlp2_2048`: whole `9a42b908` / `538e9763` / `6ffab719` 0.891–0.901 ms, `S` = 4 `440ac947` 0.915–0.919, one hot loop
+  — 792 instructions, 96 HMMA, 8 LDGSTS — the cut's 32 RED and zero pass on top): whole 1.025×, the price's side. The
+  `pj_m2048_n4096_k4096` / `_k14336` tiles (`S` = 2 measured, whole now) have no whole timing: **open**, the next A100
+  round's arm (`--splitk=2` against the shipped build).
   16-bit `narrow1` tiles (P 1, issue < 1) are unchanged: the 5080's emission of all 137 programs is byte-for-byte the
   steps'.
 - **`attn_2048_64` on the A100**: ac's price with bugs' measured latency (728 ns) and barrier (54 cycles) picks
@@ -482,8 +486,10 @@ split per kernel (`kern.py`): a kernel equal to some step's is a superposition, 
 
 Value gates: 41 suite + 96 model-scale programs pass on every arm, 128 px differentials pass; 3 / 800 competitor legs
 with max > 2 × med or med > 1.3 × min (all in resS, not re-timed). Against the 5fcb401b column (same protocol, same
-box): **geomean 1.008** over 137 programs; the 126 with text equal to 5fcb401b's 1.008 (the runtime alone differs:
-hopper-launch's `mapal_gpu.c`); attention-chains' 7 1.024; bugs-properties' 4 1.002.
+box): **geomean 1.008** over 137 programs; the 126 with text equal to 5fcb401b's 1.008; attention-chains' 7 1.024;
+bugs-properties' 4 1.002. Review: the 1.008 on equal text is session drift, not the runtime — the one runtime A/B
+(`analysis/rtab-abba.txt`, `llm_kvn_b1_l2048`, old / new `mapal_gpu.c` same-box ABBA) is null (6.43 / 6.43), and the
+competitor legs drifted the other way on the same objects (×1.005).
 
 | workload (5080) | 5fcb401b | merge | fastest competitor (leg) | explanation |
 | --- | ---: | ---: | --- | --- |
@@ -503,21 +509,32 @@ arms), `firew_rowsum_2048x2048_16` 0.896 (two first-rep outliers; null 0.115), `
 
 ### The RTX 5080 column (matrix.md: 5fcb401b → merge; rented parts keep 5fcb401b)
 
+Review: the first version of this table timed all 120 rows in the merge session, so the 104 rows whose host and device
+text equal 5fcb401b's (`analysis/alone-rtx-5080.tsv`) moved by the session alone (Mapal ×0.990, best leg ×1.005:
+0.941 → 0.927) and carried the column 0.979 → 0.965. Equal text is the same object and PTX — null by construction —
+so `matrix.md` now takes those rows from the 5fcb401b session and only the 14 changed programs from the merge's
+(`confirmation-fixes/changed-res{S,M}`: their probe, torch, comp and chain lines); the merge column is **0.978**
+(30 / 39 / 51), the changed rows 1.288 → 1.280. The table below is that matrix; the first version's column is kept
+in brackets.
+
 | geomean Mapal / best (rows) | 5fcb401b | merge |
 | --- | ---: | ---: |
-| GEMM cells & projections | 1.045 (47) | 1.033 (47) |
-| MLP chains | 1.054 (6) | 1.048 (6) |
-| Attention / softmax / long rows | 0.858 (14) | 0.840 (14) |
-| LLM decode / prefill / block | 1.036 (37) | 1.015 (37) |
-| Conv / FIR / elementwise | 0.529 (7) | 0.534 (7) |
-| Fan-in/out, loops, CPU+GPU | 1.032 (9) | 1.023 (9) |
-| all tf32 / bf16w / bf16kv / bf16 rows | 1.186 / 1.662 / 1.043 / 0.982 | 1.183 / 1.615 / 1.014 / 0.967 |
-| **all rows** | **0.979 (120)** | **0.965 (120)** |
-| win / even / loss | 30 / 39 / 51 | 32 / 37 / 51 |
+| GEMM cells & projections | 1.045 (47) | 1.045 (47) [1.033] |
+| MLP chains | 1.054 (6) | 1.054 (6) [1.048] |
+| Attention / softmax / long rows | 0.858 (14) | 0.855 (14) [0.840] |
+| LLM decode / prefill / block | 1.036 (37) | 1.035 (37) [1.015] |
+| Conv / FIR / elementwise | 0.529 (7) | 0.529 (7) [0.534] |
+| Fan-in/out, loops, CPU+GPU | 1.032 (9) | 1.032 (9) [1.023] |
+| all tf32 / bf16w / bf16kv / bf16 rows | 1.186 / 1.662 / 1.043 / 0.982 | 1.186 / 1.655 / 1.043 / 0.982 [1.183 / 1.615 / 1.014 / 0.967] |
+| **all rows** | **0.979 (120)** | **0.978 (120)** [0.965] |
+| win / even / loss | 30 / 39 / 51 | 30 / 39 / 51 [32 / 37 / 51] |
 
 The rented columns move at the next round: the steps' single-session measurements (A100 tf32x3 1.43–1.54, bf16w
 prefills A100 1.74 / 2.67 and H100 PCIe 1.69 / 2.16, H100 `wgmma-ws` 11 / 12, A100 streamed attention 1.17–2.8×)
-are not the round's protocol.
+are not the round's protocol. Review: the A100 tf32x3 ratios are tensor-cores-2's kernels (13 programs now run whole
+2048-row tiles; whole timed only at 2048³) on a box whose Mapal probes ran at a ramp clock (ratios only); the A100
+streamed attention boxes ran no evidence pass (timing only, not a result); the H100 `wgmma-ws` boxes' evidence is
+rebuilt below.
 
 ### Open problems attacked (integration)
 
@@ -533,3 +550,23 @@ are not the round's protocol.
   (bugs-properties: the 3090 stream geometry and B1 row slices, `l2keep.cu` below 1.0 × L2; hopper-launch: `l2-gate`'s
   wave footprint, `ws-persist`'s separating fact).
 - No tailored fixes (`docs/tailored-fixes.md` unchanged).
+
+### Review of the merge (nine confirmed findings)
+
+| # | finding | resolution | evidence |
+| --- | --- | --- | --- |
+| 1 | bf16x2n / bf16x3n: `±inf` in the narrow operand gave NaN (a split part of `0` or of the other sign times `inf`) | **fixed**: `acc_nonfinite` ORs a non-finite test of every accumulator after the `k` loop into the split guard (every such cell is left `inf` / NaN), so the warp takes the FFMA cold path. A test of each narrow fragment register (first try) cost 6 % of the kernel's SASS; this one adds 64 / 48 instructions once a tile after the loop (A100 / H100 PCIe `llm_pre_t2048_bf16w`: 800 → 864, 1 368 → 1 416), the hot loop's opcodes unchanged (A100: one `SHF` realized as `IMAD`) | test `narrow_infinity_takes_the_guard` (fails without: `NaN vs inf`); generator law 7 (`±inf` in the narrow operand) and store 6 (`bf16 × f32`), coverage `narrow_a` 8 / `narrow_inf` 1 of 64 |
+| 2 | the merge ships A100 2048-row tf32x3 tiles whole; the comment claimed the `mlp_2048` cut back | **comment corrected**; the 2048³ whole tile is the measured faster side (tensor-cores-2's own run: whole 0.891–0.901 ms beside `S` = 4 0.915–0.919, one hot loop); `pj_m2048_n4096_k4096` / `_k14336` whole: open (no whole timing) | `split_cut_priced_at_the_realized_rate` docs; `func/gpu.rs` `mma_pieces` |
+| 3 | `l2_keep_bytes` half the L2 on the 3090 / A100 / H100, unmeasured | **3090 fixed** from its own sweep: `l2_keep_of_sweep` reads the keep at the plateau–DRAM midpoint (the 3090's stream re-reads a kept set at 1.2 TB/s, not the derived 2.4): 1.03 × 6 MiB; the 5080's sweep from 0.25 × (today, `calib/l2keep-rtx-5080.txt`: plateau 4.1–4.3 TB/s to 1.01 ×) gives its profile's 1.025 × exactly. A100 / H100: their sweeps (from 1.0 ×) show no plateau — below 1.0 ×, the half a placeholder, **open** until `l2keep.cu`'s 0.25 × sweep (the confirmation round's `ops_nsys.sh` step 0) | test `l2_keep_read_off_the_sweeps` (fails at 3 MiB); emission moved on the 3090 only: 14 programs' site tables drop `SITE_COLD` (operands 3–6 MiB), `smlp_4096_256_1024`'s candidates (its `c0-rules.tsv` pin regolded) |
+| 4 | 5080 column 0.979 → 0.965 from equal-text rows' drift | **fixed**: matrix rebuilt with equal-text rows at 5fcb401b (null by construction): **0.978** (30 / 39 / 51); changed rows 1.288 → 1.280; the runtime attribution withdrawn (its only A/B is null) | `matrix.md` command; § The RTX 5080 column |
+| 5 | "12 / 12 losers → winners" | **corrected** to 11 / 12 (`pj_m128_n6144_k4096` 0.809 under the shipped tf32x3: finding 2 open for it); README, tensor-cores-2, cross-arch | — |
+| 6 | tensor-cores-2's A100 probes at a ramp clock | **recorded**: absolute ms, cuBLAS margins and the pipe fraction withdrawn; ratios kept | `tensor-cores-2.md` § Measurements |
+| 7 | `rung_replay.tsv` FFMA 5.21 / split 7.09 | **fixed**: 3.832 / 5.213 (raw 5fcb401b); bugs-properties' derived 86.6 (0.54) / 117.7 (0.92) | `rung_replay.tsv`, `bugs-properties.md` |
+| 8 | six rented boxes without `evidence.tsv` | H100 (hopper-launch) **rebuilt** from the deterministic emission (12 / 12 kernels by name; the step's intents 0 mismatch; 88 checker mismatches on the bundle's arm names, open); bundle / box scripts now run the pass on the box. A100 (attention-chains): **timing only**, cited as such | `hopper-launch.md` § Intent / realized |
+| 9 | `streamk-epi` / cut-price on an unmeasured L2 mechanism | **open** (evidence rule 3): no L2 / DRAM counter on any part (`ncu` captures empty, no local `ncu`); the gate keeps every replayed arm's measured side; the next 3090 round's `ncu` pass decides | `bugs-properties.md` § `streamk-epi` |
+
+Re-measured: nothing on the RTX 5080 — every `benches/algorithms/pt_*` program's host and device text is byte-equal
+before / after on the 5080, 4090 and 5090 (201 programs; `pc_*` / `pm_*` panic in both, pre-existing). The moved rows are rented-part rows: the A100 / H100 / H100 PCIe bf16w / bf16kv
+programs (6 each: the guard's 64 / 48 post-loop instructions) and the 3090's 14 site-table programs — the next round's
+A/B (the confirmation round in flight times the build before this fix). Tests: `cargo test -p mapal-backend-llvm`
+(release) all pass.

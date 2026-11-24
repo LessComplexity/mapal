@@ -181,7 +181,8 @@ forced arm loses 1.20–1.22. The bf16w projections take bf16x2n at issue 1.90 (
 **Open (a mixed result across parts):** the 5080's bf16x2n QKV kernel runs 1.86 ms against the FFMA tile's 2.6–3.9
 (traced; 103 Gflop: 108 bf16 Tflop/s, ~90 % of its pipe — pipe-bound, issue 0.38), the program 0.757; the rule
 (2 · 256 bf16 against 1.6 · 256 FFMA: θ ≤ 1.0) refuses it. The A100's issue-bound tiles realize ~39 % of their pipe
-at issue 1.0 (19.9 useful Tflop/s at 3 products against 154 TF32 Tflop/s). One margin cannot hold both: the tensor
+at issue 1.0 (19.9 useful Tflop/s at 3 products against 154 TF32 Tflop/s) — at the 1410 MHz the 154 assumes; review:
+this box's probes ran near 1094 MHz (below), where the same 19.9 is ~50 % of the pipe: the fraction is unmeasured. One margin cannot hold both: the tensor
 tile's realized fraction as a function of its issue (and the pipe clocks per instruction against its latency) is the
 missing fact. Replayed as `OPEN` (`rung_replay.tsv`); the 3090 / 4090 / 5080 bf16w prefills keep the FFMA tile.
 
@@ -190,6 +191,11 @@ missing fact. Replayed as `OPEN` (`rung_replay.tsv`); the 3090 / 4090 / 5080 bf1
 Competitors: the same box's cuBLAS / cuBLASLt f32 legs (`gemm_lib`, fresh and flushed, within the f32 gate) where
 the bundle ran them; otherwise the 5fcb401b round's fastest leg on that part type (`matrix.md`; the H100 row's is the
 SXM part's). bf16 legs are never like-for-like for an f32-activation program (they round activations too).
+
+**Review — clocks (absolute A100 times below are not comparable across boxes or legs):** the A100 box's Mapal probes ran at a ramp clock: the same FFMA kernel (site `e365ba106e28962e`) took 4.898 ms here against 3.818 at 5fcb401b and 3.83–3.90 on five earlier A100 rounds (1.28× = 1410 / 1094 MHz, the attention-chains sibling box's logged `implied_clock_khz=1094236`); this box logged no calibration line and its `ncu-a100.csv` is empty, while its cuBLAS f32 leg (3.672 ms = 18.7 Tflop/s) ran above the 1094 MHz FP32 peak (15.1). The ON / OFF
+ratios hold (both Mapal arms, interleaved ABBA, one probe kind); the absolute ms, the cuBLAS margins ("beats cuBLAS f32
+6–9 %") and the realized pipe fraction do not — the library legs ran warm, Mapal's single-call probes did not. The next
+A100 round logs `calib.cu ffma` and times both sides at one clock.
 
 | workload | part | OFF | ON | fastest competitor (leg) | explanation |
 |---|---|---:|---:|---|---|
@@ -226,7 +232,7 @@ instead.
 
 | problem | status |
 |---|---|
-| (1) split-tile loses on the A100 | **closed**: the "register reload" was the evidence tool's hot-loop choice (fixed); the loser was issue-bound (2.1×); the integer cut + the bound's flush depth issue 792 instead of 1612 a panel, and the A100 now wins 1.43–1.54 on its 2048-row GEMMs and MLPs (beats cuBLAS f32 by 6–9 %); the rule prices the issue (`split_issue_pm`) and its margin is placed on the measured tiles. Remaining: the 1.40-issue class's uncut under-filled site (attempted, open: the split tile's own wave fill) |
+| (1) split-tile loses on the A100 | **closed**: the "register reload" was the evidence tool's hot-loop choice (fixed); the loser was issue-bound (2.1×); the integer cut + the bound's flush depth issue 792 instead of 1612 a panel, and the A100 now wins 1.43–1.54 over the FFMA tile on its 2048-row GEMMs and MLPs (11 of the 12 finding-2 programs; review: `pj_m128_n6144_k4096` still loses 0.809, and the cuBLAS margin is not a like-for-like clock — above); the rule prices the issue (`split_issue_pm`) and its margin is placed on the measured tiles. Remaining: the 1.40-issue class's uncut under-filled site (attempted, open: the split tile's own wave fill) |
 | (2) H100 16-bit tiles on `wgmma` | **attempted, open**: design stated (§2); not built — no emulator model for 16-bit `wgmma`, no local Hopper; the H100's measured `mma.sync` rate now in its profile |
 | (3) bf16-weight prefills | **partly closed**: the products off tensor cores were the f32 × bf16 projections (FFMA tile on every part); bf16x2n / bf16x3n take them where the bound and rate admit — A100 1.74 / 2.67, H100 PCIe 1.69 / 2.16. The prefill's remaining gap is the f32 attention flow kernel (8.4 of 11.85 ms on the A100): open. GeForce: the rule refuses a measured 1.32× win (open: the tile's realized fraction at its issue) |
 | found: `pt_pc_*` / `pt_pm_*` emission panic (`stream.rs:1332` index out of bounds) | pre-existing at 8ff66d34 on the 5080 / A100 (`pt_pc_128`, `pt_pm_2048_128`, …): not this step's, reported |
@@ -235,7 +241,7 @@ instead.
 
 - `benches/results/evidence/local-rtx-5080/README.md`: a row — "tensor-cores-2 (`fix/tensor-cores`): split tiles
   priced at their issue (`split-issue`), f32 × bf16 on the bf16 warp product (bf16x2n / bf16x3n, `split-least`);
-  A100 tf32x3 1.43–1.54 over the FFMA tile (12 / 12 losers → winners), bf16w prefills A100 1.74 / 2.67, H100 PCIe
+  A100 tf32x3 1.43–1.54 over the FFMA tile (11 / 12 losers → winners; `pj_m128_n6144_k4096` 0.809, open), bf16w prefills A100 1.74 / 2.67, H100 PCIe
   1.69 / 2.16; [tensor-cores-2.md](tensor-cores-2.md)".
 - `CLAUDE.md` facts table: no new graph fact. The `precision_plan` row's split mention (if any, after the f32-tensor
   -cores merge) gains `SplitKind::Bf16x2n` (`mapal_ir::split`, split error `2⁻¹⁶`, K_min 288).

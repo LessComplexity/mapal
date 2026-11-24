@@ -958,7 +958,9 @@ pub struct DeviceCost {
     pub tma_copy_ns: u64,
     /// integration (tune-context): **the largest cyclic working set the L2
     /// keeps**, bytes — re-read back to back at no less than the midpoint of
-    /// the L2 and DRAM rates (`benches/local/l2keep.cu`; the RTX 5080's 64 MiB
+    /// the sweep's plateau (the stream's own re-read rate of a set the L2
+    /// holds) and the DRAM rate ([`l2_keep_of_sweep`],
+    /// `benches/local/l2keep.cu`; the RTX 5080's 64 MiB
     /// L2 keeps a 64.6 MiB stream at 4.1 TB/s, 1.025× its size at 2.5, 1.05×
     /// at 1.4: its DRAM rate by 1.1×). What separates an operand a program
     /// re-reads from L2 across calls from one it streams from DRAM: a trial
@@ -1617,8 +1619,11 @@ impl Gpu {
     }
 
     /// integration (tune-context): **the largest cyclic working set the
-    /// L2 keeps** — [`DeviceCost::l2_keep_bytes`] where measured, else the
-    /// nominal L2 ([`Self::l2_bytes`]). A site whose operand's working set
+    /// L2 keeps** — [`DeviceCost::l2_keep_bytes`] where the profile sets it
+    /// (measured: [`l2_keep_of_sweep`] on the part's `l2keep.cu` sweep — the
+    /// RTX 5080, the RTX 3090; the A100's and H100's half are placeholders
+    /// below their sweep's first point, 1.0 ×, open until the sweep from 0.25
+    /// × runs), else the nominal L2 ([`Self::l2_bytes`]). A site whose operand's working set
     /// (`residence_plan`) is within it is re-read from L2 across the
     /// program's calls: its trial does not evict the L2.
     pub fn l2_keep_bytes(&self) -> u64 {
@@ -5077,8 +5082,10 @@ pub const H100: TargetProfile = TargetProfile {
             // quantity): median 629 ns [IQR 605–660] over 116 points; `calib.cu
             // body`: 348 cycles [325–356] (the 5080's 4390 derived before);
             // `l2keep.cu`: 1.0 × the 50 MiB L2 re-reads at 2579 GB/s, below the
-            // DRAM rate (3180; L2 4018) — the keep lies below the nominal L2
-            // (two partitions), half until the sweep from 0.25 × L2 runs.
+            // DRAM rate (3180; L2 4018), flat to 1.05 × — the keep lies below
+            // the sweep's first point (two partitions). Not measured below 1.0
+            // ×: half the L2 is a placeholder (open) until the sweep from 0.25
+            // × L2 is read by [`l2_keep_of_sweep`].
             lat_ns: 629,
             coop_body_cycles: 348,
             l2_keep_bytes: 25 * 1024 * 1024,
@@ -5416,13 +5423,16 @@ pub const RTX_3090: TargetProfile = TargetProfile {
             // quantity (bytes in flight over the DRAM rate below 90 % of the
             // 892 GB/s peak, `calib.cu bw`): median 452 ns [IQR 439–486] over
             // 101 points; `calib.cu body`: 2102 cycles [2013–2193], 3 runs;
-            // `l2keep.cu`: a cyclic stream of 1.0 × the 6 MiB L2 re-reads at
-            // 1205 GB/s (L2 2424, DRAM 892: below their midpoint) — the keep
-            // lies below the nominal L2, the sweep reached no lower: half until
-            // the sweep from 0.25 × L2 runs.
+            // `l2keep.cu`: a cyclic stream of 1.0–1.02 × the 6 MiB L2
+            // re-reads at 1201–1217 GB/s (the plateau: this stream's L2 rate on
+            // the part, not the derived 2424), 1.025–1.05 × falls to 1166 /
+            // 1101 / 971 / 900 / 874 / 811 (DRAM 892) — the 5080's sweep shape
+            // (plateau 4.1–4.3 TB/s from 0.25 × up to 1.01 ×, the cliff past
+            // it); the largest set at the plateau-DRAM midpoint (1054): 1.03 ×
+            // L2 ([`l2_keep_of_sweep`], test `l2_keep_read_off_the_sweeps`).
             lat_ns: 452,
             coop_body_cycles: 2102,
-            l2_keep_bytes: 3 * 1024 * 1024,
+            l2_keep_bytes: 6_480_199,
             ..NO_PLAN
         }),
         // GDDR6X at 19.5 Gb/s on 384 bits (936 GB/s); the FFMA peak under
@@ -5482,9 +5492,12 @@ pub const A100: TargetProfile = TargetProfile {
             // (`calib-a100.txt`): the loaded latency (`calib.cu bw`, plan-cost's
             // quantity): median 728 ns [IQR 686–802] over 112 points; `calib.cu
             // body`: 4048 cycles [3948–5569]; `l2keep.cu`: 1.0 × the 40 MiB L2
-            // re-reads at 1563 GB/s, the DRAM rate (1487; L2 2862) — the keep
-            // lies below the nominal L2 (two partitions: a line every SM reads
-            // is held in both), half until the sweep from 0.25 × L2 runs.
+            // re-reads at 1563 GB/s, the DRAM rate (1487; L2 2862), flat to
+            // 1.05 × — no plateau: the keep lies below the sweep's first point
+            // (two partitions: a line every SM reads is held in both). Not
+            // measured below 1.0 ×: half the L2 is a placeholder (open) until
+            // the sweep from 0.25 × L2 (`l2keep.cu`, the confirmation round's
+            // `ops_nsys.sh` step 0) is read by [`l2_keep_of_sweep`].
             lat_ns: 728,
             coop_body_cycles: 4048,
             l2_keep_bytes: 20 * 1024 * 1024,
@@ -6568,6 +6581,28 @@ mod dispatch_width_tests {
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn detect() -> Option<TargetProfile> {
     None
+}
+
+/// review: **the L2 keep read off an `l2keep.cu` sweep** — `(ws / L2,
+/// GB/s)` points of a cyclic stream re-read back to back, and the part's DRAM
+/// read rate. The plateau is the sweep's highest rate (the stream's own
+/// re-read rate of a set the L2 holds: the 5080's 4.1–4.3 TB/s from 0.25 ×,
+/// the 3090's 1.2 TB/s — not the derived L2 rate, which the 3090's stream never
+/// reaches); the keep is the largest ratio re-read at no less than the
+/// plateau–DRAM midpoint. `None` where the sweep has no plateau (its highest
+/// rate within 1.25 × the DRAM rate, beyond the sweep's ±2 % repeat noise:
+/// every point past the keep — the A100 / H100 from 1.0 ×).
+pub fn l2_keep_of_sweep(sweep: &[(f64, f64)], dram_gbs: f64) -> Option<f64> {
+    let plateau = sweep.iter().map(|p| p.1).fold(0.0, f64::max);
+    if plateau < 1.25 * dram_gbs {
+        return None;
+    }
+    let mid = (plateau + dram_gbs) / 2.0;
+    sweep
+        .iter()
+        .filter(|p| p.1 >= mid)
+        .map(|p| p.0)
+        .fold(None, |m, r| Some(m.map_or(r, |m: f64| m.max(r))))
 }
 
 #[cfg(test)]
@@ -8556,5 +8591,68 @@ mod tests {
             }
         }
         assert!(met >= 4, "crossovers in range ({met})");
+    }
+
+    /// review: **each profile's `l2_keep_bytes` is its sweep's keep**
+    /// ([`l2_keep_of_sweep`]): the RTX 5080's (local, 2026-11-25, from 0.25
+    /// ×: plateau 4.1–4.3 TB/s, cliff past 1.01 ×) at 1.025 × its 64 MiB; the
+    /// RTX 3090's (cross-arch 5fcb401b `calib-l2keep`, 1.0–1.05 ×: plateau
+    /// 1.2 TB/s to 1.02 ×) at 1.03 × its 6 MiB — the derived L2 rate's
+    /// midpoint (1658) put it below 1.0 × and the profile at a placeholder
+    /// half; the A100's and H100's sweeps (5fcb401b, flat at the DRAM rate
+    /// from 1.0 ×) have no plateau: their keep lies below 1.0 × (their
+    /// placeholders, open until the sweep from 0.25 × runs).
+    #[test]
+    fn l2_keep_read_off_the_sweeps() {
+        let r5080 = [
+            (0.25, 3601.0),
+            (0.375, 3901.0),
+            (0.5, 4096.0),
+            (0.625, 4144.0),
+            (0.75, 4165.0),
+            (0.8125, 4226.0),
+            (0.875, 4248.0),
+            (0.9375, 4267.0),
+            (1.0, 4161.0),
+            (1.005, 4182.0),
+            (1.01, 4137.0),
+            (1.015, 3737.0),
+            (1.02, 3153.0),
+            (1.025, 2619.0),
+            (1.03, 2308.0),
+            (1.035, 2065.0),
+            (1.04, 1801.0),
+            (1.045, 1608.0),
+            (1.05, 1458.0),
+        ];
+        let r3090 = [
+            (1.0, 1205.0),
+            (1.005, 1211.0),
+            (1.01, 1205.0),
+            (1.015, 1201.0),
+            (1.02, 1217.0),
+            (1.025, 1166.0),
+            (1.03, 1101.0),
+            (1.035, 971.0),
+            (1.04, 900.0),
+            (1.045, 874.0),
+            (1.05, 811.0),
+        ];
+        let a100 = [(1.0, 1563.0), (1.02, 1550.0), (1.05, 1528.0)];
+        let h100 = [(1.0, 2579.0), (1.025, 2623.0), (1.05, 2608.0)];
+        let keep = |p: &TargetProfile, sweep: &[(f64, f64)], dram: f64| {
+            let g = p.gpu().expect("gpu");
+            let r = l2_keep_of_sweep(sweep, dram).expect("a plateau");
+            ((r * g.l2_bytes as f64) as u64, g.l2_keep_bytes())
+        };
+        let (want, got) = keep(&RTX_5080, &r5080, 917.0);
+        assert_eq!(got, want, "rtx-5080");
+        let (want, got) = keep(&RTX_3090, &r3090, 892.0);
+        assert_eq!(got, want, "rtx-3090");
+        for (p, sweep, dram) in [(&A100, &a100, 1487.0), (&H100, &h100, 3180.0)] {
+            assert_eq!(l2_keep_of_sweep(sweep, dram), None, "{}", p.name);
+            let g = p.gpu().expect("gpu");
+            assert!(g.l2_keep_bytes() < g.l2_bytes, "{}: below 1.0 x", p.name);
+        }
     }
 }

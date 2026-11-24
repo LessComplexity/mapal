@@ -6412,20 +6412,24 @@ pub fn flash_src(p: &FlashProg) -> String {
 /// A sum of products under the default face's `{f32}` (no member set) whose
 /// operands a split form may realize on a matrix instruction
 /// (`mapal_ir::split`): both `f32` (tf32x3), both one narrow format
-/// (narrow1), or `f32 × bf16` (no form: the FMA tile). `k` straddles every
+/// (narrow1), or `f32 × bf16` / `bf16 × f32` (bf16x3n, bf16x2n). `k` straddles every
 /// form's `K_min` (8 … 512); a residual epilogue; `b` row-major or read
 /// transposed; value laws a split meets at its edges — small rationals,
 /// magnitudes spread over 2^±40, cancelling pairs (`|Σ| ≪ M`), small integers
 /// (TF32-exact: `lo = 0`), an infinity and a NaN (the guard), the largest
 /// finite value (the `hi` overflow select), operands near the least normal
-/// value (parts below it: the absolute term).
+/// value (parts below it: the absolute term), infinities of both signs in
+/// the narrow operand of a mixed product (`b`; `a` for `bf16 × f32`; `b` for
+/// one format) on the checked cells' rows / columns, the other operand
+/// finite (a split part of `0` or of the other sign times `±inf`).
 #[derive(Clone, Debug)]
 pub struct SplitProg {
     pub dims: [u8; 3],
-    /// 0: f32 × f32, 1: bf16 × bf16, 2: f16 × f16, 3: f32 × bf16.
+    /// 0: f32 × f32, 1: bf16 × bf16, 2: f16 × f16, 3: f32 × bf16, 6: bf16
+    /// × f32.
     pub store: u8,
     /// 0 rationals, 1 wide, 2 cancelling, 3 integers, 4 inf / NaN, 5 the
-    /// largest finite, 6 tiny.
+    /// largest finite, 6 tiny, 7 ±inf in the narrow operand.
     pub law: u8,
     pub bt: bool,
     pub post: bool,
@@ -6435,8 +6439,8 @@ pub struct SplitProg {
 pub fn split_prog_strategy() -> impl Strategy<Value = SplitProg> {
     (
         (any::<u8>(), any::<u8>(), any::<u8>()),
-        prop::sample::select(vec![0u8, 0, 1, 1, 2, 3]),
-        0u8..7,
+        prop::sample::select(vec![0u8, 0, 1, 1, 2, 3, 6]),
+        0u8..8,
         prop::bool::weighted(0.3),
         prop::bool::weighted(0.3),
         (any::<u8>(), any::<u8>()),
@@ -6484,6 +6488,7 @@ pub fn split_src_at(p: &SplitProg, m: u64, n: u64, k: u64) -> (String, (usize, u
         1 => (Some("bf16"), Some("bf16")),
         2 => (Some("f16"), Some("f16")),
         3 => (None, Some("bf16")),
+        6 => (Some("bf16"), None),
         4 => (Some("f8e4m3"), Some("f8e4m3")),
         5 => (Some("f8e5m2"), Some("f8e5m2")),
         _ => (None, None),
@@ -6543,6 +6548,35 @@ pub fn split_src_at(p: &SplitProg, m: u64, n: u64, k: u64) -> (String, (usize, u
         ),
         _ => format!("(t * {a2} + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0"),
     };
+    let cells = [
+        u64::from(p.seed[0]) * 7 % (m * n),
+        m * n / 2 + 1,
+        m * n - 1 - u64::from(p.seed[1]) % n,
+    ];
+    // Law 7: `+inf` read by the first checked cell at `k / 2`, `−inf` by the
+    // last at `k = 1`, in the narrow operand (`a` only where `a` alone is
+    // narrow) — rows of `a` (`i·k + q`), columns of `b` (`q·n + j`, or
+    // `j·k + q` when `bt`).
+    let (law_a, law_b) = match p.law {
+        7 => {
+            let infs = |law: &str, (i0, i1): (u64, u64)| {
+                format!(
+                    "{law} -> w; (t == {i0}) -> {{ -true-> 1.0 / 0.0; -false-> w; }} -> u1; (t == {i1}) -> {{ -true-> 0.0 - 1.0 / 0.0; -false-> u1; }} -> u2; u2"
+                )
+            };
+            let (c0, c2) = (cells[0], cells[2]);
+            if fa.is_some() && fb.is_none() {
+                (
+                    infs(&law_a, ((c0 / n) * k + k / 2, (c2 / n) * k + 1)),
+                    law_b,
+                )
+            } else {
+                let bix = |j: u64, q: u64| if p.bt { j * k + q } else { q * n + j };
+                (law_a, infs(&law_b, (bix(c0 % n, k / 2), bix(c2 % n, 1))))
+            }
+        }
+        _ => (law_a, law_b),
+    };
     let store = |f: Option<&str>| f.map_or(String::new(), |n| format!(" -> to_{n}"));
     let read = |f: Option<&str>, x: &str| match f {
         Some(_) => format!("{x} -> widen_f32"),
@@ -6564,11 +6598,6 @@ pub fn split_src_at(p: &SplitProg, m: u64, n: u64, k: u64) -> (String, (usize, u
     };
     let abs =
         |x: &str, o: &str| format!("({x} > 0.0) -> {{ -true-> {x}; -false-> 0.0 - {x}; }} -> {o}");
-    let cells = [
-        u64::from(p.seed[0]) * 7 % (m * n),
-        m * n / 2 + 1,
-        m * n - 1 - u64::from(p.seed[1]) % n,
-    ];
     // An integer literal, a negative one as a difference.
     let int = |v: i64| match v < 0 {
         true => format!("(0 - {})", -v),

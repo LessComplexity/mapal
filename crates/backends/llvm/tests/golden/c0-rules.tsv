@@ -116,7 +116,7 @@ pt_smlp_4096_256_1024	rtx-4090	exact	131d156aa4ba7f4f
 pt_smlp_4096_256_1024	rtx-5090	default	8a4f5e12d02e7c27
 pt_smlp_4096_256_1024	rtx-5090	contract	ee82ec5dd3bac0cc
 pt_smlp_4096_256_1024	rtx-5090	exact	b43f83a5f35b5308
-pt_smlp_4096_256_1024	rtx-3090	default	8b75490464b2ff63
+pt_smlp_4096_256_1024	rtx-3090	default	e9c4f164a357b6f2
 pt_smlp_4096_256_1024	rtx-3090	contract	7a22852d6aff0d71
 pt_smlp_4096_256_1024	rtx-3090	exact	b70ea4b8bca6ce5b
 pt_smlp_4096_256_1024	h100-pcie	default	cf25fe9493c73dda

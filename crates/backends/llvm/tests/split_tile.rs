@@ -508,6 +508,8 @@ struct Cover {
     fallback: u64,
     guardless: u64,
     narrow1_rule: u64,
+    narrow_a: u64,
+    narrow_inf: u64,
 }
 
 impl std::ops::AddAssign for Cover {
@@ -530,6 +532,8 @@ impl std::ops::AddAssign for Cover {
         self.fallback += o.fallback;
         self.guardless += o.guardless;
         self.narrow1_rule += o.narrow1_rule;
+        self.narrow_a += o.narrow_a;
+        self.narrow_inf += o.narrow_inf;
     }
 }
 
@@ -641,11 +645,14 @@ fn check(cc: &str, p: &testgen::SplitProg) -> Cover {
             "the 5080's rule refuses tf32x3 and the bf16 cuts\n{src}"
         );
         c.narrow1_rule = u64::from(ruled.as_deref() == Some("narrow1"));
+        let cut = matches!(kind, SplitKind::Bf16x3n | SplitKind::Bf16x2n);
+        c.narrow_a = u64::from(cut && p.store == 6);
+        c.narrow_inf = u64::from(cut && p.law == 7);
     } else {
         let below = match p.store {
             0 => k < 24,
             1 | 2 => k < 16,
-            3 => SplitForm::of(SplitKind::Bf16x3n)
+            3 | 6 => SplitForm::of(SplitKind::Bf16x3n)
                 .k_min(1, 16, MEASURED, 4096)
                 .is_none_or(|m| k < m),
             _ => false,
@@ -706,6 +713,8 @@ fn generated_programs_within_d2() {
         c.fallback,
         c.guardless,
         c.narrow1_rule,
+        c.narrow_a,
+        c.narrow_inf,
     ];
     assert!(all.iter().all(|&x| x > 0), "{c:?}");
 }
@@ -719,7 +728,12 @@ fn generated_programs_within_d2() {
 /// cut into 8 pieces, as tensor-cores-2 measured it winning (1.105 over the
 /// FFMA tile, `rung_replay.tsv`); the 2048 × 2048 × 2048 tile (4 waves
 /// against 13 of pieces, 16.8 M `red` adds past the L2 it keeps) stays
-/// whole.
+/// whole — as tensor-cores-2's own run measured it: in `pt_mlp_2048` /
+/// `mlp2_2048` the uncut tf32x3 2048³ kernels (`9a42b908`, `538e9763`,
+/// `6ffab719`: 0.891–0.901 ms) beside the `S` = 4 cut of the same shape
+/// (`440ac947`: 0.915–0.919 ms), the same hot loop (792 instructions, 96
+/// HMMA, 8 LDGSTS a trip; the cut adds 32 RED and the zero pass): whole
+/// 1.025× faster, same box, same processes, 4 reps.
 #[test]
 fn split_cut_priced_at_the_realized_rate() {
     let s_of = |rows, c, k| {
@@ -734,4 +748,86 @@ fn split_cut_priced_at_the_realized_rate() {
     };
     assert_eq!(s_of(128, 4096, 4096), 8, "the measured cut");
     assert_eq!(s_of(2048, 2048, 2048), 1, "the cut's adds past the L2");
+}
+
+/// **An infinity in the narrow operand of a bf16 cut takes the guard.** The
+/// `bf16x3n` / `bf16x2n` tile multiplies every bf16 part of the f32 operand
+/// by the narrow element; a part of `0` (`rn(1 − 1)`) or of the other sign
+/// times `±inf` is a NaN where the exact product is `±inf`, and every such
+/// cell is left non-finite: the guard ORs a test of each accumulator after
+/// the `k` loop (`acc_nonfinite`, once a tile: the hot loop's SASS is
+/// unchanged) into its flag, so the warp's tile takes the FFMA cold path: the
+/// oracle's value class in every cell, both orientations (`f32 × bf16`,
+/// `bf16 × f32`), under the 5080's ON arm (`bf16x2n`), its `split-least` OFF
+/// arm (`bf16x3n`), a forced cut and the A100's rule. Fails without the
+/// test: 80 / 80 reviewer configurations returned NaN for `±inf`.
+#[test]
+fn narrow_infinity_takes_the_guard() {
+    let Some(cc) = emu::clang() else {
+        return;
+    };
+    let mut kinds = HashMap::new();
+    for (store, bt, k) in [
+        (3u8, false, 512u64),
+        (3, true, 64),
+        (6, false, 64),
+        (6, false, 512),
+    ] {
+        let p = testgen::SplitProg {
+            dims: [0, 0, 0],
+            store,
+            law: 7,
+            bt,
+            post: false,
+            seed: [3, 5],
+        };
+        let (src, (cells, _, _)) = testgen::split_src_at(&p, 32, 32, k);
+        let ir = lower(&src);
+        let rr = run(&ir, 4_000_000_000);
+        assert!(matches!(rr.outcome, Outcome::Done(_)), "{src}");
+        let want = floats(&rr.output);
+        // The specials reach the first and last checked cells.
+        assert!(
+            want[0].is_infinite() && want[3 * (cells - 1)].is_infinite(),
+            "{want:?}\n{src}"
+        );
+        for (target, off, splitk) in [
+            ("rtx-5080", &[][..], 0u64),
+            ("rtx-5080", &["split-least"][..], 0),
+            ("rtx-5080", &[][..], 2),
+            ("a100", &[][..], 0),
+        ] {
+            let e = emission(
+                &ir,
+                target,
+                EmitOpts::default(),
+                off,
+                &["split-tile"],
+                splitk,
+            );
+            let kind = split_of(&e).unwrap_or_else(|| panic!("{target} {off:?}: a split\n{src}"));
+            *kinds.entry(kind.clone()).or_insert(0) += 1;
+            let ctx = format!("store {store} bt {bt} k {k} {target} {off:?} S {splitk} {kind}");
+            let built = emu::build_emulated(&cc, &e.text, &e.device.clone().unwrap_or_default());
+            for mode in [MODES[0], MODES[3]] {
+                let (got, _) = built.run(&[mode[0], mode[1], ("MAPAL_EMU_MMA_G", "2")]);
+                let g = floats(&got);
+                assert_eq!(g.len(), want.len(), "{ctx}");
+                for i in 0..cells {
+                    let (y, w) = (g[3 * i], want[3 * i]);
+                    if !w.is_finite() {
+                        assert!(
+                            y.is_nan() && w.is_nan() || y == w,
+                            "{ctx} {mode:?} cell {i}: {y} vs {w}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("narrow infinity: {kinds:?}");
+    assert!(
+        kinds.contains_key("bf16x2n") && kinds.contains_key("bf16x3n"),
+        "{kinds:?}"
+    );
 }

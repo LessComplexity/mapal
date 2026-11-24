@@ -1,0 +1,21 @@
+# benches/local/l2keep.cu on the local RTX 5080, 2026-11-25 (bench lock, CPU set 16-31,48-63): ws / L2, GB/s
+l2_bytes=67108864 sms=84
+ws/l2=0.250 ws_mb=16.0 gbs=3601
+ws/l2=0.375 ws_mb=24.0 gbs=3901
+ws/l2=0.500 ws_mb=32.0 gbs=4096
+ws/l2=0.625 ws_mb=40.0 gbs=4144
+ws/l2=0.750 ws_mb=48.0 gbs=4165
+ws/l2=0.812 ws_mb=52.0 gbs=4226
+ws/l2=0.875 ws_mb=56.0 gbs=4248
+ws/l2=0.938 ws_mb=60.0 gbs=4267
+ws/l2=1.000 ws_mb=64.0 gbs=4161
+ws/l2=1.005 ws_mb=64.3 gbs=4182
+ws/l2=1.010 ws_mb=64.6 gbs=4137
+ws/l2=1.015 ws_mb=65.0 gbs=3737
+ws/l2=1.020 ws_mb=65.3 gbs=3153
+ws/l2=1.025 ws_mb=65.6 gbs=2619
+ws/l2=1.030 ws_mb=65.9 gbs=2308
+ws/l2=1.035 ws_mb=66.2 gbs=2065
+ws/l2=1.040 ws_mb=66.6 gbs=1801
+ws/l2=1.045 ws_mb=66.9 gbs=1608
+ws/l2=1.050 ws_mb=67.2 gbs=1458
