@@ -1,0 +1,94 @@
+// A loop-carrying fn over a struct of weights and an array of per-layer caches, called from a loop.
+type Layer {
+    gain: [f32; 64],
+    shift: [f32; 64],
+}
+
+type Model {
+    layers: [Layer; 2],
+    bias: [f32; 64],
+}
+
+type Cache {
+    keys: [f32; 256],
+}
+
+fn step(token: i32, model: Model, caches: [Cache; 2]) -> ([f32; 64], [Cache; 2]) {
+    64 -> iota -> map {
+        i -> (i + token) % 7 -> widen_f32
+    } -> start;
+    mut hidden: [f32; 64] <- start;
+    mut updated: [Cache; 2] <- caches;
+    mut layer: i32 <- 0;
+    loop {
+        (layer < 2) -> {
+            -true-> {
+                model.layers[layer] -> weights;
+                updated[layer] -> cache;
+                64 -> iota -> map {
+                    i -> hidden[i] * weights.gain[i] + weights.shift[i] + cache.keys[i]
+                } -> next;
+                256 -> iota -> map {
+                    c -> (c / 64 == token % 4) -> {
+                        -true-> next[c % 64];
+                        -false-> cache.keys[c];
+                    }
+                } -> keys;
+                Cache {
+                    keys: keys
+                } -> fresh;
+                updated[layer] <- fresh;
+                next -> hidden;
+                layer + 1 -> layer;
+                -> loop;
+            }
+            -false-> {
+                64 -> iota -> map {
+                    i -> hidden[i] + model.bias[i]
+                } -> out;
+                (out, updated) -> ret;
+            }
+        }
+    }
+}
+
+fn main() {
+    64 -> iota -> map {
+        i -> i -> widen_f32
+    } -> ramp;
+    64 -> iota -> map {
+        i -> 0.5
+    } -> halves;
+    Layer {
+        gain: halves,
+        shift: ramp
+    } -> first;
+    Layer {
+        gain: ramp,
+        shift: halves
+    } -> second;
+    Model {
+        layers: [first, second],
+        bias: ramp
+    } -> model;
+    (0.0, 256) -> fill -> zeros;
+    Cache {
+        keys: zeros
+    } -> blank;
+    mut caches: [Cache; 2] <- [blank, blank];
+    mut token: i32 <- 0;
+    loop {
+        (token, model, caches) -> step -> stepped;
+        stepped.0[token] -> println;
+        (token < 5) -> {
+            -true-> {
+                stepped.1 -> caches;
+                token + 1 -> token;
+                -> loop;
+            }
+            -false-> stepped.1 -> final;
+        }
+    }
+    final[1].keys[100] -> println;
+    final[0].keys[3] -> println;
+}

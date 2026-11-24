@@ -1,0 +1,74 @@
+// A 1-row projection whose weights are a field of an element of an array of structs.
+type Layer {
+    weight: [bf16; 2048],
+    bias: [f32; 32],
+}
+
+fn project(weight: [bf16; 2048], x: [f32; 64]) -> [f32; 32] {
+    64 -> iota -> columns;
+    32 -> iota -> map {
+        row ->
+        (0.0, columns) -> fold {
+            sum, column ->
+            weight[row * 64 + column] -> widen_f32 -> w;
+            sum + w * x[column]
+        }
+    } -> ret;
+}
+
+fn run(x: [f32; 64], layers: [Layer; 3]) -> [f32; 32] {
+    (0.0, 32) -> fill -> zeros;
+    mut total: [f32; 32] <- zeros;
+    mut layer: i32 <- 0;
+    loop {
+        (layer < 3) -> {
+            -true-> {
+                layers[layer] -> current;
+                (current.weight, x) -> project -> y;
+                32 -> iota -> map {
+                    i -> total[i] + y[i] + current.bias[i]
+                } -> total;
+                layer + 1 -> layer;
+                -> loop;
+            }
+            -false-> total -> ret;
+        }
+    }
+}
+
+fn make_layer(seed: i32) -> Layer {
+    2048 -> iota -> map {
+        i -> (i * 7 + seed * 13) % 17 - 8 -> widen_f32 -> v;
+        v * 0.125 -> to_bf16
+    } -> weight;
+    32 -> iota -> map {
+        i -> (i + seed) -> widen_f32
+    } -> bias;
+    Layer {
+        weight: weight,
+        bias: bias
+    } -> ret;
+}
+
+fn main() {
+    0 -> make_layer -> a;
+    1 -> make_layer -> b;
+    2 -> make_layer -> c;
+    [a, b, c] -> layers;
+    mut step: i32 <- 0;
+    loop {
+        64 -> iota -> map {
+            i -> (i + step) % 5 -> widen_f32
+        } -> x;
+        (x, layers) -> run -> y;
+        y[step] -> println;
+        (step < 3) -> {
+            -true-> {
+                step + 1 -> step;
+                -> loop;
+            }
+            -false-> y -> last;
+        }
+    }
+    last[31] -> println;
+}

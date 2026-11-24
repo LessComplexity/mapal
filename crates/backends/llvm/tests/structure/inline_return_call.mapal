@@ -1,0 +1,19 @@
+// Repro: an inlined function whose result is written straight by a call to another inlined function.
+fn scaled(x: [f32; 64], factor: f32) -> [f32; 64] {
+    64 -> iota -> map {
+        i -> x[i] * factor
+    } -> ret;
+}
+
+fn doubled(x: [f32; 64]) -> [f32; 64] {
+    (x, 2.0) -> scaled -> ret;
+}
+
+fn main() {
+    64 -> iota -> map {
+        i -> i -> widen_f32
+    } -> x;
+    x -> doubled -> y;
+    y -> doubled -> z;
+    z[63] -> println;
+}

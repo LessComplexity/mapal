@@ -287,7 +287,7 @@ fn main() {
 }
 "#;
     let build_of = |ll: &str| -> String {
-        ll.split("define internal [4 x i32] @fn")
+        ll.split("define internal void @fn")
             .nth(1)
             .and_then(|s| s.split("\n}\n").next())
             .expect("build fn")
@@ -304,18 +304,20 @@ fn main() {
     )
     .unwrap();
     let build = build_of(&s64);
+    // structure: the returned array is the caller's storage (`ptr %out`),
+    // never an alloca of the callee.
     assert_eq!(
         build.matches("alloca [4 x i32]").count(),
-        3,
-        "the carried Update target shares its source slot (no fourth array alloca):\n{build}"
+        2,
+        "the carried Update target shares its source slot (no third array alloca):\n{build}"
     );
     // S65 `by-ref`: the state is the literal's buffer (it dies at the entry),
     // the Update writes it in place through the state's pointer, and the
-    // loop products forward that pointer — the one other array is the
-    // returned value, which the exit copies out (the caller observes it).
+    // loop products forward that pointer — the exit copies the value out into
+    // the caller's storage (the caller observes it).
     let ll = emit(&lower_src(src)).unwrap();
     let build = build_of(&ll);
-    assert_eq!(build.matches("alloca [4 x i32]").count(), 2, "{build}");
+    assert_eq!(build.matches("alloca [4 x i32]").count(), 1, "{build}");
     assert_eq!(build.matches("@llvm.memcpy").count(), 1, "{build}");
     insta::assert_snapshot!("update_inplace_carried_loop", ll);
 }
@@ -347,7 +349,7 @@ fn main() {
 "#;
     let ll = emit(&lower_src(escape)).unwrap();
     let f = ll
-        .split("define internal { [4 x i32], [4 x i32] } @fn")
+        .split("define internal void @fn")
         .nth(1)
         .and_then(|s| s.split("\n}\n").next())
         .expect("escape f");
@@ -373,7 +375,7 @@ fn main() {
     let ll = emit(&lower_src(byref)).unwrap();
     let fdef = ll
         .lines()
-        .find(|l| l.starts_with("define internal [4 x i32] @fn"))
+        .find(|l| l.starts_with("define internal void @fn"))
         .expect("f's define line");
     assert!(
         fdef.contains("(ptr"),

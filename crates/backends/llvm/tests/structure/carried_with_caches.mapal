@@ -1,0 +1,81 @@
+// A carried hidden state advanced by a residual projection, beside per-layer caches updated in place.
+type Cache {
+    keys: [f32; 256],
+}
+
+fn project(weight: [bf16; 4096], x: [f32; 64]) -> [f32; 64] {
+    64 -> iota -> columns;
+    64 -> iota -> map {
+        row ->
+        (0.0, columns) -> fold {
+            sum, column ->
+            weight[row * 64 + column] -> widen_f32 -> w;
+            sum + w * x[column]
+        }
+    } -> ret;
+}
+
+fn run(x: [f32; 64], weights: [bf16; 4096], caches: [Cache; 2], token: i32) -> ([f32; 64], [Cache; 2]) {
+    mut hidden: [f32; 64] <- x;
+    mut updated: [Cache; 2] <- caches;
+    mut layer: i32 <- 0;
+    loop {
+        (layer < 2) -> {
+            -true-> {
+                updated[layer] -> cache;
+                (weights, hidden) -> project -> y;
+                64 -> iota -> map {
+                    i -> hidden[i] + y[i] + cache.keys[i]
+                } -> next;
+                256 -> iota -> map {
+                    c -> (c / 64 == token % 4) -> {
+                        -true-> next[c % 64] * 0.5;
+                        -false-> cache.keys[c];
+                    }
+                } -> keys;
+                Cache {
+                    keys: keys
+                } -> fresh;
+                updated[layer] <- fresh;
+                next -> hidden;
+                layer + 1 -> layer;
+                -> loop;
+            }
+            -false-> {
+                64 -> iota -> map {
+                    i -> hidden[i] * 2.0
+                } -> out;
+                (out, updated) -> ret;
+            }
+        }
+    }
+}
+
+fn main() {
+    4096 -> iota -> map {
+        i -> (i * 7) % 17 - 8 -> widen_f32 -> v;
+        v * 0.01 -> to_bf16
+    } -> weights;
+    (0.0, 256) -> fill -> zeros;
+    Cache {
+        keys: zeros
+    } -> blank;
+    mut caches: [Cache; 2] <- [blank, blank];
+    mut step: i32 <- 0;
+    loop {
+        64 -> iota -> map {
+            i -> (i + step) % 5 -> widen_f32
+        } -> x;
+        (x, weights, caches, step) -> run -> stepped;
+        stepped.0[step] -> println;
+        (step < 3) -> {
+            -true-> {
+                stepped.1 -> caches;
+                step + 1 -> step;
+                -> loop;
+            }
+            -false-> stepped.1 -> last;
+        }
+    }
+    last[1].keys[70] -> println;
+}

@@ -38,6 +38,8 @@ impl<'a> FnEmit<'a> {
             body: String::new(),
             next: 0,
             byref: None,
+            byref_paths: Vec::new(),
+            out_ptr: false,
             ptr_resident: SecondaryMap::new(),
             lup: ir.last_use_plan(f),
             bp: ir.bounds_proof(f),
@@ -75,6 +77,7 @@ impl<'a> FnEmit<'a> {
             profile,
             heap_ok: false,
             heap_used: false,
+            frame_heap: false,
             gpu_arms: crate::GpuArms::default(),
             algebra: None,
             fma_stash: SecondaryMap::new(),
@@ -376,22 +379,14 @@ impl<'a> FnEmit<'a> {
         // hold `ptr`s, so assemble the by-value whole in a scratch of the
         // ordinary type — each by-ref array component deep-copied through its
         // forwarded pointer, every other component copied inline.
-        let bk = match &self.byref {
-            Some((input, bk, text)) if *input == o && *text != llt => Some(*bk),
-            _ => None,
-        };
-        if let Some(bk) = bk {
+        let byref = matches!(&self.byref, Some((input, _, text)) if *input == o && *text != llt);
+        if byref {
+            // structure: every array the ABI passes by address, at any depth,
+            // deep-copied through its pointer (`copy_layout`).
             let buf = self.scratch(&llt);
-            for k in 0..product_arity(&obj.ty) {
-                if k < bk && matches!(obj.ty.component_ty(k), Some(Ty::Array { .. })) {
-                    let cllt = lower_ty(obj.ty.component_ty(k)?)?;
-                    let src = self.array_operand_ptr(o, Some(k))?;
-                    let dst = self.field_ptr(&buf, &obj.ty, &llt, k)?;
-                    self.emit_memcpy(&dst, &src, &cllt);
-                } else if let Some((cllt, cval)) = self.load_component(o, k) {
-                    self.field_store(&buf, &obj.ty, &llt, k, &cllt, &cval);
-                }
-            }
+            let ty = obj.ty.clone();
+            let paths = self.byref_paths.clone();
+            self.copy_layout(&ty, &buf, &[], &slot, &paths);
             let v = self.tmp();
             self.line(format!("{v} = load {llt}, ptr {buf}"));
             return Some((llt, v));
@@ -412,12 +407,8 @@ impl<'a> FnEmit<'a> {
                 // The by-ref body input GEPs against the by-ref struct text; a
                 // first-k Array field holds the capture `ptr`, not the array.
                 let (cllt, agg_llt) = match &self.byref {
-                    Some((input, bk, text)) if *input == agg => (
-                        if k < *bk && matches!(comp_ty, Ty::Array { .. }) {
-                            "ptr".into()
-                        } else {
-                            lower_ty(comp_ty)?
-                        },
+                    Some((input, _, text)) if *input == agg => (
+                        lower_ptr_paths(comp_ty, &sub_paths(&self.byref_paths, k))?,
                         text.clone(),
                     ),
                     _ => (
@@ -453,6 +444,137 @@ impl<'a> FnEmit<'a> {
                 Some((cllt, ptr))
             }
             _ => None,
+        }
+    }
+
+    /// structure: the pointer positions of `o`'s slot — `[[]]` for a bare
+    /// forwarded array, the by-ref input's ABI paths, its views, or a staging
+    /// product's pointer-only array fields (what [`Self::lower_slot_ty`] lays
+    /// out).
+    pub(super) fn slot_paths(&self, o: ObjectId) -> Vec<Vec<u32>> {
+        if self.ptr_resident.contains_key(o) {
+            return vec![Vec::new()];
+        }
+        if self.byref.as_ref().is_some_and(|(input, _, _)| *input == o) {
+            return self.byref_paths.clone();
+        }
+        if let Some(v) = self.views.get(o) {
+            return v.clone();
+        }
+        (0..product_arity(&self.obj_ty(o)))
+            .filter(|&k| self.pointer_only_array_component(o, k))
+            .map(|k| vec![k])
+            .collect()
+    }
+
+    /// structure: where `o`'s value lives and how it is laid out there — a
+    /// pointer to storage whose positions `paths` hold pointers (a forwarded
+    /// array: its bytes, `[]`).
+    pub(super) fn value_ptr(&mut self, o: ObjectId) -> Option<(String, Vec<Vec<u32>>)> {
+        let slot = self.slot(o)?;
+        if self.ptr_resident.contains_key(o) {
+            let p = self.tmp();
+            self.line(format!("{p} = load ptr, ptr {slot}"));
+            return Some((p, Vec::new()));
+        }
+        Some((slot, self.slot_paths(o)))
+    }
+
+    /// structure: [`Self::value_ptr`] of component `k` of product `agg` —
+    /// through its `Pair` feeder (as [`Self::array_operand_ptr`] reads), else
+    /// the field itself (a pointer field: the bytes it points at).
+    pub(super) fn component_value_ptr(
+        &mut self,
+        agg: ObjectId,
+        k: u32,
+    ) -> Option<(String, Vec<Vec<u32>>)> {
+        if let Some(f) = self.pair_source(agg, k)
+            && self.slots.contains_key(f)
+            && !self.host_free(f)
+        {
+            return self.value_ptr(f);
+        }
+        let paths = sub_paths(&self.slot_paths(agg), k);
+        let (_, fp) = self.component_ptr(agg, k)?;
+        if paths.iter().any(|p| p.is_empty()) {
+            let p = self.tmp();
+            self.line(format!("{p} = load ptr, ptr {fp}"));
+            return Some((p, Vec::new()));
+        }
+        Some((fp, paths))
+    }
+
+    /// structure: copy a value of `ty` from storage `src` laid out with
+    /// pointers at `src_paths` into storage `dst` laid out with pointers at
+    /// `dst_paths` — no aggregate SSA, every array by `memcpy` or by address.
+    /// A pointer destination over source bytes takes their address (a call
+    /// argument, an element view); a byte destination over a source pointer
+    /// copies through it.
+    pub(super) fn copy_layout(
+        &mut self,
+        ty: &Ty,
+        dst: &str,
+        dst_paths: &[Vec<u32>],
+        src: &str,
+        src_paths: &[Vec<u32>],
+    ) {
+        let d_ptr = dst_paths.iter().any(|p| p.is_empty());
+        let s_ptr = src_paths.iter().any(|p| p.is_empty());
+        match ty {
+            Ty::Array { .. } => {
+                let Some(llt) = lower_ty(ty) else {
+                    return;
+                };
+                let from = if s_ptr {
+                    let p = self.tmp();
+                    self.line(format!("{p} = load ptr, ptr {src}"));
+                    p
+                } else {
+                    src.to_string()
+                };
+                if d_ptr {
+                    self.line(format!("store ptr {from}, ptr {dst}"));
+                } else {
+                    self.emit_memcpy(dst, &from, &llt);
+                }
+            }
+            Ty::Tuple(_) | Ty::Struct { .. } => {
+                let (Some(dllt), Some(sllt)) = (
+                    lower_ptr_paths(ty, dst_paths),
+                    lower_ptr_paths(ty, src_paths),
+                ) else {
+                    return;
+                };
+                for k in 0..product_arity(ty) {
+                    let Some(cty) = ty.component_ty(k).cloned() else {
+                        continue;
+                    };
+                    if lower_ty(&cty).is_none() {
+                        continue;
+                    }
+                    let (Some(df), Some(sf)) = (
+                        self.field_ptr(dst, ty, &dllt, k),
+                        self.field_ptr(src, ty, &sllt, k),
+                    ) else {
+                        continue;
+                    };
+                    self.copy_layout(
+                        &cty,
+                        &df,
+                        &sub_paths(dst_paths, k),
+                        &sf,
+                        &sub_paths(src_paths, k),
+                    );
+                }
+            }
+            _ => {
+                let Some(llt) = lower_ty(ty) else {
+                    return;
+                };
+                let v = self.tmp();
+                self.line(format!("{v} = load {llt}, ptr {src}"));
+                self.line(format!("store {llt} {v}, ptr {dst}"));
+            }
         }
     }
 
@@ -668,7 +790,12 @@ impl<'a> FnEmit<'a> {
         let bytes = llt_bytes(llt);
         let text = if self.heap_block(bytes) {
             let align = align.unwrap_or_else(|| llt_align(llt));
-            format!("  {name} = call ptr @mapal_rt_alloc(i64 {bytes}, i64 {align})\n")
+            let alloc = if self.frame_heap {
+                "mapal_rt_frame_alloc"
+            } else {
+                "mapal_rt_alloc"
+            };
+            format!("  {name} = call ptr @{alloc}(i64 {bytes}, i64 {align})\n")
         } else {
             match align {
                 Some(align) => format!("  {name} = alloca {llt}, align {align}\n"),
@@ -681,7 +808,11 @@ impl<'a> FnEmit<'a> {
     /// Release the arena, if this emitter filled any of it. Emitted once, at
     /// the last point that can read arena memory (plan-s29 composition rule 4).
     pub(super) fn heap_teardown(&mut self) {
-        if self.heap_used {
+        if self.heap_used && self.frame_heap {
+            // The per-call arena is runtime state: the fn is no longer readonly.
+            self.runtime_write = true;
+            self.line("call void @mapal_rt_frame_release(i64 %hmark)");
+        } else if self.heap_used {
             self.line("call void @mapal_rt_free_all()");
         }
     }
@@ -1015,10 +1146,9 @@ impl<'a> FnEmit<'a> {
         match k {
             None => self.slot(source),
             Some(k) => {
-                let byref_field = matches!(&self.byref, Some((input, bk, _))
+                let byref_field = matches!(&self.byref, Some((input, _, _))
                     if *input == source
-                        && k < *bk
-                        && matches!(self.obj_ty(source).component_ty(k), Some(Ty::Array { .. })));
+                        && self.byref_paths.iter().any(|p| p.as_slice() == [k]));
                 // S65 `by-ref`: a view field holds the pointer.
                 if byref_field || self.is_view(source, &[k]) {
                     let (_, fp) = self.component_ptr(source, k)?;

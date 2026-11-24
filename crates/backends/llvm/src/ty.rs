@@ -54,23 +54,21 @@ pub(crate) fn lower_ty(ty: &Ty) -> Option<String> {
 /// `lower_ty` verbatim.
 pub(crate) fn lower_body_input_ty(ty: &Ty, k: u32) -> Option<String> {
     match ty {
-        Ty::Tuple(_) | Ty::Struct { .. } if k > 0 => {
-            let kept: Vec<String> = component_tys(ty)
-                .iter()
-                .enumerate()
-                .filter_map(|(i, c)| match c {
-                    Ty::Array { .. } if (i as u32) < k => Some("ptr".into()),
-                    _ => lower_ty(c),
-                })
-                .collect();
-            match kept.len() {
-                0 => None,
-                1 => Some(kept.into_iter().next().unwrap()),
-                _ => Some(format!("{{ {} }}", kept.join(", "))),
-            }
-        }
+        Ty::Tuple(_) | Ty::Struct { .. } if k > 0 => lower_ptr_paths(ty, &capture_paths(ty, k)),
         _ => lower_ty(ty),
     }
+}
+
+/// The array positions a body input with `k` leading captures passes by
+/// reference: every array inside a capture, at any depth (a captured struct's
+/// fields, a captured tuple's nested struct's), never the per-element rest.
+/// structure: a struct capture is its arrays' addresses, so no body call
+/// moves array bytes.
+pub(crate) fn capture_paths(ty: &Ty, k: u32) -> Vec<Vec<u32>> {
+    array_paths(ty)
+        .into_iter()
+        .filter(|p| p.first().is_some_and(|&c| c < k))
+        .collect()
 }
 
 /// The lowered LLVM type of a **Named fn's** input with every top-level Array
@@ -85,12 +83,20 @@ pub(crate) fn lower_body_input_ty(ty: &Ty, k: u32) -> Option<String> {
 /// component qualifies; nested products-in-products stay by value (a
 /// component that is itself a product lowers via `lower_ty`). Scalar-only
 /// inputs lower identically to `lower_ty` (byte-identical text).
+/// structure: every array at any depth — a struct parameter's fields, an
+/// array of structs (one position: its elements are its bytes) — so a call
+/// moves addresses, never array bytes (`array_paths`).
 pub(crate) fn lower_named_input_ty(ty: &Ty) -> Option<String> {
-    match ty {
-        Ty::Array { .. } => Some("ptr".into()),
-        Ty::Tuple(_) | Ty::Struct { .. } => lower_body_input_ty(ty, u32::MAX),
-        _ => lower_ty(ty),
-    }
+    lower_ptr_paths(ty, &array_paths(ty))
+}
+
+/// structure: whether a Named fn's output holding arrays is written by the
+/// callee straight into storage its caller passes (`ptr %out`) — a product of
+/// arrays (per-layer caches, a struct of weights) never returns as one SSA
+/// aggregate. Decided from the type alone, so every caller and the callee
+/// agree. The entry keeps its by-value return (its caller is `@main`).
+pub(crate) fn out_by_ptr(ty: &Ty) -> bool {
+    !array_paths(ty).is_empty()
 }
 
 /// [`lower_ty`] with the Array components at `paths` (component-index paths

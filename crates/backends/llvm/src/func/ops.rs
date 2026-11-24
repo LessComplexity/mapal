@@ -65,6 +65,17 @@ impl<'a> FnEmit<'a> {
                     } else {
                         self.emit_memcpy(&dst, &src, &sllt);
                     }
+                } else if self.holds_array_bytes(
+                    &self.obj_ty(source),
+                    &[self.slot_paths(source), self.field_paths(target, slot)],
+                ) && let Some((src, spaths)) = self.value_ptr(source)
+                    && let Some((_, dst)) = self.component_ptr(target, slot)
+                {
+                    // structure: a product holding array bytes moves field by
+                    // field (`copy_layout`), never as one SSA aggregate.
+                    let ty = self.obj_ty(source);
+                    let dpaths = self.field_paths(target, slot);
+                    self.copy_layout(&ty, &dst, &dpaths, &src, &spaths);
                 } else if let Some(llt) = self.big_aggregate(source)
                     && let Some((cllt, dst)) = self.component_ptr(target, slot)
                 {
@@ -93,6 +104,23 @@ impl<'a> FnEmit<'a> {
                     } else {
                         let llt = lower_ty(&self.obj_ty(target)).expect("Proj array lowers");
                         self.emit_memcpy(&dst, &src, &llt);
+                    }
+                } else if let Some(cty) = self.obj_ty(source).component_ty(index).cloned()
+                    && self.holds_array_bytes(
+                        &cty,
+                        &[
+                            sub_paths(&self.slot_paths(source), index),
+                            self.slot_paths(target),
+                        ],
+                    )
+                {
+                    // structure: a product field of arrays (a struct
+                    // parameter's, an element view's), field by field.
+                    if let Some((src, spaths)) = self.component_value_ptr(source, index)
+                        && let Some(dst) = self.slot(target)
+                    {
+                        let dpaths = self.slot_paths(target);
+                        self.copy_layout(&cty, &dst, &dpaths, &src, &spaths);
                     }
                 } else if let Some((cllt, val)) = self.load_component(source, index) {
                     self.store_obj(target, &cllt, &val);
@@ -296,6 +324,12 @@ impl<'a> FnEmit<'a> {
                     let dst = self.slot(target).expect("Output array target slot");
                     let llt = lower_ty(&self.obj_ty(source)).expect("Output array lowers");
                     self.emit_memcpy(&dst, &src, &llt);
+                } else if has_arrays(&self.obj_ty(source))
+                    && let Some((src, spaths)) = self.value_ptr(source)
+                    && let Some(dst) = self.slot(target)
+                {
+                    let ty = self.obj_ty(source);
+                    self.copy_layout(&ty, &dst, &[], &src, &spaths);
                 } else if let Some((llt, val)) = self.load_whole(source) {
                     self.store_obj(target, &llt, &val);
                 }
@@ -571,6 +605,18 @@ impl<'a> FnEmit<'a> {
         let out_ty = self.obj_ty(cfd.output);
         let arg = match lower_named_input_ty(&in_ty) {
             None => String::new(),
+            Some(arg_llt)
+                if has_arrays(&in_ty) && !has_top_array(&in_ty) || nested_arrays(&in_ty) =>
+            {
+                // structure: arrays at any depth pass by address — the
+                // argument assembled in scratch in the ABI's layout.
+                let buf = self.scratch(&arg_llt);
+                let (src, spaths) = self.value_ptr(source).expect("call arg storage");
+                self.copy_layout(&in_ty, &buf, &array_paths(&in_ty), &src, &spaths);
+                let whole = self.tmp();
+                self.line(format!("{whole} = load {arg_llt}, ptr {buf}"));
+                format!("{arg_llt} {whole}")
+            }
             Some(_) if !has_top_array(&in_ty) => {
                 let (llt, val) = self.load_whole(source).expect("call arg");
                 format!("{llt} {val}")
@@ -595,6 +641,22 @@ impl<'a> FnEmit<'a> {
                 self.body_call_arg(source, product_arity(&in_ty), &in_ty, &arg_llt, &[])
             }
         };
+        if g != self.ir.entry() && out_by_ptr(&out_ty) {
+            // structure: the callee writes its output into this storage.
+            let llt = lower_ty(&out_ty).expect("an output of arrays lowers");
+            let direct = self.slot_paths(target).is_empty();
+            let dst = match self.slot(target) {
+                Some(s) if direct => s,
+                _ => self.scratch(&llt),
+            };
+            let sep = if arg.is_empty() { "" } else { ", " };
+            self.line(format!("call void @{callee}({arg}{sep}ptr {dst})"));
+            if !direct && let Some(t) = self.slot(target) {
+                let tp = self.slot_paths(target);
+                self.copy_layout(&out_ty, &t, &tp, &dst, &[]);
+            }
+            return;
+        }
         match lower_ty(&out_ty) {
             None => self.line(format!("call void @{callee}({arg})")),
             Some(rty) => {
@@ -602,6 +664,24 @@ impl<'a> FnEmit<'a> {
                 self.line(format!("{r} = call {rty} @{callee}({arg})"));
                 self.store_obj(target, &rty, &r);
             }
+        }
+    }
+
+    /// structure: a value of `ty` laid out by some of `layouts` holds array
+    /// bytes (or the layouts differ) — it moves by `copy_layout`. A product
+    /// every array of which is forwarded on every side is a small struct of
+    /// pointers, moved whole as before.
+    pub(super) fn holds_array_bytes(&self, ty: &Ty, layouts: &[Vec<Vec<u32>>]) -> bool {
+        let all = array_paths(ty);
+        !all.is_empty() && layouts.iter().any(|l| *l != all)
+    }
+
+    /// structure: the pointer positions of field `k` of `agg`'s slot (an
+    /// array literal's elements are bytes).
+    pub(super) fn field_paths(&self, agg: ObjectId, k: u32) -> Vec<Vec<u32>> {
+        match self.obj_ty(agg) {
+            Ty::Array { .. } => Vec::new(),
+            _ => sub_paths(&self.slot_paths(agg), k),
         }
     }
 
@@ -733,6 +813,49 @@ impl<'a> FnEmit<'a> {
         }
         let arr_llt = lower_ty(&arr_ty).expect("array lowers");
         let idx_ty = src_ty.component_ty(1).cloned().expect("index i");
+        let elem_ty = arr_ty.component_ty(0).cloned().expect("array element");
+        if has_arrays(&elem_ty)
+            && !self
+                .pair_source(source, 0)
+                .is_some_and(|a| self.host_free(a))
+        {
+            // structure: an element holding arrays (a row of a nested array,
+            // a struct of an array of structs) is read in place — a view of
+            // its address when the plan made the target one, else copied
+            // field by field; never one SSA aggregate.
+            let arr_ptr = self
+                .array_operand_ptr(source, Some(0))
+                .expect("index array ptr");
+            let i64idx = self.load_index(source, 1, &idx_ty);
+            let i64idx = if self.bp.proven(m) {
+                i64idx
+            } else if matches!(self.guard_flavor, GuardFlavor::Host) {
+                self.guard_index(&i64idx, size);
+                i64idx
+            } else {
+                // A task / device body records the trap and reads cell 0.
+                let oob = self.index_oob(&i64idx, size);
+                let bad = self.label();
+                let good = self.label();
+                self.line(format!("br i1 {oob}, label %{bad}, label %{good}"));
+                self.label_line(&bad);
+                self.record_trap(m, 1);
+                self.line(format!("br label %{good}"));
+                self.label_line(&good);
+                let c = self.tmp();
+                self.line(format!("{c} = select i1 {oob}, i64 0, i64 {i64idx}"));
+                c
+            };
+            let ep = self.tmp();
+            self.line(format!(
+                "{ep} = getelementptr {arr_llt}, ptr {arr_ptr}, i64 0, i64 {i64idx}"
+            ));
+            if let Some(dst) = self.slot(target) {
+                let tp = self.slot_paths(target);
+                self.copy_layout(&elem_ty, &dst, &tp, &ep, &[]);
+            }
+            return;
+        }
         // S54 `arena`: a device-only array's element is copied out into a
         // scratch cell (its reads are proven, so no guard).
         if self
@@ -877,6 +1000,14 @@ impl<'a> FnEmit<'a> {
         self.line(format!(
             "{ep} = getelementptr {arr_llt}, ptr {tgt_slot}, i64 0, i64 {i64idx}"
         ));
+        let elem_ty = arr_ty.component_ty(0).cloned().expect("array element");
+        if has_arrays(&elem_ty)
+            && let Some((src, spaths)) = self.component_value_ptr(source, 2)
+        {
+            // structure: an element of arrays written field by field.
+            self.copy_layout(&elem_ty, &ep, &[], &src, &spaths);
+            return;
+        }
         let (vllt, val) = self.load_component(source, 2).expect("update value");
         self.line(format!("store {vllt} {val}, ptr {ep}"));
     }
@@ -943,7 +1074,20 @@ impl<'a> FnEmit<'a> {
     ) -> String {
         let buf = self.scratch(arg_llt);
         for i in 0..captures {
-            if matches!(arg_ty.component_ty(i), Some(Ty::Array { .. })) {
+            if let Some(cty) = arg_ty.component_ty(i).cloned()
+                && !matches!(cty, Ty::Array { .. })
+                && has_arrays(&cty)
+            {
+                // structure: a captured product's arrays by address
+                // (`capture_paths`).
+                let (src, spaths) = self
+                    .component_value_ptr(source, i)
+                    .expect("body capture storage");
+                let fp = self
+                    .field_ptr(&buf, arg_ty, arg_llt, i)
+                    .expect("capture field");
+                self.copy_layout(&cty, &fp, &array_paths(&cty), &src, &spaths);
+            } else if matches!(arg_ty.component_ty(i), Some(Ty::Array { .. })) {
                 let addr = self
                     .array_operand_ptr(source, Some(i))
                     .expect("body capture addr");

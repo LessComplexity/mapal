@@ -2153,6 +2153,11 @@ fn emit_module(
     if funcs.contains("@mapal_rt_alloc") {
         out.push_str(HEAP_DECLS);
     }
+    if funcs.contains("@mapal_rt_frame_alloc") {
+        out.push_str(
+            "declare i64 @mapal_rt_frame_mark()\ndeclare ptr @mapal_rt_frame_alloc(i64, i64)\ndeclare void @mapal_rt_frame_release(i64)\n",
+        );
+    }
     // fold-algebra: an explicit-face pair is one `llvm.fma` (gated on the call).
     for (call, decl) in [
         (

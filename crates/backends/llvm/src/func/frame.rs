@@ -7,18 +7,33 @@ use super::*;
 impl<'a> FnEmit<'a> {
     /// Configure by-ref inputs and Update slot aliases. Returns the lowered
     /// incoming argument type.
-    pub(super) fn prepare_storage(&mut self) -> Option<String> {
+    /// The call ABI of this fn's input and output (by-ref input positions,
+    /// `ptr %out`): a function of its signature alone, set before anything
+    /// lays out products (`plan_views` pins the input's pointers).
+    pub(super) fn init_abi(&mut self) {
         let fd = self.ir.func(self.f).expect("func resolves");
         let in_ty = self.obj_ty(fd.input);
-        let (bk, btext) = match fd.kind {
+        let (bk, btext, bpaths) = match fd.kind {
             FuncKind::MapBody | FuncKind::FoldBody => {
                 let k = self.body_captures();
-                (k, lower_body_input_ty(&in_ty, k))
+                (k, lower_body_input_ty(&in_ty, k), capture_paths(&in_ty, k))
             }
-            FuncKind::Named => (u32::MAX, lower_named_input_ty(&in_ty)),
+            FuncKind::Named => (u32::MAX, lower_named_input_ty(&in_ty), array_paths(&in_ty)),
         };
+        self.out_ptr = fd.kind == FuncKind::Named
+            && self.f != self.ir.entry()
+            && out_by_ptr(&self.obj_ty(fd.output));
         if let Some(text) = btext {
+            self.byref_paths = bpaths;
             self.byref = Some((fd.input, bk, text));
+        }
+    }
+
+    pub(super) fn prepare_storage(&mut self) -> Option<String> {
+        self.init_abi();
+        let fd = self.ir.func(self.f).expect("func resolves");
+        let in_ty = self.obj_ty(fd.input);
+        if let Some((_, bk, _)) = self.byref.clone() {
             if bk == u32::MAX && matches!(&in_ty, Ty::Array { .. }) {
                 self.ptr_resident.insert(fd.input, ());
             }
@@ -170,8 +185,15 @@ impl<'a> FnEmit<'a> {
 
     pub(super) fn allocate_local_slots(&mut self, in_llt: &Option<String>) {
         let mut ord = 0u32;
+        let output = self.ir.func(self.f).expect("func resolves").output;
         for (id, kind, ty) in self.owned_objects() {
             if kind == ObjectKind::Constant {
+                continue;
+            }
+            if self.out_ptr && id == output {
+                // structure: the caller's storage (`ptr %out`).
+                self.slots.insert(id, "%out".to_string());
+                ord += 1;
                 continue;
             }
             if self.elided_updates.contains_key(id) || self.elided_arrays.contains_key(id) {
@@ -367,6 +389,7 @@ impl<'a> FnEmit<'a> {
         if !self.by_ref {
             return;
         }
+        self.init_abi();
         for scc in self.ir.loop_structure(self.f) {
             for plan in scc
                 .merges
@@ -411,6 +434,32 @@ impl<'a> FnEmit<'a> {
                     .filter(|p| !(literal && p.is_empty()))
                     .map(|p| (o, p)),
             );
+        }
+        // structure: the by-ref input's nested pointer positions are the
+        // ABI's — pinned. A consumer that needs bytes there converts at its
+        // edge (`copy_layout`); the input is never anything but pointers.
+        let pinned: std::collections::HashSet<Pos> = match &self.byref {
+            Some((input, _, _)) => self
+                .byref_paths
+                .iter()
+                .filter(|p| !p.is_empty())
+                .map(|p| (*input, p.clone()))
+                .collect(),
+            None => Default::default(),
+        };
+        cand.extend(pinned.iter().cloned());
+        // structure: an `Index` of an array of arrays or of products is a
+        // view of the element (its address inside the array's bytes), unless
+        // a consumer needs the bytes.
+        for (o, _, ty) in self.owned_objects() {
+            if self
+                .ir
+                .in_edges(o)
+                .first()
+                .is_some_and(|&m| self.ir.morphism(m).expect("m").op == Operation::Index)
+            {
+                cand.extend(array_paths(&ty).into_iter().map(|p| (o, p)));
+            }
         }
         // `eq`: one whole-value copy moves both, so both are pointers or
         // neither; `need`: a view of a field needs the field to be a pointer.
@@ -457,15 +506,18 @@ impl<'a> FnEmit<'a> {
                 let address = match mo.op {
                     Operation::Index | Operation::Update => one && k == 0,
                     Operation::Zip => one && k <= 1,
-                    Operation::Map { captures, .. } => one && k <= captures,
-                    Operation::Fold { captures, .. } => one && (k < captures || k == captures + 1),
-                    Operation::Call(_) => one,
+                    // structure: a capture's arrays at any depth and a call
+                    // argument's travel by address (`capture_paths`,
+                    // `lower_named_input_ty`).
+                    Operation::Map { captures, .. } => one && k <= captures || k < captures,
+                    Operation::Fold { captures, .. } => one && k == captures + 1 || k < captures,
+                    Operation::Call(_) => true,
                     op => {
                         !pres.is_empty()
                             || matches!(op, Operation::Pair { .. } | Operation::Proj { .. })
                     }
                 };
-                if !address {
+                if !address && !pinned.contains(&(s, p.clone())) {
                     cand.remove(&(s, p));
                 }
             }
@@ -474,17 +526,18 @@ impl<'a> FnEmit<'a> {
             let mut changed = false;
             for (a, b) in &eq {
                 if cand.contains(a) != cand.contains(b) {
-                    changed |= cand.remove(a) | cand.remove(b);
+                    changed |= (!pinned.contains(a) && cand.remove(a))
+                        | (!pinned.contains(b) && cand.remove(b));
                 }
             }
             for (v, n) in &need {
-                changed |= !cand.contains(n) && cand.remove(v);
+                changed |= !cand.contains(n) && !pinned.contains(v) && cand.remove(v);
             }
             if !changed {
                 break;
             }
         }
-        let mut cand: Vec<Pos> = cand.into_iter().collect();
+        let mut cand: Vec<Pos> = cand.into_iter().filter(|x| !pinned.contains(x)).collect();
         cand.sort();
         for (o, p) in cand {
             if p.is_empty() {
@@ -497,6 +550,9 @@ impl<'a> FnEmit<'a> {
 
     /// Position `p` of `o` holds a pointer (`[]`: `o` is one).
     pub(super) fn is_view(&self, o: ObjectId, p: &[u32]) -> bool {
+        if self.byref.as_ref().is_some_and(|(input, _, _)| *input == o) {
+            return self.byref_paths.iter().any(|q| q == p);
+        }
         if p.is_empty() {
             self.ptr_resident.contains_key(o)
         } else {

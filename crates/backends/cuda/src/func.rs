@@ -2038,7 +2038,7 @@ pub(crate) fn const_literal(v: &Value) -> String {
             format!("{x:e}"),
             "",
         ),
-        Value::Str(_) => unreachable!("Str is not a scalar operand"),
+        Value::Str(_) | Value::Unit => unreachable!("Str / Unit is not a scalar operand"),
     }
 }
 

@@ -116,6 +116,7 @@ fn value_label(v: &Value) -> String {
         Value::F64(x) => format!("{x:?}"),
         Value::Narrow(n, b) => format!("{:?}{}", crate::narrow::widen(*n, *b), n.name()),
         Value::Bool(x) => x.to_string(),
+        Value::Unit => "()".to_string(),
         Value::Str(s) => {
             let mut shown: String = s.chars().take(20).collect();
             if s.chars().count() > 20 {

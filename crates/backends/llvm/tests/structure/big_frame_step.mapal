@@ -1,0 +1,55 @@
+// A loop-carrying fn called per step whose arrays (4 x 256 KB caches, a 256 KB scratch) are too big for
+// a stack frame: its big blocks come from the per-call arena and are released at each return.
+type Cache {
+    rows: [f32; 65536],
+}
+
+fn step(token: i32, caches: [Cache; 4]) -> (f32, [Cache; 4]) {
+    mut updated: [Cache; 4] <- caches;
+    mut layer: i32 <- 0;
+    loop {
+        (layer < 4) -> {
+            -true-> {
+                updated[layer] -> cache;
+                65536 -> iota -> map {
+                    c -> (c % 1024 == token) -> {
+                        -true-> cache.rows[c] + 1.0;
+                        -false-> cache.rows[c];
+                    }
+                } -> rows;
+                Cache {
+                    rows: rows
+                } -> fresh;
+                updated[layer] <- fresh;
+                layer + 1 -> layer;
+                -> loop;
+            }
+            -false-> {
+                updated[3].rows[token] -> ret.0;
+                updated -> ret.1;
+            }
+        }
+    }
+}
+
+fn main() {
+    (0.0, 65536) -> fill -> zeros;
+    Cache {
+        rows: zeros
+    } -> blank;
+    mut caches: [Cache; 4] <- [blank, blank, blank, blank];
+    mut token: i32 <- 0;
+    loop {
+        (token, caches) -> step -> stepped;
+        stepped.0 -> println;
+        (token < 5) -> {
+            -true-> {
+                stepped.1 -> caches;
+                token + 1 -> token;
+                -> loop;
+            }
+            -false-> stepped.1 -> last;
+        }
+    }
+    last[2].rows[1027] -> println;
+}

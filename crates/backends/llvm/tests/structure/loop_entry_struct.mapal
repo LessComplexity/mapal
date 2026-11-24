@@ -1,0 +1,40 @@
+// Repro: an effectful loop whose entry state is a struct of arrays built from parallel host work.
+type Cache {
+    keys: [f32; 4096],
+    values: [f32; 4096],
+}
+
+fn main() {
+    4096 -> iota -> map {
+        i -> i % 7 -> widen_f32
+    } -> a;
+    4096 -> iota -> map {
+        i -> i % 5 -> widen_f32
+    } -> b;
+    Cache {
+        keys: a,
+        values: b
+    } -> start;
+    mut cache: Cache <- start;
+    mut step: i32 <- 0;
+    loop {
+        step -> println;
+        (step < 3) -> {
+            -true-> {
+                cache.keys -> keys;
+                4096 -> iota -> map {
+                    i -> keys[i] + 1.0
+                } -> bumped;
+                Cache {
+                    keys: bumped,
+                    values: cache.values
+                } -> cache;
+                step + 1 -> step;
+                -> loop;
+            }
+            -false-> cache -> done;
+        }
+    }
+    done.keys -> k;
+    k[4095] -> println;
+}

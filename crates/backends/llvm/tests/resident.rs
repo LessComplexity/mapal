@@ -598,8 +598,10 @@ fn state_read_by_its_writer_ping_pongs_without_copies() {
         !on.contains("%ls"),
         "the second buffer is the init's:\n{on}"
     );
+    // structure: the by-value state's route copies are `memcpy`s (they were
+    // SSA aggregate loads / stores of the same bytes, counted as none).
     let s64 = cpu(&src, off("by-ref"));
-    assert_eq!(trip_moves(&s64), [("0:16384:value".to_string(), 3)]);
+    assert_eq!(trip_moves(&s64), [("0:16384:value".to_string(), 5)]);
 }
 
 /// `y = site(x, w); x' = relu(y)`: the state dies at the site, before its

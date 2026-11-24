@@ -14,8 +14,8 @@ use crate::MovePanel;
 use crate::module::StrGlobal;
 use crate::profile::TargetProfile;
 use crate::ty::{
-    array_paths, erased_index, lower_body_input_ty, lower_named_input_ty, lower_ptr_paths,
-    lower_ty, residual_arity, sub_paths,
+    array_paths, capture_paths, erased_index, lower_body_input_ty, lower_named_input_ty,
+    lower_ptr_paths, lower_ty, out_by_ptr, residual_arity, sub_paths,
 };
 
 /// Truthful fn attributes (trap-aware; suggestions #7): the conservative
@@ -269,6 +269,13 @@ pub(crate) struct FnEmit<'a> {
     /// (ADR-0027, suggestions #6); for a `Named` fn `k = u32::MAX` — every
     /// top-level Array component (BL5 by-ref call args, suggestions #8).
     byref: Option<(ObjectId, u32, String)>,
+    /// structure: the by-ref input's pointer positions (`array_paths` of a
+    /// Named fn's input, `capture_paths` of a body's) — every array at any
+    /// depth the caller passes by address.
+    byref_paths: Vec<Vec<u32>>,
+    /// structure: this Named fn writes its output through `ptr %out`
+    /// ([`crate::ty::out_by_ptr`]).
+    out_ptr: bool,
     /// The objects holding a forwarded array pointer (`alloca ptr`): array
     /// objects produced by `Proj{index < k}` from the by-ref input, plus the
     /// input object itself when a Named fn's whole input is one bare Array.
@@ -354,6 +361,9 @@ pub(crate) struct FnEmit<'a> {
     /// an unbounded number of times and keep their `alloca`s, which is also why
     /// the teardown can free everything: nobody else registers a block.
     heap_ok: bool,
+    /// structure: a non-entry Named fn's big blocks live in the per-call
+    /// arena (`mapal_rt_frame_alloc`), released at its return.
+    frame_heap: bool,
     /// This emitter lowered at least one block to the arena ⟹ it owes a
     /// teardown.
     heap_used: bool,
@@ -862,6 +872,18 @@ fn is_float(ty: &Ty) -> bool {
 /// Does `ty` carry a top-level Array — the ty itself, or a direct product
 /// component (nested products-in-products do NOT count: they stay by value,
 /// suggestions #8's recorded limitation)?
+/// structure: `ty` holds an array at some depth (a product of arrays, an
+/// array of anything).
+fn has_arrays(ty: &Ty) -> bool {
+    !array_paths(ty).is_empty()
+}
+
+/// structure: `ty` is a product with an array below its top level (a struct
+/// parameter of a tuple input).
+fn nested_arrays(ty: &Ty) -> bool {
+    array_paths(ty).iter().any(|p| p.len() > 1)
+}
+
 fn has_top_array(ty: &Ty) -> bool {
     match ty {
         Ty::Array { .. } => true,
@@ -925,7 +947,7 @@ fn const_literal(v: &Value) -> String {
         Value::F32(x) => format!("0x{:016X}", (*x as f64).to_bits()),
         Value::F64(x) => format!("0x{:016X}", x.to_bits()),
         Value::Narrow(n, b) => crate::narrow::literal(*n, *b),
-        Value::Str(_) => unreachable!("Str is not a scalar operand"),
+        Value::Str(_) | Value::Unit => unreachable!("Str / Unit is not a scalar operand"),
     }
 }
 

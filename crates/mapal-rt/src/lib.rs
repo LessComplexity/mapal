@@ -606,6 +606,49 @@ pub extern "C" fn mapal_rt_free_all() {
     }
 }
 
+thread_local! {
+    /// structure: the per-call arena of a repeatedly-called fn — its big
+    /// blocks, released when it returns ([`mapal_rt_frame_release`]). Thread-
+    /// local, so a fn running on a worker never releases another's blocks.
+    static FRAME: std::cell::RefCell<Vec<(usize, Layout)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// structure: the mark a non-entry fn takes on entry; its blocks are those
+/// allocated after it.
+#[unsafe(no_mangle)]
+pub extern "C" fn mapal_rt_frame_mark() -> i64 {
+    FRAME.with(|f| f.borrow().len() as i64)
+}
+
+/// structure: [`mapal_rt_alloc`] for a non-entry fn's big block (a decode
+/// step's per-layer caches would overflow the stack as `alloca`s): resident,
+/// uninitialised, released by [`mapal_rt_frame_release`] at its return.
+#[unsafe(no_mangle)]
+pub extern "C" fn mapal_rt_frame_alloc(bytes: i64, align: i64) -> *mut u8 {
+    let layout = Layout::from_size_align(bytes as usize, align as usize)
+        .expect("mapal_rt_frame_alloc: emitter passes a valid size/alignment pair");
+    assert!(layout.size() > 0, "mapal_rt_frame_alloc: zero-sized block");
+    let ptr = unsafe { alloc::alloc(layout) };
+    if ptr.is_null() {
+        alloc::handle_alloc_error(layout);
+    }
+    unsafe { reside(ptr, layout.size()) };
+    FRAME.with(|f| f.borrow_mut().push((ptr as usize, layout)));
+    ptr
+}
+
+/// structure: release every block allocated on this thread since `mark`
+/// (the fn's output was written into its caller's storage before).
+#[unsafe(no_mangle)]
+pub extern "C" fn mapal_rt_frame_release(mark: i64) {
+    FRAME.with(|f| {
+        for (addr, layout) in f.borrow_mut().drain(mark.max(0) as usize..) {
+            unsafe { alloc::dealloc(addr as *mut u8, layout) };
+        }
+    });
+}
+
 impl Pool {
     fn new(threads: usize) -> Arc<Self> {
         // plan-s50 P1: ONE EXECUTOR PER LANE, counting the host.

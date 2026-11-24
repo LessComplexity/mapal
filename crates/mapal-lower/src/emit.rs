@@ -1118,9 +1118,20 @@ impl Emitter<'_> {
                     self.rebind(&text, wire, ty, true);
                     Ok(Some(wire))
                 } else if let Some(&fid) = self.fn_ids.get(&text) {
-                    // call.
-                    let wire =
-                        wire.ok_or_else(|| diag(LCode::HeadlessChain, e.span, "call with no arg"))?;
+                    // call. `() -> g`: the wire-less head calls a zero-parameter
+                    // fn with the Unit witness (its input is `Unit`).
+                    let zero = self.fn_sigs.get(&text).is_some_and(|s| s.params.is_empty());
+                    let wire = match wire {
+                        None if zero => {
+                            let o = fb
+                                .constant(mapal_ir::Value::Unit, ir_loc(e.span))
+                                .map_err(|err| ir_err(err, e.span))?;
+                            self.record(o, Ty::Unit)
+                        }
+                        w => {
+                            w.ok_or_else(|| diag(LCode::HeadlessChain, e.span, "call with no arg"))?
+                        }
+                    };
                     let dest = self.lookahead_dest(next, ctx, next.is_none())?;
                     let r = self.emit_call(fb, fid, &text, wire, dest, e.span)?;
                     if let Some(r) = r {
@@ -1714,11 +1725,14 @@ impl Emitter<'_> {
         let csig = self.fn_sigs.get(callee_name).expect("callee sig").clone();
         if csig.effectful {
             let tok = self.consume_token(sp)?;
-            // arg' = pack(tok, arg) (or tok alone when A absent — but a call
-            // stage always has a wire arg here).
-            let arg2 = self
-                .pack(fb, &[tok, arg], Dest::Fresh(None), sp)
-                .map_err(|e| ir_err(e, sp))?;
+            // arg' = pack(tok, arg), or the token alone for a zero-parameter
+            // callee (`() -> g`: its input is the token).
+            let arg2 = if csig.params.is_empty() {
+                tok
+            } else {
+                self.pack(fb, &[tok, arg], Dest::Fresh(None), sp)
+                    .map_err(|e| ir_err(e, sp))?
+            };
             let r = fb
                 .call(callee, arg2, Dest::Fresh(None), ir_loc(sp))
                 .map_err(|e| ir_err(e, sp))?;
@@ -3199,6 +3213,9 @@ impl Emitter<'_> {
                 "an inner-loop exit must terminate in `-> ret`",
             ));
         }
+        if self.defer_exit_arm(fb, payload, cond_exit, lh, token_carried, guard_sp)? {
+            return Ok(());
+        }
         // Determine the terminal: `-> ret`, a binding, or a bare value.
         let (value, terminal) = self.exit_arm_value(fb, payload, scrutinee, guard_sp)?;
         let tok = if token_carried { self.token } else { None };
@@ -3327,6 +3344,9 @@ impl Emitter<'_> {
                     }
                     t
                 }
+                None if slot_exit(b).is_some() => {
+                    return self.slot_exit_value(fb, b, scrutinee, guard_sp);
+                }
                 None => {
                     // Find the last chain item (the terminal); emit everything
                     // before it as statements.
@@ -3400,6 +3420,225 @@ impl Emitter<'_> {
                 Ok((val, ExitTerminal::BareValue))
             }
         }
+    }
+
+    /// structure (exit work runs once): an exit arm that computes — statements
+    /// before its terminal, or stages beyond the terminal's own — runs AFTER
+    /// the loop, on its exit value. The loop exits with the loop-varying values
+    /// the arm reads (and the token); the arm's work is then ordinary
+    /// straight-line code reading them. Its effects happen once, in order, as
+    /// the source says, and none of its work joins the loop's decide phase
+    /// (which runs every trip): a final norm and output projection in a
+    /// layer loop's exit arm is computed once, not once per layer. `false`:
+    /// the arm stays as before (no work, a headless or slot-wise terminal, a
+    /// nested loop's ret exit).
+    fn defer_exit_arm(
+        &mut self,
+        fb: &mut FnBuilder,
+        payload: &ArmPayload,
+        cond_exit: ObjectId,
+        lh: &mapal_ir::LoopHandle,
+        token_carried: bool,
+        guard_sp: syn::SourceLoc,
+    ) -> ER<bool> {
+        let block = match payload {
+            ArmPayload::Block(b) => b.clone(),
+            ArmPayload::Chain(c) => Block {
+                items: Vec::new(),
+                tail: Some(c.clone()),
+                span: c.span,
+                compute: None,
+            },
+        };
+        if self.loop_depth >= 2 {
+            return Ok(false);
+        }
+        // A slot-wise exit (`x -> ret.0; y -> ret.1;`): every statement runs
+        // after the loop, its `ret.k` writes as the straight-line ones.
+        let slots = slot_exit(&block).is_some();
+        // ...a pure fn's: an effectful fn returns whole (L1307), so its slot
+        // exit packs in the loop (`slot_exit_value`).
+        if slots && self.in_effectful_fn() {
+            return Ok(false);
+        }
+        // The terminal chain: the tail, else the last statement chain.
+        let stmts: Vec<&Stmt> = block
+            .items
+            .iter()
+            .filter_map(|it| match it {
+                BlockItem::Stmt(s) => Some(s),
+                _ => None,
+            })
+            .collect();
+        let (terminal, before): (&Chain, usize) = match &block.tail {
+            Some(t) => (t, stmts.len()),
+            None => match stmts.last().map(|s| &s.kind) {
+                Some(StmtKind::Chain(c)) => (c, stmts.len() - 1),
+                _ => return Ok(false),
+            },
+        };
+        let bind = match terminal.stages.last().map(|s| &s.kind) {
+            Some(StageKind::Ret { proj: None }) => None,
+            Some(StageKind::Ret { proj: Some(_) }) if slots => None,
+            Some(StageKind::Bind { mut_span, name, .. }) => Some((
+                name_text(self.source, *name).to_string(),
+                mut_span.is_some(),
+            )),
+            _ => return Ok(false),
+        };
+        if terminal.head.is_none() || !slots && before == 0 && terminal.stages.len() < 2 {
+            return Ok(false);
+        }
+        // The loop-varying values the arm reads leave the loop as its exit.
+        let mut names: Vec<(String, ObjectId, Ty, bool)> = Vec::new();
+        for name in crate::typing::block_reads(self.source, &block, self.fn_sigs) {
+            if let Some((b, _)) = self.scope.resolve(&name)
+                && self.derived.contains(&b.obj)
+            {
+                names.push((name, b.obj, b.ty.clone(), b.mutable));
+            }
+        }
+        let tok = if token_carried { self.token } else { None };
+        let mut comps: Vec<ObjectId> = names.iter().map(|n| n.1).collect();
+        comps.extend(tok);
+        let payload_obj = match comps.len() {
+            0 => fb.merge_of(lh),
+            1 => comps[0],
+            _ => self
+                .pack(fb, &comps, Dest::Fresh(None), guard_sp)
+                .map_err(|e| ir_err(e, guard_sp))?,
+        };
+        let exit = fb
+            .loop_exit(
+                lh,
+                payload_obj,
+                cond_exit,
+                Dest::Fresh(None),
+                ir_loc(guard_sp),
+            )
+            .map_err(|e| ir_err(e, guard_sp))?;
+        let ty = self.tyq(payload_obj);
+        self.record(exit, ty);
+        for (k, (name, _, ty, mutable)) in names.iter().enumerate() {
+            let obj = if comps.len() == 1 {
+                exit
+            } else {
+                self.proj(
+                    fb,
+                    exit,
+                    k as u32,
+                    Dest::Fresh(Some(name.clone())),
+                    guard_sp,
+                )?
+            };
+            self.record(obj, ty.clone());
+            self.rebind(name, obj, ty.clone(), *mutable);
+        }
+        if tok.is_some() {
+            let nt = if comps.len() == 1 {
+                exit
+            } else {
+                self.proj(fb, exit, names.len() as u32, Dest::Fresh(None), guard_sp)?
+            };
+            self.record(nt, Ty::IoToken);
+            self.token = Some(nt);
+        }
+        // The arm's work, after the loop (outside it for the nesting rules).
+        self.loop_depth -= 1;
+        let mut emitted = Ok(());
+        for s in &stmts[..before] {
+            emitted = self.emit_stmt(fb, s);
+            if emitted.is_err() {
+                break;
+            }
+        }
+        if emitted.is_ok() {
+            emitted = self
+                .emit_chain(fb, terminal, ChainCtx::Statement)
+                .map(|_| ());
+        }
+        self.loop_depth += 1;
+        emitted?;
+        if let Some((name, mutable)) = bind {
+            let (b, _) = self
+                .scope
+                .resolve(&name)
+                .ok_or_else(|| internal(guard_sp, "exit binding vanished"))?;
+            let (obj, ty) = (b.obj, b.ty.clone());
+            // The exit value binds in the loop's enclosing scope (§8.5).
+            self.bind_new_enclosing(&name, obj, ty, mutable);
+        }
+        Ok(true)
+    }
+
+    /// A loop exit arm written slot by slot (`-false-> { x -> ret.0; y ->
+    /// ret.1; }`): every statement runs in order, each `ret.k` chain's value is
+    /// kept, and the complete set packs into the one exit value a full `-> ret`
+    /// would carry (the canonical single `LoopExit` writer). An incomplete or
+    /// repeated slot set is L1306, as at the top level.
+    fn slot_exit_value(
+        &mut self,
+        fb: &mut FnBuilder,
+        b: &Block,
+        scrutinee: ObjectId,
+        guard_sp: syn::SourceLoc,
+    ) -> ER<(Option<ObjectId>, ExitTerminal)> {
+        let mut slots: Vec<(u64, ObjectId)> = Vec::new();
+        for item in &b.items {
+            let BlockItem::Stmt(s) = item else {
+                continue;
+            };
+            let ret_slot = match &s.kind {
+                StmtKind::Chain(c) => match c.stages.last().map(|st| &st.kind) {
+                    Some(StageKind::Ret { proj: Some((k, _)) }) => Some((*k, c)),
+                    _ => None,
+                },
+                _ => None,
+            };
+            match ret_slot {
+                Some((k, c)) => {
+                    let v = self
+                        .exit_chain_value(fb, c, scrutinee, true)?
+                        .ok_or_else(|| {
+                            diag(
+                                LCode::IncompleteReturn,
+                                guard_sp,
+                                "value-less `-> ret.k` with no value to write",
+                            )
+                        })?;
+                    slots.push((k, v));
+                }
+                None => self.emit_stmt(fb, s)?,
+            }
+        }
+        let out = self
+            .fn_sigs
+            .get(&self.owner_name)
+            .and_then(|s| s.ret.clone());
+        let arity = match &out {
+            Some(Ty::Tuple(ts)) => ts.len(),
+            Some(Ty::Struct { fields, .. }) => fields.len(),
+            _ => 0,
+        };
+        slots.sort_by_key(|&(k, _)| k);
+        let complete =
+            slots.len() == arity && slots.iter().enumerate().all(|(i, &(k, _))| k == i as u64);
+        if !complete {
+            return Err(diag(
+                LCode::IncompleteReturn,
+                guard_sp,
+                "a loop exit's `ret.k` writes must cover every slot once",
+            ));
+        }
+        let comps: Vec<ObjectId> = slots.into_iter().map(|(_, v)| v).collect();
+        let packed = match out {
+            Some(ty @ Ty::Struct { .. }) => {
+                self.pack_struct(fb, ty, &comps, Dest::Fresh(None), guard_sp)
+            }
+            _ => self.pack(fb, &comps, Dest::Fresh(None), guard_sp),
+        }
+        .map_err(|e| ir_err(e, guard_sp))?;
+        Ok((Some(packed), ExitTerminal::Ret))
     }
 
     /// If `e` is a bare `Var` that resolves to no existing binding and is not a
@@ -4214,4 +4453,19 @@ mod tests {
         assert_eq!(d.code.0, "L1605", "{d:?}");
         assert!(!d.message.contains("internal"), "{d:?}");
     }
+}
+
+/// The first `ret.k` slot a loop exit arm block writes as a statement, if any
+/// ([`Emitter::slot_exit_value`]).
+fn slot_exit(b: &Block) -> Option<u64> {
+    b.items.iter().find_map(|item| match item {
+        BlockItem::Stmt(s) => match &s.kind {
+            StmtKind::Chain(c) => match c.stages.last().map(|st| &st.kind) {
+                Some(StageKind::Ret { proj: Some((k, _)) }) => Some(*k),
+                _ => None,
+            },
+            _ => None,
+        },
+        _ => None,
+    })
 }

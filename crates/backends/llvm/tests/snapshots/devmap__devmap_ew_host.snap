@@ -1,6 +1,5 @@
 ---
 source: crates/backends/llvm/tests/devmap.rs
-assertion_line: 411
 expression: ew.text
 ---
 ; mapal-backend-llvm emitted module
@@ -64,7 +63,7 @@ bb4:
   %t13 = call i64 @mapal_gpu_alloc(ptr %d12, i64 16384)
   %t15 = getelementptr [1 x i64], ptr %dv14, i64 0, i64 0
   store i64 %t13, ptr %t15
-  call void @mapal_gpu_launchv(i64 2572394544390463150, i32 0, i32 1, ptr %dv14, i32 16, i32 1, i32 256, i32 0)
+  call void @mapal_gpu_launchv(i64 7387636036715498949, i32 0, i32 1, ptr %dv14, i32 16, i32 1, i32 256, i32 0)
   %t16 = getelementptr { ptr, i32 }, ptr %o8, i32 0, i32 0
   store ptr %o7, ptr %t16
   %t17 = getelementptr { ptr, i32 }, ptr %o12, i32 0, i32 0

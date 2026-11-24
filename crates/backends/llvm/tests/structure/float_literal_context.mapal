@@ -1,0 +1,24 @@
+fn cosine_near_zero(x: f32) -> f32 {
+    x * x -> x_squared;
+    11 -> iota -> steps;
+    ((1.0, 1.0), steps) -> fold {
+        sum_and_term, step ->
+        2 * step + 1 -> k;
+        k * (k + 1) -> widen_f32 -> divisor;
+        -sum_and_term.1 * x_squared / divisor -> term;
+        (sum_and_term.0 + term, term)
+    } -> series;
+    series.0 -> ret;
+}
+
+fn main() {
+    0.5 -> cosine_near_zero -> c;
+    c -> println;
+    64 -> iota -> map {
+        i -> 0.01
+    } -> start: [f32; 64];
+    start[2] -> println;
+    [1.0, 2.0] -> xs;
+    (xs[0] + c) -> y;
+    y -> println;
+}

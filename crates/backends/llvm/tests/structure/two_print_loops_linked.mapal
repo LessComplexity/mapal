@@ -1,0 +1,26 @@
+// Probe: two print loops one after the other.
+fn main() {
+    [1, 2, 3] -> a;
+    mut i: i32 <- 0;
+    loop {
+        (i < 3) -> {
+            -true-> {
+                a[i] -> println;
+                i + 1 -> i;
+                -> loop;
+            }
+            -false-> i -> first_done;
+        }
+    }
+    mut j: i32 <- first_done - 3;
+    loop {
+        (j < 3) -> {
+            -true-> {
+                a[j] * 10 -> println;
+                j + 1 -> j;
+                -> loop;
+            }
+            -false-> j -> second_done;
+        }
+    }
+}

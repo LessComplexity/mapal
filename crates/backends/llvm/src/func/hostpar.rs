@@ -39,6 +39,8 @@ impl<'a> FnEmit<'a> {
         s.gpu_arms = self.gpu_arms;
         s.split_range = true;
         s.byref = self.byref.clone();
+        s.byref_paths = self.byref_paths.clone();
+        s.out_ptr = self.out_ptr;
         s.ptr_resident = self.ptr_resident.clone();
         s.update_aliases = self.update_aliases.clone();
         s.elided_updates = self.elided_updates.clone();
