@@ -295,3 +295,25 @@ fn main() {
         err.iter().map(|d| d.code.0).collect::<Vec<_>>()
     );
 }
+
+/// ADR-0045: a `read` in a `Plain` fanout branch → T0201, the twin of the
+/// `time` case: the file read threads the token, so a parallel branch is no
+/// place for it.
+#[test]
+fn read_in_plain_branch_is_t0201() {
+    let src = r#"
+fn square(x: i32) -> i32 { x * x -> ret; }
+fn main() {
+    6 -> {
+        -> seq { "w.bin" -> read -> w: [i32; 2]; -> square -> a; };
+        -> square -> b;
+    }
+    w[0] -> println;
+    a -> println;
+    b -> println;
+}
+"#;
+    let diags = check_src(src);
+    assert_eq!(codes(&diags), ["T0201"]);
+    assert!(diags[0].message.contains("read"), "{:?}", diags[0]);
+}

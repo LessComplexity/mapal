@@ -1910,6 +1910,11 @@ pub struct Chain {
     /// Every closed-form operand (and iota) made first, before the nodes —
     /// a program that loads its weights before it computes.
     pub hoist: bool,
+    /// ADR-0045: the closed-form operands that come from a file instead —
+    /// law `i` (in order of making) when bit `i % 8` is set — `"l<i>.bin" ->
+    /// read -> l<i>: [f32; n]`, the file holding the law's own values
+    /// ([`Chain::files`]): the same program, its weights loaded.
+    pub read: u8,
 }
 
 pub fn chain_strategy() -> impl Strategy<Value = Chain> {
@@ -1928,6 +1933,7 @@ pub fn chain_strategy() -> impl Strategy<Value = Chain> {
             nodes,
             broadcast: false,
             hoist: false,
+            read: 0,
         })
 }
 
@@ -1959,7 +1965,19 @@ pub fn wide_chain_strategy() -> impl Strategy<Value = Chain> {
             nodes,
             broadcast: true,
             hoist,
+            read: 0,
         })
+}
+
+/// [`wide_chain_strategy`] with operands read from files ([`Chain::read`]):
+/// most programs read some of their closed-form operands, one in eight all
+/// of them; the test writes [`Chain::files`] beside the program.
+pub fn read_chain_strategy() -> impl Strategy<Value = Chain> {
+    (
+        wide_chain_strategy(),
+        prop_oneof![7 => 1u8..=255, 1 => Just(255u8)],
+    )
+        .prop_map(|(c, read)| Chain { read, ..c })
 }
 
 /// An array's shape in a [`Chain`]: its length is a function of the grid.
@@ -1995,6 +2013,9 @@ struct ChainCtx {
     laws: u32,
     /// [`Chain::hoist`]: the iotas and laws, emitted before the nodes.
     pre: Option<String>,
+    /// [`Chain::read`] and the files its reads load.
+    read: u8,
+    files: Vec<(String, Vec<u8>)>,
 }
 
 impl ChainCtx {
@@ -2030,15 +2051,26 @@ impl ChainCtx {
     /// A closed-form array of shape `sh` (values in about ±6, a few bits).
     fn law(&mut self, sh: Shape, key: u8) -> String {
         let n = self.len(sh);
-        let it = self.iota(n);
         self.laws += 1;
         let name = format!("l{}", self.laws);
         let (mul, add, m) = [(7, 13, 101), (11, 57, 103), (5, 3, 97), (3, 1, 89)][key as usize % 4];
-        let div = [7.0, 9.0, 11.0, 13.0][(key as usize / 4) % 4];
-        let line = format!(
-            "    {it} -> map {{ t -> (t * {mul} + {add}) % {m} - {h} -> widen_f32 -> v; v / {div:.1} }} -> {name};\n",
-            h = m / 2
-        );
+        let div = [7.0f32, 9.0, 11.0, 13.0][(key as usize / 4) % 4];
+        let line = if self.read >> (self.laws % 8) & 1 == 1 {
+            // ADR-0045: the same values, loaded — what the law's map computes
+            // (an exact i32, widened exactly, one f32 division), little-endian.
+            let file = format!("{name}.bin");
+            let bytes = (0..n as i32)
+                .flat_map(|t| (((t * mul + add) % m - m / 2) as f32 / div).to_le_bytes())
+                .collect();
+            self.files.push((file.clone(), bytes));
+            format!("    \"{file}\" -> read -> {name}: [f32; {n}];\n")
+        } else {
+            let it = self.iota(n);
+            format!(
+                "    {it} -> map {{ t -> (t * {mul} + {add}) % {m} - {h} -> widen_f32 -> v; v / {div:.1} }} -> {name};\n",
+                h = m / 2
+            )
+        };
         match &mut self.pre {
             Some(pre) => *pre += &line,
             None => self.s += &line,
@@ -2074,6 +2106,17 @@ impl ChainCtx {
 impl Chain {
     /// The chain's Mapal source.
     pub fn source(&self) -> String {
+        self.render().0
+    }
+
+    /// ADR-0045: the files the chain's reads load (`(name, bytes)`, the
+    /// names relative to the program's data directory); none when
+    /// [`Chain::read`] is 0.
+    pub fn files(&self) -> Vec<(String, Vec<u8>)> {
+        self.render().1
+    }
+
+    fn render(&self) -> (String, Vec<(String, Vec<u8>)>) {
         let (r, c, k, t) = (
             u64::from(self.r),
             u64::from(self.c),
@@ -2090,6 +2133,8 @@ impl Chain {
             iotas: Vec::new(),
             laws: 0,
             pre: self.hoist.then(String::new),
+            read: self.read,
+            files: Vec::new(),
         };
         let rc = r * c;
         let mut printed: Vec<String> = Vec::new();
@@ -2333,11 +2378,12 @@ impl Chain {
                 x.print(&o, sh);
             }
         }
-        format!(
+        let src = format!(
             "fn main() {{\n    0.0 -> zero: f32;\n{}{}}}\n",
             x.pre.unwrap_or_default(),
             x.s
-        )
+        );
+        (src, x.files)
     }
 }
 

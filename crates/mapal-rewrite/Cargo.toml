@@ -12,6 +12,7 @@ mapal-syntax = { path = "../mapal-syntax" }
 mapal-lower = { path = "../mapal-lower" }
 mapal-interp = { path = "../mapal-interp" }
 proptest = "1.11.0"
+tempfile = "3.27.0"
 insta = "1.47.2"
 criterion = "0.5.1"
 

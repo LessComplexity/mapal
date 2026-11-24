@@ -15,3 +15,6 @@ mapal-check = { path = "../mapal-check" }
 mapal-rewrite = { path = "../mapal-rewrite" }
 mapal-interp = { path = "../mapal-interp" }
 mapal-backend-llvm = { path = "../backends/llvm" }
+
+[dev-dependencies]
+tempfile = "3.27.0"
