@@ -973,7 +973,24 @@ pub struct DeviceCost {
     /// (`calib.cu bar`), in ns. 0 = not measured: derived
     /// ([`Gpu::bar_cycles`] at this part's clock, [`Gpu::bar_ns`]).
     pub bar_ns: u64,
+    /// gaps-disasm C5 `split-price`: what one more `k` partition of a
+    /// DRAM-streaming atomic split costs per output cell — its partial's
+    /// `red` and its blocks' prologue and epilogue as the split kernel issues
+    /// them beside the stream — in ps (a split sweep at one site: the slope
+    /// of time against `S · cells` between two splits of equal grid spread).
+    /// 0 = not measured: the fill rule's count, unpriced.
+    pub split_cell_ps: u64,
 }
+
+/// gaps-disasm C5: the rtx-5080's [`DeviceCost::split_cell_ps`] — the
+/// 16 × 2048 × 7168 cell's one-warp FMA split (16 tiles) at S = 14 and 28
+/// (224 / 448 blocks, the same spread over 84 SMs, `grid_spread_pm` 1125):
+/// 79.9 against 86.0 µs device time for 14 · 32 768 more partial cells
+/// (`tile_bench --splitk`, CUDA events, median of 30;
+/// `local-rtx-5080/gapfix-launch-combine.md`) — 13.3 ps a cell. The same
+/// sweep's S = 7 / 8 / 56 (100.4 / 88.1 / 88.1 µs) are what the price
+/// ([`crate::profile::TargetProfile::split_priced`]) predicts within 5 %.
+pub const SPLIT_CELL_PS_RTX_5080: u64 = 13;
 
 /// kernel-merging `calls`: the measured member-body change of a persistent
 /// chain on the rtx-5080 — `calib.cu body`'s 4-round chain (its wide levels
@@ -1049,6 +1066,7 @@ pub const NO_PLAN: DeviceCost = DeviceCost {
     tma_copy_ns: 0,
     l2_keep_bytes: 0,
     bar_ns: 0,
+    split_cell_ps: 0,
 };
 
 impl DeviceCost {
@@ -1068,7 +1086,7 @@ impl DeviceCost {
     /// overrides by name ([`Gpu::fp32_lanes`], [`Gpu::clock_khz`], and the
     /// hardware-properties the rung rules read: SMs, L2, shared memory,
     /// threads, registers and blocks per SM, the DRAM interface).
-    pub const NAMES: [&'static str; 44] = [
+    pub const NAMES: [&'static str; 45] = [
         "flops_per_ns",
         "bytes_per_ns",
         "launch_ns",
@@ -1100,6 +1118,7 @@ impl DeviceCost {
         "bar_ns",
         "tma_copy_ns",
         "l2_keep_bytes",
+        "split_cell_ps",
         "fp32_lanes",
         "clock_khz",
         "sms",
@@ -1160,7 +1179,7 @@ pub type CostOver = [Option<u64>; DeviceCost::NAMES.len()];
 impl Gpu {
     /// [`DeviceCost::NAMES`] that name a [`DeviceCost`] field (those before
     /// `fp32_lanes`).
-    const NAMES_COST: usize = 30;
+    const NAMES_COST: usize = 32;
 
     /// This part with the overrides in `over` applied (a part without a
     /// [`DeviceCost`] takes one from [`NO_PLAN`]).
@@ -1200,6 +1219,7 @@ impl Gpu {
                 "bar_ns" => &mut d.bar_ns,
                 "tma_copy_ns" => &mut d.tma_copy_ns,
                 "l2_keep_bytes" => &mut d.l2_keep_bytes,
+                "split_cell_ps" => &mut d.split_cell_ps,
                 "fp32_lanes" => &mut self.fp32_lanes,
                 "clock_khz" => &mut self.clock_khz,
                 "sms" => &mut self.sms,
@@ -1257,6 +1277,7 @@ impl Gpu {
             "bar_ns" => d.bar_ns,
             "tma_copy_ns" => d.tma_copy_ns,
             "l2_keep_bytes" => d.l2_keep_bytes,
+            "split_cell_ps" => d.split_cell_ps,
             "fp32_lanes" => self.fp32_lanes,
             "clock_khz" => self.clock_khz,
             "sms" => self.sms,
@@ -5024,6 +5045,7 @@ pub const RTX_4090: TargetProfile = TargetProfile {
             tma_copy_ns: 0,
             l2_keep_bytes: 0,
             bar_ns: 0,
+            split_cell_ps: 0,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_89), 2.52 GHz under load. The
         // cross-arch box (power limit 250 W of the part's 450) sustained
@@ -5077,6 +5099,7 @@ pub const H100: TargetProfile = TargetProfile {
             // boxes 352-475 ns (13.5 TB/s over the part at 16 KiB: 102 B/ns an SM).
             tma_copy_ns: 159,
             bar_ns: 0,
+            split_cell_ps: 0,
             // bugs-properties, measured on the cross-arch 5fcb401b box
             // (`calib-h100.txt`): the loaded latency (`calib.cu bw`, plan-cost's
             // quantity): median 629 ns [IQR 605–660] over 116 points; `calib.cu
@@ -5233,6 +5256,7 @@ pub const RTX_5090: TargetProfile = TargetProfile {
             tma_copy_ns: 0,
             l2_keep_bytes: 0,
             bar_ns: 0,
+            split_cell_ps: 0,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_120), 2.41 GHz under load.
         fp32_lanes: 128,
@@ -5369,6 +5393,7 @@ pub const RTX_5080: TargetProfile = TargetProfile {
             l2_keep_bytes: 68_786_585,
             // flash-attention P1: `calib.cu bar`, 256 threads (16.9 ns).
             bar_ns: 17,
+            split_cell_ps: SPLIT_CELL_PS_RTX_5080,
         }),
         // 128 FP32 lanes per SM (sm_120); E1 peak FFMA median 52.7 Tflop/s
         // [50.3–57.6] / (84 SMs · 128 · 2) = 2.45 GHz under load.
@@ -5418,6 +5443,7 @@ pub const RTX_3090: TargetProfile = TargetProfile {
             // 892 GB/s DRAM peak first at 8 KiB in flight an SM.
             fly_bytes_per_sm: 8192,
             bar_ns: 0,
+            split_cell_ps: 0,
             // bugs-properties, measured on the cross-arch 5fcb401b box
             // (`calib-rtx-3090.txt`): the loaded latency, plan-cost's own
             // quantity (bytes in flight over the DRAM rate below 90 % of the
@@ -5488,6 +5514,7 @@ pub const A100: TargetProfile = TargetProfile {
             // boxes (`col` 0.241 warp loads a clock at g = 4–32; `row` 0.393).
             lds_bcast_pm: 241,
             bar_ns: 0,
+            split_cell_ps: 0,
             // bugs-properties, measured on the cross-arch 5fcb401b box
             // (`calib-a100.txt`): the loaded latency (`calib.cu bw`, plan-cost's
             // quantity): median 728 ns [IQR 686–802] over 112 points; `calib.cu
@@ -8655,4 +8682,5 @@ mod tests {
             assert!(g.l2_keep_bytes() < g.l2_bytes, "{}: below 1.0 x", p.name);
         }
     }
+
 }
