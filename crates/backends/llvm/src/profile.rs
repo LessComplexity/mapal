@@ -183,6 +183,15 @@ pub struct Gpu {
     /// Warp schedulers per SM, each issuing one warp per clock (four on every
     /// profiled SM): the fill rule's unit ([`Self::fill_warps`]).
     pub schedulers: u64,
+    /// bugs-properties: **one 256-thread block barrier with a dependent
+    /// shared-memory round trip, in SM cycles** (`calib.cu bar`, clock64
+    /// spans) — the SM design's, not its clock's: the Ampere / Ada SMs
+    /// measure 54–57 (A100 53.7, RTX 3090 56.7, RTX 4090 57.2), Hopper 41.8
+    /// (H100), consumer Blackwell 44.6 (RTX 5080; cross-arch 5fcb401b). The
+    /// barrier's ns where the part measured none ([`Gpu::bar_ns`]): these
+    /// cycles at its clock (the 5080's 41 at every part's clock read 26 / 29
+    /// / 16 ns against 33.5 / 38.1 / 22.5 measured on the 3090 / A100 / 4090).
+    pub bar_cycles: u64,
     /// f32-tensor-cores P1: **flops one SM issues a clock through the warp
     /// TF32 product** (`mma.sync.m16n8k8`, operands in registers): `calib.cu
     /// matrix` (32 warps an SM, independent register chains, clock64 spans
@@ -247,10 +256,96 @@ pub struct Caps {
     /// thread keeps the count the block launched with.
     pub reg_realloc: Option<RegRealloc>,
     /// `cvt.rn.satfinite.{e4m3,e5m2}x2.f32` and `cvt.rn.f16x2.{e4m3,e5m2}x2`:
-    /// two fp8 conversions an instruction (ADR-0043 slice 3, C1). Without it
-    /// the fp8 roundings are the host's integer sequence
-    /// ([`mapal_ir::narrow::f8_from_f32`]).
-    pub cvt_f8: bool,
+    /// two fp8 conversions an instruction (ADR-0043 slice 3, C1), and the
+    /// encoding they need on this part ([`Ptx`]: PTX ISA 7.8 from `sm_90`;
+    /// `sm_89` encodes the widening only from PTX 8.1 — the 4090's `_f8w`
+    /// modules at llc's default 7.8 were rejected by `ptxas`, cross-arch
+    /// 5fcb401b finding 1). `None`: no such instruction — the fp8 roundings
+    /// are the host's integer sequence ([`mapal_ir::narrow::f8_from_f32`]).
+    pub cvt_f8: Option<Ptx>,
+    /// bugs-properties `ptx-isa`: **the encoding the part's target itself
+    /// needs** — the lowest PTX ISA that names its SM target (`llc` refuses
+    /// a lower one: `sm_90a` 8.0, `sm_120` 8.7). Every device module declares
+    /// the largest of this and the [`Ptx`] of each capability whose
+    /// instructions it emits ([`Ptx::declare`], the `; mapal.ptx` line), and
+    /// every compile step passes it to `llc` (`-mattr=+ptx<isa>`).
+    pub ptx: Ptx,
+}
+
+/// bugs-properties `ptx-isa`: **a PTX encoding** — the PTX ISA version
+/// (× 10: 8.1 → 81) and the SM (compute capability × 10) an instruction or a
+/// target needs. Ordered by ISA, then SM: a module's declaration is the
+/// largest need ([`Ptx::max`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Ptx {
+    pub isa: u32,
+    pub sm: u32,
+}
+
+impl Ptx {
+    pub const fn new(isa: u32, sm: u32) -> Self {
+        Self { isa, sm }
+    }
+
+    /// The `llc` feature that sets the module's `.version` (`+ptx81`).
+    pub fn mattr(self) -> String {
+        format!("+ptx{}", self.isa)
+    }
+
+    /// **The device module's declaration line** (`; mapal.ptx isa=81 sm=89
+    /// mattr=+ptx81`): what every `llc` step of the module passes, read by
+    /// [`Ptx::declared`] (the CLI, tests) and by the bundle scripts (`sed`).
+    pub fn declare(self) -> String {
+        format!(
+            "; mapal.ptx isa={} sm={} mattr={}\n",
+            self.isa,
+            self.sm,
+            self.mattr()
+        )
+    }
+
+    /// The encoding a device module declares ([`Ptx::declare`]); `None`
+    /// where it declares none.
+    pub fn declared(device: &str) -> Option<Self> {
+        let l = device
+            .lines()
+            .take(8)
+            .find_map(|l| l.strip_prefix("; mapal.ptx "))?;
+        let field = |k: &str| {
+            l.split(' ')
+                .find_map(|w| w.strip_prefix(k))
+                .and_then(|v| v.parse().ok())
+        };
+        Some(Self::new(field("isa=")?, field("sm=")?))
+    }
+}
+
+/// bugs-properties `ptx-isa`: the encodings of `cvt.rn.f16x2.e4m3x2` and
+/// `cvt.rn.satfinite.e4m3x2.f32` (PTX ISA notes): 7.8 on `sm_89` for the
+/// rounding, but the widening on `sm_89` only from 8.1 — the module's need
+/// there is 8.1; from `sm_90` both at 7.8.
+pub const CVT_F8_SM89: Ptx = Ptx::new(81, 89);
+pub const CVT_F8_SM90: Ptx = Ptx::new(78, 90);
+
+/// bugs-properties `ptx-isa`: the lowest PTX ISA naming each SM target
+/// (`llc`'s default for `-mcpu`, the PTX ISA's target table) — `sm_80` 7.0,
+/// `sm_86` 7.1, `sm_87` 7.4, `sm_89` / `sm_90` 7.8, `sm_90a` 8.0, `sm_100`
+/// 8.6, `sm_103` / `sm_121` 8.8, `sm_120` 8.7; below `sm_80` 6.0.
+pub const fn ptx_of_target(cc: u64, arch_specific: bool) -> Ptx {
+    let isa = match cc {
+        0..80 => 60,
+        80 => 70,
+        81..=86 => 71,
+        87 => 74,
+        88..=89 => 78,
+        90 if arch_specific => 80,
+        90 => 78,
+        91..=100 => 86,
+        101..=119 => 88,
+        120 => 87,
+        _ => 88,
+    };
+    Ptx::new(isa, cc as u32)
 }
 
 /// `setmaxnreg.{inc,dec}`'s geometry: the per-thread counts a warpgroup may
@@ -642,13 +737,15 @@ pub const CAPS_WARP_MMA: Caps = Caps {
     ex2: Some(EX2_UNITS),
     bulk: None,
     reg_realloc: None,
-    cvt_f8: false,
+    cvt_f8: None,
+    ptx: ptx_of_target(80, false),
 };
 
 /// [`CAPS_WARP_MMA`] with the fp8 warp products: the RTX 4090 (8.9).
 pub const CAPS_WARP_MMA_F8: Caps = Caps {
     matrix: &MATRIX_WARP_F8,
-    cvt_f8: true,
+    cvt_f8: Some(CVT_F8_SM89),
+    ptx: ptx_of_target(89, false),
     ..CAPS_WARP_MMA
 };
 
@@ -657,6 +754,8 @@ pub const CAPS_WARP_MMA_F8: Caps = Caps {
 pub const CAPS_WARP_MMA_PDL: Caps = Caps {
     griddepcontrol: true,
     bulk: Some(BULK_SM90),
+    cvt_f8: Some(CVT_F8_SM90),
+    ptx: ptx_of_target(120, false),
     ..CAPS_WARP_MMA_F8
 };
 
@@ -665,6 +764,7 @@ pub const CAPS_WARP_MMA_PDL: Caps = Caps {
 pub const CAPS_WARPGROUP_MMA: Caps = Caps {
     matrix: &MATRIX_WARPGROUP,
     reg_realloc: Some(REG_REALLOC_SM90),
+    ptx: ptx_of_target(90, true),
     ..CAPS_WARP_MMA_PDL
 };
 
@@ -703,7 +803,14 @@ pub const fn caps_of_cc(cc: u64, arch_specific: bool) -> Caps {
         } else {
             None
         },
-        cvt_f8: cc >= 89,
+        cvt_f8: if cc >= 90 {
+            Some(CVT_F8_SM90)
+        } else if cc == 89 {
+            Some(CVT_F8_SM89)
+        } else {
+            None
+        },
+        ptx: ptx_of_target(cc, arch_specific),
     }
 }
 
@@ -855,7 +962,7 @@ pub struct DeviceCost {
     /// with a dependent shared-memory round trip before it — what each window
     /// of a streamed unit pays per barrier on its block's critical path
     /// (`calib.cu bar`), in ns. 0 = not measured: derived
-    /// ([`BAR_CYCLES_RTX_5080`] at this part's clock, [`Gpu::bar_ns`]).
+    /// ([`Gpu::bar_cycles`] at this part's clock, [`Gpu::bar_ns`]).
     pub bar_ns: u64,
 }
 
@@ -882,14 +989,22 @@ pub const CHAIN_CYCLES_RTX_5080: [u64; 4] = [1355, 1593, 1191, 5008];
 /// load under load) — and its process's first cooperative launch,
 /// `coop_first_ns` 38 000 ns (host time, not scaled): what a part without
 /// its own measurement prices a row's slices on ([`Gpu::slice_cost`]).
-pub const SLICE_RTX_5080: [u64; 3] = [213, 1404, 38_000];
+pub const SLICE_RTX_5080: [u64; 3] = [213, 573, 38_000];
 
-/// flash-attention `stream` (P1): the rtx-5080's measured block barrier
-/// with a dependent shared-memory round trip at 256 threads — 16.9 ns
-/// (`calib.cu bar`: 44.6 cycles at 2.64 GHz, `local-rtx-5080/flash-attention.md`)
-/// — in cycles of its 2.45 GHz profile clock: what a part without its own
-/// measurement prices a window's barriers on ([`Gpu::bar_ns`]).
-pub const BAR_CYCLES_RTX_5080: u64 = 41;
+/// bugs-properties: [`Gpu::bar_cycles`] by compute capability — the SM
+/// designs' measured barrier (`calib.cu bar`, 256 threads, cross-arch
+/// 5fcb401b): `sm_80` 54 (A100), `sm_86` / `sm_89` 57 (RTX 3090 / 4090),
+/// `sm_90` 42 (H100), consumer Blackwell 45 (RTX 5080, the `sm_100` family
+/// too until measured); the native profile's fallback when the calibration
+/// file gives no `bar_ns`, as [`mma_rates_of_cc`] for the matrix rates.
+pub const fn bar_cycles_of_cc(cc: u64) -> u64 {
+    match cc {
+        80 => 54,
+        90 => 42,
+        100.. => 45,
+        _ => 57,
+    }
+}
 
 /// A [`DeviceCost`] without the plan-cost rates: the parts that keep the
 /// rules' plans (D8). `..NO_PLAN` fills them.
@@ -1408,8 +1523,9 @@ impl Gpu {
         if d.row_iter_ns == 0 {
             d.row_iter_ns = at(walk);
         }
+        // bugs-properties: a DRAM load's latency is ns, not SM cycles.
         if d.lat_ns == 0 {
-            d.lat_ns = at(lat);
+            d.lat_ns = lat;
         }
         if d.coop_first_ns == 0 {
             d.coop_first_ns = first;
@@ -1418,11 +1534,11 @@ impl Gpu {
     }
 
     /// flash-attention `stream` (P1): one block barrier on a block's
-    /// critical path, ns — measured ([`DeviceCost::bar_ns`]), else the
-    /// rtx-5080's cycles at this part's clock.
+    /// critical path, ns — measured ([`DeviceCost::bar_ns`]), else the SM's
+    /// barrier cycles at this part's clock ([`Self::bar_cycles`]).
     pub fn bar_ns(&self) -> u64 {
         match self.cost.map_or(0, |d| d.bar_ns) {
-            0 => BAR_CYCLES_RTX_5080 * 1_000_000 / self.clock_khz.max(1),
+            0 => self.bar_cycles * 1_000_000 / self.clock_khz.max(1),
             x => x,
         }
     }
@@ -1500,8 +1616,9 @@ impl Gpu {
     /// peak ([`Self::dram_peak_bytes_per_ns`]); `red.global.add.f32` at its
     /// adds per L2 byte (atomics resolve in the L2 slices: 400 / 4500 on the
     /// 5080 and the 4090, 560 / 6500 on the 5090 — one ratio on three
-    /// parts); the zero pass's, the in-stream gap's and the loaded latency's
-    /// device time in the 5080's cycles at this part's clock; the host's
+    /// parts); the zero pass's and the in-stream gap's device time in the
+    /// 5080's cycles at this part's clock, the loaded latency in its ns (a
+    /// DRAM round trip, not SM cycles: bugs-properties); the host's
     /// issue as measured (a host property); the tile's fitted efficiency
     /// and the LSU issue a clock as the 5080's (per-SM fractions). The
     /// fields no plan price reads, and those a consumer defaults itself
@@ -1559,8 +1676,13 @@ impl Gpu {
         if self.clock_khz > 0 {
             or(&mut d.zero_ns, at(rc.zero_ns));
             or(&mut d.gap_ns, at(rc.gap_ns));
-            or(&mut d.lat_ns, at(rc.lat_ns));
         }
+        // bugs-properties: the loaded latency is a DRAM round trip in ns, not
+        // SM cycles — the 5080's 573 ns at the part's clock read 899 / 995 /
+        // 776 ns on the 3090 / A100 / H100 against 452 / 728 / 629 measured
+        // (cross-arch 5fcb401b, `calib.cu bw`); unscaled it is within 0.8–1.5×
+        // of every measured part.
+        or(&mut d.lat_ns, rc.lat_ns);
         or(&mut d.issue_ns, rc.issue_ns);
         or(&mut d.launch_ns, rc.launch_ns);
         or(&mut d.eff_max_pm, rc.eff_max_pm);
@@ -4778,6 +4900,9 @@ const ADA_SM: Gpu = Gpu {
     mem_clock_khz: 10_501_000,
     mem_bus_bits: 192,
     schedulers: 4,
+    // bugs-properties: the 4090's (the sm_89 SM; `calib.cu bar`, cross-arch
+    // 5fcb401b: 57.2 cycles at 256 threads).
+    bar_cycles: 57,
     // f32-tensor-cores P1: the warp products' flops an SM a clock. Every
     // GeForce SM since `sm_86` issues TF32 at its FFMA rate and the 16-bit
     // products with f32 accumulators at twice it: the RTX 5080 measured
@@ -4851,9 +4976,10 @@ pub const RTX_4090: TargetProfile = TargetProfile {
             row_iter_ns: 0,
             coop_first_ns: 0,
             sm_bytes_per_ns: 77,
-            // kernel-merging `calls`: not measured here — derived, the
-            // rtx-5080's 4390 cycles at 2.52 GHz = 1742 ns a chain.
-            coop_body_cycles: 0,
+            // kernel-merging `calls`: `calib.cu body` on the cross-arch 5fcb401b
+            // box, 7292 cycles [7254–7293] (bugs-properties; the 5080's 4390
+            // derived before).
+            coop_body_cycles: 7292,
             // stream-fly: `calib.cu bw` on the cross-arch box (60f0f8ce): 90 % of
             // its 958 GB/s DRAM peak first at 4 KiB in flight an SM.
             fly_bytes_per_sm: 4096,
@@ -4912,28 +5038,37 @@ pub const H100: TargetProfile = TargetProfile {
             // copy at 128 B - 16 KiB for any ring depth >= 4 (186-302 ns alone); 32 KiB
             // boxes 352-475 ns (13.5 TB/s over the part at 16 KiB: 102 B/ns an SM).
             tma_copy_ns: 159,
-            l2_keep_bytes: 0,
             bar_ns: 0,
-            // kernel-merging `calls`: `coop_body_cycles` not measured here —
-            // derived, the rtx-5080's 4390 cycles at 1.807 GHz = 2429 ns a
-            // chain: smlp / firew_rowsum's chains (1.55 / 2.3x slower when
-            // formed on the boundaries alone, cross-arch 7a2b67bf) save 695.
+            // bugs-properties, measured on the cross-arch 5fcb401b box
+            // (`calib-h100.txt`): the loaded latency (`calib.cu bw`, plan-cost's
+            // quantity): median 629 ns [IQR 605–660] over 116 points; `calib.cu
+            // body`: 348 cycles [325–356] (the 5080's 4390 derived before);
+            // `l2keep.cu`: 1.0 × the 50 MiB L2 re-reads at 2579 GB/s, below the
+            // DRAM rate (3180; L2 4018) — the keep lies below the nominal L2
+            // (two partitions), half until the sweep from 0.25 × L2 runs.
+            lat_ns: 629,
+            coop_body_cycles: 348,
+            l2_keep_bytes: 25 * 1024 * 1024,
             ..NO_PLAN
         }),
         // HBM3 3.35 TB/s on 5120 bits (datasheet; query `mem=2619000x5120`);
         // the FFMA peak under load 61.07 Tflop/s = 1.807 GHz at 128 lanes
         // (`calib.cu ffma`; boost 1.98 GHz).
         clock_khz: 1_807_000,
+        // bugs-properties: `calib.cu bar` 41.8 cycles (5fcb401b).
+        bar_cycles: 42,
         mem_clock_khz: 2_619_000,
         mem_bus_bits: 5120,
         // f32-tensor-cores P1: `wgmma` TF32 — the datasheet's dense 494.7
-        // Tflop/s over 132 SMs at 1.83 GHz (2048); `mma.sync` measured as
-        // Mapal realized it (cross-arch: mlp_2048_tf32's HMMA tile, 2 · 2·2048³
-        // flops in 0.2701 ms = 127 Tflop/s, 532 an SM a clock here — a lower
-        // bound until `calib.cu matrix` runs on the box); the 16-bit warp
-        // products at twice it, the ratio every measured SM shows.
-        mma_tf32_per_clk: 532,
-        mma_half_per_clk: 1064,
+        // Tflop/s over 132 SMs at 1.83 GHz (2048). bugs-properties: `mma.sync`
+        // measured (`calib.cu matrix`, cross-arch 5fcb401b, 32 warps an SM of
+        // independent register chains, clock64 spans): TF32 1351, bf16 / f16
+        // 2702 flops an SM a clock (the 532 / 1064 before were Mapal's HMMA
+        // tile realized, mlp_2048_tf32 — a lower bound). Read with the split
+        // realization's issue (`rules::split_issue_pays`), the rate moves no
+        // f32 GEMM onto tf32x3: the rate rule alone flips.
+        mma_tf32_per_clk: 1351,
+        mma_half_per_clk: 2702,
         wgmma_tf32_per_clk: 2048,
         caps: CAPS_WARPGROUP_MMA,
         ..ADA_SM
@@ -4973,11 +5108,14 @@ pub const H100_PCIE: TargetProfile = TargetProfile {
         // Datasheet (H100 PCIe 80 GB): HBM2e 2.04 TB/s on 5120 bits (device
         // query `mem_clock_khz=1593000`), 1.755 GHz boost.
         clock_khz: 1_755_000,
+        // bugs-properties: the Hopper SM's barrier ([`H100`]'s 41.8 cycles).
+        bar_cycles: 42,
         mem_clock_khz: 1_593_000,
         mem_bus_bits: 5120,
-        // f32-tensor-cores P1: the Hopper SM's rates ([`H100`]).
-        mma_tf32_per_clk: 532,
-        mma_half_per_clk: 1064,
+        // f32-tensor-cores P1: the Hopper SM's rates ([`H100`]; an SM a clock:
+        // measured on the SXM part, the same SM).
+        mma_tf32_per_clk: 1351,
+        mma_half_per_clk: 2702,
         wgmma_tf32_per_clk: 2048,
         caps: CAPS_WARPGROUP_MMA,
         ..ADA_SM
@@ -5059,6 +5197,9 @@ pub const RTX_5090: TargetProfile = TargetProfile {
         clock_khz: 2_410_000,
         // GDDR7 at 28 Gb/s on 512 bits: 1792 GB/s.
         mem_clock_khz: 14_001_000,
+        // bugs-properties: the consumer Blackwell SM's barrier ([`RTX_5080`]'s
+        // 44.6 cycles).
+        bar_cycles: 45,
         mem_bus_bits: 512,
         caps: CAPS_WARP_MMA_PDL,
         ..ADA_SM
@@ -5191,6 +5332,9 @@ pub const RTX_5080: TargetProfile = TargetProfile {
         // Device query: `mem_clock_khz=15001000 bus_bits=256` (GDDR7 at 30
         // Gb/s: 960 GB/s).
         mem_clock_khz: 15_001_000,
+        // flash-attention P1 / bugs-properties: `calib.cu bar`, 44.6 cycles at
+        // 256 threads (the measured `bar_ns` above prices this part).
+        bar_cycles: 45,
         mem_bus_bits: 256,
         caps: CAPS_WARP_MMA_PDL,
         ..ADA_SM
@@ -5229,17 +5373,32 @@ pub const RTX_3090: TargetProfile = TargetProfile {
             // 892 GB/s DRAM peak first at 8 KiB in flight an SM.
             fly_bytes_per_sm: 8192,
             bar_ns: 0,
-            // kernel-merging `calls`: `coop_body_cycles` not measured here —
-            // derived, the rtx-5080's 4390 cycles at 1.561 GHz = 2812 ns.
+            // bugs-properties, measured on the cross-arch 5fcb401b box
+            // (`calib-rtx-3090.txt`): the loaded latency, plan-cost's own
+            // quantity (bytes in flight over the DRAM rate below 90 % of the
+            // 892 GB/s peak, `calib.cu bw`): median 452 ns [IQR 439–486] over
+            // 101 points; `calib.cu body`: 2102 cycles [2013–2193], 3 runs;
+            // `l2keep.cu`: a cyclic stream of 1.0 × the 6 MiB L2 re-reads at
+            // 1205 GB/s (L2 2424, DRAM 892: below their midpoint) — the keep
+            // lies below the nominal L2, the sweep reached no lower: half until
+            // the sweep from 0.25 × L2 runs.
+            lat_ns: 452,
+            coop_body_cycles: 2102,
+            l2_keep_bytes: 3 * 1024 * 1024,
             ..NO_PLAN
         }),
         // GDDR6X at 19.5 Gb/s on 384 bits (936 GB/s); the FFMA peak under
         // load 32.77 Tflop/s = 1.561 GHz at 128 lanes (`calib.cu ffma`,
         // cross-arch; boost 1.695 GHz).
         clock_khz: 1_561_000,
+        // bugs-properties: `calib.cu bar` 56.7 cycles (5fcb401b).
+        bar_cycles: 57,
         mem_clock_khz: 9_751_000,
         mem_bus_bits: 384,
-        caps: CAPS_WARP_MMA,
+        caps: Caps {
+            ptx: ptx_of_target(86, false),
+            ..CAPS_WARP_MMA
+        },
         ..ADA_SM
     }),
     ..GENERIC
@@ -5278,8 +5437,16 @@ pub const A100: TargetProfile = TargetProfile {
             // 1483 GB/s DRAM peak first at 16 KiB in flight an SM.
             fly_bytes_per_sm: 16384,
             bar_ns: 0,
-            // kernel-merging `calls`: `coop_body_cycles` not measured here —
-            // derived, the rtx-5080's 4390 cycles at 1.41 GHz = 3113 ns.
+            // bugs-properties, measured on the cross-arch 5fcb401b box
+            // (`calib-a100.txt`): the loaded latency (`calib.cu bw`, plan-cost's
+            // quantity): median 728 ns [IQR 686–802] over 112 points; `calib.cu
+            // body`: 4048 cycles [3948–5569]; `l2keep.cu`: 1.0 × the 40 MiB L2
+            // re-reads at 1563 GB/s, the DRAM rate (1487; L2 2862) — the keep
+            // lies below the nominal L2 (two partitions: a line every SM reads
+            // is held in both), half until the sweep from 0.25 × L2 runs.
+            lat_ns: 728,
+            coop_body_cycles: 4048,
+            l2_keep_bytes: 20 * 1024 * 1024,
             ..NO_PLAN
         }),
         // Datasheet (A100 40 GB): 64 FP32 lanes per SM, 1.41 GHz boost (the
@@ -5287,14 +5454,17 @@ pub const A100: TargetProfile = TargetProfile {
         // bits.
         fp32_lanes: 64,
         clock_khz: 1_410_000,
+        // bugs-properties: `calib.cu bar` 53.7 cycles (5fcb401b).
+        bar_cycles: 54,
         mem_clock_khz: 1_215_000,
         mem_bus_bits: 5120,
-        // f32-tensor-cores P1: the datasheet's dense TF32 156 and bf16 312
-        // Tflop/s over 108 SMs at 1.41 GHz — eight times the FFMA rate an SM
-        // a clock (64 lanes); Mapal's own TF32 tile realized 81.4, the best
-        // TF32 leg 127.5 (matrix.md, pj_m2048_n28672_k4096).
-        mma_tf32_per_clk: 1024,
-        mma_half_per_clk: 2048,
+        // f32-tensor-cores P1: measured (`calib.cu matrix`, cross-arch
+        // 5fcb401b): TF32 1012, bf16 / f16 2024 flops an SM a clock (the
+        // datasheet's dense 156 / 312 Tflop/s over 108 SMs at 1.41 GHz: 1024
+        // / 2048); Mapal's own TF32 tile realized 81.4, the best TF32 leg
+        // 127.5 (matrix.md, pj_m2048_n28672_k4096).
+        mma_tf32_per_clk: 1012,
+        mma_half_per_clk: 2024,
         caps: CAPS_WARP_MMA,
         ..ADA_SM
     }),
@@ -5683,14 +5853,15 @@ pub const fn fp32_lanes_of_cc(cc: u64) -> u64 {
 /// compute capability — the fallback when the calibration file does not give
 /// `mma_tf32_per_clk` / `mma_half_per_clk` / `wgmma_tf32_per_clk` (`calib.cu
 /// matrix`), as [`fp32_lanes_of_cc`] for the FFMA lanes: the datacenter
-/// `sm_80` SM 1024 / 2048; the Hopper SM's `mma.sync` as Mapal realized it
-/// (532, [`H100`]) and its `wgmma` 2048; every other SM since `sm_86` 256 /
-/// 512 (the RTX 5080 measured). No tensor core below `sm_80`.
+/// `sm_80` SM 1012 / 2024 (the A100 measured); the Hopper SM's `mma.sync`
+/// 1351 / 2702 (the H100 measured, [`H100`]) and its `wgmma` 2048; every
+/// other SM since `sm_86` 256 / 512 (the RTX 5080, 3090, 4090 measured). No
+/// tensor core below `sm_80`.
 pub const fn mma_rates_of_cc(cc: u64) -> [u64; 3] {
     match cc {
         0..80 => [0, 0, 0],
-        80 => [1024, 2048, 0],
-        90 => [532, 1064, 2048],
+        80 => [1012, 2024, 0],
+        90 => [1351, 2702, 2048],
         _ => [256, 512, 0],
     }
 }
@@ -5761,6 +5932,7 @@ impl DeviceQuery {
             mem_clock_khz: self.mem_clock_khz,
             mem_bus_bits: self.mem_bus_bits,
             schedulers: 4,
+            bar_cycles: bar_cycles_of_cc(self.cc),
             mma_tf32_per_clk: mma_rates_of_cc(self.cc)[0],
             mma_half_per_clk: mma_rates_of_cc(self.cc)[1],
             wgmma_tf32_per_clk: if arch_specific {
@@ -7685,6 +7857,43 @@ mod tests {
             assert_eq!(p.gpu_wgmma_tile(4096, 4096, 4096), None, "{}", p.name);
         }
         assert!(H100.gpu().is_some_and(Gpu::has_wgmma));
+    }
+
+    /// bugs-properties `ptx-isa`: each part's target encoding is its own
+    /// SM's (the PTX ISA table, as `caps_of_cc` builds it for the device
+    /// query), the fp8 conversions need PTX 8.1 on `sm_89` and 7.8 from
+    /// `sm_90`, and a module's declaration line round-trips.
+    #[test]
+    fn ptx_isa_per_part() {
+        for (p, cc, a) in [
+            (RTX_3090, 86, false),
+            (A100, 80, false),
+            (RTX_4090, 89, false),
+            (CUDA_ADA, 89, false),
+            (H100, 90, true),
+            (H100_PCIE, 90, true),
+            (RTX_5090, 120, false),
+            (RTX_5080, 120, false),
+        ] {
+            let g = p.gpu().expect("gpu");
+            let arch = format!("sm_{cc}{}", if a { "a" } else { "" });
+            assert_eq!(g.arch, arch, "{}", p.name);
+            assert_eq!(g.caps.ptx, ptx_of_target(cc, a), "{}", p.name);
+            assert_eq!(g.caps.cvt_f8, caps_of_cc(cc, a).cvt_f8, "{}", p.name);
+        }
+        assert_eq!(caps_of_cc(89, false).cvt_f8, Some(Ptx::new(81, 89)));
+        assert_eq!(caps_of_cc(86, false).cvt_f8, None);
+        assert_eq!(
+            (ptx_of_target(90, true).isa, ptx_of_target(120, false).isa),
+            (80, 87)
+        );
+        let d = format!(
+            "; mapal-backend-llvm device module\n{}; mapal.device target=x\n",
+            Ptx::new(81, 89).declare()
+        );
+        assert_eq!(Ptx::declared(&d), Some(Ptx::new(81, 89)));
+        assert_eq!(Ptx::new(81, 89).mattr(), "+ptx81");
+        assert_eq!(Ptx::declared("; mapal-backend-llvm device module\n"), None);
     }
 
     /// hopper-wgmma-tma: the capabilities as geometry per part — the H100

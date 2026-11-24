@@ -352,3 +352,136 @@ fn generated_f8_programs_exact_bytes_and_default_bounds() {
     ];
     assert!(all.iter().all(|&x| x > 0), "{c:?}");
 }
+
+/// bugs-properties `ptx-isa` (cross-arch 5fcb401b finding 1: every `_f8w`
+/// module for the RTX 4090 went out at `llc`'s `sm_89` default, PTX 7.8, and
+/// `ptxas` rejected its `cvt.rn.f16x2.e4m3x2`, which `sm_89` encodes only
+/// from PTX 8.1): over generated fp8 programs, on every GPU profile, the
+/// device module declares an encoding (`; mapal.ptx`) at least its target's
+/// own (`Caps::ptx`) and, where it emits the fp8 conversions, at least
+/// theirs (`Caps::cvt_f8`); where `llc` and `ptxas` are installed, every
+/// module compiles at that declaration and `ptxas` accepts it for the
+/// profile's target — the bundle's preflight, per program.
+#[test]
+fn generated_f8_programs_declare_their_ptx_isa_per_profile() {
+    use mapal_backend_llvm::{Ptx, resolve_profile};
+    let have = |t: &str| {
+        std::process::Command::new(t)
+            .arg("--version")
+            .output()
+            .is_ok_and(|o| o.status.success())
+    };
+    let tools = have("llc") && have("ptxas");
+    const PROFILES: [&str; 8] = [
+        "rtx-3090",
+        "a100",
+        "rtx-4090",
+        "cuda-ada",
+        "h100",
+        "h100-pcie",
+        "rtx-5090",
+        "rtx-5080",
+    ];
+    let mut runner = TestRunner::deterministic();
+    let progs: Vec<testgen::F8Prog> = (0..16)
+        .map(|_| {
+            testgen::f8_prog_strategy()
+                .new_tree(&mut runner)
+                .unwrap()
+                .current()
+        })
+        .collect();
+    // Per program and profile with a device unit: (profile, the module
+    // carries an fp8 instruction, assembled by ptxas).
+    let per = testgen::par_check(&progs, |z, p| {
+        let (src, _) = testgen::f8_src(p);
+        let ir = lower(&src);
+        let mut seen = Vec::new();
+        for (i, name) in PROFILES.iter().enumerate() {
+            let g = resolve_profile(name)
+                .and_then(|t| t.gpu())
+                .expect("a GPU profile");
+            let em = emission(&ir, name, EmitOpts::default(), &[], &[]);
+            let Some(d) = em.device.as_deref() else {
+                continue;
+            };
+            let dec = Ptx::declared(d).unwrap_or_else(|| panic!("#{z} {name}: no ; mapal.ptx"));
+            assert!(
+                dec >= g.caps.ptx,
+                "#{z} {name}: {dec:?} below the target's {:?}",
+                g.caps.ptx
+            );
+            let hw = d.contains("cvt.rn.f16x2.e4m3x2") || d.contains("cvt.rn.satfinite.e");
+            if hw {
+                let need = g
+                    .caps
+                    .cvt_f8
+                    .expect("an fp8 instruction on a part that has it");
+                assert!(
+                    dec.isa >= need.isa && dec.sm >= need.sm,
+                    "#{z} {name}: {dec:?} < {need:?}"
+                );
+            }
+            let mut asm = false;
+            if tools {
+                let dir = tempfile::tempdir().unwrap();
+                let (ll, ptx) = (dir.path().join("d.ll"), dir.path().join("d.ptx"));
+                std::fs::write(&ll, d).unwrap();
+                let llc = std::process::Command::new("llc")
+                    .args(["-O3", &format!("-mcpu={}", g.arch), "-nvptx-fma-level=0"])
+                    .arg(format!("-mattr={}", dec.mattr()))
+                    .arg(&ll)
+                    .arg("-o")
+                    .arg(&ptx)
+                    .output()
+                    .unwrap();
+                assert!(
+                    llc.status.success(),
+                    "#{z} {name}: llc\n{}\n{src}",
+                    String::from_utf8_lossy(&llc.stderr)
+                );
+                let st = std::process::Command::new("ptxas")
+                    .arg(format!("-arch={}", g.arch))
+                    .arg(&ptx)
+                    .args(["-o", "/dev/null"])
+                    .output()
+                    .unwrap();
+                assert!(
+                    st.status.success(),
+                    "#{z} {name}: ptxas rejects the module at {dec:?}\n{}\n{src}",
+                    String::from_utf8_lossy(&st.stderr)
+                );
+                asm = true;
+            }
+            seen.push((i, hw, asm));
+        }
+        seen
+    });
+    let mut hw = [0u64; PROFILES.len()];
+    let (mut modules, mut assembled) = (0, 0);
+    for (i, h, a) in per.into_iter().flatten() {
+        modules += 1;
+        hw[i] += u64::from(h);
+        assembled += u64::from(a);
+    }
+    eprintln!(
+        "ptx-isa: {modules} modules, {assembled} through ptxas, fp8 instructions per profile {hw:?}"
+    );
+    assert!(
+        modules >= PROFILES.len() as u64,
+        "every profile emits device units"
+    );
+    // The parts with the conversions emit them (sm_89 among them: the
+    // encoding the declaration must carry); the 3090 / A100 never do.
+    for (i, name) in PROFILES.iter().enumerate() {
+        let cvt = resolve_profile(name)
+            .and_then(|t| t.gpu())
+            .expect("gpu")
+            .caps
+            .cvt_f8;
+        assert_eq!(hw[i] > 0, cvt.is_some(), "{name}: {hw:?}");
+    }
+    if tools {
+        assert_eq!(assembled, modules, "every module through ptxas");
+    }
+}

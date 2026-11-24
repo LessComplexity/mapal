@@ -109,6 +109,12 @@ tf32_src() { # <src> -> path of its TF32-admitting twin
     local o="${1%.mapal}_tfsrc.mapal"
     sed 's/-> fold {/-> fold: tf32 | f32 {/g' "$1" > "$o"; echo "$o"
 }
+# bugs-properties `ptx-isa`: the `-mattr` a device module declares (empty for a module without the line).
+ptx_mattr() { sed -n 's/^; mapal\.ptx .*mattr=\([^ ]*\).*/-mattr=\1/p' "$1" | head -1; }
+ptxas_preflight() { # <ptx> <sm>: ptxas must accept the PTX for its target (cudatool.sh), else the bundle stops
+    local log; log=$("$ROOT/benches/gpu/cudatool.sh" ptxas -arch="$2" "$1" -o /dev/null 2>&1) ||
+        { echo "ptxas preflight FAILED: $1 ($2)" >&2; echo "$log" | head -5 >&2; exit 1; }
+}
 emit_one() {
     local src=$1 stem=$2 prof=$3 sm=$4 a m; shift 4
     m=$(march "$HOST")
@@ -118,7 +124,10 @@ emit_one() {
     clang -O2 -c --target=x86_64-unknown-linux-gnu -march="$m" -Wno-override-module "$stem.host.ll" -o "$stem.host.o"
     [ -f "$stem.dev.ll" ] || return 0
     "$LLVM/opt" -O3 "$stem.dev.ll" -S -o "$stem.dev.opt.ll"
-    "$LLVM/llc" -O3 -mcpu="$sm" -nvptx-fma-level=0 "$stem.dev.opt.ll" -o "$stem.ptx"
+    # bugs-properties `ptx-isa`: the PTX ISA the module declares (`; mapal.ptx ... mattr=+ptx<isa>`).
+    "$LLVM/llc" -O3 -mcpu="$sm" -nvptx-fma-level=0 $(ptx_mattr "$stem.dev.ll") "$stem.dev.opt.ll" -o "$stem.ptx"
+    # ... and a `ptxas` preflight: a PTX the target's assembler rejects fails the bundle here, not on the box.
+    ptxas_preflight "$stem.ptx" "$sm"
     # (A program whose every site has an epilogue launches only `launchv`: no line.)
     # S62 `splitk`: a split site's launch ends `; splitk=S` and the reduce launch
     # follows: `kernel gx gy block smem S rkernel rgx rgy rblock rsmem`.
