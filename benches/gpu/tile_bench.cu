@@ -13,8 +13,12 @@
 // or fmaf with --contract) BIT FOR BIT; cuBLAS/CUTLASS are compared to an f64
 // reference and their max relative error is printed.
 //
-// Timing: legs interleaved round-robin, each launch bracketed by cudaEvents,
-// L2 flushed (256 MB memset) before every timed launch, warmup 3 per leg.
+// Timing: legs interleaved round-robin, L2 flushed (256 MB memset) before every
+// timed launch, warmup 3 per leg; a launch is timed at the Mapal program's
+// boundary (gaps-disasm H, `wall_ms`: the device idle, the host clock around
+// the launch and a synchronize), the former cudaEvent bracket (the host's
+// enqueue hidden behind the flush) printed beside as `dev_med_ms`;
+// BENCH_BOUNDARY=event (a measurement flag): the bracket as the time.
 // --warm (S62, after the face flag): no flush — each leg re-reads operands its
 // previous launch left in L2, the state of a producer feeding its consumer.
 //
@@ -40,6 +44,23 @@
 #include <vector>
 
 #include "cutlass/gemm/device/gemm.h"
+
+#include <chrono>
+
+// gaps-disasm H: `f` (one leg's launch) at the Mapal program's boundary — the
+// queue drained, the host clock around the launch and a synchronize.
+template <class F>
+static float wall_ms(F &&f) {
+  if (cudaDeviceSynchronize() != cudaSuccess) exit(102);
+  auto t0 = std::chrono::steady_clock::now();
+  f();
+  if (cudaDeviceSynchronize() != cudaSuccess) exit(102);
+  return std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - t0).count();
+}
+static bool boundary_event() {
+  const char *b = getenv("BENCH_BOUNDARY");
+  return b && !strcmp(b, "event");
+}
 
 #ifndef CUTLASS_ARCH
 #define CUTLASS_ARCH cutlass::arch::Sm80
@@ -529,7 +550,7 @@ static int splitk_main(int argc, char **argv) {
   cudaEvent_t t0, t1;
   CUDA(cudaEventCreate(&t0));
   CUDA(cudaEventCreate(&t1));
-  std::vector<std::vector<float>> ms(nl);
+  std::vector<std::vector<float>> ms(nl), dev(nl);
   for (int r = 0; r < reps; ++r)
     for (size_t x = 0; x < nl; ++x) {
       size_t leg = r & 1 ? nl - 1 - x : x;
@@ -542,14 +563,20 @@ static int splitk_main(int argc, char **argv) {
       CUDA(cudaEventSynchronize(t1));
       float e;
       CUDA(cudaEventElapsedTime(&e, t0, t1));
+      dev[leg].push_back(e);
+      if (!boundary_event()) {
+        CUDA(cudaMemsetAsync(flush, r & 0xff, flush_bytes));
+        e = wall_ms([&] { run(leg); });
+      }
       ms[leg].push_back(e);
     }
   for (size_t leg = 0; leg < nl; ++leg) {
     if (ms[leg].empty()) continue;
-    auto v = ms[leg];
+    auto v = ms[leg], d = dev[leg];
     std::sort(v.begin(), v.end());
-    printf("time leg=%s M=%d N=%d K=%d n=%zu min_ms=%.4f med_ms=%.4f max_ms=%.4f\n", name(leg).c_str(), M, N, K,
-           v.size(), v.front(), v[v.size() / 2], v.back());
+    std::sort(d.begin(), d.end());
+    printf("time leg=%s M=%d N=%d K=%d n=%zu min_ms=%.4f med_ms=%.4f max_ms=%.4f dev_med_ms=%.4f\n",
+           name(leg).c_str(), M, N, K, v.size(), v.front(), v[v.size() / 2], v.back(), d[d.size() / 2]);
   }
   // --- determinism within the process: the whole output again, byte for byte
   for (size_t leg = 0; leg < na; ++leg) {
@@ -720,12 +747,16 @@ int main(int argc, char **argv) {
   for (int r = 0; r < reps; ++r)
     for (int leg = 0; leg < 3; ++leg) {
       if (!warm) CUDA(cudaMemsetAsync(flush, r & 0xff, flush_bytes));
-      CUDA(cudaEventRecord(t0));
-      run(leg);
-      CUDA(cudaEventRecord(t1));
-      CUDA(cudaEventSynchronize(t1));
       float x;
-      CUDA(cudaEventElapsedTime(&x, t0, t1));
+      if (boundary_event()) {
+        CUDA(cudaEventRecord(t0));
+        run(leg);
+        CUDA(cudaEventRecord(t1));
+        CUDA(cudaEventSynchronize(t1));
+        CUDA(cudaEventElapsedTime(&x, t0, t1));
+      } else {
+        x = wall_ms([&] { run(leg); });
+      }
       ms[leg].push_back(x);
     }
   const double flops = 2.0 * M * N * K;

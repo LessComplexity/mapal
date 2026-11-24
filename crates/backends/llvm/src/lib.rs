@@ -1024,6 +1024,41 @@ pub struct GpuRungs {
     /// H100 measurement is mixed, the separating fact open: `rules::rungs`);
     /// `--gpu-on=ws-persist` measures the walk. Off: a CTA a tile.
     pub ws_persist: bool,
+    /// gaps-disasm C1 `load-dispatch`: the module registers its site tables
+    /// before the runtime's init (`mapal_gpu_sites`), so each table's pick
+    /// (where one is decided without a run: forced, stored), its candidates'
+    /// kernels and shared-memory limits and a cooperative table's occupancy
+    /// are resolved when the module loads — a one-call program's first site
+    /// goes from its clock to its first driver call without hashing its
+    /// table or scanning the wisdom (the runtime finds every preloaded kernel
+    /// by its id in one hash probe either way). Off
+    /// (`--gpu-off=load-dispatch`): no registry; all of it at the first call.
+    pub load_dispatch: bool,
+    /// gaps-disasm C1 `zero-host`: an atomic output's zero pass that no
+    /// earlier kernel folded (`zero-fold`) is the runtime's zero kernel — one
+    /// launch on the host — never the driver's memset API (RTX 5080: 3.7–5.9
+    /// µs a call inside a one-call program's clock, against 2.5–3.9 µs a
+    /// launch). Off (`--gpu-off=zero-host`): `cuMemsetD8Async`.
+    pub zero_host: bool,
+    /// gaps-disasm C1 `zero-hoist`: an atomic site's zero that no earlier
+    /// kernel takes (`zero-fold`) is issued at the earliest point the
+    /// zero-fold walk allows — right after the last step that touches the
+    /// output's bytes, or the sequence's start — instead of between the
+    /// site's dispatch and its launch, where its host issue delays the
+    /// kernel (an arena member, in the straight-line walk; a loop trip keeps
+    /// it at the site), skipped at run time where the site's decided pick
+    /// adds nothing (`mapal_gpu_zero_for`). Off (`--gpu-off=zero-hoist`): at the
+    /// site.
+    pub zero_hoist: bool,
+    /// gaps-disasm C5 `split-price`: an under-filled FMA tile whose operands
+    /// stream from DRAM takes the atomic `k` split its price gives — the
+    /// stream at the split grid's spread over the SMs against every
+    /// partition's partial cells at the part's measured
+    /// `DeviceCost::split_cell_ps` (`TargetProfile::split_priced`) — where the
+    /// fill rule took the fewest partitions that reach `fill_warps`. A part
+    /// without the property keeps the fill rule. Off
+    /// (`--gpu-off=split-price`): the fill rule.
+    pub split_price: bool,
 }
 
 impl GpuRungs {
@@ -1168,11 +1203,15 @@ impl GpuRungs {
         streamk_epi: true,
         tma_warm: true,
         ws_persist: true,
+        load_dispatch: true,
+        zero_host: true,
+        zero_hoist: true,
+        split_price: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 139] = [
+    pub const NAMES: [&'static str; 143] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1312,6 +1351,10 @@ impl GpuRungs {
         "streamk-epi",
         "tma-warm",
         "ws-persist",
+        "load-dispatch",
+        "zero-host",
+        "zero-hoist",
+        "split-price",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -1456,6 +1499,10 @@ impl GpuRungs {
             "streamk-epi" => &mut self.streamk_epi,
             "tma-warm" => &mut self.tma_warm,
             "ws-persist" => &mut self.ws_persist,
+            "load-dispatch" => &mut self.load_dispatch,
+            "zero-host" => &mut self.zero_host,
+            "zero-hoist" => &mut self.zero_hoist,
+            "split-price" => &mut self.split_price,
             _ => return None,
         })
     }
@@ -2232,6 +2279,13 @@ fn emit_module(
     if funcs.contains("@mapal_gpu_site(") {
         out.push_str(crate::func::gpu::SITE_DECL);
     }
+    // gaps-disasm C1 `load-dispatch`: the tables registered before the init.
+    let host_rungs = crate::func::gpu::host_rungs(profile, opts.contract, opts.gpu);
+    let (n_sites, registry) = match gpu_host && host_rungs.load_dispatch {
+        true => crate::func::gpu::site_registry(&funcs),
+        false => (0, String::new()),
+    };
+    out.push_str(&registry);
     let sme_store = funcs.contains("@mapal_sme_panel(");
     let sme_acc = funcs.contains("@mapal_sme_panel_acc(");
     let sme = sme_store || sme_acc;
@@ -2266,7 +2320,7 @@ fn emit_module(
     // runtime: the same gate as `GPU_INIT_DECL`.
     let prologue = if gpu_host {
         crate::func::gpu::init_call(
-            crate::func::gpu::host_rungs(profile, opts.contract, opts.gpu),
+            host_rungs,
             // Streams are opened where a launch names one: `launchv` on stream 0
             // is also `epilogue`'s and `devmap`'s (S54 integration).
             funcs
@@ -2275,6 +2329,7 @@ fn emit_module(
                 .any(|t| t.split(", ").nth(1).is_some_and(|s| s != "i32 0")),
             crate::func::gpu::pdl(ir, profile, opts.contract, opts.gpu),
             crate::func::gpu::module_zeroes(&funcs),
+            n_sites,
         )
     } else {
         String::new()

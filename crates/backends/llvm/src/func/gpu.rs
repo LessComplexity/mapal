@@ -85,20 +85,80 @@ pub(crate) const GPU_INIT_WARM_ZERO: u32 = 32;
 /// kernel before the clock — the runtime reads that fact from the module text
 /// it loads, so the flag word of a module without one is what it was.
 pub(crate) const GPU_INIT_TMA_COLD: u32 = 64;
+/// gaps-disasm C1 `zero-host`: the module zeroes outputs, by the runtime's
+/// zero kernel (loaded at init) rather than the driver's memset API.
+pub(crate) const GPU_INIT_ZERO_KERNEL: u32 = 128;
 
 /// `main`'s first call in a module with a GPU site: hands the runtime its host
 /// rungs. Off, the runtime does nothing until the first site, the S52 path.
 /// `zeroes`: some launch of the module zeroes an output ([`module_zeroes`]).
-pub(crate) fn init_call(rungs: crate::GpuRungs, streams: bool, pdl: bool, zeroes: bool) -> String {
+/// `load-dispatch`: the module's site tables ([`site_registry`]) registered
+/// first, so the init resolves them.
+pub(crate) fn init_call(
+    rungs: crate::GpuRungs,
+    streams: bool,
+    pdl: bool,
+    zeroes: bool,
+    sites: usize,
+) -> String {
     let flags = u32::from(rungs.eager_init) * GPU_INIT_EAGER
         + u32::from(streams) * GPU_INIT_STREAMS
         + u32::from(pdl) * GPU_INIT_PDL
         + u32::from(rungs.preload) * GPU_INIT_PRELOAD
         + u32::from(rungs.stage && rungs.async_h2d) * GPU_INIT_STAGE
         + u32::from(rungs.warm_zero && zeroes) * GPU_INIT_WARM_ZERO
-        + u32::from(!rungs.tma_warm) * GPU_INIT_TMA_COLD;
-    format!("  call void @mapal_gpu_init(i32 {flags})\n")
+        + u32::from(!rungs.tma_warm) * GPU_INIT_TMA_COLD
+        + u32::from(rungs.zero_host && zeroes) * GPU_INIT_ZERO_KERNEL;
+    let reg = match (rungs.load_dispatch, sites) {
+        (true, n) if n > 0 => format!("  call void @mapal_gpu_sites(ptr @mapal_sites, i32 {n})\n"),
+        _ => String::new(),
+    };
+    format!("{reg}  call void @mapal_gpu_init(i32 {flags})\n")
 }
+
+/// gaps-disasm C1 `load-dispatch`: the module's site tables, one
+/// `%mapal_site_reg { i64 site, ptr table, i32 n, i32 flags }` each (its
+/// first `mapal_gpu_site` call's site and flags; a table is one constant
+/// however many calls launch it), as the `@mapal_sites` constant and its
+/// declarations — empty when the host text launches no table.
+pub(crate) fn site_registry(host: &str) -> (usize, String) {
+    let mut rows: Vec<String> = Vec::new();
+    let mut seen: Vec<&str> = Vec::new();
+    for call in host.split("@mapal_gpu_site(i64 ").skip(1) {
+        let mut f = call.split(", ");
+        let (Some(site), Some(flags), Some(_stream), Some(n), Some(table)) =
+            (f.next(), f.next(), f.next(), f.next(), f.next())
+        else {
+            continue;
+        };
+        let Some(table) = table.strip_prefix("ptr ") else {
+            continue;
+        };
+        if seen.contains(&table) {
+            continue;
+        }
+        seen.push(table);
+        rows.push(format!(
+            "%mapal_site_reg {{ i64 {site}, ptr {table}, {n}, {flags} }}"
+        ));
+    }
+    if rows.is_empty() {
+        return (0, String::new());
+    }
+    (
+        rows.len(),
+        format!(
+            "{SITES_DECL}@mapal_sites = private unnamed_addr constant [{} x %mapal_site_reg] [{}]\n",
+            rows.len(),
+            rows.join(", ")
+        ),
+    )
+}
+
+/// `load-dispatch`'s registry type and entry (`mapal_choice.h`'s
+/// `struct mapal_site_reg`, `mapal_gpu.c`'s `mapal_gpu_sites`).
+pub(crate) const SITES_DECL: &str = "%mapal_site_reg = type { i64, ptr, i32, i32 }\n\
+     declare void @mapal_gpu_sites(ptr, i32)\n";
 
 /// sweep-gemm-2 `warm-zero`: does a launch of this host text zero device
 /// bytes — a direct `mapal_gpu_zero` call, or a site table row (`%mapal_cand
@@ -115,6 +175,7 @@ pub(crate) fn module_zeroes(host: &str) -> bool {
             .map(|z| z as u64)
     };
     host.contains("call void @mapal_gpu_zero(")
+        || host.contains("call void @mapal_gpu_zero_for(")
         || host
             .lines()
             .filter(|l| l.contains(" x %mapal_cand] ["))
@@ -286,7 +347,7 @@ pub(crate) const COOP_DECL: &str =
 /// S54 entries (`streams`, `pinned`), each declared only where it is called,
 /// so a module that never opens a stream or pins keeps its S53 text.
 /// (`launchv` is [`LAUNCHV_DECL`], shared with `epilogue` and `devmap`.)
-pub(crate) const S54_DECLS: [(&str, &str); 8] = [
+pub(crate) const S54_DECLS: [(&str, &str); 9] = [
     (
         "@mapal_gpu_event(",
         "declare void @mapal_gpu_event(i32, i32)\n",
@@ -301,6 +362,12 @@ pub(crate) const S54_DECLS: [(&str, &str); 8] = [
     (
         "@mapal_gpu_zero(",
         "declare void @mapal_gpu_zero(i64, i64)\n",
+    ),
+    // gaps-disasm C1 `zero-hoist`: a hoisted zero, skipped where its site's
+    // pick does not add into the output.
+    (
+        "@mapal_gpu_zero_for(",
+        "declare void @mapal_gpu_zero_for(ptr, i64, i64)\n",
     ),
     // caching-memory `retain-pieces`: gathered rows placed at their stride.
     (
@@ -2980,14 +3047,28 @@ fn combine(
     // loads of `cells · e_b` bytes of `b` in flight.
     let naive = l.tiled.is_none();
     let stream = naive && rungs.stream_fly && streaming(site, gpu);
+    // gaps-disasm C5 `split-price`: an under-filled tile whose operands stream
+    // from DRAM (its flops per byte below the part's FFMA balance) takes the
+    // atomic split its price gives ([`TargetProfile::split_priced`]: the
+    // stream at the grid's spread against every partition's partial cells).
+    let bytes = (site.rows * site.k + site.k * site.c + site.rows * site.c) * e;
+    let streams = gpu
+        .ffma_per_dram_byte_pm()
+        .is_some_and(|b| 2 * site.rows * site.c * site.k * 1000 < b * bytes);
+    let priced = |workspace: bool| {
+        (under && !workspace && !naive && streams && rungs.split_price)
+            .then(|| profile.split_priced(blocks, cap, panels, site.rows * site.c, bytes))
+            .flatten()
+    };
     let count = |workspace| match forced {
         s if s > 0 && panels.is_multiple_of(s) => s,
         _ => {
-            let rule = match under {
-                true => {
+            let rule = match (under, priced(workspace)) {
+                (true, Some(s)) => s,
+                (true, None) => {
                     profile.split_fill(blocks, warps, cap, panels, site.rows * site.c, e, workspace)
                 }
-                false => {
+                (false, _) => {
                     profile.split_count(blocks, wave, panels, site.rows * site.c, e, workspace)
                 }
             };
@@ -10327,7 +10408,7 @@ impl<'a> FnEmit<'a> {
     /// `mapal_gpu_site` call over the launch's pointers `ptrs` (the output
     /// third). The workspace slot, when a candidate takes one, is sized at the
     /// table's largest (`entry-arena` seeds it like any split workspace).
-    pub(super) fn site_call(&mut self, t: SiteTable, ptrs: &[String]) {
+    pub(super) fn site_call(&mut self, t: SiteTable, ptrs: &[String]) -> String {
         let global = format!("@{}.cands{}", self.fnames[self.f], self.fresh());
         self.cand_tables.push_str(&format!(
             "{global} = private unnamed_addr constant [{} x %mapal_cand] [{}]\n",
@@ -10364,6 +10445,7 @@ impl<'a> FnEmit<'a> {
             t.flags,
             t.rows.len()
         ));
+        global
     }
 
     /// per-site-choice: whether site `m`'s launch may run again (`RERUN`) —
@@ -11531,7 +11613,7 @@ mod tests {
                 });
                 let wait = pdl_part(p, true, arms);
                 assert_eq!(wait, enabled && p.gpu().unwrap().has_griddepcontrol());
-                let host = init_call(host_rungs(p, true, arms), false, wait, false);
+                let host = init_call(host_rungs(p, true, arms), false, wait, false, 0);
                 let flags: u32 = host
                     .split("i32 ")
                     .nth(1)
@@ -11674,7 +11756,7 @@ mod tests {
             "  call void @mapal_gpu_launchv(i64 1, i32 0)\n"
         ));
         let flags = |rungs: GpuRungs, zeroes: bool| -> u32 {
-            init_call(rungs, false, false, zeroes)
+            init_call(rungs, false, false, zeroes, 0)
                 .split("i32 ")
                 .nth(1)
                 .and_then(|s| s.split(')').next())
@@ -11704,6 +11786,61 @@ mod tests {
         assert_eq!(
             flags(cold, true),
             flags(GpuRungs::ALL, true) | GPU_INIT_TMA_COLD
+        );
+        // gaps-disasm C1 `zero-host`: the zero kernel's bit exactly where the
+        // module zeroes; the OFF arm clears that one bit.
+        assert_ne!(flags(GpuRungs::ALL, true) & GPU_INIT_ZERO_KERNEL, 0);
+        assert_eq!(flags(GpuRungs::ALL, false) & GPU_INIT_ZERO_KERNEL, 0);
+        let memset = GpuRungs {
+            zero_host: false,
+            ..GpuRungs::ALL
+        };
+        assert_eq!(
+            flags(memset, true),
+            flags(GpuRungs::ALL, true) & !GPU_INIT_ZERO_KERNEL
+        );
+    }
+
+    /// gaps-disasm C1 `load-dispatch`: one registry row a table (its first
+    /// call's site and flags, however many calls launch it), the registration
+    /// ahead of the init; none without a table or with the rung off.
+    #[test]
+    fn site_registry_lists_each_table_once_before_the_init() {
+        let call = |site: i64, flags: u32, table: &str| {
+            format!(
+                "  call void @mapal_gpu_site(i64 {site}, i32 {flags}, i32 0, i32 3, ptr {table}, i32 3, ptr %p1, i32 2, ptr null)\n"
+            )
+        };
+        let host = call(-5, 1, "@f.cands1") + &call(-5, 1, "@f.cands1") + &call(7, 8, "@g.cands4");
+        let host = format!(
+            "declare void @mapal_gpu_site(i64, i32, i32, i32, ptr, i32, ptr, i32, ptr)\n{host}"
+        );
+        let (n, reg) = site_registry(&host);
+        assert_eq!(n, 2, "{reg}");
+        assert!(reg.starts_with(SITES_DECL), "{reg}");
+        assert!(
+            reg.contains(
+                "[2 x %mapal_site_reg] [%mapal_site_reg { i64 -5, ptr @f.cands1, i32 3, i32 1 }, \
+                 %mapal_site_reg { i64 7, ptr @g.cands4, i32 3, i32 8 }]"
+            ),
+            "{reg}"
+        );
+        assert_eq!(
+            site_registry("  call void @mapal_gpu_launchv(i64 1)\n"),
+            (0, String::new())
+        );
+        let init = init_call(GpuRungs::ALL, false, false, false, n);
+        assert!(
+            init.starts_with("  call void @mapal_gpu_sites(ptr @mapal_sites, i32 2)\n  call void @mapal_gpu_init("),
+            "{init}"
+        );
+        let off = GpuRungs {
+            load_dispatch: false,
+            ..GpuRungs::ALL
+        };
+        assert_eq!(
+            init_call(off, false, false, false, n),
+            init_call(GpuRungs::ALL, false, false, false, 0)
         );
     }
 

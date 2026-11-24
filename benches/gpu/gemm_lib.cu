@@ -7,8 +7,9 @@
 //   cublas   cublasSgemm (the column-major transpose trick: Cᵀ = Bᵀ·Aᵀ).
 //   lt       cublasLtMatmul: up to 8 heuristic algorithms (32 MB workspace), each timed over 5 runs, the fastest
 //            kept — the best cuBLASLt offers for the shape.
-// Timing (chain_bench.cu's convention): 3 warm-ups per leg, then `reps` repetitions round-robin, each after a
-// 256 MB L2 flush, bracketed by CUDA events; min / median / max ms. `<leg>-fresh`: the operands regenerated on the
+// Timing: 3 warm-ups per leg, then `reps` repetitions round-robin, each after a
+// 256 MB L2 flush, at the Mapal program's boundary (gaps-disasm H: device idle, host clock around the call and a
+// synchronize; the former event bracket printed beside as `dev_med_ms`); min / median / max ms. `<leg>-fresh`: the operands regenerated on the
 // device right before each repetition instead of the flush — a Mapal program's own boundary (its operands are
 // generated just before its clock, so the last-written part of them is still in the 64 MB L2).
 // Values: c[0] and c[M·N − 1] against Mapal's printed values when given:
@@ -21,6 +22,7 @@
 #include <cuda_runtime.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -103,19 +105,36 @@ int main(int argc, char **argv) {
   cudaEvent_t e0, e1;
   CK(cudaEventCreate(&e0));
   CK(cudaEventCreate(&e1));
-  auto time_once = [&](auto &&f, bool cold = true) {
+  // gaps-disasm H: a repetition is timed at the Mapal program's boundary — the flush (or the fresh operands)
+  // done and the device idle, the host clock around the call and a synchronize — so the leg's host dispatch is
+  // inside its clock as a Mapal program's is (`wall`); the former event bracket, recorded behind the flush (the
+  // host enqueue hidden under its device time), runs too and is printed beside (`dev_med_ms`). `boundary_event`
+  // (BENCH_BOUNDARY=event, a measurement flag): the bracket as the leg's time, as before.
+  const bool boundary_event = getenv("BENCH_BOUNDARY") && !strcmp(getenv("BENCH_BOUNDARY"), "event");
+  float last_dev = 0;
+  auto prepare = [&](bool cold) {
     CK(cudaMemsetAsync(flush, 0, 256 << 20));
     if (!cold) {  // fresh: the operands written last, B then A, as the program's laws are
       law<<<1024, 256>>>(B, (long long)K * N, 11, 57, 103, 51, 9.0f);
       law<<<1024, 256>>>(A, (long long)M * K, 7, 13, 101, 50, 7.0f);
     }
+  };
+  auto time_once = [&](auto &&f, bool cold = true) {
+    prepare(cold);
     CK(cudaEventRecord(e0));
     f();
     CK(cudaEventRecord(e1));
     CK(cudaEventSynchronize(e1));
     float ms;
     CK(cudaEventElapsedTime(&ms, e0, e1));
-    return ms;
+    last_dev = ms;
+    if (boundary_event) return ms;
+    prepare(cold);
+    CK(cudaDeviceSynchronize());
+    auto t0 = std::chrono::steady_clock::now();
+    f();
+    CK(cudaDeviceSynchronize());
+    return std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - t0).count();
   };
   // The fastest heuristic algorithm (median of 5, after 2 warm-ups).
   int best = 0;
@@ -168,14 +187,21 @@ int main(int argc, char **argv) {
     w.name = l == 0 ? (tf32 ? "cublas-tf32-fresh" : "cublas-fresh") : (tf32 ? "lt-tf32-fresh" : "lt-fresh");
     legs.push_back(w);
   }
+  std::vector<std::vector<float>> devs(legs.size());
   for (int r = 0; r < reps; ++r)
-    for (size_t l = 0; l < legs.size(); ++l) legs[l].ms.push_back(time_once([&] { run_leg(l % nl); }, l < nl));
-  for (auto &L : legs) {
+    for (size_t l = 0; l < legs.size(); ++l) {
+      legs[l].ms.push_back(time_once([&] { run_leg(l % nl); }, l < nl));
+      devs[l].push_back(last_dev);
+    }
+  for (size_t l = 0; l < legs.size(); ++l) {
+    Leg &L = legs[l];
     std::sort(L.ms.begin(), L.ms.end());
+    std::sort(devs[l].begin(), devs[l].end());
     const char *within = want.size() < 2 ? "no-mapal" : L.dev <= tol ? "yes" : "no";
-    printf("gemm prog=%s leg=%s algo=%d/%d min_ms=%.4f med_ms=%.4f max_ms=%.4f within=%s maxdev=%.3e values=%.7g,%.7g\n",
+    printf("gemm prog=%s leg=%s algo=%d/%d min_ms=%.4f med_ms=%.4f max_ms=%.4f within=%s maxdev=%.3e values=%.7g,%.7g "
+           "dev_med_ms=%.4f\n",
            stem.c_str(), L.name, strstr(L.name, "lt") ? best : -1, nres, L.ms[0], L.ms[L.ms.size() / 2], L.ms.back(),
-           within, L.dev, L.vals[0], L.vals[1]);
+           within, L.dev, L.vals[0], L.vals[1], devs[l][devs[l].size() / 2]);
   }
   return 0;
 }

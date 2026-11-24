@@ -48,6 +48,16 @@ struct mapal_cand {
 };
 _Static_assert(sizeof(struct mapal_cand) == 56, "the host's %mapal_cand");
 
+/* gaps-disasm C1 `load-dispatch`: one site table the module registers before
+ * its init (`mapal_gpu_sites`; the host's `%mapal_site_reg`, gpu.rs
+ * `SITES_DECL`): the site, its table and length, its `mapal_gpu_site` flags. */
+struct mapal_site_reg {
+  uint64_t site;
+  const struct mapal_cand *c;
+  uint32_t n, flags;
+};
+_Static_assert(sizeof(struct mapal_site_reg) == 24, "the host's %mapal_site_reg");
+
 /* `flags` bit 0: running the site again is value-safe. */
 #define MAPAL_SITE_RERUN 1u
 /* `flags` bit 1 (kernel-merging `zero-fold`): an earlier kernel of the same
@@ -207,10 +217,69 @@ static uint64_t choice_med3(uint64_t a, uint64_t b, uint64_t c) {
   return a > b ? (b > c ? b : a > c ? c : a) : (a > c ? a : b > c ? c : b);
 }
 
+static struct choice_memo *choice_memo_of(const struct mapal_cand *c) {
+  return &choice_memo[(((uintptr_t)c * 0x9e3779b97f4a7c15ull) >> 32) % CHOICE_MEMO];
+}
+
+/* The decision a table takes without running anything: forced (`src`
+ * "forced") or the stored winner ("wisdom"); 1 when found. `key` is the
+ * table's wisdom key (0 when forced). */
+static int choice_lookup(uint32_t n, const struct mapal_cand *c, uint64_t *key,
+                         uint32_t *pick, const char **src) {
+  *key = 0;
+  if (choice.pick >= 0) {
+    /* Forced: no key, no wisdom. */
+    *pick = (uint32_t)choice.pick < n ? (uint32_t)choice.pick : n - 1;
+    *src = "forced";
+    return 1;
+  }
+  *key = choice_fnv(c, (size_t)n * sizeof *c, CHOICE_FNV0) ^ choice.module;
+  /* `tune`: only this process's decisions stand (a site in a loop trials once). */
+  size_t lo = choice.pick == CHOICE_TUNE ? choice.nfile : 0;
+  for (size_t i = choice.nw; i-- > lo;)
+    if (choice.w[i].key == *key && choice.w[i].n == n) {
+      *pick = choice.w[i].pick;
+      *src = "wisdom";
+      return 1;
+    }
+  return 0;
+}
+
+/* The trace's one line a decision; ` at=load` where the module's load made it. */
+static void choice_line(uint64_t site, uint64_t key, uint32_t n, uint32_t pick,
+                        const char *src, uint32_t reps, uint64_t ns0, uint64_t nsw, int load) {
+  fprintf(stderr, "mapal_gpu_trace op=site site=%016llx key=%016llx n=%u pick=%u src=%s reps=%u",
+          (unsigned long long)site, (unsigned long long)key, n, pick, src, reps);
+  if (reps)
+    fprintf(stderr, " ns0=%llu nsw=%llu", (unsigned long long)ns0, (unsigned long long)nsw);
+  if (load)
+    fputs(" at=load", stderr);
+  fputc('\n', stderr);
+}
+
+/* gaps-disasm C1 `load-dispatch`: a registered table's decision made when
+ * the module loads (`mapal_gpu_sites`), off the program's clock — the key's
+ * hash over the table and the wisdom scan cost a one-call program's first
+ * site 1.0–2.3 us of host time between its clock and its first driver call
+ * (RTX 5080, `gapfix-launch-combine.md`). Only a decision the first call
+ * takes without running anything (forced, stored) is made here; a site
+ * that trials still decides at its first call. Returns the pick, or -1. */
+static int choice_preset(uint64_t site, uint32_t n, const struct mapal_cand *c) {
+  uint64_t key;
+  uint32_t pick = 0;
+  const char *src = "rules";
+  if (!n || !choice_lookup(n, c, &key, &pick, &src))
+    return -1;
+  *choice_memo_of(c) = (struct choice_memo){c, n, pick};
+  if (choice.trace)
+    choice_line(site, key, n, pick, src, 0, 0, 0, 1);
+  return (int)pick;
+}
+
 static uint32_t choice_site(uint64_t site, uint32_t flags, uint32_t n,
                             const struct mapal_cand *c, int safe,
                             const struct choice_dev *d) {
-  struct choice_memo *memo = &choice_memo[(((uintptr_t)c * 0x9e3779b97f4a7c15ull) >> 32) % CHOICE_MEMO];
+  struct choice_memo *memo = choice_memo_of(c);
   if (memo->c == c && memo->n == n) {
     d->run(d->env, memo->pick);
     return memo->pick;
@@ -218,25 +287,9 @@ static uint32_t choice_site(uint64_t site, uint32_t flags, uint32_t n,
   uint64_t key = 0;
   uint32_t pick = 0;
   const char *src = "rules";
-  int found = 0;
   uint32_t reps = 0;
   uint64_t ns0 = 0, nsw = 0;
-  if (choice.pick >= 0) {
-    /* Forced: no key, no wisdom. */
-    pick = (uint32_t)choice.pick < n ? (uint32_t)choice.pick : n - 1;
-    src = "forced";
-    found = 1;
-  } else {
-    key = choice_fnv(c, (size_t)n * sizeof *c, CHOICE_FNV0) ^ choice.module;
-  }
-  /* `tune`: only this process's decisions stand (a site in a loop trials once). */
-  size_t lo = choice.pick == CHOICE_TUNE ? choice.nfile : 0;
-  for (size_t i = choice.nw; !found && i-- > lo;)
-    if (choice.w[i].key == key && choice.w[i].n == n) {
-      pick = choice.w[i].pick;
-      src = "wisdom";
-      found = 1;
-    }
+  int found = choice_lookup(n, c, &key, &pick, &src);
   if (!found && (flags & MAPAL_SITE_RERUN) && safe && choice.tune && choice.path[0]) {
     /* The trial: what any candidate allocates is made first; candidate 0 once
      * sizes it (R = 5 below 2 ms, 3 below 50 ms, 2 below 500 ms, else 1); rep
@@ -356,13 +409,8 @@ static uint32_t choice_site(uint64_t site, uint32_t flags, uint32_t n,
   /* An unsafe execution's candidate 0 is not a decision: a later one may trial. */
   if (safe || found)
     *memo = (struct choice_memo){c, n, pick};
-  if (choice.trace) {
-    fprintf(stderr, "mapal_gpu_trace op=site site=%016llx key=%016llx n=%u pick=%u src=%s reps=%u",
-            (unsigned long long)site, (unsigned long long)key, n, pick, src, reps);
-    if (reps)
-      fprintf(stderr, " ns0=%llu nsw=%llu", (unsigned long long)ns0, (unsigned long long)nsw);
-    fputc('\n', stderr);
-  }
+  if (choice.trace)
+    choice_line(site, key, n, pick, src, reps, ns0, nsw, 0);
   return pick;
 }
 

@@ -492,6 +492,9 @@ fn candidate_zero_is_the_pre_sprint_emission() {
             "--gpu-off=wgmma-ws",
             // sweep-attention-2: the k-major `b` copies (decode scores).
             "--gpu-off=kmajor-b",
+            // gaps-disasm C1: the zero kernel's init flag and the table
+            // registry change the host text by design; off, the one before.
+            "--gpu-off=zero-host,zero-hoist,load-dispatch",
         ]
         .iter()
         .chain(face_flags)
@@ -579,9 +582,11 @@ fn candidate_zero_is_the_rules_plan() {
                 let grid = &args[args.len() - 4..];
                 assert_eq!(grid, &c0[4..8], "#{z} {target}: grid\n{call}");
                 // An atomic / stream-K recipe zeroes the output as the
-                // rules' launch is preceded by its zero.
+                // rules' launch is preceded by its zero (at the site, or
+                // hoisted ahead of it: gaps-disasm C1 `zero-hoist`).
                 let zero = one.text.lines().any(|l| {
-                    l.contains("@mapal_gpu_zero(") && l.ends_with(&format!(", i64 {})", c0[2]))
+                    (l.contains("@mapal_gpu_zero(") || l.contains("@mapal_gpu_zero_for("))
+                        && l.ends_with(&format!(", i64 {})", c0[2]))
                 });
                 assert!(c0[2] == 0 || zero, "#{z} {target}: zero {}", c0[2]);
                 if c0[1] != 0 {
@@ -921,6 +926,27 @@ fn the_measured_pick_is_stored_and_reused() {
     // The next run reads the stored winner and launches it alone.
     let (out, err, d, launches) = run(ns, wis, &[]);
     assert_eq!(d, vec![("wisdom".into(), 1)], "{err}");
+    // gaps-disasm C1 `load-dispatch`: the module registers its table before
+    // the init, and the stored decision is made there, not at the first call
+    // (a trial still decides at its call, above).
+    assert!(
+        e.text
+            .contains("call void @mapal_gpu_sites(ptr @mapal_sites, i32 1)"),
+        "{}",
+        e.text
+    );
+    let at_load = |err: &str| {
+        err.lines()
+            .filter(|l| l.starts_with("mapal_gpu_trace op=site ") && l.ends_with(" at=load"))
+            .count()
+    };
+    assert_eq!(at_load(&err), 1, "{err}");
+    let fresh = dir.path().join("load-fresh");
+    let (_, err_fresh, d_fresh, _) = run(ns, fresh.to_str().unwrap(), &[]);
+    assert_eq!(d_fresh, vec![("trial".into(), 1)], "{err_fresh}");
+    assert_eq!(at_load(&err_fresh), 0, "{err_fresh}");
+    let (_, err_forced, _, _) = run(ns, wis, &[("MAPAL_GPU_PICK", "rules")]);
+    assert_eq!(at_load(&err_forced), 1, "{err_forced}");
     assert_eq!(out, want);
     let solo = built.run(&[("MAPAL_GPU_PICK", "1")]).1;
     assert_eq!(launches, emu::totals(&solo)[2], "only the winner launches");
@@ -977,14 +1003,14 @@ fn the_measured_pick_is_stored_and_reused() {
     );
     // D4: a table without `RERUN` (the flag an aliased output clears,
     // `apart`) is never trialled.
+    // (Its other flags kept: a hoisted zero's `ZEROED`, gaps-disasm C1.)
+    let t0 = &tables(&e.text)[0];
     let host = e.text.replacen(
+        &format!("@mapal_gpu_site(i64 {}, i32 {},", t0.site as i64, t0.flags),
         &format!(
-            "@mapal_gpu_site(i64 {}, i32 1,",
-            tables(&e.text)[0].site as i64
-        ),
-        &format!(
-            "@mapal_gpu_site(i64 {}, i32 0,",
-            tables(&e.text)[0].site as i64
+            "@mapal_gpu_site(i64 {}, i32 {},",
+            t0.site as i64,
+            t0.flags & !1
         ),
         1,
     );

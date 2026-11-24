@@ -915,3 +915,79 @@ fn full_tile_counted_and_valued_on_unseen_programs() {
     eprintln!("full-tile: {full} full-tile split kernels, {valued} valued");
     assert!(full >= 4, "the generator reaches full-tile ({full})");
 }
+
+/// gaps-disasm C5 `split-price` on programs from the generator, on the part
+/// that measured `split_cell_ps` (rtx-5080) and one that did not (rtx-4090):
+/// where the price moves an atomic split, the count still walks whole panels
+/// (`bk | k/S`) and the values are the fill rule's (emulated); a part
+/// without the property emits the OFF arm's text byte for byte.
+#[test]
+fn split_price_counted_and_valued_on_unseen_programs() {
+    let mut runner = TestRunner::deterministic();
+    let strat = testgen::geom_prog_strategy();
+    let clang = emu::clang();
+    let progs: Vec<_> = (0..48)
+        .map(|_| strat.new_tree(&mut runner).unwrap().current())
+        .collect();
+    let arms = |ir: &CategoryIr, target: &'static str, on: bool| {
+        let mut gpu = GpuArms::default();
+        for r in ["async", "pdl", "streams", "place"] {
+            *gpu.off.rung(r).expect("rung") = true;
+        }
+        *gpu.off.rung("split-price").expect("rung") = !on;
+        let opts = EmitOpts {
+            host: "generic",
+            target,
+            gpu,
+            ..EmitOpts::default()
+        };
+        emit_detailed(ir, &opts).expect("emits")
+    };
+    let [moved, kept, valued] = testgen::par_count(&progs, |z, p| {
+        let (mut moved, mut kept, mut valued) = (0, 0, 0);
+        let (src, _) = testgen::geom_src(p);
+        let ir = lower(&src);
+        // A part without the property: the fill rule, byte for byte.
+        let (x, y) = (arms(&ir, "rtx-4090", true), arms(&ir, "rtx-4090", false));
+        assert_eq!(x.text, y.text, "#{z}\n{src}");
+        assert_eq!(x.device, y.device, "#{z}\n{src}");
+        let (on, off) = (arms(&ir, "rtx-5080", true), arms(&ir, "rtx-5080", false));
+        if splits(on.device.as_deref()) == splits(off.device.as_deref()) {
+            kept += 1;
+            return [moved, kept, valued];
+        }
+        moved += 1;
+        for l in on
+            .device
+            .as_deref()
+            .unwrap_or("")
+            .lines()
+            .filter(|l| l.starts_with("; mapal.plan") && l.contains(" kind=tile "))
+        {
+            let f = |k: &str| -> u64 {
+                l.split(' ')
+                    .find_map(|x| x.strip_prefix(k))
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(0)
+            };
+            if f("S=") > 1 {
+                assert!(
+                    (f("k=") / f("S=")).is_multiple_of(f("bk=")),
+                    "#{z}: bk | k/S\n{l}\n{src}"
+                );
+            }
+        }
+        if let Some(cc) = &clang {
+            let dev = |e: &mapal_backend_llvm::Emission| e.device.clone().unwrap_or_default();
+            let (x, y) = (
+                emu::run_emulated(cc, &on.text, &dev(&on)),
+                emu::run_emulated(cc, &off.text, &dev(&off)),
+            );
+            assert_eq!(x, y, "#{z} rtx-5080 values\n{src}");
+            valued += 1;
+        }
+        [moved, kept, valued]
+    });
+    eprintln!("split-price: {moved} moved, {kept} kept, {valued} valued");
+    assert!(moved > 0, "the generator reaches split-price ({moved})");
+}

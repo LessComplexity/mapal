@@ -232,6 +232,7 @@ impl<'a> FnEmit<'a> {
             }
             None => (fname, param),
         };
+        self.zero_slots_rest();
         let text = format!(
             "define internal {sig_ret} @{fname}({param}){fn_attrs} {{\nentry:\n{}{}{}}}\n{}{}",
             perf_begin, self.allocas, self.body, self.cand_tables, self.host_par_fns

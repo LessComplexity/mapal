@@ -3,8 +3,9 @@
 PyTorch user would, eager and `torch.compile(mode="max-autotune-no-cudagraphs")`, with the same operand
 laws (gen_tiles.py OPS / BIAS / law / decode — change both or neither), pure FP32 (TF32 off).
 
-Timing (chain_bench.cu's convention): 5 warm-ups, then `reps` repetitions, each after a 256 MB L2 flush,
-bracketed by CUDA events; min / median / max ms. Values: every output's [0] and [last], in the program's
+Timing: 5 warm-ups, then `reps` repetitions, each after a 256 MB L2 flush, at the Mapal program's boundary
+(gaps-disasm H, `timed`): the device idle, the host clock around the call and a synchronize; min / median / max ms.
+The former CUDA-event bracket (the host enqueue hidden behind the flush) is printed beside as `dev_med_ms`. Values: every output's [0] and [last], in the program's
 print order, gated against Mapal's printed values (box_run.sh `vals/<stem>.txt`) as chain_bench does:
 |torch − mapal| ≤ 1e-3 · max(|mapal|, rms(torch output)).
 
@@ -577,34 +578,58 @@ def gate(stem, outs, vals_dir, tol=1e-3):
     return ('yes' if ok else 'no'), dev_
 
 
+LAST_DEV = []  # the last `timed` call's device spans (event bracket), sorted ms
+
+
 def timed(fn, args, reps, flush, pre=None):
-    """5 warm-ups, then `reps` CUDA-event-bracketed calls, each after the L2 flush. `pre` (a CUDA-graph leg's
-    `cudagraph_mark_step_begin`) runs before each call, outside the bracket."""
+    """5 warm-ups, then `reps` repetitions, each after the L2 flush, timed at the Mapal program's boundary
+    (gaps-disasm H): the flush done and the device idle, the host clock around the call and a synchronize — the
+    host dispatch (Python, Inductor's wrapper, the launches) inside the clock, as a Mapal program's own `time`
+    reads put its site dispatch and launches there. Returns those wall times (sorted ms). Each repetition also runs
+    the former bracket — CUDA events recorded behind the flush, so the host's enqueue hides under the flush's
+    device time — into `LAST_DEV` (the device span, reported beside: `dev_med_ms`). `pre` (a CUDA-graph leg's
+    `cudagraph_mark_step_begin`) runs before each call, outside both. `BENCH_BOUNDARY=event` (a measurement
+    flag): the event bracket as the returned time, as before."""
+    global LAST_DEV
     sync = torch.cuda.synchronize if dev == 'cuda' else (lambda: None)
     for _ in range(5):
         if pre:
             pre()
         fn(*args)
     sync()
-    ts = []
+    ts, ds = [], []
     for _ in range(reps):
-        if flush is not None:
-            flush.zero_()
-        if pre:
-            pre()
         if dev == 'cuda':
+            if flush is not None:
+                flush.zero_()
+            if pre:
+                pre()
             e0, e1 = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
             e0.record()
             fn(*args)
             e1.record()
             e1.synchronize()
-            ts.append(e0.elapsed_time(e1))
-        else:
-            t0 = time.perf_counter()
-            fn(*args)
-            ts.append((time.perf_counter() - t0) * 1e3)
+            ds.append(e0.elapsed_time(e1))
+        if flush is not None:
+            flush.zero_()
+        if pre:
+            pre()
+        sync()
+        t0 = time.perf_counter()
+        fn(*args)
+        sync()
+        ts.append((time.perf_counter() - t0) * 1e3)
     ts.sort()
+    ds.sort()
+    LAST_DEV = ds
+    if os.environ.get('BENCH_BOUNDARY') == 'event' and ds:
+        return ds
     return ts
+
+
+def dev_med():
+    """`dev_med_ms=` of the last `timed` call (the event bracket's median), '' off the device."""
+    return f' dev_med_ms={LAST_DEV[len(LAST_DEV) // 2]:.4f}' if LAST_DEV else ''
 
 
 def compile_mode(mode):
@@ -755,7 +780,7 @@ def main():
                 peak = (torch.cuda.max_memory_allocated() - base_b) / 2 ** 20 if dev == 'cuda' else float('nan')
                 print(f'torch prog={stem} mode={mode} n={len(ts)} min_ms={ts[0]:.4f} med_ms={ts[len(ts) // 2]:.4f} '
                       f'max_ms={ts[-1]:.4f} within={ok} maxdev={dv:.3e} compile_s={comp:.1f} peak_mb={peak:.1f} '
-                      f'values={",".join(f"{v:.6g}" for v in vals)}{cg}', flush=True)
+                      f'values={",".join(f"{v:.6g}" for v in vals)}{cg}{dev_med()}', flush=True)
             except Exception as ex:  # noqa: BLE001 — one leg's failure is a row, not the session
                 print(f'torch prog={stem} mode={mode} FAILED {type(ex).__name__}: {str(ex)[:200]}', flush=True)
             torch._inductor.config.fx_graph_cache = True

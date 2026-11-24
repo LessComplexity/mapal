@@ -28,6 +28,18 @@
 //! merged tuples are unsplit). A tail rides a group member only at its last
 //! (the group's launch), when no member touches the bytes and the merged
 //! launch's arguments take the tail's. OFF: `--gpu-off=zero-fold`.
+//!
+//! gaps-disasm C1 `zero-hoist`: a site no kernel took keeps its zero op, but
+//! not on its own host path. The same walk gives the earliest point the op
+//! may be issued — the first emitted step from the last one touching the
+//! output's bytes on (the sequence's start when none does) — and the op is
+//! issued after that step (`zero_after`), the site launching with
+//! [`SITE_ZEROED`] — in the straight-line walk (a loop trip's sites keep their
+//! zero at the site): its host issue overlaps the device work between, instead
+//! of standing between the site's dispatch and its launch (RTX 5080: 3.7–5.9
+//! µs of a one-call program's clock, `gaps-disasm.md` C1). An arena member
+//! only (issuing early allocates nothing); not where it would move by less
+//! than a step. OFF: `--gpu-off=zero-hoist`.
 
 use super::resident::ResidentPlan;
 use super::*;
@@ -56,19 +68,22 @@ impl<'a> FnEmit<'a> {
     /// **`zero-fold`** (module doc): fills `plan.zero_by` / `plan.zeroed` and
     /// gives each folding kernel its own id.
     pub(super) fn zero_fold(&self, plan: &mut ResidentPlan) {
-        if !gpu::host_rungs(self.profile, self.contract, self.gpu_arms).zero_fold
-            || !plan.chain.is_empty()
-        {
+        let rungs = gpu::host_rungs(self.profile, self.contract, self.gpu_arms);
+        // gaps-disasm C1 `zero-hoist`: a zero no kernel takes is hoisted (the
+        // walk's earliest point) — on every part, priced or not.
+        let hoist = rungs.zero_hoist;
+        if !(rungs.zero_fold || hoist) || !plan.chain.is_empty() {
             return;
         }
-        // Priced only where the tail's and the fill's rates were measured.
-        let Some((g, d)) = self
+        // Tails are priced only where the tail's and the fill's rates were
+        // measured.
+        let rates = self
             .profile
             .plan_rates()
-            .filter(|(_, d)| d.tail_bytes_per_ns > 0 && d.fill_bytes_per_ns > 0)
-        else {
+            .filter(|(_, d)| rungs.zero_fold && d.tail_bytes_per_ns > 0 && d.fill_bytes_per_ns > 0);
+        if rates.is_none() && !hoist {
             return;
-        };
+        }
         let acc = self.ir.access_plan(self.f);
         let sites = self.zero_sites(plan);
         if sites.is_empty() {
@@ -84,8 +99,10 @@ impl<'a> FnEmit<'a> {
         // Why each atomic site keeps its zero op: a gated step touches its
         // bytes, the walk met an access first (`stopped`), no kernel took it
         // (`none`: no eligible kernel, its pointers full, or priced out).
-        let (mut gated_n, mut stopped, mut none) = (0, 0, 0);
-        for seq in self.zero_sequences() {
+        let (mut gated_n, mut stopped, mut none, mut hoisted) = (0, 0, 0, 0usize);
+        let seqs = self.zero_sequences();
+        let top = seqs.len().saturating_sub(1);
+        for (si, seq) in seqs.into_iter().enumerate() {
             let access: Vec<(Vec<ObjectId>, Vec<ObjectId>)> = seq
                 .iter()
                 .map(|s| match *s {
@@ -110,13 +127,16 @@ impl<'a> FnEmit<'a> {
                     gated_n += 1;
                     continue;
                 }
-                let mut decided = false;
+                let mut stop = None;
+                let mut folded_here = false;
                 for i in (0..j).rev() {
                     if touches(&access[i]) {
-                        stopped += 1;
-                        decided = true;
+                        stop = Some(i);
                         break;
                     }
+                    let Some((g, d)) = rates else {
+                        continue;
+                    };
                     let Step::Op(e) = seq[i] else {
                         continue;
                     };
@@ -172,16 +192,50 @@ impl<'a> FnEmit<'a> {
                         }
                     }
                     plan.zeroed.insert(l, ());
-                    decided = true;
+                    folded_here = true;
                     break;
                 }
-                none += usize::from(!decided);
+                if folded_here {
+                    continue;
+                }
+                stopped += usize::from(stop.is_some());
+                none += usize::from(stop.is_none());
+                // gaps-disasm C1 `zero-hoist`: no kernel took the zero, so the
+                // zero op itself is issued at the walk's earliest point — the
+                // first emitted step from the last access to the output's
+                // bytes (or the sequence's start) on — instead of on the
+                // site's own host path, between its dispatch and its launch
+                // (RTX 5080: 3.7–5.9 µs of host time there in a one-call
+                // program, `gaps-disasm.md` C1). An arena member only (its
+                // address is the arena's, so issuing early allocates
+                // nothing); never where it would move by less than a step.
+                let arena = plan
+                    .arena
+                    .as_ref()
+                    .is_some_and(|a| a.offset.get(out).is_some());
+                let at = (stop.unwrap_or(0)..j).find(|&k| matches!(seq[k], Step::Op(_)));
+                // The straight-line walk only (the last sequence): a loop
+                // trip's sites keep their zero at the site.
+                if let (true, true, Some(k)) = (hoist && si == top, arena, at)
+                    && k + 1 < j
+                    && let Step::Op(after) = seq[k]
+                {
+                    match plan.zero_after.get_mut(after) {
+                        Some(v) => v.push((l, bytes)),
+                        None => {
+                            plan.zero_after.insert(after, vec![(l, bytes)]);
+                        }
+                    }
+                    plan.zeroed.insert(l, ());
+                    plan.zero_hoist_ix.insert(l, hoisted);
+                    hoisted += 1;
+                }
             }
         }
         plan.zero_line = format!(
-            "; mapal.zero.host sites={} folded={} kernels={} gated={gated_n} stopped={stopped} none={none}\n",
+            "; mapal.zero.host sites={} folded={} kernels={} gated={gated_n} stopped={stopped} none={none} hoisted={hoisted}\n",
             sites.len(),
-            plan.zeroed.len(),
+            plan.zeroed.len() - hoisted,
             plan.zero_by.len()
         );
         // A folding kernel is another kernel: its own id.
@@ -421,6 +475,34 @@ impl<'a> FnEmit<'a> {
                 ox < oy + by && oy < ox + bx
             }
             _ => false,
+        }
+    }
+
+    /// gaps-disasm C1 `zero-hoist`: hoisted slot `j` holds the candidate
+    /// table `global` (the site's launch, after its hoisted zero op).
+    pub(super) fn zero_slot(&mut self, j: usize, global: &str) {
+        if self.zero_slots.len() <= j {
+            self.zero_slots.resize(j + 1, false);
+        }
+        self.zero_slots[j] = true;
+        self.cand_tables.push_str(&format!(
+            "@{}.zh{j} = private unnamed_addr constant ptr {global}\n",
+            self.fnames[self.f]
+        ));
+    }
+
+    /// The hoisted slots no table filled (a site launched without one): null
+    /// — the runtime then zeroes unconditionally. Placed with the function's
+    /// tables.
+    pub(super) fn zero_slots_rest(&mut self) {
+        let n = self.resident.as_ref().map_or(0, |p| p.zero_hoist_ix.len());
+        for j in 0..n {
+            if !self.zero_slots.get(j).copied().unwrap_or(false) {
+                self.cand_tables.push_str(&format!(
+                    "@{}.zh{j} = private unnamed_addr constant ptr null\n",
+                    self.fnames[self.f]
+                ));
+            }
         }
     }
 

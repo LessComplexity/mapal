@@ -297,8 +297,17 @@ fn default_face_is_within_the_a_priori_bound() {
     let em = emit_face(&ir, EmitOpts::default(), &[]);
     let (host, dev) = (em.text, em.device.expect("a device unit"));
     assert!(host.contains("; splitk=4 atomic\n"), "{host}");
-    assert!(host.contains("call void @mapal_gpu_zero(i64 "));
-    assert!(host.contains("declare void @mapal_gpu_zero(i64, i64)"));
+    // The output's zero: at the site, or hoisted ahead of it (gaps-disasm C1
+    // `zero-hoist`: `mapal_gpu_zero_for`).
+    assert!(
+        host.contains("call void @mapal_gpu_zero(i64 ")
+            || host.contains("call void @mapal_gpu_zero_for(ptr "),
+        "{host}"
+    );
+    assert!(
+        host.contains("declare void @mapal_gpu_zero(i64, i64)")
+            || host.contains("declare void @mapal_gpu_zero_for(ptr, i64, i64)")
+    );
     assert!(dev.contains("atomicrmw fadd ptr addrspace(1)"));
     assert!(!dev.contains(" fast ") && !dev.contains(" reassoc "));
     let off = emit_face(&ir, EmitOpts::default(), &["splitk-atomic"]).text;
