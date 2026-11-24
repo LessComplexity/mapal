@@ -371,6 +371,11 @@ impl<'a> FnEmit<'a> {
             let Some(first_enter) = first_enter else {
                 continue;
             };
+            // The loop's entry state is host-built (`Pair` / `Proj` edges) and
+            // may read a task's output — a product of array views a task
+            // packed, say — before the `LoopEnter` itself: the wait goes in
+            // front of the earliest such edge, as for any checkpoint.
+            let first_enter = checkpoint_injection(ir, first_enter, &assigned, &topo);
             for (ordinal, checkpoint) in plan
                 .checkpoints
                 .iter()
@@ -1045,6 +1050,29 @@ impl<'a> FnEmit<'a> {
                     self.emit_morphism(m);
                 }
             }
+        }
+    }
+
+    /// A loop's pre-loop waits hoisted onto a host-built edge of its entry
+    /// state (`checkpoint_injection`); the `LoopEnter` case is `walk_filtered`'s.
+    pub(super) fn emit_pre_loop(&mut self, m: MorphismId) {
+        let Some(list) = self
+            .host
+            .as_ref()
+            .and_then(|host| host.pre_loop.get(m))
+            .cloned()
+        else {
+            return;
+        };
+        for c in &list {
+            self.line(format!(
+                "call void @mapal_par_wait(ptr %h, ptr @ckpt{}_entries, i32 {})",
+                c.ordinal, c.len
+            ));
+            self.line(format!(
+                "call void @mapal_par_check(ptr %h, i64 {})",
+                c.topo
+            ));
         }
     }
 
