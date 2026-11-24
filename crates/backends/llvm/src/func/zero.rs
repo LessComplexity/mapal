@@ -34,7 +34,8 @@
 //! may be issued — the first emitted step from the last one touching the
 //! output's bytes on (the sequence's start when none does) — and the op is
 //! issued after that step (`zero_after`), the site launching with
-//! [`SITE_ZEROED`]: its host issue overlaps the device work between, instead
+//! [`SITE_ZEROED`] — in the straight-line walk (a loop trip's sites keep their
+//! zero at the site): its host issue overlaps the device work between, instead
 //! of standing between the site's dispatch and its launch (RTX 5080: 3.7–5.9
 //! µs of a one-call program's clock, `gaps-disasm.md` C1). An arena member
 //! only (issuing early allocates nothing); not where it would move by less
@@ -99,7 +100,9 @@ impl<'a> FnEmit<'a> {
         // bytes, the walk met an access first (`stopped`), no kernel took it
         // (`none`: no eligible kernel, its pointers full, or priced out).
         let (mut gated_n, mut stopped, mut none, mut hoisted) = (0, 0, 0, 0usize);
-        for seq in self.zero_sequences() {
+        let seqs = self.zero_sequences();
+        let top = seqs.len().saturating_sub(1);
+        for (si, seq) in seqs.into_iter().enumerate() {
             let access: Vec<(Vec<ObjectId>, Vec<ObjectId>)> = seq
                 .iter()
                 .map(|s| match *s {
@@ -211,7 +214,9 @@ impl<'a> FnEmit<'a> {
                     .as_ref()
                     .is_some_and(|a| a.offset.get(out).is_some());
                 let at = (stop.unwrap_or(0)..j).find(|&k| matches!(seq[k], Step::Op(_)));
-                if let (true, true, Some(k)) = (hoist, arena, at)
+                // The straight-line walk only (the last sequence): a loop
+                // trip's sites keep their zero at the site.
+                if let (true, true, Some(k)) = (hoist && si == top, arena, at)
                     && k + 1 < j
                     && let Step::Op(after) = seq[k]
                 {

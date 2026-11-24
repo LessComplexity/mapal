@@ -43,8 +43,10 @@ fn bench(name: &str) -> CategoryIr {
 fn shipped(ir: &CategoryIr, target: &'static str, on: bool) -> Emission {
     let mut gpu = GpuArms::default();
     *gpu.off.rung("zero-fold").unwrap() = !on;
-    // gaps-disasm C1: the zero ops no kernel takes are hoisted with it.
+    // gaps-disasm C1: the zero ops no kernel takes are hoisted with it; C5's
+    // priced split (its own test) left out: the sites here keep their cuts.
     *gpu.off.rung("zero-hoist").unwrap() = !on;
+    *gpu.off.rung("split-price").unwrap() = true;
     // `calls` zeroes its atomic members itself (its tests).
     *gpu.off.rung("calls").unwrap() = true;
     emit_detailed(
@@ -68,6 +70,7 @@ fn emulated(ir: &CategoryIr, on: bool) -> Emission {
     }
     *gpu.off.rung("zero-fold").unwrap() = !on;
     *gpu.off.rung("zero-hoist").unwrap() = !on;
+    *gpu.off.rung("split-price").unwrap() = true;
     // `calls` zeroes its atomic members itself (its tests).
     *gpu.off.rung("calls").unwrap() = true;
     emit_detailed(
@@ -340,13 +343,11 @@ struct Cover {
     none: usize,
     runs: usize,
     hoisted: usize,
-    hoisted_loops: usize,
 }
 
 impl Cover {
     fn add(&mut self, d: &Cover) {
         self.hoisted += d.hoisted;
-        self.hoisted_loops += d.hoisted_loops;
         self.programs += d.programs;
         self.sites += d.sites;
         self.folded += d.folded;
@@ -366,7 +367,7 @@ impl Cover {
 /// passes. Coverage asserted: folds in loop trips and straight-line code,
 /// kernels zeroing several sites, walks stopped by an access to the output's
 /// bytes, sites no kernel could take, and (gaps-disasm C1 `zero-hoist`) zero
-/// ops hoisted ahead of their sites, in loop trips too — their values equal.
+/// ops hoisted ahead of their sites in straight-line code — their values equal.
 #[test]
 fn zero_fold_on_generated_programs() {
     let Some(clang) = emu::clang() else {
@@ -412,13 +413,12 @@ fn zero_fold_on_generated_programs() {
         if hoisted > 0 {
             // Every hoisted zero is its own op ahead of its site (the walk
             // left no touching step between: values below).
-            let ops = on.text.matches("call void @mapal_gpu_zero(").count();
+            let ops = on.text.matches("call void @mapal_gpu_zero_for(").count();
             assert!(
                 ops >= hoisted,
                 "#{z}: {ops} zero ops, {hoisted} hoisted\n{}",
                 on.text
             );
-            cv.hoisted_loops += usize::from(p.looped);
         }
         if p.looped {
             cv.loops += 1;
@@ -475,8 +475,7 @@ fn zero_fold_on_generated_programs() {
             && cv.multi > 0
             && cv.stopped > 0
             && cv.none > 0
-            && cv.hoisted > 0
-            && cv.hoisted_loops > 0,
+            && cv.hoisted > 0,
         "{cv:?}"
     );
 }

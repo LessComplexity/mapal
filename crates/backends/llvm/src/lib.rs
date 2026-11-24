@@ -1045,7 +1045,9 @@ pub struct GpuRungs {
     /// zero-fold walk allows — right after the last step that touches the
     /// output's bytes, or the sequence's start — instead of between the
     /// site's dispatch and its launch, where its host issue delays the
-    /// kernel (an arena member only). Off (`--gpu-off=zero-hoist`): at the
+    /// kernel (an arena member, in the straight-line walk; a loop trip keeps
+    /// it at the site), skipped at run time where the site's decided pick
+    /// adds nothing (`mapal_gpu_zero_for`). Off (`--gpu-off=zero-hoist`): at the
     /// site.
     pub zero_hoist: bool,
     /// gaps-disasm C5 `split-price`: an under-filled FMA tile whose operands

@@ -582,9 +582,11 @@ fn candidate_zero_is_the_rules_plan() {
                 let grid = &args[args.len() - 4..];
                 assert_eq!(grid, &c0[4..8], "#{z} {target}: grid\n{call}");
                 // An atomic / stream-K recipe zeroes the output as the
-                // rules' launch is preceded by its zero.
+                // rules' launch is preceded by its zero (at the site, or
+                // hoisted ahead of it: gaps-disasm C1 `zero-hoist`).
                 let zero = one.text.lines().any(|l| {
-                    l.contains("@mapal_gpu_zero(") && l.ends_with(&format!(", i64 {})", c0[2]))
+                    (l.contains("@mapal_gpu_zero(") || l.contains("@mapal_gpu_zero_for("))
+                        && l.ends_with(&format!(", i64 {})", c0[2]))
                 });
                 assert!(c0[2] == 0 || zero, "#{z} {target}: zero {}", c0[2]);
                 if c0[1] != 0 {
@@ -1001,14 +1003,14 @@ fn the_measured_pick_is_stored_and_reused() {
     );
     // D4: a table without `RERUN` (the flag an aliased output clears,
     // `apart`) is never trialled.
+    // (Its other flags kept: a hoisted zero's `ZEROED`, gaps-disasm C1.)
+    let t0 = &tables(&e.text)[0];
     let host = e.text.replacen(
+        &format!("@mapal_gpu_site(i64 {}, i32 {},", t0.site as i64, t0.flags),
         &format!(
-            "@mapal_gpu_site(i64 {}, i32 1,",
-            tables(&e.text)[0].site as i64
-        ),
-        &format!(
-            "@mapal_gpu_site(i64 {}, i32 0,",
-            tables(&e.text)[0].site as i64
+            "@mapal_gpu_site(i64 {}, i32 {},",
+            t0.site as i64,
+            t0.flags & !1
         ),
         1,
     );
