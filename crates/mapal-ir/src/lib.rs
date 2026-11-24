@@ -31,6 +31,7 @@ pub mod exp;
 mod facts;
 mod graph;
 mod loc;
+pub mod math;
 mod mermaid;
 pub mod narrow;
 mod residence;
@@ -58,6 +59,7 @@ pub use graph::{
     Operation, Precision,
 };
 pub use loc::SourceLoc;
+pub use math::MathFn;
 pub use mermaid::lint_mermaid;
 pub use residence::{Residence, ResidencePlan};
 pub use ty::{MAX_TY_DEPTH, NarrowFloat, Ty, Value, ty_contains_token, ty_label};

@@ -238,13 +238,16 @@ pub struct Caps {
     pub griddepcontrol: bool,
     /// `red`/`atom.add.f64` on global memory.
     pub red_f64: bool,
-    /// `ex2.approx.ftz.f32` (MUFU.EX2) and its maximum relative error over
-    /// `[−½, ½]` in units of `2⁻²⁴` (ADR-0042 D5): every NVIDIA SM has the
-    /// instruction; the error is measured exhaustively
-    /// (`benches/local/exp_calib.cu`: the RTX 5080's 2^−22.709 → 3). The
-    /// hardware `exp` form is taken where it meets the bound
-    /// ([`mapal_ir::exp::ExpForm::hw_admits`]). `None`: no such instruction.
-    pub ex2: Option<u32>,
+    /// **The math function units the SM computes with** (ADR-0046 D5/D7):
+    /// each unit's function, width, the intrinsic emitted, its error over its
+    /// domain (`Exact` for a correctly rounded operation, else the measured
+    /// maximum and the calibration line it is read from), its issue cost.
+    /// `ex2.approx.ftz.f32` (MUFU.EX2, ADR-0042 D5) and `sqrt.rn` on every
+    /// NVIDIA SM ([`MATH_SM`]); the approximate `sqrt` / `sin` / `cos`
+    /// units where a calibration measured them ([`MATH_SM_RTX_5080`]). A
+    /// builtin's realization is chosen from these by its contract
+    /// ([`mapal_ir::math::choose`]) — never by the part's name.
+    pub math: mapal_ir::math::Target,
     /// **The bulk-copy engine (TMA)** — global→shared copies one thread
     /// issues, completing on a transaction barrier (`mbarrier` with a byte
     /// count), as the geometry it executes ([`BulkCopy`]); `None`: no such
@@ -734,7 +737,7 @@ pub const CAPS_WARP_MMA: Caps = Caps {
     ldmatrix: true,
     griddepcontrol: false,
     red_f64: true,
-    ex2: Some(EX2_UNITS),
+    math: MATH_SM_TARGET,
     bulk: None,
     reg_realloc: None,
     cvt_f8: None,
@@ -794,7 +797,7 @@ pub const fn caps_of_cc(cc: u64, arch_specific: bool) -> Caps {
         ldmatrix: cc >= 80,
         griddepcontrol: cc >= 90,
         red_f64: cc >= 60,
-        ex2: Some(EX2_UNITS),
+        math: MATH_SM_TARGET,
         bulk: if cc >= 90 { Some(BULK_SM90) } else { None },
         // `setmaxnreg`: the arch-specific targets from 9.0 (spike: `sm_120a`
         // takes it, `sm_120` refuses it).
@@ -814,12 +817,169 @@ pub const fn caps_of_cc(cc: u64, arch_specific: bool) -> Caps {
     }
 }
 
-/// [`Caps::ex2`] measured on the RTX 5080 (sm_120): `ex2.approx.ftz.f32` over
+/// `ex2.approx.ftz.f32`'s error measured on the RTX 5080 (sm_120) over
 /// every f32 in `[−½, ½]` against the f64 `exp2`, worst relative error
-/// 2^−22.709 = 2.45 units of `2⁻²⁴` (`benches/local/exp_calib.cu`;
+/// 2^−22.709 = 2.45 units of `2⁻²⁴`, rounded up (`benches/local/exp_calib.cu`;
 /// `exp.md`). The unit is the same SFU instruction on every profiled part;
 /// a part measured otherwise states its own.
 pub const EX2_UNITS: u32 = 3;
+
+use mapal_ir::math::{Err as MathErr, Target as MathTarget, Unit as MathUnit, UnitOp};
+
+/// ADR-0042 D5 as a unit: `ex2.approx.ftz.f32` on `[−½, ½]`, its error
+/// [`EX2_UNITS`] units of `2⁻²⁴` (flushes subnormals: the `exp` form scales
+/// after it, so it never sees one).
+pub const EX2_UNIT: MathUnit = MathUnit {
+    op: UnitOp::Ex2,
+    bits: 32,
+    sym: "llvm.nvvm.ex2.approx.ftz.f",
+    err: MathErr::Bound {
+        rel: EX2_UNITS as f64 / 16_777_216.0,
+        abs: 0.0,
+    },
+    lo: -0.5,
+    hi: 0.5,
+    cost: 1,
+    specials: false,
+    evidence: "benches/local/exp_calib.cu: RTX 5080 ex2.approx.ftz.f32 over [-1/2, 1/2] 2^-22.709 (exp.md)",
+};
+
+/// `sqrt.rn.f32` / `.f64`: IEEE 754 `squareRoot`, correctly rounded — the
+/// reference's bits by definition (`Exact`), on every NVIDIA SM.
+pub const SQRT_RN: [MathUnit; 2] = [
+    MathUnit {
+        op: UnitOp::Sqrt,
+        bits: 32,
+        sym: "llvm.nvvm.sqrt.rn.f",
+        err: MathErr::Exact,
+        lo: 0.0,
+        hi: f64::INFINITY,
+        cost: 8,
+        specials: true,
+        evidence: "PTX ISA sqrt.rn: IEEE 754 squareRoot, round to nearest even (RTX 5080: 0 mismatches over every positive f32, 19.7 cycles a warp op)",
+    },
+    MathUnit {
+        op: UnitOp::Sqrt,
+        bits: 64,
+        sym: "llvm.nvvm.sqrt.rn.d",
+        err: MathErr::Exact,
+        lo: 0.0,
+        hi: f64::INFINITY,
+        cost: 16,
+        specials: true,
+        evidence: "PTX ISA sqrt.rn: IEEE 754 squareRoot, round to nearest even",
+    },
+];
+
+/// The math units every NVIDIA SM has: [`EX2_UNIT`] and [`SQRT_RN`].
+pub const MATH_SM: [MathUnit; 3] = [EX2_UNIT, SQRT_RN[0], SQRT_RN[1]];
+pub const MATH_SM_TARGET: MathTarget = MathTarget {
+    units: &MATH_SM,
+    defs: &[],
+};
+
+/// [`MATH_SM`] with the approximate units the RTX 5080's calibration
+/// measured (`benches/gpu/calib.cu math`, `local-rtx-5080/math.md`).
+pub const MATH_SM_RTX_5080: [MathUnit; 6] = [
+    EX2_UNIT,
+    SQRT_RN[0],
+    SQRT_RN[1],
+    SQRT_APPROX_RTX_5080,
+    SIN_APPROX_RTX_5080,
+    COS_APPROX_RTX_5080,
+];
+pub const MATH_RTX_5080: MathTarget = MathTarget {
+    units: &MATH_SM_RTX_5080,
+    defs: &[],
+};
+
+/// `sqrt.approx.f32` (MUFU, subnormal operands kept — the `.ftz` form
+/// flushes them: relative error 1) on the RTX 5080: worst relative error
+/// 1.0001e-7 = 2^−23.253 over every positive f32, the contract's special
+/// values returned (`±0`, `+∞`, NaN for negatives); 8.13 cycles a warp
+/// instruction against FFMA's 1.06 — one issue slot inside a form (`calib.cu
+/// math`, `local-rtx-5080/math.md`).
+pub const SQRT_APPROX_RTX_5080: MathUnit = MathUnit {
+    op: UnitOp::Sqrt,
+    bits: 32,
+    sym: "llvm.nvvm.sqrt.approx.f",
+    err: MathErr::Bound {
+        rel: 1.0001e-7,
+        abs: 0.0,
+    },
+    lo: 0.0,
+    hi: f64::INFINITY,
+    cost: 1,
+    specials: true,
+    evidence: "calib.cu math, RTX 5080 2026-11-25: sqrt.approx.f32 rel 2^-23.253 over every positive f32, specials ok",
+};
+
+/// `sin.approx.f32` (MUFU.SIN) on the RTX 5080 over `[−0.7854, 0.7854]` (the
+/// Payne–Hanek remainder's range, a little past `π/4`): absolute
+/// error 3.4745e-7 = 2^−21.457, relative error 1 (it is not relative near 0)
+/// — no `sin` form takes it (ADR-0046 D3's bound is relative).
+pub const SIN_APPROX_RTX_5080: MathUnit = MathUnit {
+    op: UnitOp::Sin,
+    bits: 32,
+    sym: "llvm.nvvm.sin.approx.f",
+    err: MathErr::Bound {
+        rel: 1.0,
+        abs: 3.4745e-7,
+    },
+    lo: -0.7854,
+    hi: 0.7854,
+    cost: 1,
+    specials: true,
+    evidence: "calib.cu math, RTX 5080 2026-11-25: sin.approx.f32 over every f32 of [-0.7854, 0.7854] abs 2^-21.457, rel 1",
+};
+
+/// `cos.approx.f32` (MUFU.COS) on the RTX 5080 over `[−0.7854, 0.7854]`: relative
+/// error 3.1899e-7 = 2^−21.580 (absolute 2^−22.003) — inside the bound with
+/// the remainder's rounding (`2^−21.12`): the `cos r` part of a trig form.
+pub const COS_APPROX_RTX_5080: MathUnit = MathUnit {
+    op: UnitOp::Cos,
+    sym: "llvm.nvvm.cos.approx.f",
+    err: MathErr::Bound {
+        rel: 3.1899e-7,
+        abs: 0.0,
+    },
+    evidence: "calib.cu math, RTX 5080 2026-11-25: cos.approx.f32 over every f32 of [-0.7854, 0.7854] rel 2^-21.580",
+    ..SIN_APPROX_RTX_5080
+};
+
+/// ADR-0046 D7: the host's math units — a correctly rounded `sqrt` (IEEE 754
+/// `squareRoot`: LLVM's `llvm.sqrt` without fast-math flags is that operation
+/// on every host target — x86 `sqrtss` / `sqrtsd`, AArch64 `fsqrt`, else the
+/// libm call). No transcendental unit: `exp`, `sin`, `cos` are the
+/// references (contracted on the default face).
+pub const HOST_MATH_UNITS: [MathUnit; 2] = [
+    MathUnit {
+        op: UnitOp::Sqrt,
+        bits: 32,
+        sym: "llvm.sqrt.f32",
+        err: MathErr::Exact,
+        lo: 0.0,
+        hi: f64::INFINITY,
+        cost: 4,
+        specials: true,
+        evidence: "IEEE 754 squareRoot: llvm.sqrt without fast-math flags",
+    },
+    MathUnit {
+        op: UnitOp::Sqrt,
+        bits: 64,
+        sym: "llvm.sqrt.f64",
+        err: MathErr::Exact,
+        lo: 0.0,
+        hi: f64::INFINITY,
+        cost: 4,
+        specials: true,
+        evidence: "IEEE 754 squareRoot: llvm.sqrt without fast-math flags",
+    },
+];
+pub const HOST_MATH: MathTarget = MathTarget {
+    units: &HOST_MATH_UNITS,
+    defs: &[],
+};
 
 /// **Mapal's own achieved device rates on one part (S62 `place`)** — not the
 /// silicon's peak: the honest number for a gate choosing between two Mapal
@@ -2554,6 +2714,11 @@ pub struct TargetProfile {
     /// `sme_kc` through a new `Option` for a field rename, and a working SME leg
     /// is not worth that; the test makes the duplication unable to drift.
     pub l1d: Option<L1d>,
+    /// ADR-0046 D7: **the host's math units and definitions** (its IEEE
+    /// `sqrt`, [`HOST_MATH`]); a host with none (an accelerator's control
+    /// core) states [`mapal_ir::math::Target::NONE`] and runs every
+    /// builtin's reference from plain operations.
+    pub math: mapal_ir::math::Target,
 }
 
 /// The element width a tile site accumulates at. Tile sites are numeric-gated
@@ -4767,6 +4932,7 @@ pub const GENERIC: TargetProfile = TargetProfile {
     // nobody has measured them either; `raptorlake`'s numbers are OWED and were
     // not taken because the box was unreachable this session.
     dispatch: None,
+    math: HOST_MATH,
 };
 
 /// Apple M-series: NEON at 16 B × 32 registers, but a 16 MB L2 **shared by five
@@ -5381,7 +5547,12 @@ pub const RTX_5080: TargetProfile = TargetProfile {
         // 256 threads (the measured `bar_ns` above prices this part).
         bar_cycles: 45,
         mem_bus_bits: 256,
-        caps: CAPS_WARP_MMA_PDL,
+        // ADR-0046 D8: the approximate math units this part's calibration
+        // measured (`calib.cu math`).
+        caps: Caps {
+            math: MATH_RTX_5080,
+            ..CAPS_WARP_MMA_PDL
+        },
         ..ADA_SM
     }),
     ..GENERIC
@@ -5710,8 +5881,21 @@ pub const APPLE_M4_SME: TargetProfile = TargetProfile {
     ..APPLE_M
 };
 
-const PROFILES: [&TargetProfile; 15] = [
+/// ADR-0046 D7: **a host whose float unit has only IEEE `+ − ×`** — no
+/// `sqrt` instruction, no function unit (an accelerator's scalar core, an
+/// ASIC's control unit): it declares no math unit, so every math builtin is
+/// its plain-operation reference (`sqrt` the digit recurrence, `sin` /
+/// `cos` the integer Payne–Hanek reduction), with the exact faces' bits.
+/// The generic host's geometry otherwise.
+pub const PLAIN_FP: TargetProfile = TargetProfile {
+    name: "plain-fp",
+    math: MathTarget::NONE,
+    ..GENERIC
+};
+
+const PROFILES: [&TargetProfile; 16] = [
     &GENERIC,
+    &PLAIN_FP,
     &APPLE_M,
     &ZEN3,
     &CUDA_ADA,

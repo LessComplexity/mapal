@@ -161,11 +161,19 @@ pub enum Operation {
     /// ([`crate::narrow::round`]): the `to_bf16` / `to_f16` builtins. Pure —
     /// no token; total and trap-free.
     Narrow,
-    /// `eˣ` on a float scalar, `Float{b} → Float{b}` (ADR-0042): the
-    /// `x -> exp` pipeline builtin. Pure — no token; total and trap-free. Its
-    /// value is [`crate::exp`]'s algorithm on the exact faces and within that
-    /// module's bound on the default face.
-    Exp,
+    /// A math builtin on a float scalar, `Float{b} → Float{b}` (ADR-0046;
+    /// `exp` ADR-0042): the `x -> exp` / `sqrt` / `sin` / `cos` pipeline
+    /// builtins. Pure — no token; total and trap-free. Its value is
+    /// [`crate::math`]'s reference on the exact faces and within its
+    /// contract on the default face.
+    Math(crate::math::MathFn),
+}
+
+impl Operation {
+    /// ADR-0042's `exp`, now one member of [`Operation::Math`] (every reader
+    /// of the operation keeps its meaning).
+    #[allow(non_upper_case_globals)]
+    pub const Exp: Operation = Operation::Math(crate::math::MathFn::Exp);
 }
 
 /// A directed dataflow edge (DESIGN §5). Exactly one source, one target (I1).

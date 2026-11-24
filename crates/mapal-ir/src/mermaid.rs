@@ -168,7 +168,7 @@ fn edge_label(op: &Operation) -> String {
         Operation::Output => "Output".into(),
         Operation::Widen => "Widen".into(),
         Operation::Narrow => "Narrow".into(),
-        Operation::Exp => "Exp".into(),
+        Operation::Math(f) => f.label().into(),
     }
 }
 

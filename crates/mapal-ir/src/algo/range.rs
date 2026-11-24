@@ -283,6 +283,15 @@ impl CategoryIr {
                 Some((lo, hi)) if hi < lim.ln() - 1.0 => Abs::Num(padded(lo.exp(), hi.exp(), lim)),
                 _ => TOP,
             },
+            // ADR-0046: `sqrt` of a non-negative range; `sin` / `cos` in
+            // `[−1, 1]`.
+            Operation::Math(crate::math::MathFn::Sqrt) => match src(self, memo).num() {
+                Some((lo, hi)) if lo >= 0.0 => Abs::Num(padded(lo.sqrt(), hi.sqrt(), lim)),
+                _ => TOP,
+            },
+            Operation::Math(crate::math::MathFn::Sin | crate::math::MathFn::Cos) => {
+                Abs::Num(padded(-1.0, 1.0, lim))
+            }
             Operation::Phi => match src(self, memo) {
                 Abs::Prod(p) if p.len() == 3 => p[0].join(&p[1]),
                 _ => TOP,

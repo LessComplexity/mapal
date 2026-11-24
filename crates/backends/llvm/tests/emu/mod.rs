@@ -365,6 +365,13 @@ pub fn host_device(dev: &str) -> String {
         }
         // ADR-0042: the hardware `exp` form's `ex2.approx` is the host's `exp2f`.
         l = l.replace("@llvm.nvvm.ex2.approx.ftz.f(", "@emu_ex2(");
+        // ADR-0046: the SM's math units (`mapal_gpu_emu.c`).
+        l = l
+            .replace("@llvm.nvvm.sqrt.rn.f(", "@emu_sqrt_rn(")
+            .replace("@llvm.nvvm.sqrt.rn.d(", "@emu_sqrt_rn64(")
+            .replace("@llvm.nvvm.sqrt.approx.f(", "@emu_sqrt_approx(")
+            .replace("@llvm.nvvm.sin.approx.f(", "@emu_sin_approx(")
+            .replace("@llvm.nvvm.cos.approx.f(", "@emu_cos_approx(");
         l = l
             .replace("@llvm.nvvm.cp.async.commit.group()", "@emu_cp_commit()")
             .replace("@llvm.nvvm.cp.async.wait.group(", "@emu_cp_wait(");
@@ -419,6 +426,8 @@ pub fn host_device(dev: &str) -> String {
            declare void @emu_barrier()\ndeclare void @emu_barrier_n(i32)\n@emu_smem = external global [0 x i8], align 16\n\
            declare void @emu_cp_async(ptr, ptr, i32)\ndeclare void @emu_cp_commit()\n\
            declare void @emu_cp_wait(i32)\ndeclare float @emu_ex2(float)\n\
+           declare float @emu_sqrt_rn(float)\ndeclare double @emu_sqrt_rn64(double)\ndeclare float @emu_sqrt_approx(float)\n\
+           declare float @emu_sin_approx(float)\ndeclare float @emu_cos_approx(float)\n\
            declare void @emu_ldsm(ptr, i32, i32)\ndeclare i32 @emu_frag(i32)\ndeclare float @emu_fragf(i32)\n\
            declare i32 @emu_cvt_bf16x2(float, float)\ndeclare i32 @emu_cvt_f16x2(float, float)\n\
            declare i16 @emu_cvt_e4m3x2(float, float)\ndeclare i16 @emu_cvt_e5m2x2(float, float)\n\

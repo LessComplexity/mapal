@@ -27,6 +27,9 @@ pub fn apply(opts: &mut EmitOpts, a: &str) -> Result<bool, String> {
         // exp (ADR-0042) OFF arms: the oracle's steps on the default face;
         // no rescale law in `fold_combine` (a fact arm).
         "--no-exp-hw" => opts.gpu.off.exp_hw = true,
+        // ADR-0046 OFF arm: every math builtin's exact-face realization on
+        // every face.
+        "--no-math-hw" => opts.gpu.off.math_hw = true,
         "--no-exp-rescale" => opts.gpu.off.exp_rescale = true,
         // flash-attention: the stream fact arm.
         "--no-stream" => opts.gpu.off.stream_fact = true,

@@ -37,11 +37,8 @@ use crate::ty::{lower_ty, prod_shape};
 /// `const uint8_t*`), and the trap-flag + exit-102 machinery (DESIGN §3).
 /// `trap_check_after_launch` is WP3's launch-site hook; it stays
 /// `[[maybe_unused]]` because scalar-only modules have no launches.
-/// ADR-0042: `mapal_exp_f32` / `mapal_exp_f64`, the oracle's algorithm
-/// (`mapal_ir::exp`) step for step — on the device each step an explicit
-/// round-to-nearest intrinsic, so `-fmad=true` cannot contract it and the
-/// device's bits are the interpreter's. Emitted after the prelude when the
-/// program has an `Exp`.
+/// ADR-0042 / ADR-0046: the math builtins' C ([`math_helpers`]) is emitted
+/// after the prelude when the program has one.
 /// ADR-0043: the headers a program with narrow storage includes.
 pub(crate) fn narrow_headers() -> &'static str {
     "\n#include <cuda_bf16.h>\n#include <cuda_fp16.h>\n"
@@ -59,59 +56,174 @@ pub(crate) fn narrow_fn(ty: &mapal_ir::Ty) -> &'static str {
     }
 }
 
-pub(crate) fn exp_helpers() -> String {
+/// ADR-0046 D5/D7: what the CUDA backend's C declares — the correctly rounded
+/// `sqrt` on both sides (`__fsqrt_rn` / `__dsqrt_rn` on the device, `sqrtf` /
+/// `sqrt` on the host: IEEE `squareRoot`), so the exact faces take it; every
+/// other builtin is its reference.
+const CUDA_UNITS: [mapal_ir::math::Unit; 2] = [
+    mapal_ir::math::Unit {
+        op: mapal_ir::math::UnitOp::Sqrt,
+        bits: 32,
+        sym: "MAPAL_SQRT32",
+        err: mapal_ir::math::Err::Exact,
+        lo: 0.0,
+        hi: f64::INFINITY,
+        cost: 4,
+        specials: true,
+        evidence: "IEEE 754 squareRoot: __fsqrt_rn / sqrtf",
+    },
+    mapal_ir::math::Unit {
+        op: mapal_ir::math::UnitOp::Sqrt,
+        bits: 64,
+        sym: "MAPAL_SQRT64",
+        err: mapal_ir::math::Err::Exact,
+        lo: 0.0,
+        hi: f64::INFINITY,
+        cost: 4,
+        specials: true,
+        evidence: "IEEE 754 squareRoot: __dsqrt_rn / sqrt",
+    },
+];
+pub(crate) const CUDA_MATH: mapal_ir::math::Target = mapal_ir::math::Target {
+    units: &CUDA_UNITS,
+    defs: &[],
+};
+
+/// ADR-0042 / ADR-0046: `mapal_<builtin>_f32` / `_f64` for every builtin and
+/// width the program uses — the exact face's realization
+/// ([`mapal_ir::math::choose`] over [`CUDA_MATH`]) printed from its trace: on
+/// the device each float step an explicit round-to-nearest intrinsic, so
+/// `-fmad=true` cannot contract it and the device's bits are the
+/// interpreter's.
+pub(crate) fn math_helpers(used: &std::collections::BTreeSet<(mapal_ir::MathFn, u32)>) -> String {
+    use mapal_ir::math::{self, B2, Cvt, F2, FPred, Face, I2, IPred, Op, VTy, W};
     let mut s = String::from(
         "\n#include <cstring>\n\
          __host__ __device__ inline float mapal_f32_of(uint32_t b) { float f; memcpy(&f, &b, sizeof f); return f; }\n\
          __host__ __device__ inline double mapal_f64_of(uint64_t b) { double f; memcpy(&f, &b, sizeof f); return f; }\n\
+         __host__ __device__ inline uint32_t mapal_bits32(float f) { uint32_t b; memcpy(&b, &f, sizeof b); return b; }\n\
+         __host__ __device__ inline uint64_t mapal_bits64(double f) { uint64_t b; memcpy(&b, &f, sizeof b); return b; }\n\
          #ifdef __CUDA_ARCH__\n\
          #define MAPAL_MUL32(a, b) __fmul_rn(a, b)\n#define MAPAL_ADD32(a, b) __fadd_rn(a, b)\n#define MAPAL_SUB32(a, b) __fsub_rn(a, b)\n\
          #define MAPAL_MUL64(a, b) __dmul_rn(a, b)\n#define MAPAL_ADD64(a, b) __dadd_rn(a, b)\n#define MAPAL_SUB64(a, b) __dsub_rn(a, b)\n\
+         #define MAPAL_FMA32(a, b, c) __fmaf_rn(a, b, c)\n#define MAPAL_FMA64(a, b, c) __fma_rn(a, b, c)\n\
+         #define MAPAL_SQRT32(a) __fsqrt_rn(a)\n#define MAPAL_SQRT64(a) __dsqrt_rn(a)\n\
+         #define MAPAL_MULHI64(a, b) __umul64hi(a, b)\n\
+         #define MAPAL_CLZ32(a) ((uint32_t)__clz((int)(a)))\n#define MAPAL_CLZ64(a) ((uint64_t)__clzll((long long)(a)))\n\
          #else\n\
          #define MAPAL_MUL32(a, b) ((a) * (b))\n#define MAPAL_ADD32(a, b) ((a) + (b))\n#define MAPAL_SUB32(a, b) ((a) - (b))\n\
          #define MAPAL_MUL64(a, b) ((a) * (b))\n#define MAPAL_ADD64(a, b) ((a) + (b))\n#define MAPAL_SUB64(a, b) ((a) - (b))\n\
+         #define MAPAL_FMA32(a, b, c) fmaf(a, b, c)\n#define MAPAL_FMA64(a, b, c) fma(a, b, c)\n\
+         #define MAPAL_SQRT32(a) sqrtf(a)\n#define MAPAL_SQRT64(a) sqrt(a)\n\
+         #define MAPAL_MULHI64(a, b) ((uint64_t)(((unsigned __int128)(a) * (b)) >> 64))\n\
+         #define MAPAL_CLZ32(a) ((uint32_t)((a) ? __builtin_clz(a) : 32))\n#define MAPAL_CLZ64(a) ((uint64_t)((a) ? __builtin_clzll(a) : 64))\n\
          #endif\n",
     );
-    for form in [mapal_ir::exp::F32, mapal_ir::exp::F64] {
-        let (t, it, ut, w, of, suf) = if form.bits == 64 {
-            ("double", "int64_t", "uint64_t", 64, "mapal_f64_of", "ull")
+    for &(f, bits) in used {
+        let c = math::choose(f, bits, Face::Exact, false, true, &CUDA_MATH);
+        let def = math::trace(&c, &CUDA_MATH);
+        let w = bits;
+        let (t, ut, of, bitsf) = if bits == 64 {
+            ("double", "uint64_t", "mapal_f64_of", "mapal_bits64")
         } else {
-            ("float", "int32_t", "uint32_t", 32, "mapal_f32_of", "u")
+            ("float", "uint32_t", "mapal_f32_of", "mapal_bits32")
         };
-        let c = |b: u64| format!("{of}(0x{b:x}{suf})");
-        let (mul, add, sub) = (
-            format!("MAPAL_MUL{w}"),
-            format!("MAPAL_ADD{w}"),
-            format!("MAPAL_SUB{w}"),
-        );
+        let cty = |v: VTy| match v {
+            VTy::F => t,
+            VTy::I32 => "uint32_t",
+            VTy::I64 => "uint64_t",
+            VTy::B => "bool",
+        };
+        let names: Vec<String> = def
+            .steps
+            .iter()
+            .enumerate()
+            .map(|(i, st)| match st.op {
+                Op::Arg => "x".to_string(),
+                Op::CF(b) => format!("{of}(0x{b:x}{})", if bits == 64 { "ull" } else { "u" }),
+                Op::CI(W::I32, v) => format!("((uint32_t)0x{v:x}u)"),
+                Op::CI(W::I64, v) => format!("((uint64_t)0x{v:x}ull)"),
+                _ => format!("v{i}"),
+            })
+            .collect();
         s.push_str(&format!(
-            "__host__ __device__ inline {t} mapal_exp_f{w}({t} x) {{\n\
-             \x20 const {t} hi = {hi}, lo = {lo};\n\
-             \x20 {t} xc = x > hi ? hi : x;\n  xc = xc < lo ? lo : xc;\n  xc = xc != xc ? ({t})0 : xc;\n\
-             \x20 {t} t = {add}({mul}(xc, {l2e}), {sh});\n\
-             \x20 {t} kf = {sub}(t, {sh});\n\
-             \x20 {it} k = ({it})kf;\n\
-             \x20 {t} r = {sub}({sub}(xc, {mul}(kf, {lhi})), {mul}(kf, {llo}));\n",
-            hi = c(form.hi),
-            lo = c(form.lo),
-            l2e = c(form.log2e),
-            sh = c(form.shifter),
-            lhi = c(form.ln2_hi),
-            llo = c(form.ln2_lo),
+            "__host__ __device__ inline {t} mapal_{}_f{w}({t} x) {{\n",
+            f.name()
         ));
-        let cs = form.coefs();
-        let n = form.degree as usize;
-        s.push_str(&format!("  {t} p = {};\n", c(cs[n])));
-        for i in (0..n).rev() {
-            s.push_str(&format!("  p = {add}({mul}(p, r), {});\n", c(cs[i])));
+        for (i, st) in def.steps.iter().enumerate() {
+            let a = |k: usize| names[st.args[k].0 as usize].as_str();
+            let wn = |w: W| if w == W::I64 { 64 } else { 32 };
+            let e = match st.op {
+                Op::Arg | Op::CF(_) | Op::CI(..) => continue,
+                Op::F2(op) => {
+                    let o = match op {
+                        F2::Add => "ADD",
+                        F2::Sub => "SUB",
+                        F2::Mul => "MUL",
+                    };
+                    format!("MAPAL_{o}{w}({}, {})", a(0), a(1))
+                }
+                Op::FNeg => format!("(-({}))", a(0)),
+                Op::Fma => format!("MAPAL_FMA{w}({}, {}, {})", a(0), a(1), a(2)),
+                Op::FCmp(p) => match p {
+                    FPred::Ogt => format!("({} > {})", a(0), a(1)),
+                    FPred::Olt => format!("({} < {})", a(0), a(1)),
+                    FPred::Oeq => format!("({} == {})", a(0), a(1)),
+                    FPred::Uno => format!("({0} != {0} || {1} != {1})", a(0), a(1)),
+                },
+                Op::I2(iw, op) => {
+                    let it = if iw == W::I64 { "uint64_t" } else { "uint32_t" };
+                    let st_ = if iw == W::I64 { "int64_t" } else { "int32_t" };
+                    match op {
+                        I2::Add => format!("(({it})({} + {}))", a(0), a(1)),
+                        I2::Sub => format!("(({it})({} - {}))", a(0), a(1)),
+                        I2::Mul => format!("(({it})({} * {}))", a(0), a(1)),
+                        I2::MulHi if iw == W::I64 => format!("MAPAL_MULHI64({}, {})", a(0), a(1)),
+                        I2::MulHi => format!("((uint32_t)(((uint64_t){} * {}) >> 32))", a(0), a(1)),
+                        I2::And => format!("(({it})({} & {}))", a(0), a(1)),
+                        I2::Or => format!("(({it})({} | {}))", a(0), a(1)),
+                        I2::Xor => format!("(({it})({} ^ {}))", a(0), a(1)),
+                        I2::Shl => format!("(({it})({} << {}))", a(0), a(1)),
+                        I2::LShr => format!("(({it})({} >> {}))", a(0), a(1)),
+                        I2::AShr => format!("(({it})(({st_}){} >> {}))", a(0), a(1)),
+                    }
+                }
+                Op::Clz(iw) => format!("MAPAL_CLZ{}({})", wn(iw), a(0)),
+                Op::ICmp(iw, p) => {
+                    let st_ = if iw == W::I64 { "int64_t" } else { "int32_t" };
+                    match p {
+                        IPred::Eq => format!("({} == {})", a(0), a(1)),
+                        IPred::Ne => format!("({} != {})", a(0), a(1)),
+                        IPred::Ult => format!("({} < {})", a(0), a(1)),
+                        IPred::Ugt => format!("({} > {})", a(0), a(1)),
+                        IPred::Slt => format!("(({st_}){} < ({st_}){})", a(0), a(1)),
+                        IPred::Sgt => format!("(({st_}){} > ({st_}){})", a(0), a(1)),
+                    }
+                }
+                Op::B2(op) => match op {
+                    B2::And => format!("({} && {})", a(0), a(1)),
+                    B2::Or => format!("({} || {})", a(0), a(1)),
+                    B2::Xor => format!("({} != {})", a(0), a(1)),
+                },
+                Op::Sel => format!("({} ? {} : {})", a(0), a(1), a(2)),
+                Op::Cvt(cv) => match cv {
+                    Cvt::Bits => format!("{bitsf}({})", a(0)),
+                    Cvt::FromBits => format!("{of}(({ut}){})", a(0)),
+                    Cvt::FToSi(W::I32) => format!("((uint32_t)(int32_t){})", a(0)),
+                    Cvt::FToSi(W::I64) => format!("((uint64_t)(int64_t){})", a(0)),
+                    Cvt::SiToF(W::I32) => format!("(({t})(int32_t){})", a(0)),
+                    Cvt::SiToF(W::I64) => format!("(({t})(int64_t){})", a(0)),
+                    Cvt::UiToF(W::I32) => format!("(({t})(uint32_t){})", a(0)),
+                    Cvt::UiToF(W::I64) => format!("(({t})(uint64_t){})", a(0)),
+                    Cvt::ZExt => format!("((uint64_t){})", a(0)),
+                    Cvt::Trunc => format!("((uint32_t){})", a(0)),
+                    Cvt::BoolToI(iw) => format!("((uint{}_t)({} ? 1 : 0))", wn(iw), a(0)),
+                },
+                Op::Unit(_, sym) => format!("{sym}({})", a(0)),
+            };
+            s.push_str(&format!("  const {} v{i} = {e};\n", cty(st.ty)));
         }
-        s.push_str(&format!(
-            "  {it} k1 = k >> 1, k2 = k - k1;\n\
-             \x20 {t} y = {mul}({mul}(p, {of}(({ut})(k1 + {b}) << {m})), {of}(({ut})(k2 + {b}) << {m}));\n\
-             \x20 if (x > hi) y = ({t})INFINITY;\n  if (x < lo) y = ({t})0;\n  if (x != x) y = x;\n  return y;\n}}\n",
-            b = form.bias,
-            m = form.mant,
-        ));
+        s.push_str(&format!("  return {};\n}}\n", names[def.out.0 as usize]));
     }
     s
 }

@@ -3670,7 +3670,7 @@ impl UnitGen<'_> {
             let f = self.tmp();
             self.line(format!(
                 "{f} = call {t} {}({t} {d})",
-                crate::exp::symbol(bits)
+                crate::math::symbol(mapal_ir::MathFn::Exp, bits)
             ));
             let y = self.tmp();
             self.line(format!("{y} = fmul {t} {x}, {f}"));

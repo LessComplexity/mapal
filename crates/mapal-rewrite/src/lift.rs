@@ -296,7 +296,7 @@ fn cloneable_invariant(ir: &CategoryIr, morph: &mapal_ir::Morphism) -> bool {
             | Operation::Phi
             | Operation::Widen
             | Operation::Narrow
-            | Operation::Exp
+            | Operation::Math(_)
     )
 }
 
