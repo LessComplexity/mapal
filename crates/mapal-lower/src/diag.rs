@@ -79,7 +79,15 @@ pub enum LCode {
     InvalidNarrow,         // L1616
     ReadAnnotation,        // L1617
     ReadSource,            // L1618
-    Internal,              // L1901
+    // ADR-0047: size-generic functions (the L17xx band).
+    UnknownSize,     // L1701
+    DuplicateSize,   // L1702
+    SizeRebound,     // L1703
+    SizeConflict,    // L1704
+    SizeNotIntegral, // L1705
+    SizeUnbound,     // L1706
+    SizeOutOfRange,  // L1707
+    Internal,        // L1901
 }
 
 impl LCode {
@@ -152,6 +160,13 @@ impl LCode {
             LCode::InvalidNarrow => "L1616",
             LCode::ReadAnnotation => "L1617",
             LCode::ReadSource => "L1618",
+            LCode::UnknownSize => "L1701",
+            LCode::DuplicateSize => "L1702",
+            LCode::SizeRebound => "L1703",
+            LCode::SizeConflict => "L1704",
+            LCode::SizeNotIntegral => "L1705",
+            LCode::SizeUnbound => "L1706",
+            LCode::SizeOutOfRange => "L1707",
             LCode::Internal => "L1901",
         }
     }

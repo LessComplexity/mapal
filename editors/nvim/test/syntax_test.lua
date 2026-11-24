@@ -80,6 +80,13 @@ local cases = {
   { 18, 9, "flowGuardArrow", "chrome of -true->" },
   { 38, 9, "flowGuardArrow", "chrome of -0->" },
   { 41, 9, "flowGuardArrow", "chrome of -Some(x)->" },
+
+  -- ADR-0047 size parameters: the list after a function's name.
+  { 60, "scale", "flowFnName", "a size-generic fn keeps its name colour" },
+  { 60, 9, "flowSizeList", "the `<` opening the size list, not an operator" },
+  { 60, "rows", "flowSizeParam", "a declared size parameter" },
+  { 60, "columns", "flowSizeParam", "the second size parameter" },
+  { 60, 23, "flowSizeList", "the `>` closing the size list" },
 }
 
 local failures = 0

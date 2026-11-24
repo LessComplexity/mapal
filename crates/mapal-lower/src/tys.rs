@@ -10,6 +10,7 @@ use mapal_ir::{MAX_TY_DEPTH, Ty};
 use mapal_syntax::{self as syn, Program, Ty as SynTy, TyKind};
 
 use crate::diag::{LCode, diag};
+use crate::sizes::SizeEnv;
 
 /// Convert a `mapal_syntax::SourceLoc` to a `mapal_ir::SourceLoc` (field-identical;
 /// DESIGN §1 / D8).
@@ -277,6 +278,7 @@ fn resolve_tykind(
     source: &str,
     ty: &SynTy,
     resolve_named: &impl Fn(&str, syn::SourceLoc, &mut Vec<syn::Diagnostic>) -> Option<Ty>,
+    env: &SizeEnv,
     diags: &mut Vec<syn::Diagnostic>,
 ) -> Option<Ty> {
     let resolved = match &ty.kind {
@@ -300,7 +302,7 @@ fn resolve_tykind(
         TyKind::Tuple(ts) => {
             let mut out = Vec::with_capacity(ts.len());
             for inner in ts {
-                out.push(resolve_tykind(source, inner, resolve_named, diags)?);
+                out.push(resolve_tykind(source, inner, resolve_named, env, diags)?);
             }
             Ty::Tuple(out)
         }
@@ -308,19 +310,32 @@ fn resolve_tykind(
             elem,
             len,
             len_span,
+            size,
         } => {
-            if *len == 0 {
-                diags.push(diag(
-                    LCode::EmptyArray,
-                    *len_span,
-                    "array type has size 0".to_string(),
-                ));
-                return None;
-            }
-            let e = resolve_tykind(source, elem, resolve_named, diags)?;
+            // ADR-0047 D2: a size expression evaluates under the instance's
+            // sizes (none outside a size-generic function: L1701).
+            let n = match size {
+                Some(e) => match crate::sizes::eval(source, e, env) {
+                    Ok(n) => n,
+                    Err(d) => {
+                        diags.push(d);
+                        return None;
+                    }
+                },
+                None if *len == 0 => {
+                    diags.push(diag(
+                        LCode::EmptyArray,
+                        *len_span,
+                        "array type has size 0".to_string(),
+                    ));
+                    return None;
+                }
+                None => *len,
+            };
+            let e = resolve_tykind(source, elem, resolve_named, env, diags)?;
             Ty::Array {
                 elem: Box::new(e),
-                size: *len,
+                size: n,
             }
         }
         TyKind::Dynamic(_) | TyKind::Error => {
@@ -373,6 +388,7 @@ pub fn resolve_ty(
                 }
             }
         },
+        &SizeEnv::new(),
         diags,
     )
 }
@@ -417,6 +433,18 @@ impl TypeTable {
         ty: &SynTy,
         diags: &mut Vec<syn::Diagnostic>,
     ) -> Option<Ty> {
+        self.resolve_sized(source, ty, &SizeEnv::new(), diags)
+    }
+
+    /// [`TypeTable::resolve`] inside an instance of a size-generic function:
+    /// a size expression evaluates under `env` (ADR-0047 D2).
+    pub fn resolve_sized(
+        &self,
+        source: &str,
+        ty: &SynTy,
+        env: &SizeEnv,
+        diags: &mut Vec<syn::Diagnostic>,
+    ) -> Option<Ty> {
         // Post-build seam: struct references resolve against the completed table.
         resolve_tykind(
             source,
@@ -432,6 +460,7 @@ impl TypeTable {
                     None
                 }
             },
+            env,
             diags,
         )
     }

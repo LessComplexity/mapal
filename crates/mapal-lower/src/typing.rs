@@ -24,6 +24,7 @@ use mapal_syntax::{
 
 use crate::diag::{LCode, diag};
 use crate::scope::ScopeStack;
+use crate::sizes::{Generics, Instance, SiteKey, SizeEnv};
 use crate::tys::{TypeTable, name_text};
 
 /// A literal's resolved scalar ty (the union-find leaf state).
@@ -88,12 +89,41 @@ enum WTy {
     Unknown,
 }
 
+/// ADR-0047: what the typing walk of one function (or instance) needs about
+/// size generics — its own sizes, the generic functions, the call sites'
+/// bindings emission found in an earlier round.
+pub struct SizeCtx<'a> {
+    /// The function's (instance) name: `f` or `f<4, 8>`.
+    pub owner: String,
+    /// The instance's size values (empty for a fixed-size function).
+    pub env: SizeEnv,
+    pub generics: &'a Generics<'a>,
+    /// Emission's binding of each call site, from earlier rounds (D5).
+    pub sites: &'a BTreeMap<SiteKey, Vec<u64>>,
+}
+
+/// What the typing walk found at its calls to generic functions: the binding
+/// it used at each site, and the instances they name.
+#[derive(Default)]
+pub struct SizeUse {
+    pub sites: BTreeMap<SiteKey, Vec<u64>>,
+    pub instances: Vec<Instance>,
+    /// Generic calls the walk could not type (its own types did not reach
+    /// and no earlier round's emission bound the site): its diagnostics
+    /// downstream of one may be artifacts of the missing result type.
+    pub unresolved: usize,
+}
+
 /// The typing walk state for one function.
 struct Walk<'a> {
     source: &'a str,
     types: &'a TypeTable,
     fn_sigs: &'a BTreeMap<String, FnSig>,
     owner_name: String,
+    /// ADR-0047: the size context and what the walk found.
+    sizes: &'a SizeCtx<'a>,
+    size_use: SizeUse,
+    effects: &'a crate::effects::Effects,
     /// the owner's declared (surface) return ty, for ret-write unification.
     owner_ret: Option<Ty>,
     /// union-find parent links over literal vars.
@@ -116,23 +146,32 @@ pub struct FnSig {
     /// surface return ty (resolved), if declared.
     pub ret: Option<Ty>,
     pub effectful: bool,
+    /// ADR-0047: a size-generic function's placeholder (`params` / `ret`
+    /// empty: each instance has its own resolved signature).
+    pub generic: bool,
 }
 
-/// Run D1 over one function. Returns the typing info + diagnostics.
+/// Run D1 over one function (or one instance of a size-generic function,
+/// `sizes.owner` naming it). Returns the typing info, the diagnostics and the
+/// generic calls it typed (ADR-0047 D5).
 pub fn analyze_fn(
     source: &str,
     types: &TypeTable,
-    _effects: &crate::effects::Effects,
+    effects: &crate::effects::Effects,
     fn_sigs: &BTreeMap<String, FnSig>,
     fd: &syn::FnDecl,
-) -> (TypeInfo, Vec<syn::Diagnostic>) {
-    let owner_name = name_text(source, fd.name).to_string();
+    sizes: &SizeCtx,
+) -> (TypeInfo, Vec<syn::Diagnostic>, SizeUse) {
+    let owner_name = sizes.owner.clone();
     let owner_ret = fn_sigs.get(&owner_name).and_then(|s| s.ret.clone());
     let mut walk = Walk {
         source,
         types,
         fn_sigs,
         owner_name,
+        sizes,
+        size_use: SizeUse::default(),
+        effects,
         owner_ret,
         uf: Vec::new(),
         state: Vec::new(),
@@ -151,10 +190,105 @@ pub fn analyze_fn(
     }
     walk.block(&fd.body, &mut scope);
     walk.resolve_all();
-    (walk.info, walk.diags)
+    (walk.info, walk.diags, walk.size_use)
 }
 
 impl Walk<'_> {
+    // --- size parameters (ADR-0047 D4) --------------------------------------
+
+    /// The value of a size parameter named `text` not shadowed in `scope`.
+    fn size_value(&self, text: &str, scope: &ScopeStack<WTy>) -> Option<u64> {
+        if scope.contains(text) {
+            return None;
+        }
+        self.sizes.env.get(text).copied()
+    }
+
+    /// An integer literal's value, or a size expression's (D4: a size is an
+    /// integer literal in every respect).
+    fn int_const(&self, e: &Expr, scope: &ScopeStack<WTy>) -> Option<u64> {
+        match &e.kind {
+            ExprKind::Int(n) => Some(*n),
+            _ => self.size_fold(e, scope).and_then(|v| u64::try_from(v).ok()),
+        }
+    }
+
+    /// D4: the value of an integer expression over size parameters and
+    /// literals (`rows * columns`, `n - 1`), folded to one literal.
+    fn size_fold(&self, e: &Expr, scope: &ScopeStack<WTy>) -> Option<i128> {
+        if self.sizes.env.is_empty() {
+            return None;
+        }
+        crate::sizes::fold_value(self.source, e, &|t| self.size_value(t, scope))
+    }
+
+    /// L1703: a binding may not reuse a size parameter's name.
+    fn check_not_size(&mut self, name: syn::Name) {
+        let text = name_text(self.source, name);
+        if self.sizes.env.contains_key(text) {
+            self.diags.push(diag(
+                LCode::SizeRebound,
+                name.span,
+                format!("`{text}` is a size parameter; it cannot be rebound — pick another name"),
+            ));
+        }
+    }
+
+    /// D3 at a call to a generic function (typing side): emission's binding
+    /// of this site when an earlier round found one, else this walk's own
+    /// inference from `cur` (and the next stage's annotation). The result is
+    /// the instance's output type; `Unknown` when neither reaches.
+    fn generic_call(
+        &mut self,
+        name: &str,
+        cur: &WTy,
+        next: Option<&Stage>,
+        span: syn::SourceLoc,
+    ) -> WTy {
+        let Some(fd) = self.sizes.generics.get(name).copied() else {
+            return WTy::Unknown;
+        };
+        let key: SiteKey = (self.owner_name.clone(), span.start, span.end);
+        let values = match self.sizes.sites.get(&key) {
+            Some(v) => Some(v.clone()),
+            None => self.wty_to_ty(cur).and_then(|arg| {
+                let expected = self.expected_result(next);
+                crate::sizes::infer(self.source, fd, &arg, expected.as_ref(), span).ok()
+            }),
+        };
+        let Some(values) = values else {
+            self.size_use.unresolved += 1;
+            return WTy::Unknown;
+        };
+        let env = crate::sizes::env_of(self.source, fd, &values);
+        let effectful = self.effects.is_effectful(name);
+        let Some(sig) = crate::sizes::instance_sig(self.source, self.types, fd, &env, effectful)
+        else {
+            return WTy::Unknown;
+        };
+        self.size_use.sites.insert(key, values.clone());
+        self.size_use.instances.push((name.to_string(), values));
+        self.type_call(&sig, cur, span);
+        match sig.ret {
+            Some(r) => WTy::Known(r),
+            None => WTy::Unknown,
+        }
+    }
+
+    /// D3.4: the type a call's result is bound with — the next stage's
+    /// annotation (`-> y: [f32; 8]`), or the owner's output at a `-> ret`.
+    fn expected_result(&mut self, next: Option<&Stage>) -> Option<Ty> {
+        match next.map(|s| &s.kind) {
+            Some(StageKind::Bind { ty: Some(t), .. }) => {
+                let mut sink = Vec::new();
+                self.types
+                    .resolve_sized(self.source, t, &self.sizes.env, &mut sink)
+            }
+            Some(StageKind::Ret { proj: None }) => self.owner_ret.clone(),
+            _ => None,
+        }
+    }
+
     // --- union-find ---------------------------------------------------------
 
     fn fresh_var(&mut self, span: syn::SourceLoc, float: bool) -> usize {
@@ -348,6 +482,7 @@ impl Walk<'_> {
                 self.chain(c, scope);
             }
             StmtKind::Bind(b) => {
+                self.check_not_size(b.name);
                 let v = self.expr(&b.value, scope);
                 // `c[i] <- v` (ADR-0021): an *indexed* bind is an element write,
                 // not a fresh binding. Type the index, unify `v` with `c`'s
@@ -365,7 +500,12 @@ impl Walk<'_> {
                     return;
                 }
                 if let Some(annot) = &b.ty
-                    && let Some(t) = self.types.resolve(self.source, annot, &mut self.diags)
+                    && let Some(t) = self.types.resolve_sized(
+                        self.source,
+                        annot,
+                        &self.sizes.env,
+                        &mut self.diags,
+                    )
                 {
                     self.unify_known(&v, &t, b.span);
                     scope.bind(name_text(self.source, b.name), WTy::Known(t));
@@ -397,8 +537,9 @@ impl Walk<'_> {
             None => seed,
         };
         let mut prev: Option<&Expr> = chain.head.as_ref();
-        for stage in &chain.stages {
-            cur = self.stage(&stage.kind, stage.span, cur, prev, scope);
+        for (i, stage) in chain.stages.iter().enumerate() {
+            let next = chain.stages.get(i + 1);
+            cur = self.stage(&stage.kind, stage.span, cur, prev, next, scope);
             prev = match &stage.kind {
                 StageKind::Expr(e) => Some(e),
                 _ => None,
@@ -406,12 +547,14 @@ impl Walk<'_> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn stage(
         &mut self,
         kind: &StageKind,
         stage_span: syn::SourceLoc,
         cur: WTy,
         prev: Option<&Expr>,
+        next: Option<&Stage>,
         scope: &mut ScopeStack<WTy>,
     ) -> WTy {
         match kind {
@@ -425,6 +568,9 @@ impl Walk<'_> {
                             self.unify(&cur, &bty, e.span);
                         }
                         cur
+                    } else if self.fn_sigs.get(text).is_some_and(|s| s.generic) {
+                        // ADR-0047: a call to a size-generic function.
+                        self.generic_call(text, &cur, next, e.span)
                     } else if let Some(sig) = self.fn_sigs.get(text).cloned() {
                         // call: cur (arg) unifies with declared input; result ty.
                         self.type_call(&sig, &cur, e.span);
@@ -456,15 +602,16 @@ impl Walk<'_> {
                         // ADR-0031: `n -> iota` — the count flows in. Size
                         // synthesized from the visible literal stage; emit
                         // re-derives and the builder owns static-n (L1612).
-                        match prev.map(|p| &p.kind) {
-                            Some(ExprKind::Int(n)) if *n > 0 && *n <= i32::MAX as u64 => {
-                                WTy::Array(Box::new(WTy::Known(Ty::i32())), *n)
+                        // A size parameter is a literal (ADR-0047 D4).
+                        match prev.and_then(|p| self.int_const(p, scope)) {
+                            Some(n) if n > 0 && n <= i32::MAX as u64 => {
+                                WTy::Array(Box::new(WTy::Known(Ty::i32())), n)
                             }
                             // onto-device: an extent past i32 — the count is an
                             // `i64` literal and the elements its index type.
-                            Some(ExprKind::Int(n)) if *n <= i64::MAX as u64 && *n > 0 => {
+                            Some(n) if n <= i64::MAX as u64 && n > 0 => {
                                 self.unify_known(&cur, &Ty::i64(), e.span);
-                                WTy::Array(Box::new(WTy::Known(Ty::index_ty(*n))), *n)
+                                WTy::Array(Box::new(WTy::Known(Ty::index_ty(n))), n)
                             }
                             _ => WTy::Unknown,
                         }
@@ -477,18 +624,20 @@ impl Walk<'_> {
                             _ => WTy::Unknown,
                         };
                         match prev.map(|p| &p.kind) {
-                            Some(ExprKind::Tuple(xs)) if xs.len() == 2 => match &xs[1].kind {
-                                ExprKind::Int(n) if *n > 0 && *n <= i32::MAX as u64 => {
-                                    WTy::Array(Box::new(elem), *n)
-                                }
-                                ExprKind::Int(n) if *n > 0 && *n <= i64::MAX as u64 => {
-                                    if let WTy::Tuple(ws) = &cur {
-                                        self.unify_known(&ws[1], &Ty::i64(), e.span);
+                            Some(ExprKind::Tuple(xs)) if xs.len() == 2 => {
+                                match self.int_const(&xs[1], scope) {
+                                    Some(n) if n > 0 && n <= i32::MAX as u64 => {
+                                        WTy::Array(Box::new(elem), n)
                                     }
-                                    WTy::Array(Box::new(elem), *n)
+                                    Some(n) if n > 0 && n <= i64::MAX as u64 => {
+                                        if let WTy::Tuple(ws) = &cur {
+                                            self.unify_known(&ws[1], &Ty::i64(), e.span);
+                                        }
+                                        WTy::Array(Box::new(elem), n)
+                                    }
+                                    _ => WTy::Unknown,
                                 }
-                                _ => WTy::Unknown,
-                            },
+                            }
                             _ => WTy::Unknown,
                         }
                     } else if let Some(target) = crate::widen_target(text) {
@@ -512,6 +661,7 @@ impl Walk<'_> {
                         }
                     } else {
                         // bind cur to a fresh name.
+                        self.check_not_size(*n);
                         scope.bind(text, cur.clone());
                         cur
                     }
@@ -527,8 +677,14 @@ impl Walk<'_> {
                 self.expr_with_hole(expr, &cur, scope)
             }
             StageKind::Bind { name, ty, .. } => {
+                self.check_not_size(*name);
                 if let Some(annot) = ty
-                    && let Some(t) = self.types.resolve(self.source, annot, &mut self.diags)
+                    && let Some(t) = self.types.resolve_sized(
+                        self.source,
+                        annot,
+                        &self.sizes.env,
+                        &mut self.diags,
+                    )
                 {
                     self.unify_known(&cur, &t, stage_span);
                     scope.bind(name_text(self.source, *name), WTy::Known(t.clone()));
@@ -667,8 +823,9 @@ impl Walk<'_> {
             None => scrutinee.clone(),
         };
         let mut prev: Option<&Expr> = chain.head.as_ref();
-        for stage in &chain.stages {
-            cur = self.stage(&stage.kind, stage.span, cur, prev, scope);
+        for (i, stage) in chain.stages.iter().enumerate() {
+            let next = chain.stages.get(i + 1);
+            cur = self.stage(&stage.kind, stage.span, cur, prev, next, scope);
             prev = match &stage.kind {
                 StageKind::Expr(e) => Some(e),
                 _ => None,
@@ -739,8 +896,16 @@ impl Walk<'_> {
         // broadcast edges, hidden leading body-input components). The one
         // remaining L1108 case is a WRITE to an enclosing name (an indexed
         // bind targeting it, ADR-0021's "rebind, never a fresh shadow").
-        let param_names: std::collections::BTreeSet<&str> =
-            params.iter().map(|p| name_text(self.source, *p)).collect();
+        for p in params {
+            self.check_not_size(*p);
+        }
+        // ADR-0047 D4: a size parameter is a constant in the body, never a
+        // capture (seeded as a body-local name).
+        let param_names: std::collections::BTreeSet<&str> = params
+            .iter()
+            .map(|p| name_text(self.source, *p))
+            .chain(self.sizes.env.keys().map(String::as_str))
+            .collect();
         let caps = body_captures(self.source, body, &param_names, self.fn_sigs);
         if let Some((cap, sp)) = &caps.write {
             self.diags.push(diag(
@@ -917,6 +1082,17 @@ impl Walk<'_> {
     // --- expressions --------------------------------------------------------
 
     fn expr(&mut self, expr: &Expr, scope: &mut ScopeStack<WTy>) -> WTy {
+        // ADR-0047 D4: a size expression in value position is one integer
+        // literal (unpinned `Ty::index_ty`).
+        if matches!(expr.kind, ExprKind::Binary { .. })
+            && let Some(v) = self.size_fold(expr, scope)
+        {
+            let var = self.fresh_var(expr.span, false);
+            if v > i128::from(i32::MAX) || v < i128::from(i32::MIN) {
+                self.pin(var, &Ty::i64(), expr.span);
+            }
+            return WTy::Var(var);
+        }
         match &expr.kind {
             ExprKind::Int(_) => WTy::Var(self.fresh_var(expr.span, false)),
             ExprKind::Float => WTy::Var(self.fresh_var(expr.span, true)),
@@ -926,7 +1102,18 @@ impl Walk<'_> {
                 let text = name_text(self.source, *n);
                 match scope.resolve(text) {
                     Some((b, _)) => b.clone(),
-                    None => WTy::Unknown,
+                    None => match self.sizes.env.get(text).copied() {
+                        // ADR-0047 D4: an integer literal of the size's value;
+                        // unpinned it is `Ty::index_ty(n)`.
+                        Some(v) => {
+                            let var = self.fresh_var(expr.span, false);
+                            if v > i32::MAX as u64 {
+                                self.pin(var, &Ty::i64(), expr.span);
+                            }
+                            WTy::Var(var)
+                        }
+                        None => WTy::Unknown,
+                    },
                 }
             }
             ExprKind::Hole => WTy::Unknown,
@@ -986,9 +1173,9 @@ impl Walk<'_> {
                 // index is an integer; if a lit var, leave it (defaults i32) —
                 // unless the literal itself is past i32 (an extent past 2³¹
                 // indexes in `i64`, its index type).
-                if let ExprKind::Int(n) = &index.kind
-                    && *n > i32::MAX as u64
-                    && *n <= i64::MAX as u64
+                if let Some(n) = self.int_const(index, scope)
+                    && n > i32::MAX as u64
+                    && n <= i64::MAX as u64
                 {
                     self.unify_known(&iv, &Ty::i64(), index.span);
                 }
@@ -1801,6 +1988,19 @@ pub fn build_fn_sigs(
     for item in &program.items {
         if let syn::Item::Fn(fd) = item {
             let name = name_text(source, fd.name).to_string();
+            if !fd.sizes.is_empty() {
+                // ADR-0047: each instance resolves its own signature.
+                out.insert(
+                    name.clone(),
+                    FnSig {
+                        params: Vec::new(),
+                        ret: None,
+                        effectful: effects.is_effectful(&name),
+                        generic: true,
+                    },
+                );
+                continue;
+            }
             let mut params = Vec::new();
             for p in &fd.params {
                 if let Some(t) = types.resolve(source, &p.ty, diags) {
@@ -1819,6 +2019,7 @@ pub fn build_fn_sigs(
                     params,
                     ret,
                     effectful: effects.is_effectful(&name),
+                    generic: false,
                 },
             );
         }

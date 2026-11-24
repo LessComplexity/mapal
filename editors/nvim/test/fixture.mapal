@@ -56,3 +56,7 @@ fn waves(x: f32) -> f32 {
     x -> exp -> e;
     r + s * c + e -> ret;
 }
+
+fn scale<rows, columns>(x: [f32; rows * columns]) -> [f32; rows] {
+    rows -> iota -> map { r -> x[r * columns] } -> ret;
+}

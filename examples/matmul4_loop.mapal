@@ -1,17 +1,19 @@
-// matmul4 — the ADR-0021 motivating program: 4×4 matrix multiply as ONE flattened
+// matmul4 — the ADR-0021 motivating program: n×n matrix multiply as ONE flattened
 // loop, building the result cell-by-cell via `c[t] <- v` (array element update).
 // The `cell` fn's inner k-loop computes one dot product; the two loops live in
-// two fns (the canonical-loop rule is per-fn). Oracle contract for the generated
-// arrays below: prints -275 then 3748.
+// two fns (the canonical-loop rule is per-fn). Both are size-generic (ADR-0047):
+// `n` is inferred at each call from the argument's `[f32; n * n]` (here 16, so
+// n = 4) and is an integer constant in the body. Oracle contract for the
+// generated arrays below: prints -275 then 3748.
 // Perf-scale versions (N=16..128) + cross-language harness: benches/matmul/.
 
-fn cell(a: [f32; 16], b: [f32; 16], i: i32, j: i32) -> f32 {
-    mut k: i32   <- 0;
+fn cell<n>(a: [f32; n * n], b: [f32; n * n], i: i32, j: i32) -> f32 {
+    mut k: i32 <- 0;
     mut acc: f32 <- 0.0;
     loop {
-        (k < 4) -> {
+        (k < n) -> {
             -true-> {
-                acc + a[i * 4 + k] * b[k * 4 + j] -> acc;
+                acc + a[i * n + k] * b[k * n + j] -> acc;
                 k + 1 -> k;
                 -> loop;
             }
@@ -20,14 +22,14 @@ fn cell(a: [f32; 16], b: [f32; 16], i: i32, j: i32) -> f32 {
     }
 }
 
-fn matmul(a: [f32; 16], b: [f32; 16]) -> [f32; 16] {
-    mut c: [f32; 16] <- b;
-    mut t: i32       <- 0;
+fn matmul<n>(a: [f32; n * n], b: [f32; n * n]) -> [f32; n * n] {
+    mut c: [f32; n * n] <- b;
+    mut t: i32 <- 0;
     loop {
-        (t < 16) -> {
+        (t < n * n) -> {
             -true-> {
-                t / 4 -> i;
-                t % 4 -> j;
+                t / n -> i;
+                t % n -> j;
                 (a, b, i, j) -> cell -> v;
                 c[t] <- v;
                 t + 1 -> t;
@@ -40,11 +42,11 @@ fn matmul(a: [f32; 16], b: [f32; 16]) -> [f32; 16] {
 
 fn main() {
     [
-      -37.0, -30.0, -23.0, -16.0, -9.0, -2.0, 5.0, 12.0,
-      19.0, 26.0, 33.0, 40.0, 47.0, -47.0, -40.0, -33.0] -> a;
+        -37.0, -30.0, -23.0, -16.0, -9.0, -2.0, 5.0, 12.0,
+        19.0, 26.0, 33.0, 40.0, 47.0, -47.0, -40.0, -33.0] -> a;
     [
-      7.0, 14.0, 21.0, 28.0, 35.0, 42.0, 49.0, -45.0,
-      -38.0, -31.0, -24.0, -17.0, -10.0, -3.0, 4.0, 11.0] -> b;
+        7.0, 14.0, 21.0, 28.0, 35.0, 42.0, 49.0, -45.0,
+        -38.0, -31.0, -24.0, -17.0, -10.0, -3.0, 4.0, 11.0] -> b;
     (a, b) -> matmul -> c;
     c[0] -> println;
     c[15] -> println;

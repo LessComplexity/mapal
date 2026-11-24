@@ -812,7 +812,9 @@ fn inline_call(
     }
 
     // Phase B — the callee's Return writers, redirected.
-    inline_return(fb, ir, plan, fmap, &local, m, ret_obj, ret_dest, arg)
+    inline_return(
+        fb, ir, plan, fmap, fused, lifted, &local, m, ret_obj, ret_dest, arg,
+    )
 }
 
 /// Phase B of an inlined call: wire the callee's Return writers per `ret_dest`
@@ -826,6 +828,8 @@ fn inline_return(
     ir: &CategoryIr,
     plan: &RewritePlan,
     fmap: &SecondaryMap<FuncId, FuncId>,
+    fused: &SecondaryMap<MorphismId, FuncId>,
+    lifted: &SecondaryMap<ObjectId, FuncId>,
     local: &SecondaryMap<ObjectId, ObjectId>,
     call: MorphismId,
     ret_obj: ObjectId,
@@ -895,6 +899,14 @@ fn inline_return(
                 arg
             }
         },
+        // A callee whose Return is written by a call that is itself inlined
+        // (`fn f(x) { x -> g -> ret; }`): substitute that callee too, with
+        // the same destination — as `replay_fn` does for its own Return
+        // writers. Emitting it as a `Call` would name a function the plan
+        // dropped.
+        Operation::Call(_) if plan.inline.contains_key(writers[0]) => inline_call(
+            fb, ir, plan, fmap, fused, lifted, local, writers[0], ret_dest,
+        ),
         op => {
             let dest = match ret_dest {
                 RetDest::Fresh(name) => Dest::Fresh(name),

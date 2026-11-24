@@ -59,6 +59,11 @@ struct Formatter<'a> {
     previous_unary: bool,
     break_after: bool,
     after_params: bool,
+    /// Inside a function's size parameter list `fn f<a, b>` (ADR-0047 D1),
+    /// written tight: no space around `<` / `>`, none before the `(`.
+    sizes: bool,
+    /// The `>` closing a size list was just written.
+    after_sizes: bool,
 }
 
 impl<'a> Formatter<'a> {
@@ -73,6 +78,8 @@ impl<'a> Formatter<'a> {
             previous_unary: false,
             break_after: false,
             after_params: false,
+            sizes: false,
+            after_sizes: false,
         }
     }
 
@@ -124,10 +131,25 @@ impl<'a> Formatter<'a> {
                     && !matches!(self.previous, None | Some(TokenKind::LBrace));
                 base + usize::from(continuation)
             };
-            if self.needs_space(kind) {
+            // `fn name <`: the `<` opens the size parameter list.
+            let opens_sizes = kind == TokenKind::Lt
+                && i >= 2
+                && self.tokens[i - 1].kind == TokenKind::Ident
+                && self.tokens[i - 2].kind == TokenKind::KwFn;
+            let tight = opens_sizes
+                || self.after_sizes
+                || (self.sizes && kind == TokenKind::Gt)
+                || (self.sizes && self.previous == Some(TokenKind::Lt));
+            if !tight && self.needs_space(kind) {
                 self.space();
             }
             self.write(token_text(self.source, token), indent);
+            self.after_sizes = self.sizes && kind == TokenKind::Gt;
+            if opens_sizes {
+                self.sizes = true;
+            } else if self.after_sizes {
+                self.sizes = false;
+            }
 
             self.break_after = false;
             self.after_params = false;

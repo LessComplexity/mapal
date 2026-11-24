@@ -317,3 +317,29 @@ fn main() {
     assert_eq!(codes(&diags), ["T0201"]);
     assert!(diags[0].message.contains("read"), "{:?}", diags[0]);
 }
+
+/// ADR-0047 D6: a call to an effectful size-generic function in a `Plain`
+/// branch is T0201 — its instances (`show<2>`) carry the token, and check
+/// resolves the call by the generic's name; the same call under `seq` is legal.
+#[test]
+fn effectful_generic_in_plain_branch_is_t0201() {
+    let generic = "fn show<n>(x: [f32; n]) -> f32 { x[n - 1] -> println; x[0] -> ret; }\n";
+    let plain = format!(
+        "{generic}fn main() {{
+    [1.0, 2.0] -> {{
+        -> show -> a;
+        -> show -> b;
+    }}
+}}"
+    );
+    assert_eq!(codes(&check_src(&plain)), ["T0201", "T0201"]);
+    let seq = format!(
+        "{generic}fn main() {{
+    [1.0, 2.0] -> seq {{
+        -> show -> a;
+        a -> println;
+    }}
+}}"
+    );
+    assert!(check_src(&seq).is_empty());
+}

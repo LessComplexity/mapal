@@ -304,6 +304,9 @@ impl<'a> TreeWriter<'a> {
 
     fn fn_decl(&mut self, d: usize, f: &FnDecl) {
         self.line(d, f.span, &format!("Fn {}", self.quoted(f.name.span)));
+        for n in &f.sizes {
+            self.line(d + 1, n.span, &format!("size {}", self.quoted(n.span)));
+        }
         for p in &f.params {
             self.param(d + 1, p);
         }
@@ -338,8 +341,17 @@ impl<'a> TreeWriter<'a> {
                     self.ty(d + 1, e);
                 }
             }
-            TyKind::Array { elem, len, .. } => {
-                self.line(d, t.span, &format!("Ty::Array len={len}"));
+            TyKind::Array {
+                elem, len, size, ..
+            } => {
+                match size {
+                    None => self.line(d, t.span, &format!("Ty::Array len={len}")),
+                    Some(e) => self.line(
+                        d,
+                        t.span,
+                        &format!("Ty::Array size={}", self.quoted(e.span)),
+                    ),
+                }
                 self.ty(d + 1, elem);
             }
             TyKind::Dynamic(elem) => {
