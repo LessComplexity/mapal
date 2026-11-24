@@ -227,6 +227,8 @@ def sass_facts(body):
     f['insns'] = len(body)
     # exp (ADR-0042) `exp-hw`: the SFU's `ex2` (the hardware form's MUFU.EX2).
     f['mufu_ex2'] = sum(1 for _, ins in body if split(ins)[1].startswith('MUFU.EX2'))
+    # gapfix `stream-ld`: global loads on the L2's evict-first policy (`ld.global.cs`: LDG.E.EF).
+    f['ldg_ef'] = sum(1 for _, ins in body if split(ins)[1].startswith('LDG') and '.EF' in split(ins)[1])
     addr = [a for a, _ in body]
     best, spans = None, []
     for i, (a, ins) in enumerate(body):
@@ -280,6 +282,7 @@ def sass_facts(body):
         f['hot'] = dict(
             insns=len(loop), ffma=lc['FFMA'], fmul=lc['FMUL'], fadd=lc['FADD'], hmma=lc['HMMA'], hgmma=lc['HGMMA'], f2fp=sum(b == 'F2FP' for b in base),
             ldg=lc['LDG'], ldgsts=lc['LDGSTS'], lds=lc['LDS'], ldsm=lc['LDSM'], sts=lc['STS'], bar=lc['BAR'],
+            ldg_ef=sum(o.startswith('LDG') and '.EF' in o for o in ops),
             bra=lc['BRA'], ldg128=lw.get('LDG.128', 0), lds128=lw.get('LDS.128', 0),
             # tile-efficiency: copy widths and the LSU mix (T2 / T4)
             ldgsts128=sum(o.startswith('LDGSTS') and o.endswith('.128') for o in ops),

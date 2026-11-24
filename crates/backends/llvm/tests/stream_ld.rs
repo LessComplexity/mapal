@@ -166,6 +166,8 @@ fn check(clang: &str, src: &str) -> Cover {
             assert_eq!(streams(&dev), 0, "OFF: the default policy\n{src}");
         }
         for (l, s) in &ks {
+            // The plan line names what the kernel streams (`evict=`).
+            assert_eq!(*s, l.contains(" evict="), "plan line vs text: {l}\n{src}");
             if off.is_empty() {
                 // Sound: never an operand a second block re-reads.
                 assert!(!s || read_once(l), "a re-read operand streamed: {l}\n{src}");

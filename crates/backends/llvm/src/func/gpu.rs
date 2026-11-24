@@ -1455,6 +1455,10 @@ fn plan_line(
         // k-major rows.
         if l.rungs.kmajor_b && kvec_b(site, &g) {
             f += " kvb=1";
+            // gapfix `kvec-swizzle` (intent.py): the copies' bank groups.
+            if let Some((gs, st)) = kvec_swizzle(site, &g, &l.rungs) {
+                f += &format!(" swz={gs}x{st}");
+            }
         }
     }
     if let Some(m) = l.mma {
@@ -2694,6 +2698,7 @@ fn concat_kernel_text(
         None if l.cells > 1 => k.naive_cells(name, l.block, l.cells),
         None => k.naive(name, l.block),
     }
+    k.stream_field();
     k.out
 }
 
@@ -5186,6 +5191,7 @@ fn kernel_text(
         (None, None, None) if l.cells > 1 => k.naive_cells(name, l.block, l.cells),
         (None, None, None) => k.naive(name, l.block),
     }
+    k.stream_field();
     k.out
 }
 
@@ -5302,6 +5308,7 @@ fn kernel<'s>(
         p0: None,
         head: "entry",
         tmap: Vec::new(),
+        streamed: [false; 2],
     }
 }
 
@@ -5848,6 +5855,9 @@ struct Kernel<'s> {
     /// its pointers ([`ws_tensors`]'s recipes), carried to the runtime as
     /// the global `<kernel>_tmap`.
     tmap: Vec<[u64; 20]>,
+    /// gapfix `stream-ld`: the operands (`a`, `b`) this kernel loads with
+    /// the streaming policy — the plan line's `evict=` (intent.py).
+    streamed: [bool; 2],
 }
 
 impl Kernel<'_> {
@@ -6290,6 +6300,20 @@ impl Kernel<'_> {
             && cells.saturating_mul(r.elem_bytes(&s.elem)) > g.l2_keep_bytes()
     }
 
+    /// The plan line's ` evict=a|b|ab` (the first line of the text): the
+    /// operands [`Self::streams`] put on the streaming policy.
+    fn stream_field(&mut self) {
+        let tag = match self.streamed {
+            [true, true] => "ab",
+            [true, false] => "a",
+            [false, true] => "b",
+            [false, false] => return,
+        };
+        if let Some(i) = self.out.find('\n') {
+            self.out.insert_str(i, &format!(" evict={tag}"));
+        }
+    }
+
     /// A global load of `ty` (`bytes` wide) at `p`: under `stream` the
     /// streaming policy (`ld.global.cs.nc`, SASS `LDG.E.EF`) on its 32-bit
     /// words, the value bit-cast back; otherwise (and for a 2-byte or 1-byte
@@ -6622,6 +6646,7 @@ impl Kernel<'_> {
         // gapfix `stream-ld`: a thread a cell — `b` re-read by every row,
         // `a` by every column.
         let (a_cs, b_cs) = (self.streams(false, s.c), self.streams(true, s.rows));
+        self.streamed = [a_cs, b_cs];
         let av = load(self, "%a", &abase, &s.a, a_cs);
         let bv = load(self, "%b", &bbase, &s.b, b_cs);
         let accn = self.step(&acc, &av, &bv);
@@ -6711,6 +6736,7 @@ impl Kernel<'_> {
         }
         // gapfix `stream-ld`: `b`'s vectors are re-read by every row.
         let b_cs = self.streams(true, s.rows);
+        self.streamed = [false, b_cs];
         // The trip's loads first: `u` of `a`, `u` vectors of `b`.
         let mut steps = Vec::new();
         for q in 0..u {
@@ -9594,6 +9620,7 @@ impl Kernel<'_> {
         // column block.
         let a_cs = self.streams(false, s.c.div_ceil(g.tx * g.tn));
         let b_cs = self.streams(true, s.rows.div_ceil(g.ty * g.tm));
+        self.streamed = [a_cs, b_cs];
         let load_panels = |k: &mut Self, k0: &str| -> Vec<String> {
             let ka = k.op("mul", k0, s.a.ck);
             let kb = k.op("mul", k0, s.b.ck);
@@ -11491,6 +11518,7 @@ mod tests {
                             p0: None,
                             head: "entry",
                             tmap: Vec::new(),
+                            streamed: [false; 2],
                         };
                         let result = k.step("%acc", "%a", "%b");
                         let t = &k.t;
