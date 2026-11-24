@@ -174,7 +174,11 @@ fn edge_label(op: &Operation) -> String {
 
 /// Escape a label per §14 rule 1: `"` becomes `#quot;` before quoting.
 fn escape(s: &str) -> String {
+    // `<` / `>` (an instance name `cell<4>`, ADR-0047) as entities, so a
+    // renderer never reads them as markup.
     s.replace('"', "#quot;")
+        .replace('<', "#lt;")
+        .replace('>', "#gt;")
 }
 
 /// Lint a Mermaid dump against the three §14 rule groups (DESIGN §14). Returns

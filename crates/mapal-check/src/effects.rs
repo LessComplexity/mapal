@@ -47,7 +47,10 @@ pub fn check(source: &str, program: &Program, ir: &CategoryIr, out: &mut Vec<syn
             .object(fd.output)
             .map(|o| ty_contains_token(&o.ty))
             .unwrap_or(false);
-        effectful.insert(fd.name.as_str(), in_tok || out_tok);
+        // ADR-0047 D6: an instance `f<4, 8>` is its generic `f`'s effect (the
+        // same for every size tuple); calls name the base.
+        let base = fd.name.split_once('<').map_or(fd.name.as_str(), |(b, _)| b);
+        effectful.insert(base, in_tok || out_tok);
     }
 
     // 2. Tree walk, one fn at a time, carrying scope + illegal-effect context.
