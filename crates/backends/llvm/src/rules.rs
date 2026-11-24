@@ -182,11 +182,71 @@ pub fn pdl_pays(g: &Gpu, repeats: bool) -> bool {
 pub const SPLIT_RATE_PM: u64 = 1300;
 
 /// **f32-tensor-cores R-F, the part's side: a split form of `products`
-/// passes on `op` pays against the FFMA tile** — `matrix_flops_per_ns(op) ≥
-/// θ · P · ffma_flops_per_ns` ([`SPLIT_RATE_PM`]). Physical properties only:
-/// the SM's matrix and FFMA rates a clock (`calib.cu matrix`, `ffma`).
-pub fn split_rate_pays(g: &Gpu, op: &crate::profile::MatrixOp, products: u64) -> bool {
-    g.matrix_flops_per_ns(op) * 1000 >= SPLIT_RATE_PM * products * g.ffma_flops_per_ns()
+/// passes on `op` pays against the FFMA tile** — the matrix rate the split
+/// tile realizes, `matrix_flops_per_ns(op)` over its issue ratio
+/// ([`split_issue_pm`], at least 1), `≥ θ · P · ffma_flops_per_ns`
+/// ([`SPLIT_RATE_PM`]). Physical properties: the SM's matrix and FFMA rates a
+/// clock (`calib.cu matrix`, `ffma`) and its schedulers' issue.
+pub fn split_rate_pays(
+    g: &Gpu,
+    op: &crate::profile::MatrixOp,
+    products: u64,
+    issue_pm: u64,
+) -> bool {
+    g.matrix_flops_per_ns(op) * 1_000_000 / issue_pm.max(1000)
+        >= SPLIT_RATE_PM * products * g.ffma_flops_per_ns()
+}
+
+/// tensor-cores-2 `split-issue`: issue slots a split tile spends a k-step
+/// per f32 element its thread cuts — the cut, its guard, the element's
+/// fragment load and address share — read off ptxas 13.0's SASS of the
+/// 2048 × 4096 × 4096 tiles at sm_80 (`tensor-cores-2.md`; the panel loop's
+/// instructions less its `HMMA` and flush `FADD`s, over the elements cut):
+/// the integer TF32 cut (792 a 96-`HMMA` panel: 10.4), the 5fcb401b
+/// `cvt.rna` cut with its overflow select (1612: 21.7 — the A100's loser),
+/// bf16x3n's three bf16 parts (489 a 48-`HMMA` panel: 12.8), bf16x2n's two.
+pub const SPLIT_CUT_TF32: u64 = 10;
+pub const SPLIT_CUT_TF32_CVT: u64 = 22;
+pub const SPLIT_CUT_BF16X3: u64 = 13;
+pub const SPLIT_CUT_BF16X2: u64 = 10;
+
+/// **tensor-cores-2 `split-issue`: a split tile's issue against its matrix
+/// pipe**, per mille. A warp's k-step issues `P·mt·nt` matrix instructions,
+/// `4·mt·nt / flush` round-to-nearest adds and `per_cut` slots for each of
+/// the `cut` elements it cuts — one instruction a clock on its scheduler
+/// ([`Gpu::schedulers`]); the matrix pipe takes each instruction `2·m·n·k /
+/// (matrix_flops_per_clk / schedulers)` clocks. Above 1000 the tile is
+/// issue-bound: it realizes the matrix rate over this ratio. The A100's
+/// tf32x3 at 5fcb401b: 408 slots against 194 pipe clocks a k-step, 2.10 —
+/// 1012 → 481 flops an SM a clock, under the 499 three passes need
+/// (measured 0.56–0.79 of the FFMA tile).
+pub fn split_issue_pm(
+    g: &Gpu,
+    op: &crate::profile::MatrixOp,
+    products: u64,
+    (mt, nt): (u64, u64),
+    cut: u64,
+    per_cut: u64,
+    flush: u64,
+) -> u64 {
+    let slots = split_slots_pm(products, (mt, nt), cut, per_cut, flush);
+    let per_sched = g.matrix_flops_per_clk(op) / g.schedulers();
+    let flops = 2 * op.shape.m * op.shape.n * op.shape.k;
+    slots * per_sched / flops.max(1)
+}
+
+/// [`split_issue_pm`]'s slots a warp issues a matrix instruction, per mille
+/// (intent.py `split-tile`: the hot loop's SASS instructions over its `HMMA`).
+pub fn split_slots_pm(
+    products: u64,
+    (mt, nt): (u64, u64),
+    cut: u64,
+    per_cut: u64,
+    flush: u64,
+) -> u64 {
+    let instrs = (products * mt * nt).max(1);
+    let issue = instrs + 4 * mt * nt / flush.max(1) + per_cut * cut;
+    issue * 1000 / instrs
 }
 
 /// FP32 lanes per SM below which the exact face's fully unrolled panel loop
@@ -450,6 +510,7 @@ mod tests {
             let mut wave = None;
             let mut scalar = None;
             let mut split = None;
+            let mut issue = None;
             for kv in cond.split(',') {
                 let Some((k, v)) = kv.split_once('=') else {
                     continue;
@@ -461,6 +522,7 @@ mod tests {
                     "wave" => wave = Some(v.parse::<u64>().expect("wave")),
                     "scalar" => scalar = Some(v.parse::<u64>().expect("scalar")),
                     "split" => split = Some(v),
+                    "issue" => issue = Some(v.parse::<u64>().expect("issue")),
                     _ => {
                         let n: u64 = v.parse().expect(line);
                         let mut over = [None; DeviceCost::NAMES.len()];
@@ -528,11 +590,15 @@ mod tests {
                         let (kind, fmt) = match f {
                             "tf32x3" => (mapal_ir::split::SplitKind::Tf32x3, MmaFmt::Tf32),
                             "narrow1" => (mapal_ir::split::SplitKind::Narrow1, MmaFmt::Bf16),
+                            "bf16x3n" => (mapal_ir::split::SplitKind::Bf16x3n, MmaFmt::Bf16),
+                            "bf16x2n" => (mapal_ir::split::SplitKind::Bf16x2n, MmaFmt::Bf16),
                             _ => panic!("{line}: split form {f}"),
                         };
                         let op = g.caps.matrix_op(fmt, Home::Regs).expect(line);
                         let p = mapal_ir::split::SplitForm::of(kind).products();
-                        v = v && split_rate_pays(&g, &op, p);
+                        // tensor-cores-2: the realization's issue ratio
+                        // (`issue=`, per mille; none: the rate alone).
+                        v = v && split_rate_pays(&g, &op, p, issue.unwrap_or(1000));
                     }
                     // The wide tile's grid against its wave.
                     if let (Some(b), Some(w), "wide-fma") = (blocks, wave, e.rung) {
@@ -573,7 +639,7 @@ mod tests {
         }
         assert_eq!(open, OPEN.to_vec(), "measurements the rules do not pick");
         // The counts the evidence file reports.
-        assert_eq!((picked, null, mixed, open.len()), (140, 72, 10, 21));
+        assert_eq!((picked, null, mixed, open.len()), (141, 72, 10, 21));
     }
 
     /// No rule reads a name, an architecture string or a version: a part

@@ -8,8 +8,9 @@
 # benches/results/evidence/; the former GPU_RUNGS_OFF rows' cites, f3a9e792).
 # A cond may name a measured property of the box the part's profile does not carry (`<cost name>=<value>`, e.g. a
 # power-capped clock) or the site's side of a priced rule (`row_bytes=`: a retained row's k x c operand bytes;
-# `repeats=1|0`: the module's launches repeat in a loop or not; `split=tf32x3|narrow1`: the split form whose passes the
-# part's matrix and FFMA rates price, `rules::split_rate_pays`), comma-separated. cross-arch lines: the round on
+# `repeats=1|0`: the module's launches repeat in a loop or not; `split=tf32x3|narrow1|bf16x3n|bf16x2n`: the split form whose passes the
+# part's matrix and FFMA rates price, `rules::split_rate_pays`; `issue=`: its tile's issue against the matrix pipe, per mille,
+# `rules::split_issue_pm`), comma-separated. cross-arch lines: the round on
 # 8bba2a50 (benches/results/evidence/cross-arch/README.md, rules.md; raw .claude/raw-evidence/cross-arch/<part>/).
 # rung	part	fill	face	winner	cond	source
 affine	a100	A	E	null	-	base-a100 / -confirm _exact OFF/ON 1.004/1.006/0.991 vs 1.019/1.012/0.986, n=1024 0.997 vs 0.993
@@ -255,3 +256,4 @@ wgmma-ws	h100	U	T	off	blocks=256	hopper sessions 2 / 3: pj_m128_n4096_k4096_tf32
 tma-digits	h100	A	T	on	-	hopper session 2, slabs (--gpu-off=tma-digits) / ON: mlp2_2048_tf32 0.5576 / 0.4594, mlp_2048_tf32 0.3020 / 0.2551, pj_m128_n6144_k4096_tf32 0.2148 / 0.1450, pj_m128_n4096_k14336_tf32 0.5386 / 0.2641 ms
 ws-regs	h100	A	T	on	-	hopper session 1: --gpu-off=ws-regs (the even 168-register share) / ON 0.560 / 0.353 ms (pj 2048x4096, n 128), mlp 0.348 / 0.307 ms
 calls-issue	rtx-5080	U	C	null	-	review-fixes-2 ABBA 12 reps (local-rtx-5080/review-fixes-2.md; raw review-fixes-2/calls-issue): the two programs the term moved on the 5080, timed twins of px_rt_mlp2_128 / px_rg_mlp2_128 (2 trips), OFF (--gpu-off=calls-issue) / ON at d950efb3 0.0475 / 0.0842 and 0.0810 / 0.1201 ms: the chain it formed paid the process's first cooperative launch (57 against 14 us) that `chain_ns` priced at 0 in a loop; with each counted trip's share (`trip_split`) both chains are refused and ON's text is OFF's: no measured gain, no loss
+split-tile	a100	F	C	off	split=tf32x3,issue=2100	cross-arch 5fcb401b off-split-tile (finding 2): the 5fcb401b tf32x3 realization lost 12 / 12, OFF / ON 0.56-0.79 (pj_m2048_n4096_k4096 FFMA 5.21 vs split 7.09 ms); SASS (tensor-cores-2.md): 1612 instructions a 96-HMMA panel (mt 2, nt 4, the cvt.rna cut 21.7 slots an element, a flush a k-step) = 408 slots against 194 pipe clocks a k-step

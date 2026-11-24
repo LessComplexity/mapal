@@ -154,7 +154,7 @@ def ptx_facts(text):
                 f['loops'] += 1
                 seg = lines[labels[m[1]]:i + 1]
                 c = ptx_counts(seg)
-                key = (c['fma_f32'] + c['mul_f32'] + c['mma'] + c['wgmma'], -len(seg))
+                key = (c['fma_f32'] + c['mul_f32'] + MMA_WEIGHT * (c['mma'] + c['wgmma']), -len(seg))
                 spans.append((labels[m[1]], i, key, seg, c))
                 if best is None or key > best[0]:
                     best = (key, seg, c, labels[m[1]], i)
@@ -194,6 +194,11 @@ def ptxas_facts(text):
 
 
 MAC = ('FFMA', 'FMUL', 'HMMA', 'HGMMA')
+# tensor-cores-2: a matrix instruction's work against an FFMA's — an m16n8k8 HMMA is 1024 multiply-adds a warp, an
+# FFMA 32. Counted one for one, a split tile's cold path (its warp's tile recomputed by FFMA, unrolled: 128 FFMA a
+# trip) out-weighed the 96-HMMA k loop, and the A100's `split-tile` intents read the cold loop's 40 LDG as the hot
+# loop's (5fcb401b finding 2): the k loop held 8 LDGSTS and no LDG.
+MMA_WEIGHT = 32
 
 
 def innermost(best, spans):
@@ -231,7 +236,7 @@ def sass_facts(body):
         j = addr.index(int(m.group(1), 16))
         loop = body[j:i + 1]
         ops = Counter(split(x)[1].split('.')[0] for _, x in loop)
-        key = (sum(ops[k] for k in MAC), -len(loop))
+        key = (ops['FFMA'] + ops['FMUL'] + MMA_WEIGHT * (ops['HMMA'] + ops['HGMMA']), -len(loop))
         spans.append((j, i, key, loop))
         if best is None or key > best[0]:
             best = (key, loop, j, i)
@@ -269,7 +274,7 @@ def sass_facts(body):
                 n += op2.split('.')[0] in ('FFMA', 'FMUL')
             cover.append(n)
         f['hot'] = dict(
-            insns=len(loop), ffma=lc['FFMA'], fmul=lc['FMUL'], fadd=lc['FADD'], hmma=lc['HMMA'], hgmma=lc['HGMMA'],
+            insns=len(loop), ffma=lc['FFMA'], fmul=lc['FMUL'], fadd=lc['FADD'], hmma=lc['HMMA'], hgmma=lc['HGMMA'], f2fp=sum(b == 'F2FP' for b in base),
             ldg=lc['LDG'], ldgsts=lc['LDGSTS'], lds=lc['LDS'], ldsm=lc['LDSM'], sts=lc['STS'], bar=lc['BAR'],
             bra=lc['BRA'], ldg128=lw.get('LDG.128', 0), lds128=lw.get('LDS.128', 0),
             # tile-efficiency: copy widths and the LSU mix (T2 / T4)

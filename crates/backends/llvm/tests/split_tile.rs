@@ -129,9 +129,11 @@ fn gemm(rows: u64, c: u64, k: u64, fmt: Option<&str>) -> String {
 }
 
 /// **The rule per part, per face, per `K`.** tf32x3 on a part whose TF32
-/// rate pays three passes against its FFMA rate (the A100: 1024 against
-/// 3 · 1.3 · 128 an SM a clock) and nowhere else by rule (GeForce 256, the
-/// H100's `mma.sync` 532 against 998); every part under the ON arm; never
+/// rate pays three passes against its FFMA rate at the tile's issue (the
+/// A100: 1024 against 3 · 1.3 · 128 an SM a clock, on a site whose warp
+/// tile is not shrunk to fill the part — `split_issue_prices_the_realization`)
+/// and nowhere else by rule (GeForce 256, the
+/// H100's measured `mma.sync` 1351 at that site's issue); every part under the ON arm; never
 /// below the form's `K_min` (24 at the measured `g = 2`), nor on the exact
 /// or sequential faces, nor under the OFF arm. narrow1 by rule on every part
 /// with a 16-bit warp product (512 against 1.3 · 256 on GeForce).
@@ -142,7 +144,12 @@ fn split_rule_by_rate_bound_and_face() {
         split_of(&emission(&ir, t, base, off, on, 0))
     };
     let d = EmitOpts::default;
-    assert_eq!(at("a100", d(), &[], &[]).as_deref(), Some("tf32x3"));
+    let big = lower(&gemm(2048, 2048, 512, None));
+    assert_eq!(at_ir(&big, "a100", &[]).as_deref(), Some("tf32x3"));
+    // tensor-cores-2: the 128 × 256 site's grid shrinks the warp tile to one
+    // m16n8 tile (`warp-fill`): six elements cut a thread for three
+    // products, 2.7× the pipe's clocks — refused on the A100 too.
+    assert_eq!(at("a100", d(), &[], &[]), None);
     for t in [
         "rtx-5080",
         "rtx-4090",
@@ -224,31 +231,109 @@ fn split_rule_by_rate_bound_and_face() {
             }
         }
     }
-    // f32 × bf16 (bf16x3n: no emitted form) keeps the FMA tile, ON arm too.
-    let p = testgen::SplitProg {
-        dims: [0, 0, 0],
-        store: 3,
-        law: 0,
-        bt: false,
-        post: false,
-        seed: [3, 5],
+    // tensor-cores-2: f32 × bf16 (bf16 weights, f32 activations) — the
+    // f32 operand cut into bf16 parts on the bf16 warp product: two parts
+    // where the bound covers their `2⁻¹⁶` (`K ≥ 288`), else the exact three
+    // (and under `split-least` OFF); by rule where the part's bf16 rate
+    // pays the passes at the tile's issue (the A100's 2048 and the H100's
+    // 1064 against 1.3 · 2 · its FFMA rate; GeForce's 512 refuses).
+    let bw = |m: u64, n: u64, k: u64, bt: bool| {
+        let p = testgen::SplitProg {
+            dims: [0, 0, 0],
+            store: 3,
+            law: 0,
+            bt,
+            post: false,
+            seed: [3, 5],
+        };
+        lower(&testgen::split_src_at(&p, m, n, k).0)
     };
-    let ir = lower(&testgen::split_src_at(&p, 128, 256, 512).0);
-    let e = emission(&ir, "rtx-5080", d(), &[], &["split-tile"], 0);
-    assert!(mma_plans(&e).is_empty());
+    for bt in [false, true] {
+        let ir = bw(128, 256, 512, bt);
+        let big = bw(2048, 2048, 512, bt);
+        let on = |t, off: &[&str]| split_of(&emission(&ir, t, d(), off, &["split-tile"], 0));
+        assert_eq!(on("rtx-5080", &[]).as_deref(), Some("bf16x2n"), "bt {bt}");
+        assert_eq!(
+            on("rtx-5080", &["split-least"]).as_deref(),
+            Some("bf16x3n"),
+            "bt {bt}"
+        );
+        for t in ["a100", "h100"] {
+            assert_eq!(
+                at_ir(&big, t, &[]).as_deref(),
+                Some("bf16x2n"),
+                "{t} bt {bt}"
+            );
+        }
+        for t in ["rtx-5080", "rtx-4090", "rtx-3090"] {
+            assert_eq!(at_ir(&big, t, &[]), None, "{t}: bf16 512 refuses");
+        }
+        assert_eq!(at_ir(&big, "a100", &["split-tile"]), None, "OFF arm");
+    }
+    let short = bw(128, 256, 128, false);
+    let e = emission(&short, "rtx-5080", d(), &[], &["split-tile"], 0);
+    assert_eq!(split_of(&e).as_deref(), Some("bf16x3n"), "K 128 < 288");
     // The tf32x3 kernel's instructions: three TF32 products a tile and k8,
-    // the zeroed chain, the round-to-nearest add, the guard's vote.
+    // the zeroed chain, the round-to-nearest add, the guard's vote; the
+    // cut by integer rounding (`split-issue`; OFF: `cvt.rna`).
     let e = emission(&ir_tf32x3(), "rtx-5080", d(), &[], &["split-tile"], 0);
     let dev = e.device.as_deref().unwrap_or_default();
     for i in [
         "mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32",
-        "cvt.rna.tf32.f32",
         "vote.sync.any.pred",
         "float 0.0, float 0.0, float 0.0, float 0.0",
         "@llvm.fma.f32",
+        ", -8192",
     ] {
         assert!(dev.contains(i), "{i}");
     }
+    assert!(!dev.contains("cvt.rna.tf32.f32"), "split-issue: no cvt");
+    let e = emission(
+        &ir_tf32x3(),
+        "rtx-5080",
+        d(),
+        &["split-issue"],
+        &["split-tile"],
+        0,
+    );
+    let dev = e.device.as_deref().unwrap_or_default();
+    assert!(dev.contains("cvt.rna.tf32.f32"), "OFF: the 5fcb401b cut");
+    assert!(
+        mma_plans(&e).iter().all(|p| p["flush"] == "1"),
+        "OFF: flush 1"
+    );
+}
+
+/// The rules' split form of `ir` on `t` (every arm in `off` off).
+fn at_ir(ir: &CategoryIr, t: &'static str, off: &[&str]) -> Option<String> {
+    split_of(&emission(ir, t, EmitOpts::default(), off, &[], 0))
+}
+
+/// **tensor-cores-2 `split-issue`: the rule prices the realization.** The
+/// A100's 5fcb401b tf32x3 tile (the `cvt.rna` cut, a flush a k-step) issues
+/// over twice its matrix pipe's clocks and is refused there (OFF arm of
+/// `split-issue`: the realization that lost 12 / 12); the integer cut with
+/// the bound's flush depth is taken. Every split plan states its flush and
+/// issue ratio; the flush is a power of two the bound admits.
+#[test]
+fn split_issue_prices_the_realization() {
+    let ir = lower(&gemm(2048, 4096, 4096, None));
+    let d = EmitOpts::default;
+    let plan = |off: &[&str]| {
+        mma_plans(&emission(&ir, "a100", d(), off, &[], 0))
+            .into_iter()
+            .find(|p| p.contains_key("split"))
+    };
+    let on = plan(&[]).expect("a100 tf32x3");
+    assert_eq!(on["split"], "tf32x3");
+    assert!(num(&on, "issue_pm") <= 1100, "{on:?}");
+    let f = num(&on, "flush");
+    assert!(f > 1 && f.is_power_of_two(), "{on:?}");
+    assert!(
+        SplitForm::of(SplitKind::Tf32x3).admits(4096, num(&on, "S").max(1), 8, MEASURED, f)
+            == Some(f)
+    );
+    assert_eq!(plan(&["split-issue"]), None, "OFF: the loser is refused");
 }
 
 fn ir_tf32x3() -> CategoryIr {
@@ -400,6 +485,8 @@ struct Cover {
     programs: u64,
     tf32x3: u64,
     narrow1: u64,
+    bf16x3n: u64,
+    bf16x2n: u64,
     refused_kmin: u64,
     refused_rate: u64,
     pieces: u64,
@@ -420,6 +507,8 @@ impl std::ops::AddAssign for Cover {
         self.programs += o.programs;
         self.tf32x3 += o.tf32x3;
         self.narrow1 += o.narrow1;
+        self.bf16x3n += o.bf16x3n;
+        self.bf16x2n += o.bf16x2n;
         self.refused_kmin += o.refused_kmin;
         self.refused_rate += o.refused_rate;
         self.pieces += o.pieces;
@@ -479,8 +568,14 @@ fn check(cc: &str, p: &testgen::SplitProg) -> Cover {
     let kind = match split.as_deref() {
         Some("tf32x3") => Some(SplitKind::Tf32x3),
         Some("narrow1") => Some(SplitKind::Narrow1),
+        Some("bf16x3n") => Some(SplitKind::Bf16x3n),
+        Some("bf16x2n") => Some(SplitKind::Bf16x2n),
         _ => None,
     };
+    let flush = plans
+        .iter()
+        .find(|t| t.contains_key("split"))
+        .map_or(1, |t| num(t, "flush"));
     // The guard sends operands whose parts leave the normal range to the
     // FFMA path: no absolute term.
     let abs = 0.0;
@@ -497,9 +592,9 @@ fn check(cc: &str, p: &testgen::SplitProg) -> Cover {
             check_values(&got, &format!("ON {mode:?} g=2"), abs);
         }
         let kk = if kind == SplitKind::Tf32x3 { 8 } else { 16 };
-        let guardless = SplitForm::of(kind)
-            .admits(k, 1, kk, AccModel { g: 0 }, 1)
-            .is_some();
+        // At the kernel's own flush depth.
+        let guardless =
+            SplitForm::of(kind).admits(k, 1, kk, AccModel { g: 0 }, flush) == Some(flush);
         if guardless {
             let (got, _) = built.run(&[("MAPAL_EMU_SERIAL", "1"), ("MAPAL_EMU_MMA_G", "0")]);
             check_values(&got, "ON g=0", abs);
@@ -518,6 +613,8 @@ fn check(cc: &str, p: &testgen::SplitProg) -> Cover {
         }
         match kind {
             SplitKind::Tf32x3 => c.tf32x3 = 1,
+            SplitKind::Bf16x3n => c.bf16x3n = 1,
+            SplitKind::Bf16x2n => c.bf16x2n = 1,
             _ => c.narrow1 = 1,
         }
         c.post = u64::from(p.post);
@@ -532,14 +629,17 @@ fn check(cc: &str, p: &testgen::SplitProg) -> Cover {
         // rate); narrow1 by rule where the site's flops per byte or grid
         // fill pays (`split_pays` 3.).
         assert!(
-            kind != SplitKind::Tf32x3 || ruled.is_none(),
-            "the 5080's rule refuses tf32x3\n{src}"
+            kind == SplitKind::Narrow1 || ruled.is_none(),
+            "the 5080's rule refuses tf32x3 and the bf16 cuts\n{src}"
         );
         c.narrow1_rule = u64::from(ruled.as_deref() == Some("narrow1"));
     } else {
         let below = match p.store {
             0 => k < 24,
             1 | 2 => k < 16,
+            3 => SplitForm::of(SplitKind::Bf16x3n)
+                .k_min(1, 16, MEASURED, 4096)
+                .is_none_or(|m| k < m),
             _ => false,
         };
         c.refused_kmin = u64::from(below);
@@ -583,6 +683,8 @@ fn generated_programs_within_d2() {
         c.programs,
         c.tf32x3,
         c.narrow1,
+        c.bf16x3n,
+        c.bf16x2n,
         c.refused_kmin,
         c.refused_rate,
         c.pieces,
