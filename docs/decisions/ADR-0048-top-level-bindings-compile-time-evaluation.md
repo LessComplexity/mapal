@@ -67,9 +67,10 @@ replaced by its value.* Two places apply the rule:
 - *Every value, on the graph* (`mapal_rewrite::fold_static`, in the shipped pipeline before `rewrite`; OFF arm
   `--static=off` / `MAPAL_STATIC=off`). The fact is **`static_plan`** (mapal-ir, stored on the graph, one per
   function): a value is **computable** when `unchanged_plan(f).inputs` is 0 — it is a function of no input slot, and
-  the IO token is an input slot, so every `print` / `time` / `read` result and everything computed from one is not —
-  and, for a loop's value, when the whole loop is (its every decide, advance and exit value: the oracle runs a loop as
-  a unit). Its **roots** are the computable values a run-time value reads (or that leave the function); a product
+  the IO token is an input slot, so every `print` / `time` result and everything computed from one is not — when its
+  cone reads no file (a `read`'s array is the same at every call, mask 0 by ADR-0045 D7, but its bytes exist only at
+  run time), and, for a loop's value, when the whole loop is (its every decide, advance and exit value: the oracle
+  runs a loop as a unit). Its **roots** are the computable values a run-time value reads (or that leave the function); a product
   assembled slot by slot is not a root, its computable components are. Each root carries its bytes, cells and the
   oracle's work over its cone (a map or fold `n` times its body's, a call its callee's, a counted loop its trips —
   `trip_split` — times its body's; unknown through any other loop), and the **rule — bytes against work** —
