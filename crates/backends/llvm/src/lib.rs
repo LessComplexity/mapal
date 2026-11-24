@@ -969,9 +969,11 @@ pub struct GpuRungs {
     /// ship it off on every part (it lost every measured site); `--gpu-on=
     /// mma-depth` measures it.
     pub mma_depth: bool,
-    /// gapfix tensor-tile (C3) `mma-fly`: on a DRAM-bound site
-    /// (`profile::Gpu::dram_bound`, an operand past the L2 keep) a tensor
-    /// tile's ring keeps the part's in-flight bytes
+    /// gapfix tensor-tile (C3) `mma-fly`: where a tensor tile's panel loads
+    /// outlast the products that cover them (an operand past the L2 keep,
+    /// fragments read as stored, the S52 panel's DRAM time within its
+    /// products' but not their latency: `profile::TargetProfile::gpu_mma_fly`)
+    /// its ring keeps the part's in-flight bytes
     /// (`profile::Gpu::stream_fly_per_sm`) past its wait on every SM — the
     /// residency, panel depth and stages of `profile::mma_fly_pick`;
     /// elsewhere the S52 panel. Off (`--gpu-off=mma-fly`): the S52 panel on
