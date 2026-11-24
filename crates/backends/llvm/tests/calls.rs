@@ -316,19 +316,22 @@ fn every_part_prices_chains() {
     let gpu = |n: &str| TargetProfile::named(n).and_then(|p| p.gpu()).expect(n);
     let five = gpu("rtx-5080").coop_body_cycles();
     assert!(five.1 && five.0 > 0, "the rtx-5080 measured it: {five:?}");
-    for n in [
-        "cuda-ada",
-        "rtx-4090",
-        "h100",
-        "h100-pcie",
-        "rtx-5090",
-        "rtx-5080",
-        "rtx-3090",
-        "a100",
+    // bugs-properties: the cross-arch 5fcb401b boxes measured theirs
+    // (`calib.cu body`); the parts nobody measured derive the 5080's.
+    for (n, own) in [
+        ("cuda-ada", None),
+        ("rtx-4090", Some(7292)),
+        ("h100", Some(348)),
+        ("h100-pcie", None),
+        ("rtx-5090", None),
+        ("rtx-5080", Some(five.0)),
+        ("rtx-3090", Some(2102)),
+        ("a100", Some(4048)),
     ] {
         let g = gpu(n);
-        assert_eq!(g.coop_body_cycles(), (five.0, n == "rtx-5080"), "{n}");
-        let ns = five.0 as f64 * 1e6 / g.clock_khz as f64;
+        let cycles = own.unwrap_or(five.0);
+        assert_eq!(g.coop_body_cycles(), (cycles, own.is_some()), "{n}");
+        let ns = cycles as f64 * 1e6 / g.clock_khz as f64;
         assert!(
             (g.coop_body_ns() - ns).abs() < 1e-6,
             "{n}: {}",
