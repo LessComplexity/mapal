@@ -6645,7 +6645,10 @@ impl Kernel<'_> {
         };
         // gapfix `stream-ld`: a thread a cell — `b` re-read by every row,
         // `a` by every column.
-        let (a_cs, b_cs) = (self.streams(false, s.c), self.streams(true, s.rows));
+        let (a_cs, b_cs) = (
+            s.a.narrow.is_none() && self.streams(false, s.c),
+            s.b.narrow.is_none() && self.streams(true, s.rows),
+        );
         self.streamed = [a_cs, b_cs];
         let av = load(self, "%a", &abase, &s.a, a_cs);
         let bv = load(self, "%b", &bbase, &s.b, b_cs);
@@ -9618,8 +9621,14 @@ impl Kernel<'_> {
         };
         // gapfix `stream-ld`: `b` re-read by every row block, `a` by every
         // column block.
-        let a_cs = self.streams(false, s.c.div_ceil(g.tx * g.tn));
-        let b_cs = self.streams(true, s.rows.div_ceil(g.ty * g.tm));
+        // Register staging only (a `cp.async` panel's copies take no policy
+        // here), whole 4 / 8 / 16-byte loads only (`gload`).
+        let whole = |r: &mapal_ir::TileRead, vec: bool| {
+            let n = r.narrow.map_or(e, |n| n.bytes());
+            !streamed && matches!(if vec { lanes * n } else { n }, 4 | 8 | 16)
+        };
+        let a_cs = whole(&s.a, a_vec) && self.streams(false, s.c.div_ceil(g.tx * g.tn));
+        let b_cs = whole(&s.b, b_vec || kvb) && self.streams(true, s.rows.div_ceil(g.ty * g.tm));
         self.streamed = [a_cs, b_cs];
         let load_panels = |k: &mut Self, k0: &str| -> Vec<String> {
             let ka = k.op("mul", k0, s.a.ck);
