@@ -372,6 +372,10 @@ pub(crate) struct ResidentPlan {
     /// Producers no reader is left for (every reader is device-built).
     pub skip: SecondaryMap<MorphismId, ()>,
     pub carries: Vec<Carry>,
+    /// full-model `once-range`: a straight-line range cell's output → the
+    /// array it writes in place over (its source, dead after it): one
+    /// device buffer, the chain's first ([`Self::alias`]).
+    pub inplace: SecondaryMap<ObjectId, ObjectId>,
     /// S54 `arena`: the device arena and the host-free objects.
     pub arena: Option<Arena>,
     /// `upload`s that cross as the rows their iteration wrote (`delta-h2d`).
@@ -582,8 +586,18 @@ impl ResidentPlan {
 
     /// The object whose device slot `o` shares: a carry's views and exit share
     /// the component's slot (its key), and so does a next state written in
-    /// place (`range-cell`).
+    /// place (`range-cell`), and a straight-line range cell's output written
+    /// over its dead source (`once-range`).
     pub(crate) fn alias(&self, o: ObjectId) -> ObjectId {
+        // full-model `once-range`: a straight-line in-place chain's buffer
+        // is its first array's.
+        let mut o = o;
+        for _ in 0..4096 {
+            match self.inplace.get(o) {
+                Some(&w) => o = w,
+                None => break,
+            }
+        }
         self.carries
             .iter()
             .find(|c| {
@@ -1673,9 +1687,15 @@ impl<'a> FnEmit<'a> {
             self.ir.tile_plan_strided(self.f).sites.contains_key(m)
                 || self.ir.row_fold(self.f).contains_key(m)
         };
+        // full-model `once-range`: a piecewise range map outside every loop
+        // (a prompt's rows written into a cache, no carry to write in place)
+        // runs once as a whole-extent device cell — every cell its arm's,
+        // one pass over the array — rather than a host loop whose output
+        // the device then reads whole.
+        let once = || rungs.once_range && self.straight_line().contains_key(m);
         if self.gated.contains_key(m)
             || (nest && (!rungs.nest_cell || own()))
-            || (!site.uniform.is_empty() && (!rungs.uniform || piecewise()))
+            || (!site.uniform.is_empty() && (!rungs.uniform || (piecewise() && !once())))
             || self.gen_law(m).is_some()
             || !self.attrs.clean(body)
             || !self.device_leaf(body)
@@ -1704,11 +1724,15 @@ impl<'a> FnEmit<'a> {
         if !loaded && *array_elem(&self.obj_ty(mapped)) != Ty::i32() {
             return None;
         }
-        let laws = if !loaded && rungs.cell_law {
+        let mut laws = if !loaded && rungs.cell_law {
             self.laws(body, site, &caps)
         } else {
             Vec::new()
         };
+        // A range cell writes its interval over its source's buffer: that
+        // array is the output, materialized — never evaluated in the cell
+        // (`once-range`: a closed-form start a prompt writes over).
+        laws.retain(|&(s, _)| range.is_none_or(|ou| ou.slot != s));
         let lanes = self.cell_lanes(site);
         let tag = match (range.is_some(), lanes) {
             (false, 1) => self.fnames[body].clone(),
@@ -1941,6 +1965,14 @@ impl<'a> FnEmit<'a> {
     /// plan, before `prepare_storage` indexes the roots `state_death` walks.
     fn range_in_place(&self, m: MorphismId) -> Option<mapal_ir::Outside> {
         let (ou, arr) = self.range_write(m)?;
+        // full-model `once-range`: a range map run once (outside every loop
+        // and guard arm) writes its interval into its source's own buffer
+        // when nothing reads the source after it (`last_use_plan`); else it
+        // is no range cell (a whole-extent cell, [`Self::cell_of`]).
+        if self.straight_line().contains_key(m) {
+            let once = gpu::host_rungs(self.profile, self.contract, self.gpu_arms).once_range;
+            return (once && self.writes_over_dead(m, arr)).then_some(ou);
+        }
         let target = self.ir.morphism(m)?.target;
         let chain = gpu::host_rungs(self.profile, self.contract, self.gpu_arms).range_chain;
         // placement `chain`: the written array is a state view, or the output
@@ -2021,6 +2053,41 @@ impl<'a> FnEmit<'a> {
             return None;
         };
         Some((ou, self.pair_source(source, ou.slot)?))
+    }
+
+    /// full-model `once-range`: `arr` — the array the straight-line range
+    /// map `m` writes over — owns its bytes (made here, once, by a morphism
+    /// that is no view: not a product's slot, a projection, an element view,
+    /// a `Phi`, a call's result or a loop's state) and no morphism reads it
+    /// or a view of it after `m` (`last_use_plan.view_dead_after`): `m`'s
+    /// output may be those bytes.
+    fn writes_over_dead(&self, m: MorphismId, arr: ObjectId) -> bool {
+        let Some(pos) = self.lup.position(m) else {
+            return false;
+        };
+        let Some(&p) = self.ir.in_edges(arr).first() else {
+            return false;
+        };
+        let owns = self.ir.morphism(p).is_some_and(|x| {
+            !matches!(
+                x.op,
+                Operation::Pair { .. }
+                    | Operation::Proj { .. }
+                    | Operation::Index
+                    | Operation::Phi
+                    | Operation::Call(_)
+                    | Operation::LoopEnter
+                    | Operation::LoopExit
+            )
+        });
+        owns && self.ir.in_edges(arr).len() == 1
+            && self
+                .ir
+                .object(arr)
+                .is_some_and(|o| o.kind == ObjectKind::Temporary)
+            && self.ir.try_owner(arr) == Some(self.f)
+            && self.straight_line().contains_key(p)
+            && self.lup.view_dead_after(arr, pos)
     }
 
     /// `cell-lanes`: threads a nest cell takes — a warp, when the order is
@@ -2166,6 +2233,7 @@ impl<'a> FnEmit<'a> {
         });
         let straight = self.straight_line();
         let trip = gpu::host_rungs(self.profile, self.contract, self.gpu_arms).trip_cells;
+        let once = gpu::host_rungs(self.profile, self.contract, self.gpu_arms).once_range;
         if !body && gpu::host_rungs(self.profile, self.contract, self.gpu_arms).devmap {
             for (m, site) in self.ir.cell_plan(self.f).iter() {
                 // An epilogue member (R1) runs in its site's store already.
@@ -2173,10 +2241,16 @@ impl<'a> FnEmit<'a> {
                 // candidate whatever its size — [`Self::cell_round`] keeps it
                 // only where it moves no bytes (its operands on the device,
                 // its output not needed whole on the host), so a host
-                // placement is what would cross the bus each trip.
+                // placement is what would cross the bus each trip. Likewise
+                // (`once-range`) a range map run once: it writes its interval
+                // where its array is, so its cost is the bytes it would move
+                // (`once-bytes`), not its extent's roofline.
+                let once_range = once && straight.contains_key(m) && self.range_write(m).is_some();
                 if !sites_mut.contains_key(m)
                     && self.member_src(m, 0).is_none()
-                    && (self.cell_pays(m, site) || (trip && !straight.contains_key(m)))
+                    && (self.cell_pays(m, site)
+                        || (trip && !straight.contains_key(m))
+                        || once_range)
                     && let Some(c) = self.cell_of(m, site)
                 {
                     cells.insert(m, c);
@@ -2252,9 +2326,14 @@ impl<'a> FnEmit<'a> {
                     .iter()
                     .any(|&p| self.ir.morphism(p).is_some_and(|x| x.op == Operation::Iota))
             };
+            // full-model `once-range`: a `+0.0` fill is zeroed on the device
+            // where a device cell reads it (its upload is a memset): no host
+            // bytes cross for it.
+            let zeroed = gpu::host_rungs(self.profile, self.contract, self.gpu_arms).once_range;
             let there = |o| {
                 device_only(o)
                     || feeders.contains_key(o)
+                    || (zeroed && self.zero_fill(o))
                     || (devgen
                         && self
                             .ir
@@ -2310,8 +2389,10 @@ impl<'a> FnEmit<'a> {
                     let host = || self.uses(sites, cells, t, &fwd).contains(&Use::Host);
                     let walked = |o| !c.nested.is_empty() && iota(o);
                     // `range-cell`: written in place, so only into an
-                    // in-place carry's buffer.
+                    // in-place carry's buffer — or (`once-range`), run once,
+                    // into its dead source's.
                     let homeless = c.range.is_some()
+                        && per_trip
                         && !carries
                             .iter()
                             .any(|k| k.inplace && (k.next == t || k.chain.contains(&t)));
@@ -2452,6 +2533,16 @@ impl<'a> FnEmit<'a> {
             carries,
             ..ResidentPlan::default()
         };
+        // full-model `once-range`: each straight-line range cell's output is
+        // its source's buffer (`range_in_place` admitted it over a dead one).
+        let line = self.straight_line();
+        for (m, c) in cells.iter() {
+            let Some(ou) = c.range else { continue };
+            if line.contains_key(m) {
+                let t = self.ir.morphism(m).expect("cell").target;
+                plan.inplace.insert(t, c.caps[ou.slot as usize]);
+            }
+        }
         for (m, site) in sites.iter() {
             if let DevSite::RowFold(r) = site {
                 plan.rowfold.insert(m, r.clone());
@@ -2495,10 +2586,11 @@ impl<'a> FnEmit<'a> {
                     })
                     .and_then(|m| self.lup.position(m))?;
                 (self.is_view(lp.init, &[c.k])
-                    && self.ir.out_edges(a).len() == 1
-                    && self.ir.try_owner(a) == Some(self.f)
-                    && !self.lup.escapes(a)
-                    && self.lup.death(a).is_some_and(|d| d <= enter))
+                    && ((self.ir.out_edges(a).len() == 1
+                        && self.ir.try_owner(a) == Some(self.f)
+                        && !self.lup.escapes(a)
+                        && self.lup.death(a).is_some_and(|d| d <= enter))
+                        || self.bytes_enter(&plan, a, lp.init, enter)))
                 .then_some(a)
             })
             .collect();
@@ -2719,7 +2811,7 @@ impl<'a> FnEmit<'a> {
                 continue;
             }
             let produced_once = self.ir.in_edges(o).iter().all(|&p| line.contains_key(p));
-            let Some(death) = self.death_of(o) else {
+            let Some(death) = self.buffer_death(&plan, o) else {
                 continue;
             };
             if let Some(&(_, d)) = by_pos.iter().find(|&&(p, _)| p == death)
@@ -2970,6 +3062,68 @@ impl<'a> FnEmit<'a> {
     /// host morphism writes or reads whole — kept, device-built or never built
     /// — has no host slot. Carry objects keep both: the loop state holds the
     /// array inline.
+    /// full-model `carry-take` (`once-range`): the bytes of `a` — a loop's
+    /// init array, the state product `init`'s slot — are read past the loop's
+    /// entry (at `enter`) only through the loop's state: `init` feeds the
+    /// `LoopEnter` alone, every other use of `a` sits at or before `enter`
+    /// and keeps no alias past it, and every array sharing `a`'s device
+    /// buffer (an in-place chain) is dead by then. `last_use_plan` counts the
+    /// state's way to the function's output as `a`'s escape (a product's
+    /// every field escapes through its projections); the carry owns that way.
+    fn bytes_enter(&self, plan: &ResidentPlan, a: ObjectId, init: ObjectId, enter: u32) -> bool {
+        let fresh = self
+            .ir
+            .object(a)
+            .is_some_and(|o| o.kind == ObjectKind::Temporary)
+            && self.ir.try_owner(a) == Some(self.f)
+            && self.lup.carried_by(a).is_none();
+        let into = self.ir.out_edges(init).iter().all(|&e| {
+            self.ir
+                .morphism(e)
+                .is_some_and(|x| x.op == Operation::LoopEnter)
+        });
+        let uses = self.ir.out_edges(a).iter().all(|&e| {
+            let Some(x) = self.ir.morphism(e) else {
+                return false;
+            };
+            if x.target == init {
+                return true;
+            }
+            let aliasing = matches!(
+                x.op,
+                Operation::Pair { .. }
+                    | Operation::Proj { .. }
+                    | Operation::Index
+                    | Operation::Phi
+                    | Operation::Call(_)
+                    | Operation::Output
+                    | Operation::LoopEnter
+                    | Operation::LoopExit
+            );
+            self.lup.position(e).is_some_and(|p| p <= enter)
+                && (!aliasing || self.lup.death(x.target).is_some_and(|d| d <= enter))
+        });
+        let root = plan.alias(a);
+        let shared = std::iter::once(root)
+            .chain(plan.inplace.keys().filter(|&t| plan.alias(t) == root))
+            .filter(|&x| x != a)
+            .all(|x| self.death_of(x).is_some_and(|d| d <= enter));
+        fresh && into && uses && shared
+    }
+
+    /// The death of `o`'s device buffer: [`Self::death_of`] over every
+    /// object sharing it (`once-range`: a straight-line in-place chain lives
+    /// to its last array's death; `None` when one escapes).
+    fn buffer_death(&self, plan: &ResidentPlan, o: ObjectId) -> Option<u32> {
+        let mut d = self.death_of(o)?;
+        for (t, _) in plan.inplace.iter() {
+            if plan.alias(t) == o {
+                d = d.max(self.death_of(t)?);
+            }
+        }
+        Some(d)
+    }
+
     /// `o`'s last use on the device: its IR death, or (plan-cost `linear`)
     /// the launch of the site table that reads it for an earlier term.
     fn death_of(&self, o: ObjectId) -> Option<u32> {
@@ -3038,6 +3192,7 @@ impl<'a> FnEmit<'a> {
             for &m in &g.members {
                 let (r, _) = self.step_access(plan, acc, m);
                 for o in r {
+                    let o = plan.alias(o);
                     let u = until.get(o).copied().unwrap_or(0).max(at);
                     until.insert(o, u);
                 }
@@ -3056,7 +3211,7 @@ impl<'a> FnEmit<'a> {
                     .filter_map(|p| self.lup.position(p))
                     .min();
                 let death = self
-                    .death_of(o)
+                    .buffer_death(plan, o)
                     .map(|d| d.max(until.get(o).copied().unwrap_or(0)));
                 let bytes = self.array_bytes(&self.obj_ty(o));
                 (
@@ -3366,6 +3521,21 @@ impl<'a> FnEmit<'a> {
         let morph = self.ir.morphism(m).expect("morphism resolves");
         let (source, target) = (morph.source, morph.target);
         let bytes = self.array_bytes(&self.obj_ty(target));
+        // full-model `once-range`: the host intent of a range map run once —
+        // its interval written over its dead source's buffer, or the whole
+        // extent into its own.
+        let inplace = self
+            .resident
+            .as_ref()
+            .is_some_and(|p| p.inplace.contains_key(target));
+        if inplace {
+            self.line(format!("; mapal.range once=inplace bytes={bytes}"));
+        } else if c.range.is_none()
+            && self.range_write(m).is_some()
+            && self.straight_line().contains_key(m)
+        {
+            self.line(format!("; mapal.range once=whole bytes={bytes}"));
+        }
         // `range-cell`: the output is the state's carry buffer (its alias).
         let out = if c.range.is_some() {
             self.dload(target)
@@ -3941,9 +4111,17 @@ impl<'a> FnEmit<'a> {
             let bytes = self.array_bytes(&ty);
             let h = self.array_operand_ptr(t, None).expect("uploaded array ptr");
             let d = self.dalloc(t, bytes);
+            // A `+0.0` fill is zeroed on the device: no host bytes cross (the
+            // carry's init rule, at any producer).
+            let zero = delta.is_none() && chain.is_none() && self.zero_fill(t);
             // `pinned` (S54): a copy that runs more than once is page-locked.
-            self.pin(m, &h, bytes, true);
+            if !zero {
+                self.pin(m, &h, bytes, true);
+            }
             match (delta, chain) {
+                (None, None) if zero => {
+                    self.line(format!("call void @mapal_gpu_zero(i64 {d}, i64 {bytes})"))
+                }
                 (Some(du), _) => self.emit_delta_h2d(t, &du, &d, &h, bytes),
                 (None, Some(k)) => self.line(format!(
                     "call void @mapal_gpu_h2d_on(i32 {k}, i64 {d}, ptr {h}, i64 {bytes})"
@@ -4611,7 +4789,13 @@ impl<'a> FnEmit<'a> {
             // death there): its host bytes stay, its device bytes are the
             // carry's — no second upload of what the device holds.
             let dies = |a: ObjectId| {
-                take && entered.is_some_and(|p| self.lup.death(a).is_some_and(|d| d <= p))
+                take && entered.is_some_and(|p| {
+                    self.lup.death(a).is_some_and(|d| d <= p)
+                        || self
+                            .resident
+                            .as_ref()
+                            .is_some_and(|plan| self.bytes_enter(plan, a, init, p))
+                })
             };
             if let Some(a) = self.pair_source(init, c.k)
                 && (self.host_free(a) || dies(a))
@@ -4629,6 +4813,15 @@ impl<'a> FnEmit<'a> {
                 self.line(format!("store i64 {d}, ptr {sm}"));
                 self.line(format!("store i64 0, ptr {sa}"));
                 self.taken.push(a);
+                // `once-range`: the bytes are the in-place chain's buffer.
+                if let Some(r) = self
+                    .resident
+                    .as_ref()
+                    .map(|p| p.alias(a))
+                    .filter(|&r| r != a)
+                {
+                    self.taken.push(r);
+                }
                 self.dvalid.remove(a);
                 self.dvalid.insert(c.key(), ());
                 continue;

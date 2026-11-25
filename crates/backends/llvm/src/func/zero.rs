@@ -117,6 +117,29 @@ impl<'a> FnEmit<'a> {
                     Step::Loop(merge) => self.loop_access(plan, &acc, merge),
                 })
                 .collect();
+            // Each step's launch point in `seq`: a horizontal member's is
+            // its group's last member (where the merged grid launches).
+            let at_of: std::collections::HashMap<MorphismId, usize> = seq
+                .iter()
+                .enumerate()
+                .filter_map(|(i, s)| match *s {
+                    Step::Op(m) => Some((m, i)),
+                    Step::Loop(_) => None,
+                })
+                .collect();
+            let launch_ix: Vec<usize> = seq
+                .iter()
+                .enumerate()
+                .map(|(i, s)| match *s {
+                    Step::Op(m) => plan
+                        .hz_of
+                        .get(m)
+                        .and_then(|&(g, _)| plan.hz[g].members.last())
+                        .and_then(|last| at_of.get(last).copied())
+                        .map_or(i, |l| l.max(i)),
+                    Step::Loop(_) => i,
+                })
+                .collect();
             for (j, step) in seq.iter().enumerate() {
                 let Step::Op(l) = *step else {
                     continue;
@@ -134,6 +157,10 @@ impl<'a> FnEmit<'a> {
                     gated_n += 1;
                     continue;
                 }
+                let launched = (0..j)
+                    .filter(|&i| touches(&access[i]))
+                    .map(|i| launch_ix[i])
+                    .max();
                 let mut stop = None;
                 let mut folded_here = false;
                 for i in (0..j).rev() {
@@ -246,23 +273,18 @@ impl<'a> FnEmit<'a> {
                     matches!(seq[k], Step::Op(m)
                         if matches!(self.ir.morphism(m).map(|x| &x.op), Some(Operation::TimeMs)))
                 });
-                // full-model: a step's accesses happen at its launch, and a
-                // deferred `horizontal` member launches with its group, at
-                // the group's last member — the zero is issued after that
-                // (else it clears bytes the group has yet to read: an
-                // operand whose arena bytes the site's output takes next).
-                let launched = |i: usize| -> usize {
-                    let Step::Op(m) = seq[i] else { return i };
-                    let Some(&(g, _)) = plan.hz_of.get(m) else {
-                        return i;
-                    };
-                    let last = *plan.hz[g].members.last().expect("a group has members");
-                    (i..j)
-                        .find(|&x| matches!(seq[x], Step::Op(y) if y == last))
-                        .unwrap_or(j)
-                };
-                let stop = stop.map(launched);
-                let from = stop.unwrap_or(0).max(fence.unwrap_or(0));
+                // kernel-merging `horizontal`: a member touching the bytes
+                // runs at its group's launch (the last member) — the zero
+                // waits for that launch, not the member's own step
+                // (prefill-residency: a rotate cell deferred past the hoist
+                // point read its operand's bytes after the zero took them).
+                if launched.is_some_and(|l| l >= j) {
+                    continue;
+                }
+                let from = stop
+                    .unwrap_or(0)
+                    .max(fence.unwrap_or(0))
+                    .max(launched.unwrap_or(0));
                 let at = (from..j).find(|&k| {
                     matches!(seq[k], Step::Op(_)) && bytes.saturating_add(between(k)) <= keep
                 });

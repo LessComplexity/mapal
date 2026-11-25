@@ -3429,6 +3429,12 @@ pub struct ZeroProg {
     pub c: u64,
     pub k: u64,
     pub steps: Vec<[u8; 3]>,
+    /// prefill-residency: straight-line, the result reads the last site and
+    /// every cell — an earlier site's output dies at the cells reading it,
+    /// so a later site's output may take its bytes (the arena) and that
+    /// site's zero is hoisted toward the reader's launch (a horizontal
+    /// member's is its group's).
+    pub drop_sites: bool,
 }
 
 pub fn zero_prog_strategy() -> impl Strategy<Value = ZeroProg> {
@@ -3447,6 +3453,7 @@ pub fn zero_prog_strategy() -> impl Strategy<Value = ZeroProg> {
             c,
             k,
             steps,
+            drop_sites: false,
         })
 }
 
@@ -3506,8 +3513,14 @@ pub fn zero_src(p: &ZeroProg) -> String {
     // dead operand's bytes).
     let last = sites - 1;
     let mut sum = format!("y{last}[e]");
-    for y in 0..last {
-        sum += &format!(" + y{y}[(e + {}) % {rc}] / 8.0", y + 1);
+    if p.drop_sites && !p.looped {
+        for q in 0..cells {
+            sum += &format!(" + q{q}[(e + {}) % {}] / 8.0", q + 1, r * k);
+        }
+    } else {
+        for y in 0..last {
+            sum += &format!(" + y{y}[(e + {}) % {rc}] / 8.0", y + 1);
+        }
     }
     // One site: its output is the next state itself.
     let next = match sites {
@@ -7770,6 +7783,149 @@ pub fn decode_prog_src(g: &DecodeProg) -> String {
         "{ind}{h} -> iota -> map {{\n{ind}    i -> {sum}\n{ind}}} -> hidden;\n{ind}tokens -> map {{\n{ind}    t -> (0.0, features) -> fold {{\n{ind}        s, c -> s + emb[t * {h} + c] * hidden[c]\n{ind}    }}\n{ind}}} -> logits;\n{ind}((logits[0], 0), tokens) -> fold {{\n{ind}    best, t ->\n{ind}    (logits[t] > best.0) -> {{\n{ind}        -true-> (logits[t], t);\n{ind}        -false-> best;\n{ind}    }}\n{ind}}} -> winner;\n{ind}winner.1 -> token;\n{ind}token % 2 -> widen_f32 -> picked;\n{ind}{h} -> iota -> map {{\n{ind}    i -> emb[token * {h} + i] + picked\n{ind}}} -> next_x;\n{ind}next_x -> x;\n{ind}{last}.1 -> kv;\n{ind}position + 1 -> position;\n{ind}-> loop;\n            }}\n            -false-> x -> done;\n        }}\n    }}\n    done[0] -> println;\n    done[{m}] -> println;\n    done[{e}] -> println;\n}}\n",
         m = h / 2,
         e = h - 1,
+    );
+    s
+}
+
+/// full-model `once-range`: a prompt chunk written into a cache outside
+/// every loop — `chunk` rows per layer through a range map at a captured
+/// position (`t = cell ÷ w − layer·p − first`, `0 ≤ t < chunk`), attention
+/// over the filled rows, then `trips` decode steps appending one row each
+/// into the carried cache the prompt made (the loop's exit is the hidden
+/// row, as a model's: the cache is read only through attention). `shared`:
+/// the keys and values start from one zero fill (the first write's source
+/// is read again by the second; else the values start from a distinct
+/// fill); `reread`: an element of layer 0's keys is printed after layer 1
+/// wrote over them (that write's source is not dead).
+#[derive(Clone, Debug)]
+pub struct PrefillProg {
+    /// Hidden width `h`, row width `w`, layers (1 or 2), prompt rows `chunk`.
+    pub h: u64,
+    pub w: u64,
+    pub layers: u64,
+    pub chunk: u64,
+    /// The prompt's first position; the cache holds `p` positions a layer.
+    pub first: i64,
+    pub p: u64,
+    pub trips: i64,
+    pub shared: bool,
+    pub reread: bool,
+}
+
+pub fn prefill_strategy() -> impl Strategy<Value = PrefillProg> {
+    (
+        prop::sample::select(vec![16u64, 32, 64]),
+        prop::sample::select(vec![4u64, 8]),
+        1u64..3,
+        1u64..5,
+        0i64..3,
+        0i64..3,
+        any::<bool>(),
+        any::<bool>(),
+    )
+        .prop_map(|(h, w, layers, chunk, first, trips, shared, reread)| {
+            // The cache's size is no other array's, so a copy of its bytes
+            // is a cache crossing: the chunk's scores (`chunk · p`) differ
+            // from it by the chunk, the rest by spare positions past the last
+            // (a model's context is longer than its run).
+            let chunk = if chunk == layers * w {
+                chunk - 1
+            } else {
+                chunk
+            };
+            let mut p = (first + chunk as i64 + trips) as u64 + 1;
+            while [h, chunk * h, (chunk + 1) * h, layers * w * h, chunk * w, w]
+                .contains(&(layers * p * w))
+            {
+                p += 1;
+            }
+            PrefillProg {
+                h,
+                w,
+                layers,
+                chunk,
+                first,
+                p,
+                trips,
+                shared,
+                reread,
+            }
+        })
+}
+
+/// The program [`PrefillProg`] describes.
+pub fn prefill_prog_src(g: &PrefillProg) -> String {
+    let (h, w, l, p, chunk) = (g.h, g.w, g.layers, g.p, g.chunk);
+    let (cn, lwh) = (l * p * w, l * w * h);
+    let data = |name: &str, len: u64, a: u64, c: u64| {
+        format!(
+            "    {len} -> iota -> map {{\n        t -> (t * {a} + {c}) % 5 - 2 -> widen_f32\n    }} -> {name};\n"
+        )
+    };
+    let mut s = String::new();
+    s += &format!("type Cache {{\n    keys: [f32; {cn}],\n    values: [f32; {cn}],\n}}\n\n");
+    s += &format!(
+        "fn write_rows<tokens>(cache: [f32; {cn}], rows: [f32; tokens * {w}], layer: i32, first: i32) -> [f32; {cn}] {{\n    {cn} -> iota -> map {{\n        cell ->\n        cell / {w} - layer * {p} - first -> t;\n        (t >= 0 && t < tokens) -> {{\n            -true-> rows[t * {w} + cell % {w}];\n            -false-> cache[cell];\n        }}\n    }} -> ret;\n}}\n\n"
+    );
+    s += &format!(
+        "fn project<tokens>(weights: [f32; {lwh}], layer: i32, x: [f32; tokens * {h}]) -> [f32; tokens * {w}] {{\n    {h} -> iota -> columns;\n    tokens * {w} -> iota -> map {{\n        cell ->\n        cell / {w} -> t;\n        cell % {w} -> r;\n        (0.0, columns) -> fold {{\n            s, c -> s + weights[(layer * {w} + r) * {h} + c] * x[t * {h} + c]\n        }}\n    }} -> ret;\n}}\n\n"
+    );
+    s += &format!(
+        "fn back<tokens>(weights: [f32; {lwh}], layer: i32, a: [f32; tokens * {w}]) -> [f32; tokens * {h}] {{\n    {w} -> iota -> dims;\n    tokens * {h} -> iota -> map {{\n        cell ->\n        cell / {h} -> t;\n        cell % {h} -> i;\n        (0.0, dims) -> fold {{\n            s, d -> s + weights[(layer * {h} + i) * {w} + d] * a[t * {w} + d]\n        }}\n    }} -> ret;\n}}\n\n"
+    );
+    s += &format!(
+        "fn attend<tokens>(q: [f32; tokens * {w}], keys: [f32; {cn}], values: [f32; {cn}], layer: i32, first: i32) -> [f32; tokens * {w}] {{\n    {w} -> iota -> dims;\n    {p} -> iota -> pasts;\n    tokens * {p} -> iota -> map {{\n        cell ->\n        cell / {p} -> t;\n        cell % {p} -> past;\n        (past <= first + t) -> {{\n            -true-> {{\n                (0.0, dims) -> fold {{\n                    s, d -> s + q[t * {w} + d] * keys[(layer * {p} + past) * {w} + d]\n                }} -> dot;\n                (dot > 0.0) -> {{\n                    -true-> dot * 0.0 + 1.0;\n                    -false-> dot * 0.0 - 1.0;\n                }}\n            }}\n            -false-> 0.0;\n        }}\n    }} -> scores;\n    tokens * {w} -> iota -> map {{\n        cell ->\n        cell / {w} -> t;\n        cell % {w} -> d;\n        (0.0, pasts) -> fold {{\n            s, past -> s + scores[t * {p} + past] * values[(layer * {p} + past) * {w} + d]\n        }}\n    }} -> ret;\n}}\n\n"
+    );
+    s += &format!(
+        "fn layer_step<tokens>(x: [f32; tokens * {h}], layer: i32, first: i32, wk: [f32; {lwh}], wv: [f32; {lwh}], wq: [f32; {lwh}], wo: [f32; {lwh}], cache: Cache) -> ([f32; tokens * {h}], Cache) {{\n    (wk, layer, x) -> project -> key: [f32; tokens * {w}];\n    (wv, layer, x) -> project -> value: [f32; tokens * {w}];\n    (cache.keys, key, layer, first) -> write_rows -> keys;\n    (cache.values, value, layer, first) -> write_rows -> values;\n    (wq, layer, x) -> project -> query: [f32; tokens * {w}];\n    (query, keys, values, layer, first) -> attend -> attended;\n    (wo, layer, attended) -> back -> out: [f32; tokens * {h}];\n    tokens * {h} -> iota -> map {{\n        i -> x[i] + out[i]\n    }} -> after;\n    Cache {{\n        keys: keys,\n        values: values,\n    }} -> next;\n    (after, next) -> ret;\n}}\n\n"
+    );
+    s += "fn main() {\n";
+    s += &data("wk", lwh, 7, 1);
+    s += &data("wv", lwh, 5, 2);
+    s += &data("wq", lwh, 11, 0);
+    s += &data("wo", lwh, 13, 1);
+    s += &data("emb", (chunk + 1) * h, 17, 2);
+    s += &format!("    (0.0, {cn}) -> fill -> zeros;\n");
+    let values0 = if g.shared {
+        "zeros"
+    } else {
+        // A distinct start (an equal fill is the same value: one object),
+        // closed-form in the cell index.
+        s += &format!(
+            "    {cn} -> iota -> map {{\n        i -> i % 3 - 1 -> widen_f32\n    }} -> start;\n"
+        );
+        "start"
+    };
+    s += &format!(
+        "    Cache {{\n        keys: zeros,\n        values: {values0},\n    }} -> empty;\n    {n} -> iota -> map {{\n        i -> emb[i]\n    }} -> prompt;\n    (prompt, 0, {first}, wk, wv, wq, wo, empty) -> layer_step -> l0;\n",
+        n = chunk * h,
+        first = g.first,
+    );
+    let mut last = "l0";
+    if l == 2 {
+        s += &format!(
+            "    (l0.0, 1, {first}, wk, wv, wq, wo, l0.1) -> layer_step -> l1;\n",
+            first = g.first
+        );
+        last = "l1";
+        if g.reread {
+            s += &format!("    l0.1.keys[{k}] -> println;\n", k = g.first as u64 * w);
+        }
+    }
+    s += &format!("    {last}.0[{e}] -> println;\n", e = chunk * h - 1);
+    let end = g.first + chunk as i64 + g.trips;
+    s += &format!(
+        "    {h} -> iota -> map {{\n        i -> emb[{chunk} * {h} + i]\n    }} -> x0;\n    mut x: [f32; {h}] <- x0;\n    mut kv: Cache <- {last}.1;\n    mut position: i32 <- {start};\n    loop {{\n        (position < {end}) -> {{\n            -true-> {{\n                (x, 0, position, wk, wv, wq, wo, kv) -> layer_step -> d0;\n",
+        start = g.first + chunk as i64,
+    );
+    let mut dl = "d0";
+    if l == 2 {
+        s += "                (d0.0, 1, position, wk, wv, wq, wo, d0.1) -> layer_step -> d1;\n";
+        dl = "d1";
+    }
+    s += &format!(
+        "                {dl}.0 -> x;\n                {dl}.1 -> kv;\n                position + 1 -> position;\n                -> loop;\n            }}\n            -false-> x -> done;\n        }}\n    }}\n    done[0] -> println;\n    done[{m}] -> println;\n}}\n",
+        m = h - 1,
     );
     s
 }
