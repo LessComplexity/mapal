@@ -380,3 +380,37 @@ the 104 equal-text rows' session drift — Mapal ×0.990, best leg ×1.005 on th
 hopper-launch H100 runs' evidence rebuilt from the deterministic emission (12 / 12 measured kernels named alike; the
 step's intents 0 mismatch, `hopper-launch.md`); the three attention-chains A100 runs have no evidence pass and are
 timing only — not results until the next round re-times them with one.
+
+**gaps-disasm** (`gaps-disasm.md`): every RTX 5080 loss row of f1d3a04f (51 of 120) against the leading competitor's
+kernels — CUPTI timelines, the leaders' captured SASS — merged into 14 causes, ranked, and the fix-sprint plan.
+Read-only.
+
+**gapfix-launch-combine** (`gapfix-launch-combine.md`): C1 the host path out of the clock — the runtime's own zero
+kernel for the memset API (`zero-host`), a zero issued ahead of its site (`zero-hoist`), site picks / kernels /
+occupancy resolved at module load (`load-dispatch`); H every competitor leg timed at the program's boundary (host
+clock around the call and its synchronize; the event bracket kept as `dev_med_ms`); C5 an under-filled
+DRAM-streaming atomic split priced (`DeviceCost::split_cell_ps`, 5080 only: `mm_16x2048x7168` 88.1 → 79.9 µs, cuBLAS
+80.9). $0.05.
+
+**gapfix-tensor-tile** (`gapfix-tensor-tile.md`): C11 the raster gate reads row-major's `b` re-reads past the L2 keep
+(`Gpu::b_rereads`, `dram_bound`): 2048 × 28672 × 4096 bf16 / TF32 1.15 → 1.00 / 1.13 → 1.06 on the 5080, 4090 1.55 →
+1.04 / 1.51 → 1.10, A100 1.43 → 1.16 / 1.31 → 1.14, H100's 128-row TF32 projections −9 to −12 %; C3 the `mma-fly`
+ring on a convert-free 16-bit tile whose panel loads outlast its products (128 × 28672 × 4096 bf16 1.26 → 1.08 on the
+5080); C4 attempted, open. $0.30.
+
+**gapfix-rows-operands** (`gapfix-rows-operands.md`): C2 `stream-ld` — read-once operands past the L2 keep (within 4×
+it: the 3090's null separated by the keep share) load evict-first (`Caps::l2_evict`); C7 `shfl-tree` (one barrier a
+unit tree); C8 `iota-law` (`elem_plan` through captures); C12 `kvec-swizzle` (5080 null on decode, 3090 0.960).
+`pj_m1_n6144_k4096` 0.0843 → 0.0732 ms, `pj_m16_n6144_k4096` 0.0995 → 0.0787, `attn_1024_64` 0.0391 → 0.0367,
+`lsm_32_8192` unit kernel 3.04 → 2.30 µs. $0.06.
+
+**integration — gap-fixes merge** (`integration.md` § Gap-fixes merge): the three steps on one branch (conflicts only
+in the rung lists and the replay totals: 170 / 81 / 16 / 23). The merged emission of 137 programs on seven parts is
+every step's text side by side (28 kernels on the 5080 carry two steps' orthogonal changes); the integrated run found
+three interactions the steps' own runs could not see and they are fixed: C11's grouped walk with C3's ring priced
+row-major (`pj_m2048_n28672_k4096_bf16` 4.52 → 3.99 ms), `stream-ld` on a window's signal (null), and the hoisted
+zero past the operand generators (cold lines, `pj_m128_n6144_k4096_tf32` 1.068) and across the program's clock read
+(the product's own zero outside its timed region: fenced, 0.979 on the 50 programs it moves). 1549 tests + the fixes'
+binaries. Full suite with every competitor leg on the H harness: RTX 5080 column 0.978 (30 / 39 / 51) → **0.880
+(47 / 42 / 31)** — Mapal ×0.949, the best legs ×1.054 at the program's boundary (0.928 against the old event-bracket
+legs). The rented columns keep event-bracket legs until their next round. $0.41 (the steps).

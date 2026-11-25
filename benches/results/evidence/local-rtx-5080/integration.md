@@ -570,3 +570,144 @@ before / after on the 5080, 4090 and 5090 (201 programs; `pc_*` / `pm_*` panic i
 programs (6 each: the guard's 64 / 48 post-loop instructions) and the 3090's 14 site-table programs — the next round's
 A/B (the confirmation round in flight times the build before this fix). Tests: `cargo test -p mapal-backend-llvm`
 (release) all pass.
+
+## Gap-fixes merge
+
+Branch `local-rtx-5080`: `f41d4a83` + `--no-ff` merges of `gapfix/launch-combine` (`a6938770`, merge `57f3ea8f`),
+`gapfix/tensor-tile` (`7dd38795`, `c98931a1`) and `gapfix/rows-operands` (`108515bb`, `d945c641`), then the merge's
+test fixes (`fe73cd45`), what the integrated run found (`d450014d`, `9abeb446`) and this evidence. The three steps
+answer `gaps-disasm.md` (C1 / H / C5, C11 / C3 / C4, C2 / C7 / C8 / C12); their evidence: `gapfix-launch-combine.md`,
+`gapfix-tensor-tile.md`, `gapfix-rows-operands.md`. Rental spend of the steps: $0.05 + $0.30 + $0.06 = **$0.41**
+(this merge: $0, local only). Raw: `.claude/raw-evidence/local-rtx-5080/gapfix-integrate/` (`tests.log`, `testlogs/`,
+`resS/`, `resM/`, the A/B runs `fixab/`, `flyab/`, `swzab/`, `zeroab/`, `zeroab2/`; `scripts/`: `alone.py`, `kern.py`,
+`kernsrc.py`, `hostfn.py`, `cmp.py`, `bundle.sh`, `run.sh`; `analysis/`: `alone-<part>.tsv`, `kern-none.tsv`,
+`kernsrc.tsv`, `host-none.tsv`, `cmp.txt`, `fix-moved.txt`, `zero-moved.txt`, `zero-fence-moved.txt`, the A/B tables).
+
+| merge | conflicts | resolution |
+| --- | --- | --- |
+| launch-combine | none | — |
+| tensor-tile | `lib.rs` (`GpuRungs::NAMES` length) | 144 names (`load-dispatch`, `zero-host`, `zero-hoist`, `split-price`, `mma-fly`) |
+| rows-operands | `lib.rs` (the four rung fields, defaults, names, `rung()` arms), `profile.rs` (`NAMES_COST`), `rules.rs` (replay totals), `rung_replay.tsv` | unions: 148 names; `NAMES_COST` counted (rows-operands' fix, it also covers launch-combine's `split_cell_ps`); both branches' replay lines, totals 158/74/16/23 + 5/0/0/0 + 7/7/0/0 = **170 / 81 / 16 / 23**; the OPEN `l2-gate h100 off` line kept as the old gate's record (the new gate's `on` line beside it) |
+
+### Merged emission against each step alone
+
+The 137 timed programs (bS + bM stems) emitted by the merge, `fac7691b` and each branch tip on seven parts; host and
+device IR less `; mapal.` lines, kernel-name / key hashes normalized, lines sorted (`alone.py`); a program equal to no
+single step is split per device kernel (`kern.py`, `kernsrc.py`) and per host function and module global
+(`hostfn.py`). Device text:
+
+| part | programs | equal to base | one step | none (kernels from several steps) | kernels equal to no step | host equal to base |
+| --- | ---: | ---: | --- | ---: | --- | ---: |
+| rtx-5080 | 137 | 49 | lc 4, tt 3, ro 56 | 25 | **28 in 12 programs** | 1 |
+| rtx-3090 | 137 | 69 | ro 58 | 10 | 0 | 1 |
+| rtx-4090 | 137 | 56 | tt 2, ro 79 | 0 | 0 | 1 |
+| a100 | 137 | 62 | tt 4, ro 68 | 3 | 0 | 1 |
+| h100 | 137 | 53 | tt 5, ro 77 | 2 | 0 | 1 |
+| h100-pcie | 137 | 57 | tt 4, ro 69 | 7 | 0 | 1 |
+| rtx-5090 | 137 | 58 | tt 1, ro 78 | 0 | 0 | 1 |
+
+- **Host:** every merged host function and module global equals some step's (rtx-5080, rtx-3090): launch-combine's
+  site registry / hoisted zeros beside rows-operands' host folds under `iota-law`. With the runtime changed
+  (`mapal_gpu.c`, launch-combine) and the registry in nearly every host module, no row is null by construction: the
+  whole column is this session's.
+- **The 28 kernels equal to no step** are candidates of the decode / skinny-GEMV site tables on the 5080 only (the
+  one part with `split_cell_ps`): launch-combine's priced split (`S` 8 → 4) carrying rows-operands' `evict=b`
+  (`stream-ld`) or `swz=` (`kvec-swizzle`), and `attn_1024_64`'s flow kernel (its zero no longer folded, launch-combine,
+  with the shuffle tree, rows-operands). Orthogonal changes on one kernel: every program value-gated below.
+- **Interactions the run found** (not visible as text, fixed in `d450014d` / `9abeb446`, below): tensor-tile's two
+  rules on one site (C11 groups the walk, C3's ring priced row-major), launch-combine's hoisted zero past the operand
+  generators and the program's clock read.
+
+### Tests
+
+- **Workspace** (`test_par.py --bins 4`, `RUST_TEST_THREADS=16 MAPAL_PAR=4 MAPAL_TESTGEN_JOBS=4`, CPUs 16–31 / 48–63):
+  129 binaries, **1549 passed**, 2 binaries failed (wall 1806 s): `site_choice` `candidate_zero_is_the_pre_sprint_emission`
+  (rows-operands had not run it: `iota-law` moves all 204 pinned rows — the un-rewritten programs' host folds compute
+  a captured iota's element — `stream-ld` 3, `shfl-tree` 4; their OFF arms added) and `resident`'s two host-module
+  snapshots (the same iota law). Neither an interaction (`fe73cd45`).
+- **After the fixes:** backend lib 133 (+1 `mma_fly_prices_the_grouped_walk`), `stream_ld` (52 generated programs:
+  naive 6 / tile 2 streamed, re-read 42, keep 52, share 10, **window 2** refused), `zero_fold` 4
+  (+`hoisted_zero_keeps_its_lines_and_its_clock`: 24 generated products, zeros ahead of the generators 9 / after
+  them 15 / after the clock 24), `tensor_tile` 2, `site_choice` 9, `splitk` 5, `site_geometry` 8, `resident` 17,
+  `gpu_host` 5, `golden_ll` 36, `horizontal` 3, `calls` 6, `half_tile` 5, `large_gemm` 3, `hardware_properties` 2,
+  `device_geometry` 11 — pass. Every coverage counter > 0.
+
+### Time (`resS` / `resM`, every competitor leg, 30 reps, `PROBE_REPS=5`, bench lock, CPUs 0–7 pinned)
+
+Load at the start of `resS` (06:21) 5.2, of `resM` (06:33) 1.2 (1-min average; CPUs 0–7 busy 0–2 % at each boundary);
+other agents raised the load to 100–125 between about 07:10 and 07:25, during `resM`'s competitor legs. Value gates:
+41 + 96 programs and 128 px differentials pass on every arm; every follow-up A/B (below) value-gated, 0 failures.
+**Harness boundary (H):** every competitor leg is now timed as a Mapal program times itself (device idle, host clock
+around the call and its synchronize; the old event bracket kept as `dev_med_ms`); the rented columns still carry
+event-bracket legs, so the 5080 column is not comparable with them until their next round.
+
+| what (RTX 5080, 120 matrix rows) | before (matrix: 5fcb401b + confirmation-fixes) | gap-fixes merge |
+| --- | ---: | ---: |
+| geomean Mapal / best leg | 0.978 (30 / 39 / 51) | **0.880 (47 / 42 / 31)** |
+| Mapal against the old (event-bracket) legs | 0.978 | 0.928 |
+| Mapal new / old (geomean) | — | 0.949 |
+| best leg new / old (geomean; attention 1.216) | — | 1.054 |
+| GEMM cells & projections / MLP / attention / LLM / conv / fan | 1.045 / 1.054 / 0.855 / 1.035 / 0.529 / 1.032 | 0.927 / 0.988 / 0.642 / 0.987 / 0.493 / 0.992 |
+
+33 rows flip better (loss → even / win, even → win), none worse. Per cause (Mapal ms, old → merge; ratio against the
+best leg, new boundary):
+
+| cause | row | Mapal ms | ratio | SASS / usage (step's evidence) |
+| --- | --- | --- | --- | --- |
+| C1 host path | pj_m1_n4096_k4096 | 0.0396 → 0.0301 | 1.760 → 1.263 | site picks at load, the zero a kernel (no memset API) |
+| C1 + C7 | lsm_32_8192 | 0.0237 → 0.0162 | 2.326 → 0.839 | launches sooner; unit tree barriers 38 → 6 |
+| C1 | softmax_rows_4096 / epi_4096 / rt_mlp2_1024 | 3.97 → 3.80 / 3.79 → 3.54 / 2.75 → 2.55 | 1.122 → 1.033 / 1.019 → 0.991 / 1.094 → 0.992 | host path; `softmax_rows`' 64 MiB zero now inside the clock (below) |
+| C5 split price | pj_m16_n4096_k4096 / pj_m16_n2048_k7168 / mm_16x2048x7168 | 0.0495 → 0.0388 / 0.0416 → 0.0346 / 0.0879 → 0.0799 | 0.895 → 0.656 / 0.846 → 0.666 / 1.099 → 1.000 | `S` by the stream's spread against the partials |
+| C11 raster reuse gate | pj_m2048_n28672_k4096_bf16 / _tf32 | 4.555 → 3.987 / 9.048 → 8.532 | 1.139 → 1.003 / 1.123 → 1.057 | grouped walk, `b` read once (with the ring fix below) |
+| C3 mma-fly ring | pj_m128_n28672_k4096_bf16 | 0.4024 → 0.3426 | 1.268 → 1.021 | `DEPBAR.LE SB0, 0x2`, `bk` 16 × 4 |
+| C2 stream-ld | pj_m1_n6144_k4096 / pj_m16_n6144_k4096 / pj_m1_n4096_k14336 / pj_m1_n4096_k14336_bf16 | 0.0827 → 0.0687 / 0.0979 → 0.0861 / 0.2481 → 0.2238 / 0.1015 → 0.0780 | 1.614 → 1.275 / 1.111 → 0.957 / 1.081 → 0.956 / 0.719 → 0.532 | `b` loads `LDG.E.EF` |
+| C7 shfl-tree (+ C12) | attn_1024_64 / attn_2048_64 / attn_2048_128 | 0.0369 → 0.0356 / 0.0803 → 0.0728 / 0.1163 → 0.1131 | 1.284 → 1.022 / 1.154 → 0.776 / 1.235 → 0.992 | one barrier a tree; swizzled `b` stores |
+| C8 iota-law | llm_dec_b32_l2048_bf16kv / llm_dec_b1_l2048 | 0.5105 → 0.4959 / 0.2395 → 0.2195 | 1.099 → 1.047 / 0.925 → 0.837 | the norm's index computed, not loaded |
+| rows-operands (not split per rung) | causal_1024_256 / prefill_1024_512_256 | 15.16 → 13.45 / 7.78 → 6.77 | 0.344 → 0.297 / 0.344 → 0.300 | — |
+| C5 + C2 / C12 (one site table, not split) | llm_dec_b32_l8192_bf16kv | 1.728 → 1.657 | 1.160 → 1.101 | candidates at `S` 4 with `evict=` / `swz=` (the 28 kernels above) |
+
+### What the integrated run found (fixed)
+
+- **mma-fly × the C11 walk (tensor-tile, both rules on one site).** `pj_m2048_n28672_k4096_bf16` ran 4.516 ms in
+  the run, against the step's 3.99: C11 grouped its walk (`raster` 16) and C3, pricing the panel's DRAM bytes
+  row-major (`T` 1442 ≤ `t` 1672 < `T` + 573 ns), took the ring `bk` 16 × 4 — the step's 3.99 was the grouped S52
+  panel `bk` 32 × 2 (`gaps-disasm` arm). Same-session ABBA: the old bundle's grouped panel 3.98–3.99 against the
+  merge's ring 4.51–4.53. Fix (`d450014d`): `Depth::Fly { walk }` carries the walk's raster rule; the gate divides
+  each panel's bytes by its readers in the grouped wave (`b` by `h`, `a` by `wave / h`): `T` 233 ns, no ring. ABBA:
+  4.516 → **3.987** ms (null 3.989); the 128-row ring kept (unit test). Also moves the A100's
+  `llm_blkpre_t2048_bf16` (unmeasured).
+- **stream-ld on a window (rows-operands).** `cells = k·c` priced `fir_4194304_16`'s 16 MiB signal (`s[t + k]`,
+  every element read by 16 cells) as a 256 MiB read-once operand and streamed it. Read once now needs the
+  operand's `tensor_form` (dense, no overlapping axes) with `cells` distinct elements (`d450014d`; test: 12 window
+  programs, `testgen::gemm_window_src_at`). Moves fir / firew_rowsum on the 5080 / 4090 / 5090; ABBA null (0.0455 /
+  0.0454, 0.0516 / 0.0518).
+- **The hoisted zero (launch-combine C1).** `pj_m128_n6144_k4096_tf32` ran 0.180 → 0.187 ms on the same PTX (old /
+  new runtime ABBA): its 3 MB output, zeroed ahead of the 100 MB `b` generator, was cold at the atomic adds. And the
+  hoist crossed the program's `time` read: the product's own zero (64 MiB for `softmax_rows_4096`) left the timed
+  region, which the competitor legs keep inside theirs. Fix (`9abeb446`): the hoist stops where the bytes the working
+  steps after it touch (`access_plan`, `residence_plan` bytes) and the zero's own fit `l2_keep_bytes`, and never
+  crosses a clock read. ABBA against `d450014d` on the 50 programs it moves: **0.979** (the zeros' issue and fill
+  back in the clock: GEMVs 0.89–0.94, softmax / rowsum 4096 0.97; `pj_m128_n6144_k4096_tf32` 1.068); the residence
+  bound alone (35 programs) 1.001. The column takes these 50 rows from that run (`zeroab2`): 0.871 → 0.880. Open: a
+  zero folded into a kernel (`zero-fold`) is not fenced the same way (no suite program shows one ahead of a clock;
+  unchecked on generated programs).
+- **Evidence pass.** `evidence.py` did not list `stream-ld` / `kvec-swizzle` as kernel rungs (arch-rungs mismatches
+  101 / 1067 → 0 / 297, the old count); hoisted zeros are counted (`; mapal.zero.host hoisted=`, `zero_for`), intent
+  zero-fold counts them, new intent zero-hoist. Re-checked: resS 14523 checks / 275 mismatch (5fcb401b protocol run
+  of the previous merge: 14433 / 250), resM 121848 / 5779 (120181 / 5764). New mismatches: **kvec-swizzle "no
+  spill"** — attention score kernels spill 12–40 B with the swizzle (`attn_2048_64` two kernels 32 / 40 B,
+  `attn_2048_128` 12–16, `llm_pre_t8192.xref` 8; none without it), yet the swizzle is faster there (ABBA, rules
+  pick both arms: `attn_1024_64` 0.0367 → 0.0334, `attn_2048_64` 0.0820 → 0.0793, `attn_2048_128` 0.1515 → 0.1496):
+  open (the spill's place in SASS unread); choice "AUTO launches the stored pick" rows doubled (the class existed
+  before: the stored pick 5, launched 0).
+
+### Open (attempted or not reached)
+
+- The steps' own open items stand: C1 first-launch host cost and in-loop hoists; C5's DP + stream-K with workspace,
+  uneven `k` cuts and `split_cell_ps` on other parts; C4 (warp-tile efficiency property), C3's A100 64 × 64 split
+  (grid fill), the 3090 `smlp_4096_256_1024` stream-K (+22 %, fac7691b); C7 reciprocal (needs an ADR), C8 norm
+  spread, C12 copy width; C9, C14 not reached.
+- `pj_m1_n4096_k4096` (1.263), `pj_m1_n6144_k4096` (1.275), `pj_m128_n6144_k4096_tf32` (1.378) remain the 5080's
+  largest GEMV / TF32 losses; with the zero back in the clock the C1 GEMV gain is the host path's alone.
+- Rented columns: every row moved by the three steps and these fixes re-times at the next round, with the H harness.
+- No tailored fixes (`docs/tailored-fixes.md` unchanged).

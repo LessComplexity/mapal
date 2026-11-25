@@ -218,6 +218,14 @@ wins), the A100's streamed attention (0.94 → 0.30 ms at 2048 × 128; timing on
 merge, all 120 rows: **0.978** (30 / 39 / 51) — the 104 rows whose text equals 5fcb401b's held at that timing (null
 by construction); the merge's 14 changed rows 1.288 → 1.280.
 
+The RTX 5080's losses against the leaders' own kernels ([gaps-disasm](benches/results/evidence/local-rtx-5080/gaps-disasm.md):
+51 rows, 14 causes) and three fix steps on one branch ([gap-fixes merge](benches/results/evidence/local-rtx-5080/integration.md#gap-fixes-merge)):
+the host path out of the timed call (zero kernel, picks resolved at load), priced atomic splits, the raster gate on
+`b` re-reads, the in-flight ring, evict-first read-once operands, shuffle trees, iota laws, swizzled k-major copies —
+and every competitor leg now timed as a Mapal program times itself (host clock around the call and its synchronize).
+RTX 5080, all 120 rows: 0.978 (30 / 39 / 51) → **0.880 (47 / 42 / 31)**; Mapal alone against the old event-bracket
+legs 0.928. The rented columns above still carry event-bracket legs.
+
 On the final code the lsm rows split on every rented part (9.9–13.8× → 0.96–1.69× torch-compile-cg) and the 4090 /
 3090 decode chains form (0.41 / 0.75× the hand-written KV-cache decode); a GEMV epilogue site left unsplit makes B1
 decode 1.2–4.3× slower on the 3090 / A100 / H100 (without those six rows the 86-row geomeans are 0.996 / 1.145 /
