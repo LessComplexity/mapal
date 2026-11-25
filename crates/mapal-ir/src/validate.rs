@@ -663,7 +663,9 @@ fn is_loop_fork(
     let mut has_exit = false;
     for &mid in consumers {
         let m = ir.morphism(mid).unwrap();
-        if !matches!(m.op, Operation::Pair { .. }) {
+        // A consumer threads the token on: a `Pair` into an effect's
+        // source, or `TimeMs`, which takes the bare token.
+        if !matches!(m.op, Operation::Pair { .. } | Operation::TimeMs) {
             return false;
         }
         match cone_classify(ir, scc_of, m.target, obj_scc) {
@@ -2100,10 +2102,20 @@ mod typing_table_golden {
                 false,
             ),
             (
+                // full-model: a nested array is a readable value (its leaves
+                // in order, no padding).
                 "Read nested array",
                 Read,
                 tup(&[Ty::IoToken, Ty::Str]),
                 tup(&[Ty::IoToken, arr(arr(f32t(), 2), 4)]),
+                p,
+                true,
+            ),
+            (
+                "Read padded record",
+                Read,
+                tup(&[Ty::IoToken, Ty::Str]),
+                tup(&[Ty::IoToken, arr(tup(&[f32t(), Ty::u8()]), 4)]),
                 p,
                 false,
             ),

@@ -565,17 +565,11 @@ pub(crate) fn eval_morphism(
                 .component_ty(1)
                 .cloned()
                 .expect("Read target is (token, array)");
-            let Ty::Array { elem, .. } = &arr_ty else {
-                unreachable!("Read target value is not an array")
-            };
-            let bytes = mapal_ir::read::file_bytes(&arr_ty).expect("a readable array");
+            let bytes = mapal_ir::read::file_bytes(&arr_ty).expect("a readable value");
             match mapal_ir::read::load(path, ctx.ir.data_dir(), bytes) {
                 Ok(b) => {
-                    let vals = mapal_ir::read::decode(&b, elem)
-                        .into_iter()
-                        .map(RValue::Scalar)
-                        .collect();
-                    write(ctx, target, RValue::Tuple(vec![tok, RValue::array(vals)]));
+                    let value = decode_value(&b, &arr_ty, &mut 0);
+                    write(ctx, target, RValue::Tuple(vec![tok, value]));
                     Ok(())
                 }
                 Err(msg) => {
@@ -596,6 +590,40 @@ pub(crate) fn eval_morphism(
 }
 
 // --- helpers --------------------------------------------------------------
+
+/// ADR-0045 (generalized): a readable value of type `ty` from `bytes` at
+/// `*at`, leaves in order, no padding (`mapal_ir::read::readable`).
+fn decode_value(bytes: &[u8], ty: &Ty, at: &mut usize) -> RValue {
+    match ty {
+        Ty::Array { elem, size } => {
+            if let Some(w) = mapal_ir::read::elem_bytes(elem) {
+                let n = *size as usize * w as usize;
+                let vals = mapal_ir::read::decode(&bytes[*at..*at + n], elem)
+                    .into_iter()
+                    .map(RValue::Scalar)
+                    .collect();
+                *at += n;
+                RValue::array(vals)
+            } else {
+                RValue::array((0..*size).map(|_| decode_value(bytes, elem, at)).collect())
+            }
+        }
+        Ty::Tuple(ts) => RValue::Tuple(ts.iter().map(|t| decode_value(bytes, t, at)).collect()),
+        Ty::Struct { name, fields } => RValue::Struct {
+            name: name.clone(),
+            fields: fields
+                .iter()
+                .map(|(n, t)| (n.clone(), decode_value(bytes, t, at)))
+                .collect(),
+        },
+        scalar => {
+            let w = mapal_ir::read::elem_bytes(scalar).expect("a readable leaf") as usize;
+            let v = mapal_ir::read::decode(&bytes[*at..*at + w], scalar).remove(0);
+            *at += w;
+            RValue::Scalar(v)
+        }
+    }
+}
 
 /// The process-lifetime monotonic epoch for `TimeMs` (plan-time-builtin): one
 /// `Instant` shared by every read in the process, so two reads are

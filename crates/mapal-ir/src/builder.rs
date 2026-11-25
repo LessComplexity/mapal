@@ -535,7 +535,9 @@ fn is_loop_fork(
     let mut has_exit = false;
     for &mid in consumers {
         let m = ir.morphism(mid).unwrap();
-        if !matches!(m.op, Operation::Pair { .. }) {
+        // A consumer threads the token on: a `Pair` into an effect's
+        // source, or `TimeMs`, which takes the bare token.
+        if !matches!(m.op, Operation::Pair { .. } | Operation::TimeMs) {
             return false;
         }
         match cone_reaches(ir, scc_of, m.target, obj_scc) {

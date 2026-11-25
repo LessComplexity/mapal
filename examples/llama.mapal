@@ -1,0 +1,404 @@
+// llama.mapal — Llama-3.2-1B-Instruct: read the weights, run the prompt, generate greedily.
+//
+// The whole model is the functions below; the weights are data, read from one file (`model.bin`, written
+// by `benches/model/export_weights.py` from the Hugging Face checkpoint) and the prompt from another.
+// Run with `MAPAL_DATA_DIR` set to the directory holding them:
+//
+//   MAPAL_DATA_DIR=~/.cache/mapal/models/llama-3.2-1b-instruct/mapal mapal run examples/llama.mapal
+//
+// It prints one line per generated token: the token id, its logit, and the milliseconds since the prompt
+// was submitted (when the token is on the host). Every activation is f32; the weights stay bf16.
+//
+// One function serves the prompt and every generated token: `forward` runs a chunk of `tokens` new tokens
+// (the whole prompt at once, then one token at a time) through every layer, appending their keys and values
+// to the cache, and returns the logits after the chunk's last token.
+
+// ---------------------------------------------------------------------------------------------------------
+// The model's sizes (the checkpoint's config.json).
+
+128256 -> vocabulary_size;
+2048 -> hidden_size;
+16 -> layer_count;
+32 -> query_heads;
+8 -> key_value_heads;
+64 -> head_size;
+8192 -> feed_forward_size;
+0.00001 -> rms_epsilon;
+
+// Rotary position embedding: theta 500000 with llama3 frequency scaling.
+13.122363377404328 -> log_rope_theta; // ln(500000)
+32.0 -> rope_factor;
+1.0 -> rope_low_frequency_factor;
+4.0 -> rope_high_frequency_factor;
+8192.0 -> rope_original_context;
+
+// The run: the prompt's length (its first ids from `prompt.bin`) and how many tokens to generate.
+512 -> prompt_length;
+128 -> generated_tokens;
+2048 -> prompt_file_length;
+
+// Derived sizes.
+query_heads * head_size -> query_size;
+key_value_heads * head_size -> key_value_size;
+query_heads / key_value_heads -> heads_per_key_value_head;
+head_size / 2 -> rotation_pairs;
+prompt_length + generated_tokens -> context_length;
+layer_count * context_length * key_value_size -> cache_size;
+
+// ---------------------------------------------------------------------------------------------------------
+// Types.
+
+// A linear layer's weights as the checkpoint stores them: `rows` outputs of `columns` inputs, row by row.
+type Matrix<rows, columns> {
+    _: [bf16; rows * columns]
+}
+
+type DecoderLayerWeights {
+    attention_norm: [bf16; hidden_size],
+    query: Matrix<query_size, hidden_size>,
+    key: Matrix<key_value_size, hidden_size>,
+    value: Matrix<key_value_size, hidden_size>,
+    output: Matrix<hidden_size, query_size>,
+    feed_forward_norm: [bf16; hidden_size],
+    gate: Matrix<feed_forward_size, hidden_size>,
+    up: Matrix<feed_forward_size, hidden_size>,
+    down: Matrix<hidden_size, feed_forward_size>,
+}
+
+// The token embedding is also the output head (tied weights).
+type Model {
+    embedding: Matrix<vocabulary_size, hidden_size>,
+    layers: [DecoderLayerWeights; layer_count],
+    final_norm: [bf16; hidden_size],
+}
+
+// Every layer's keys and values for every position of the context: cell
+// `((layer * context_length + position) * key_value_heads + key_value_head) * head_size + dimension`.
+type KeyValueCache {
+    keys: [f32; cache_size],
+    values: [f32; cache_size],
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Rotary position embedding.
+
+// The rotation frequency of pair `pair` of a head: theta^(-2 pair / head_size). Llama 3 stretches the slow
+// ones: wavelengths longer than the original context / low factor are divided by the factor, those shorter
+// than the original context / high factor are kept, and those between are blended smoothly.
+fn inverse_frequency(pair: i32) -> f32 {
+    pair * 2 -> widen_f32 -> twice_pair;
+    head_size -> widen_f32 -> width;
+    -(twice_pair / width) * log_rope_theta -> exp -> frequency;
+    6.2831855 / frequency -> wavelength;
+    (wavelength > rope_original_context / rope_low_frequency_factor) -> {
+        -true-> frequency / rope_factor;
+        -false-> {
+            (wavelength < rope_original_context / rope_high_frequency_factor) -> {
+                -true-> frequency;
+                -false-> {
+                    rope_original_context / wavelength - rope_low_frequency_factor -> above_low;
+                    above_low / (rope_high_frequency_factor - rope_low_frequency_factor) -> smooth;
+                    (1.0 - smooth) * frequency / rope_factor + smooth * frequency
+                }
+            }
+        }
+    } -> ret;
+}
+
+// Computed before the program runs: it depends on nothing the run reads.
+rotation_pairs -> iota -> map {
+    pair -> pair -> inverse_frequency
+} -> inverse_frequencies: [f32; rotation_pairs];
+
+// Rotate each head of each token by its position's angles: in a head, element i < half and its partner
+// i + half are a pair (x, y) that becomes (x cos - y sin, y cos + x sin), at angle position * frequency.
+fn rotate<tokens, width>(x: [f32; tokens * width], positions: [i32; tokens]) -> [f32; tokens * width] {
+    tokens * width -> iota -> map {
+        cell ->
+        cell / width -> t;
+        cell % head_size -> within_head;
+        within_head % rotation_pairs -> pair;
+        positions[t] -> widen_f32 -> position;
+        position * inverse_frequencies[pair] -> angle;
+        angle -> cos -> cosine;
+        angle -> sin -> sine;
+        (within_head < rotation_pairs) -> {
+            -true-> x[cell] * cosine - x[cell + rotation_pairs] * sine;
+            -false-> x[cell] * cosine + x[cell - rotation_pairs] * sine;
+        }
+    } -> ret;
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Building blocks. Activations are `tokens` vectors stored one after another.
+
+fn embed<tokens>(embedding: Matrix<vocabulary_size, hidden_size>, ids: [i32; tokens]) -> [f32; tokens * hidden_size] {
+    tokens * hidden_size -> iota -> map {
+        cell ->
+        ids[cell / hidden_size] * hidden_size + cell % hidden_size -> row_cell;
+        embedding[row_cell] -> widen_f32
+    } -> ret;
+}
+
+// RMSNorm of each vector: x / sqrt(mean(x^2) + epsilon), times a learned gain per feature.
+fn rms_norm<tokens>(x: [f32; tokens * hidden_size], gain: [bf16; hidden_size]) -> [f32; tokens * hidden_size] {
+    hidden_size -> iota -> features;
+    hidden_size -> widen_f32 -> width;
+    tokens -> iota -> map {
+        t -> (0.0, features) -> fold {
+            sum, i -> sum + x[t * hidden_size + i] * x[t * hidden_size + i]
+        }
+    } -> sum_of_squares;
+    tokens * hidden_size -> iota -> map {
+        cell ->
+        sum_of_squares[cell / hidden_size] / width + rms_epsilon -> sqrt -> root;
+        gain[cell % hidden_size] -> widen_f32 -> g;
+        x[cell] * (1.0 / root) * g
+    } -> ret;
+}
+
+// A linear layer without bias: out[t][row] = sum over columns of weight[row][column] * x[t][column].
+fn project<tokens, rows, columns>(weight: Matrix<rows, columns>, x: [f32; tokens * columns]) -> [f32; tokens * rows] {
+    columns -> iota -> along;
+    tokens * rows -> iota -> map {
+        cell ->
+        cell / rows -> t;
+        cell % rows -> row;
+        (0.0, along) -> fold {
+            sum, column ->
+            weight[row * columns + column] -> widen_f32 -> w;
+            sum + w * x[t * columns + column]
+        }
+    } -> ret;
+}
+
+fn add<n>(a: [f32; n], b: [f32; n]) -> [f32; n] {
+    n -> iota -> map {
+        i -> a[i] + b[i]
+    } -> ret;
+}
+
+fn larger(a: f32, b: f32) -> f32 {
+    (a > b) -> {
+        -true-> a;
+        -false-> b;
+    } -> ret;
+}
+
+// SiLU, the gate activation of SwiGLU: x * sigmoid(x).
+fn silu(x: f32) -> f32 {
+    -x -> exp -> decay;
+    x / (1.0 + decay) -> ret;
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Attention.
+
+// The cache with the chunk's rows (keys or values, one row per token) written at positions
+// first_position, first_position + 1, ... of layer `layer`.
+fn write_rows<tokens>(cache: [f32; cache_size], rows: [f32; tokens * key_value_size], layer: i32, first_position: i32) -> [f32; cache_size] {
+    cache_size -> iota -> map {
+        cell ->
+        cell / key_value_size - layer * context_length - first_position -> t;
+        (t >= 0 && t < tokens) -> {
+            -true-> rows[t * key_value_size + cell % key_value_size];
+            -false-> cache[cell];
+        }
+    } -> ret;
+}
+
+// Causal grouped-query attention over layer `layer`'s cached keys and values: each token's query head h reads
+// key/value head h / 4 of every cached position up to its own, scores are scaled by 1 / sqrt(head_size),
+// softmax over each head's scores, and the result is the weighted sum of the cached values.
+fn attend<tokens>(
+    query: [f32; tokens * query_size],
+    positions: [i32; tokens],
+    keys: [f32; cache_size],
+    values: [f32; cache_size],
+    layer: i32,
+) -> [f32; tokens * query_size] {
+    head_size -> iota -> dimensions;
+    context_length -> iota -> past_positions;
+    head_size -> widen_f32 -> sqrt -> scale_root;
+    tokens * query_heads * context_length -> iota -> map {
+        cell ->
+        cell / context_length -> token_head;
+        cell % context_length -> past;
+        token_head / query_heads -> t;
+        token_head % query_heads / heads_per_key_value_head -> key_value_head;
+        (past <= positions[t]) -> {
+            -true-> {
+                (layer * context_length + past) * key_value_heads + key_value_head -> key_row;
+                (0.0, dimensions) -> fold {
+                    sum, d -> sum + query[token_head * head_size + d] * keys[key_row * head_size + d]
+                } -> dot;
+                dot / scale_root
+            }
+            -false-> -1000000000.0;
+        }
+    } -> scores;
+    tokens * query_heads -> iota -> token_heads;
+    token_heads -> map {
+        token_head -> (-1000000000.0, past_positions) -> fold {
+            best, past -> (best, scores[token_head * context_length + past]) -> larger
+        }
+    } -> row_maximum;
+    tokens * query_heads * context_length -> iota -> map {
+        cell -> scores[cell] - row_maximum[cell / context_length] -> exp
+    } -> exponentials;
+    token_heads -> map {
+        token_head -> (0.0, past_positions) -> fold {
+            sum, past -> sum + exponentials[token_head * context_length + past]
+        }
+    } -> row_total;
+    tokens * query_size -> iota -> map {
+        cell ->
+        cell / head_size -> token_head;
+        cell % head_size -> d;
+        token_head % query_heads / heads_per_key_value_head -> key_value_head;
+        (0.0, past_positions) -> fold {
+            sum, past ->
+            (layer * context_length + past) * key_value_heads + key_value_head -> value_row;
+            sum + exponentials[token_head * context_length + past] * values[value_row * head_size + d]
+        } -> weighted;
+        weighted / row_total[token_head]
+    } -> ret;
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// The decoder layer and the whole model.
+
+// SwiGLU feed-forward: down(silu(gate(x)) * up(x)).
+fn feed_forward<tokens>(x: [f32; tokens * hidden_size], weights: DecoderLayerWeights) -> [f32; tokens * hidden_size] {
+    (weights.gate, x) -> project -> gate: [f32; tokens * feed_forward_size];
+    (weights.up, x) -> project -> up: [f32; tokens * feed_forward_size];
+    tokens * feed_forward_size -> iota -> map {
+        i ->
+        gate[i] -> silu -> activated;
+        activated * up[i]
+    } -> mixed;
+    (weights.down, mixed) -> project -> ret;
+}
+
+// One decoder layer over the chunk: attention with a residual connection, then the feed-forward block with
+// a residual connection. The chunk's keys and values enter the cache before its queries attend.
+fn decoder_layer<tokens>(
+    hidden: [f32; tokens * hidden_size],
+    weights: DecoderLayerWeights,
+    layer: i32,
+    cache: KeyValueCache,
+    positions: [i32; tokens],
+) -> ([f32; tokens * hidden_size], KeyValueCache) {
+    (hidden, weights.attention_norm) -> rms_norm -> normed;
+    (weights.query, normed) -> project -> query: [f32; tokens * query_size];
+    (weights.key, normed) -> project -> key: [f32; tokens * key_value_size];
+    (weights.value, normed) -> project -> value: [f32; tokens * key_value_size];
+    (query, positions) -> rotate -> rotated_query;
+    (key, positions) -> rotate -> rotated_key;
+    (cache.keys, rotated_key, layer, positions[0]) -> write_rows -> keys;
+    (cache.values, value, layer, positions[0]) -> write_rows -> values;
+    (rotated_query, positions, keys, values, layer) -> attend -> attended;
+    (weights.output, attended) -> project -> attention_output: [f32; tokens * hidden_size];
+    (hidden, attention_output) -> add -> after_attention;
+    (after_attention, weights.feed_forward_norm) -> rms_norm -> normed_again;
+    (normed_again, weights) -> feed_forward -> feed_forward_output;
+    (after_attention, feed_forward_output) -> add -> ret.0;
+    KeyValueCache {
+        keys: keys,
+        values: values,
+    } -> updated_cache;
+    updated_cache -> ret.1;
+}
+
+// Run a chunk of tokens, the first at `first_position`, through every layer; return the logits after the
+// chunk's last token and the cache holding the chunk's keys and values.
+fn forward<tokens>(ids: [i32; tokens], first_position: i32, model: Model, cache: KeyValueCache) -> ([f32; vocabulary_size], KeyValueCache) {
+    tokens -> iota -> map {
+        t -> first_position + t
+    } -> positions;
+    (model.embedding, ids) -> embed -> embedded;
+    mut hidden: [f32; tokens * hidden_size] <- embedded;
+    mut updated: KeyValueCache <- cache;
+    mut layer: i32 <- 0;
+    loop {
+        (layer < layer_count) -> {
+            -true-> {
+                (hidden, model.layers[layer], layer, updated, positions) -> decoder_layer -> result;
+                result.0 -> hidden;
+                result.1 -> updated;
+                layer + 1 -> layer;
+                -> loop;
+            }
+            -false-> {
+                hidden_size -> iota -> map {
+                    i -> hidden[(tokens - 1) * hidden_size + i]
+                } -> last;
+                (last, model.final_norm) -> rms_norm -> normed;
+                (model.embedding, normed) -> project -> logits: [f32; vocabulary_size];
+                (logits, updated) -> ret;
+            }
+        }
+    }
+}
+
+// Greedy decoding: the token with the largest logit (the first one on a tie).
+fn most_likely_token(logits: [f32; vocabulary_size]) -> i32 {
+    vocabulary_size -> iota -> tokens;
+    ((logits[0], 0), tokens) -> fold {
+        best, token -> (logits[token] > best.0) -> {
+            -true-> (logits[token], token);
+            -false-> best;
+        }
+    } -> winner;
+    winner.1 -> ret;
+}
+
+// ---------------------------------------------------------------------------------------------------------
+
+fn main() {
+    "model.bin" -> read -> model: Model;
+    (0.0, cache_size) -> fill -> nothing_cached;
+    KeyValueCache {
+        keys: nothing_cached,
+        values: nothing_cached,
+    } -> empty_cache;
+
+    // The prompt arrives (the clock starts), and all of it at once, from position 0, gives the first token.
+    () -> time -> submitted;
+    "prompt.bin" -> read -> prompt_file: [i32; prompt_file_length];
+    prompt_length -> iota -> map {
+        t -> prompt_file[t]
+    } -> prompt;
+    (prompt, 0, model, empty_cache) -> forward -> prefilled;
+    prefilled.0 -> most_likely_token -> first_token;
+    () -> time -> first_token_time;
+    first_token -> print;
+    " " -> print;
+    prefilled.0[first_token] -> print;
+    " " -> print;
+    first_token_time - submitted -> println;
+
+    // Each later token: feed the previous one at the next position.
+    mut token: i32 <- first_token;
+    mut cache: KeyValueCache <- prefilled.1;
+    mut position: i32 <- prompt_length;
+    loop {
+        (position < prompt_length + generated_tokens - 1) -> {
+            -true-> {
+                [token] -> ids;
+                (ids, position, model, cache) -> forward -> stepped;
+                stepped.0 -> most_likely_token -> token;
+                stepped.1 -> cache;
+                () -> time -> now;
+                token -> print;
+                " " -> print;
+                stepped.0[token] -> print;
+                " " -> print;
+                now - submitted -> println;
+                position + 1 -> position;
+                -> loop;
+            }
+            -false-> position -> last_position;
+        }
+    }
+}

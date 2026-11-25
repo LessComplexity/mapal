@@ -1043,11 +1043,12 @@ struct Interval {
     w: u64,
 }
 
-/// One side of an index interval: `t ≥ a·e + b` or `t < a·e + b`.
+/// One side of an index interval: `t ÷ d ≥ a·e + b` or `t ÷ d < a·e + b`
+/// (`d = 1`: `t` itself), the last field `d`.
 #[derive(Clone, Copy, Debug)]
 enum Bound {
-    Lo(Option<u32>, i64, i64),
-    Hi(Option<u32>, i64, i64),
+    Lo(Option<u32>, i64, i64, u64),
+    Hi(Option<u32>, i64, i64, u64),
 }
 
 /// The per-element law of an array object: **what `out[i]` is, as a closed
@@ -4172,17 +4173,20 @@ impl CategoryIr {
                     self.t_bound(x, input, captures, site)?,
                     self.t_bound(y, input, captures, site)?,
                 );
-                let ((e1, a1, b1), (e2, a2, b2)) = match (bx, by) {
-                    (Bound::Lo(e1, a1, b1), Bound::Hi(e2, a2, b2))
-                    | (Bound::Hi(e2, a2, b2), Bound::Lo(e1, a1, b1)) => {
-                        ((e1, a1, b1), (e2, a2, b2))
+                let ((e1, a1, b1, d1), (e2, a2, b2, d2)) = match (bx, by) {
+                    (Bound::Lo(e1, a1, b1, d1), Bound::Hi(e2, a2, b2, d2))
+                    | (Bound::Hi(e2, a2, b2, d2), Bound::Lo(e1, a1, b1, d1)) => {
+                        ((e1, a1, b1, d1), (e2, a2, b2, d2))
                     }
                     _ => return None,
                 };
-                let len = u64::try_from(b2.checked_sub(b1)?).ok().filter(|&l| l > 0)?;
-                (a1 == a2 && (e1 == e2 || a1 == 0)).then_some((
+                // Rows `[a·e + b1, a·e + b2)` of `d` cells: `d·(b2 − b1)` cells
+                // from `d·(a·e + b1)`.
+                let rows = u64::try_from(b2.checked_sub(b1)?).ok().filter(|&l| l > 0)?;
+                let len = rows.checked_mul(d1)?;
+                (d1 == d2 && a1 == a2 && (e1 == e2 || a1 == 0)).then_some((
                     Interval {
-                        d: 1,
+                        d: d1,
                         a: a1,
                         e: e1.or(e2),
                         b: b1,
@@ -4198,7 +4202,9 @@ impl CategoryIr {
     }
 
     /// One comparison of `t` against an affine bound: `t ≥ a·e + b` as
-    /// `Lo(e, a, b)`, `t < a·e + b` as `Hi(e, a, b)`.
+    /// `Lo(e, a, b, 1)`, `t < a·e + b` as `Hi(e, a, b, 1)` — or of the row
+    /// `t ÷ d` shifted by an affine term (`t ÷ d − (a'·e + b') ≥ 0`, a chunk
+    /// of rows written at a captured position), the shift moved to the bound.
     fn t_bound(
         &self,
         cmp: ObjectId,
@@ -4211,11 +4217,12 @@ impl CategoryIr {
             self.pair_slot_source(c.source, 0)?,
             self.pair_slot_source(c.source, 1)?,
         );
-        let is_t = |o: ObjectId| self.tile_input_proj_index(o, input) == Some(captures);
-        // Normalize to `t op bound`.
-        let (op, bound) = if is_t(x) {
-            (c.op, y)
-        } else if is_t(y) {
+        let mut e = None;
+        let rows = |o: ObjectId, e: &mut Option<u32>| self.t_rows(o, input, captures, site, e, 0);
+        // Normalize to `t ÷ d + shift op bound`.
+        let (op, (d, sa, sb), bound) = if let Some(r) = rows(x, &mut e) {
+            (c.op, r, y)
+        } else if let Some(r) = rows(y, &mut e) {
             let flipped = match c.op {
                 Operation::Lt => Operation::Gt,
                 Operation::Gt => Operation::Lt,
@@ -4223,17 +4230,63 @@ impl CategoryIr {
                 Operation::Ge => Operation::Le,
                 _ => return None,
             };
-            (flipped, x)
+            (flipped, r, x)
         } else {
             return None;
         };
-        let mut e = None;
-        let (a, b) = self.capture_affine(bound, input, captures, site, &mut e, 0)?;
+        let (ba, bb) = self.capture_affine(bound, input, captures, site, &mut e, 0)?;
+        let (a, b) = (ba.checked_sub(sa)?, bb.checked_sub(sb)?);
         match op {
-            Operation::Ge => Some(Bound::Lo(e, a, b)),
-            Operation::Gt => Some(Bound::Lo(e, a, b.checked_add(1)?)),
-            Operation::Lt => Some(Bound::Hi(e, a, b)),
-            Operation::Le => Some(Bound::Hi(e, a, b.checked_add(1)?)),
+            Operation::Ge => Some(Bound::Lo(e, a, b, d)),
+            Operation::Gt => Some(Bound::Lo(e, a, b.checked_add(1)?, d)),
+            Operation::Lt => Some(Bound::Hi(e, a, b, d)),
+            Operation::Le => Some(Bound::Hi(e, a, b.checked_add(1)?, d)),
+            _ => None,
+        }
+    }
+
+    /// `o` as `t ÷ d + a·e + b` (`(d, a, b)`): the map element `t` (`d = 1`)
+    /// or `t ÷ d` (`d` a positive literal), plus or minus a term affine in one
+    /// captured int scalar ([`Self::capture_affine`]). Depth-guarded (J1).
+    fn t_rows(
+        &self,
+        o: ObjectId,
+        input: ObjectId,
+        captures: u32,
+        site: ObjectId,
+        e: &mut Option<u32>,
+        depth: u32,
+    ) -> Option<(u64, i64, i64)> {
+        if depth > 16 {
+            return None;
+        }
+        if self.tile_input_proj_index(o, input) == Some(captures) {
+            return Some((1, 0, 0));
+        }
+        let mm = self.morphisms.get(*self.in_edges(o).first()?)?;
+        let x = self.pair_slot_source(mm.source, 0)?;
+        let y = self.pair_slot_source(mm.source, 1)?;
+        match mm.op {
+            Operation::Div => {
+                let d = self.tile_literal_u64(y).filter(|&k| k > 0)?;
+                (self.tile_input_proj_index(x, input) == Some(captures)).then_some((d, 0, 0))
+            }
+            Operation::Add | Operation::Sub => {
+                if let Some((d, ra, rb)) = self.t_rows(x, input, captures, site, e, depth + 1) {
+                    let (ya, yb) = self.capture_affine(y, input, captures, site, e, depth + 1)?;
+                    return Some(if mm.op == Operation::Add {
+                        (d, ra.checked_add(ya)?, rb.checked_add(yb)?)
+                    } else {
+                        (d, ra.checked_sub(ya)?, rb.checked_sub(yb)?)
+                    });
+                }
+                if mm.op != Operation::Add {
+                    return None;
+                }
+                let (d, ra, rb) = self.t_rows(y, input, captures, site, e, depth + 1)?;
+                let (xa, xb) = self.capture_affine(x, input, captures, site, e, depth + 1)?;
+                Some((d, ra.checked_add(xa)?, rb.checked_add(xb)?))
+            }
             _ => None,
         }
     }

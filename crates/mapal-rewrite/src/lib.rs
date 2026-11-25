@@ -24,6 +24,7 @@ mod naturality;
 mod plan;
 mod replay;
 mod statics;
+mod unroll;
 
 pub use driver::{MAX_ROUNDS, PassId, RewriteReport, RewriteResult, rewrite, rewrite_with};
 pub use equations::analyze_const_fold;
@@ -35,3 +36,4 @@ pub use naturality::{NATURALITY_LAWS, NaturalityLaw};
 pub use plan::{FusionSpec, LiftKind, LiftSpec, RewritePlan};
 pub use replay::{ReplayError, is_canonical, replay};
 pub use statics::{StaticReport, fold_static};
+pub use unroll::{UNROLL_MAX_MORPHISMS, UNROLL_MAX_TRIPS, analyze_unroll};

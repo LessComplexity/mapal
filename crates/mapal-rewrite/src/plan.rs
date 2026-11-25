@@ -90,6 +90,10 @@ pub struct RewritePlan {
     /// all — compile-time evaluation ran it to its end and nothing reads it
     /// any more (its non-SCC values are in `drop`, its read exits constified).
     pub drop_loops: SecondaryMap<ObjectId, ()>,
+    /// `unroll?` (R-UN, [`crate::unroll`]): a counted loop, by its merge,
+    /// replayed as its trips one after another (the value: the trip count) —
+    /// no loop is left.
+    pub unroll: SecondaryMap<ObjectId, u32>,
 }
 
 impl RewritePlan {

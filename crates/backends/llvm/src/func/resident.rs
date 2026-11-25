@@ -2183,6 +2183,22 @@ impl<'a> FnEmit<'a> {
         }
         loop {
             let (drop, unfed, carries) = self.cell_round(sites_mut, folds, &cells, devgen);
+            // `MAPAL_DEBUG_PLACE`: each round's dropped cells (a diagnostic
+            // for "why does this map run on the host").
+            if std::env::var_os("MAPAL_DEBUG_PLACE").is_some() {
+                let name = |m: MorphismId| {
+                    let t = self.ir.morphism(m).expect("cell").target;
+                    let o = self.ir.object(t).expect("obj");
+                    format!("{}:{:?}", o.name.clone().unwrap_or_default(), t)
+                };
+                eprintln!(
+                    "place round: {} cells, {} carries; drop {:?}; unfed {:?}",
+                    cells.len(),
+                    carries.len(),
+                    drop.iter().map(|&m| name(m)).collect::<Vec<_>>(),
+                    unfed.iter().map(|&m| name(m)).collect::<Vec<_>>()
+                );
+            }
             if drop.is_empty() && unfed.is_empty() {
                 return (cells, carries);
             }
@@ -2326,7 +2342,24 @@ impl<'a> FnEmit<'a> {
                         );
                         down + out_up > 0 && up + out_down <= down + out_up
                     };
-                    homeless || !(held || (rungs.bytes_place && per_trip && moved()))
+                    // full-model `once-bytes`: a cell outside every loop
+                    // moves its bytes once — the same rule, once.
+                    let by_bytes = rungs.bytes_place && (per_trip || rungs.once_bytes);
+                    let out = homeless || !(held || (by_bytes && moved()));
+                    if out && std::env::var_os("MAPAL_DEBUG_PLACE").is_some() {
+                        let nm = |o: ObjectId| {
+                            self.ir.object(o).and_then(|x| x.name.clone()).unwrap_or_default()
+                        };
+                        eprintln!(
+                            "  drop {}: homeless={homeless} held={held} per_trip={per_trip} alone={alone} host={} ops={:?}",
+                            nm(t),
+                            host(),
+                            ops.iter()
+                                .map(|&(o, _)| format!("{}:there={}:dev={}", nm(o), there(o), device_only(o)))
+                                .collect::<Vec<_>>()
+                        );
+                    }
+                    out
                 })
                 .map(|(m, _)| m)
                 .collect();

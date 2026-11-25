@@ -2353,9 +2353,9 @@ impl Emitter<'_> {
                 ),
             ));
         }
-        let shape = "`read` needs its binding's array type: \
-                     `\"file.bin\" -> read -> name: [T; n]`, T one of \
-                     i32, i64, u8, f32, f64, bf16, f16";
+        let shape = "`read` needs its binding's type: an array or a struct / tuple \
+                     whose every leaf is i32, i64, u8, f32, f64, bf16 or f16, with no \
+                     padding (`\"file.bin\" -> read -> name: [T; n]`)";
         let annot = match next.map(|n| &n.kind) {
             Some(StageKind::Bind {
                 ty: Some(annot), ..

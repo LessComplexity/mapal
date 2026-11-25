@@ -333,6 +333,13 @@ fn reconstruct_loop(
     ret_obj: ObjectId,
     ret_dest: &RetDest,
 ) {
+    if let Some(&trips) = plan.unroll.get(merge) {
+        reconstruct_unrolled_loop(
+            fb, ir, plan, fmap, fused, lifted, remap, done, obj_order, merge, trips, ret_obj,
+            ret_dest,
+        );
+        return;
+    }
     if let Some(spec) = plan.lift.get(merge) {
         reconstruct_lifted_loop(
             fb,
@@ -454,6 +461,100 @@ fn reconstruct_loop(
     }
 
     fb.end_loop(lh).expect("replay: end_loop");
+}
+
+/// R-UN ([`crate::unroll`]): a counted loop replayed as its `trips` trips, one
+/// after another. Trip `k` replays the decide and advance phases with the
+/// merge standing for trip `k`'s state (the init for the first); its back
+/// route's next state is trip `k + 1`'s. After the last trip the decide phase
+/// runs once more on the final state and its exit route's value is the
+/// loop's exit object — what the loop leaves with. No loop is built: every
+/// trip's counter is a constant once constant folding runs.
+#[allow(clippy::too_many_arguments)]
+fn reconstruct_unrolled_loop(
+    fb: &mut mapal_ir::FnBuilder<'_>,
+    ir: &CategoryIr,
+    plan: &RewritePlan,
+    fmap: &SecondaryMap<FuncId, FuncId>,
+    fused: &SecondaryMap<MorphismId, FuncId>,
+    lifted: &SecondaryMap<ObjectId, FuncId>,
+    remap: &mut SecondaryMap<ObjectId, ObjectId>,
+    done: &mut SecondaryMap<ObjectId, bool>,
+    obj_order: &[ObjectId],
+    merge: ObjectId,
+    trips: u32,
+    ret_obj: ObjectId,
+    ret_dest: &RetDest,
+) {
+    let lp = ir
+        .loop_plan(ir.owner(merge), merge)
+        .expect("canonical loop (is_canonical gated)");
+    let targets = |order: &[MorphismId]| -> SecondaryMap<ObjectId, ()> {
+        order
+            .iter()
+            .map(|&m| (ir.morphism(m).expect("loop body edge").target, ()))
+            .collect()
+    };
+    let scc: SecondaryMap<ObjectId, ()> = lp.scc_objects.iter().map(|&o| (o, ())).collect();
+    let mut every: SecondaryMap<ObjectId, ()> = targets(&lp.decide_order);
+    for (o, _) in targets(&lp.advance_order).iter() {
+        every.insert(o, ());
+    }
+    for (o, _) in scc.iter() {
+        every.insert(o, ());
+    }
+    let decide = targets(&lp.decide_order);
+    // One pass over the body in the global topo suborder, the merge standing
+    // for `state`; `only` limits it to the decide phase (the final pass).
+    let pass = |fb: &mut mapal_ir::FnBuilder<'_>,
+                remap: &mut SecondaryMap<ObjectId, ObjectId>,
+                done: &mut SecondaryMap<ObjectId, bool>,
+                state: ObjectId,
+                only: Option<&SecondaryMap<ObjectId, ()>>| {
+        for (o, _) in every.iter() {
+            done.remove(o);
+        }
+        remap.insert(merge, state);
+        done.insert(merge, true);
+        for &o in obj_order {
+            if o == merge || !every.contains_key(o) || only.is_some_and(|d| !d.contains_key(o)) {
+                continue;
+            }
+            if done.get(o).copied().unwrap_or(false) {
+                continue;
+            }
+            reconstruct_a(
+                fb, ir, plan, fmap, fused, lifted, remap, done, obj_order, o, ret_obj, ret_dest,
+            );
+        }
+    };
+    let mut state = feed(plan, remap, lp.init);
+    let back = slot_feeders(ir, lp.back_route);
+    for _ in 0..trips {
+        pass(fb, remap, done, state, None);
+        state = feed(plan, remap, back[0]);
+    }
+    pass(fb, remap, done, state, Some(&decide));
+    let exit = slot_feeders(ir, lp.exit_route);
+    let value = feed(plan, remap, exit[0]);
+    for (o, _) in every.iter() {
+        done.insert(o, true);
+    }
+    let exit_morph = ir.morphism(lp.exits[0]).expect("loop exit");
+    let exit_tgt = exit_morph.target;
+    if exit_tgt == ret_obj {
+        match ret_dest {
+            RetDest::Own => fb
+                .output(value, None, exit_morph.loc)
+                .expect("replay: unrolled loop's exit value is the function's output"),
+            RetDest::Fresh(_) => {
+                remap.insert(ret_obj, value);
+            }
+        }
+    } else {
+        remap.insert(exit_tgt, value);
+        done.insert(exit_tgt, true);
+    }
 }
 
 /// Scalar replacement of a loop state: the leaf paths of a tuple state one of

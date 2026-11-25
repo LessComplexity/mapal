@@ -136,15 +136,25 @@ fn a_missing_or_non_array_annotation_is_l1617() {
         r#"fn main() { "w.bin" -> read -> w; w[0] -> println; }"#,
         // a scalar
         r#"fn main() { "w.bin" -> read -> w: f32; w -> println; }"#,
-        // nested arrays
-        r#"fn main() { "w.bin" -> read -> w: [[f32; 2]; 2]; w[0][0] -> println; }"#,
         // an element type a file cannot hold
         r#"fn main() { "w.bin" -> read -> w: [bool; 2]; w[0] -> println; }"#,
         r#"fn main() { "w.bin" -> read -> w: [f8e4m3; 2]; w[0] -> widen_f32 -> println; }"#,
-        // a tuple element
-        r#"fn main() { "w.bin" -> read -> w: [(f32, f32); 2]; w[0].0 -> println; }"#,
+        // a record whose layout needs padding (an f32 after a u8)
+        r#"fn main() { "w.bin" -> read -> w: [(u8, f32); 2]; w[0].1 -> println; }"#,
     ] {
         assert_rejects(src, "L1617");
+    }
+    // full-model: a value of nested arrays, tuples or structs whose leaves are
+    // readable scalars with no padding is the file's bytes, leaves in order.
+    for src in [
+        r#"fn main() { "w.bin" -> read -> w: [[f32; 2]; 2]; w[0][0] -> println; }"#,
+        r#"fn main() { "w.bin" -> read -> w: [(f32, f32); 2]; w[0].0 -> println; }"#,
+        r#"type L { g: [bf16; 2], w: [[bf16; 2]; 3] }
+fn main() { "w.bin" -> read -> m: [L; 4]; m[1].w[2][0] -> widen_f32 -> println; }"#,
+    ] {
+        let po = mapal_syntax::parse(src);
+        assert!(po.diagnostics.is_empty(), "{:?}", po.diagnostics);
+        assert!(mapal_lower::lower(src, &po.program).is_ok(), "{src}");
     }
 }
 

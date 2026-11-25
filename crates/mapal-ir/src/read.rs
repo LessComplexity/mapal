@@ -5,8 +5,9 @@
 //! same messages, and its tests replay [`resolve`] and [`size_message`]
 //! against its own.
 //!
-//! - **Element types** (D2): one-dimensional arrays of `i32`, `i64`, `u8`,
-//!   `f32`, `f64`, `bf16`, `f16` ([`readable`]).
+//! - **Types** (D2): arrays of `i32`, `i64`, `u8`, `f32`, `f64`, `bf16`,
+//!   `f16`, and arrays / structs / tuples of those at any depth with no
+//!   padding — the file is the value's bytes, leaves in order ([`readable`]).
 //! - **File format** (D3): raw little-endian elements, exactly `n · |T|`
 //!   bytes; any other length, and a file that cannot be opened, is a read
 //!   failure: exit [`EXIT_CODE`] with [`size_message`] / [`open_message`] on
@@ -26,11 +27,44 @@ pub const DATA_DIR_ENV: &str = "MAPAL_DATA_DIR";
 /// The exit code of a failed read (traps exit 101, GPU runtime failures 102).
 pub const EXIT_CODE: i32 = 103;
 
-/// A `read` target: a one-dimensional array of a readable element type.
+/// A `read` target: an array or a product (struct, tuple) whose every leaf
+/// is a readable scalar ([`elem_bytes`]), at any depth — arrays of arrays,
+/// arrays of structs, structs of arrays — laid out with no padding (each
+/// leaf at an offset that is a multiple of its own width, every product's
+/// size a multiple of its widest leaf): the file is the value's bytes, leaves
+/// in order, which is also how the value is stored. A bare scalar is not a
+/// target (a file holds an array or a record).
 pub fn readable(ty: &Ty) -> bool {
+    matches!(ty, Ty::Array { .. } | Ty::Tuple(_) | Ty::Struct { .. }) && layout(ty).is_some()
+}
+
+/// `(bytes, widest leaf)` of a readable value with no padding, else `None`.
+fn layout(ty: &Ty) -> Option<(u64, u64)> {
     match ty {
-        Ty::Array { elem, size } => *size >= 1 && elem_bytes(elem).is_some(),
-        _ => false,
+        Ty::Array { elem, size } => {
+            let (b, a) = layout(elem)?;
+            (*size >= 1).then_some(())?;
+            Some((b.checked_mul(*size)?, a))
+        }
+        Ty::Tuple(_) | Ty::Struct { .. } => {
+            let comps: Vec<&Ty> = match ty {
+                Ty::Tuple(ts) => ts.iter().collect(),
+                Ty::Struct { fields, .. } => fields.iter().map(|(_, t)| t).collect(),
+                _ => unreachable!("a product"),
+            };
+            let (mut at, mut widest) = (0u64, 0u64);
+            for c in comps {
+                let (b, a) = layout(c)?;
+                (at % a == 0).then_some(())?;
+                at = at.checked_add(b)?;
+                widest = widest.max(a);
+            }
+            (widest > 0 && at % widest == 0).then_some((at, widest))
+        }
+        scalar => {
+            let w = elem_bytes(scalar)?;
+            Some((w, w))
+        }
     }
 }
 
@@ -56,11 +90,28 @@ pub fn elem_bytes(elem: &Ty) -> Option<u64> {
     }
 }
 
-/// The exact file length a `read` of `array` requires, `n · |T|`.
-pub fn file_bytes(array: &Ty) -> Option<u64> {
-    match array {
-        Ty::Array { elem, size } => size.checked_mul(elem_bytes(elem)?),
-        _ => None,
+/// The exact file length a `read` of `ty` requires: its leaves' bytes
+/// (`n · |T|` for an array of scalars).
+pub fn file_bytes(ty: &Ty) -> Option<u64> {
+    readable(ty).then(|| layout(ty).map(|(b, _)| b))?
+}
+
+/// The leaves of a readable `ty` in file order, as `(scalar type, count)`
+/// runs: an array of scalars is one run, an array of products repeats its
+/// element's runs.
+pub fn leaf_runs(ty: &Ty, out: &mut Vec<(Ty, u64)>) {
+    match ty {
+        Ty::Array { elem, size } if elem_bytes(elem).is_some() => {
+            out.push(((**elem).clone(), *size))
+        }
+        Ty::Array { elem, size } => {
+            for _ in 0..*size {
+                leaf_runs(elem, out);
+            }
+        }
+        Ty::Tuple(ts) => ts.iter().for_each(|t| leaf_runs(t, out)),
+        Ty::Struct { fields, .. } => fields.iter().for_each(|(_, t)| leaf_runs(t, out)),
+        scalar => out.push((scalar.clone(), 1)),
     }
 }
 
@@ -175,10 +226,36 @@ mod tests {
         }
         assert!(!readable(&arr(Ty::Bool)));
         assert!(!readable(&arr(Ty::Narrow(NarrowFloat::F8e4m3))));
-        assert!(!readable(&arr(arr(Ty::f32()))));
-        assert!(!readable(&arr(Ty::Tuple(vec![Ty::f32(), Ty::f32()]))));
         assert!(!readable(&Ty::f32()));
         assert_eq!(file_bytes(&arr(Ty::f64())), Some(24));
+        // Nested values: the file is the value's leaves, in order, unpadded.
+        assert!(readable(&arr(arr(Ty::f32()))));
+        assert_eq!(file_bytes(&arr(arr(Ty::f32()))), Some(36));
+        assert!(readable(&arr(Ty::Tuple(vec![Ty::f32(), Ty::f32()]))));
+        let layer = Ty::Struct {
+            name: "Layer".into(),
+            fields: vec![
+                ("gain".into(), arr(Ty::Narrow(NarrowFloat::Bf16))),
+                ("weight".into(), arr(arr(Ty::Narrow(NarrowFloat::Bf16)))),
+            ],
+        };
+        assert_eq!(file_bytes(&layer), Some(6 + 18));
+        assert_eq!(file_bytes(&arr(layer.clone())), Some(3 * 24));
+        let mut runs = Vec::new();
+        leaf_runs(&arr(layer), &mut runs);
+        assert_eq!(runs.len(), 3 * 4);
+        // A leaf off its width's alignment (an f32 after one u8), or a
+        // record whose size is not a multiple of its widest leaf: padding.
+        assert!(!readable(&Ty::Tuple(vec![Ty::u8(), Ty::f32()])));
+        assert!(!readable(&arr(Ty::Tuple(vec![Ty::f32(), Ty::u8()]))));
+        assert!(readable(&Ty::Tuple(vec![
+            Ty::f32(),
+            Ty::u8(),
+            Ty::u8(),
+            Ty::u8(),
+            Ty::u8()
+        ])));
+        assert!(!readable(&arr(Ty::Bool)));
     }
 
     #[test]

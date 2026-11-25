@@ -11,11 +11,13 @@
 //! **Policy (plan §Move 1):** inline a call site iff
 //!   - the callee's morphism count ≤ [`INLINE_MAX_BODY`] (strip is not free —
 //!     a callee called at K sites is copied K times; the cap is a recorded
-//!     constant, tuned by the perf harness, never semantics-bearing), ∧,
+//!     constant, tuned by the perf harness, never semantics-bearing) — or the
+//!     callee has exactly one call site (nothing is copied twice), ∧,
 //!   - the callee is not the entry (the entry fn is never inlined), ∧,
 //!   - the callee has no loop (inlining it into a caller loop can create nested
 //!     SCCs, which lower never produces and the LLVM backend rejects; the
-//!     future loop-to-fold lift makes these callees eligible), ∧,
+//!     loop-to-fold lift and R-UN's unrolling, [`crate::unroll`], make such
+//!     callees eligible), ∧,
 //!   - no `Call` cycle (the builder rejects recursive Calls at seal —
 //!     `IrError::RecursiveCall` — so the graph is a DAG by construction; if
 //!     recursion ever arrives, cycle members stay as calls, plan §7).
@@ -45,6 +47,12 @@ pub const INLINE_MAX_BODY: u32 = 256;
 pub fn analyze_inline(ir: &CategoryIr) -> RewritePlan {
     let mut plan = RewritePlan::new();
     let cyclic = call_cyclic(ir);
+    let mut sites: SecondaryMap<FuncId, u32> = SecondaryMap::new();
+    for (_, morph) in ir.morphisms() {
+        if let Operation::Call(g) = morph.op {
+            *sites.entry(g).expect("live fn").or_insert(0) += 1;
+        }
+    }
     for (m, morph) in ir.morphisms() {
         let Operation::Call(g) = morph.op else {
             continue;
@@ -53,7 +61,8 @@ pub fn analyze_inline(ir: &CategoryIr) -> RewritePlan {
             continue;
         }
         let def = ir.func(g).expect("call target");
-        if def.morphisms.len() as u32 > INLINE_MAX_BODY {
+        let once = sites.get(g).copied() == Some(1);
+        if def.morphisms.len() as u32 > INLINE_MAX_BODY && !once {
             continue;
         }
         plan.inline.insert(m, ());

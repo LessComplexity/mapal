@@ -674,3 +674,111 @@ fn main() {
         }
     }
 }
+
+/// full-model: a record read whole — the file is the value's bytes, leaves in
+/// order (`mapal_ir::read::readable`): a struct of a bf16 matrix, an array of
+/// per-layer structs (each a bf16 vector and a nested bf16 matrix) and an f32
+/// vector, laid out with no padding. A layer loop reads `model.layers[layer]`
+/// (R-UN unrolls it: each layer's view at a constant index). Every backend
+/// prints the oracle's bytes.
+#[test]
+fn a_record_read_whole_on_every_backend() {
+    let dir = tempfile::tempdir().unwrap();
+    // embedding [bf16; 12], layers [Layer; 2] (gain [bf16; 4], weight
+    // [[bf16; 4]; 3]), scale [f32; 2]: 24 + 2·(8 + 24) + 8 = 96 bytes.
+    let bf = |x: f32| (x.to_bits() >> 16) as u16;
+    let mut bytes = Vec::new();
+    for i in 0..12 {
+        bytes.extend_from_slice(&bf(i as f32 * 0.5 - 2.0).to_le_bytes());
+    }
+    for l in 0..2 {
+        for i in 0..4 {
+            bytes.extend_from_slice(&bf(1.0 + 0.25 * (i + l) as f32).to_le_bytes());
+        }
+        for c in 0..12 {
+            bytes.extend_from_slice(&bf(((c * 3 + l) % 7) as f32 - 3.0).to_le_bytes());
+        }
+    }
+    for s in [0.5f32, -1.25] {
+        bytes.extend_from_slice(&s.to_le_bytes());
+    }
+    assert_eq!(bytes.len(), 96);
+    std::fs::write(dir.path().join("model.bin"), &bytes).unwrap();
+    let src = r#"
+type Layer {
+    gain: [bf16; 4],
+    weight: [[bf16; 4]; 3],
+}
+
+type Model {
+    embedding: [bf16; 12],
+    layers: [Layer; 2],
+    scale: [f32; 2],
+}
+
+fn main() {
+    "model.bin" -> read -> model: Model;
+    4 -> iota -> map {
+        i -> model.embedding[i + 4] -> widen_f32
+    } -> x0;
+    mut x: [f32; 4] <- x0;
+    mut layer: i32 <- 0;
+    loop {
+        (layer < 2) -> {
+            -true-> {
+                model.layers[layer] -> weights;
+                4 -> iota -> map {
+                    i ->
+                    weights.gain[i] -> widen_f32 -> g;
+                    weights.weight[i % 3][i] -> widen_f32 -> w;
+                    x[i] * g + w * model.scale[layer]
+                } -> x;
+                layer + 1 -> layer;
+                -> loop;
+            }
+            -false-> x -> out;
+        }
+    }
+    out[0] -> println;
+    out[1] -> println;
+    out[2] -> println;
+    out[3] -> println;
+}
+"#;
+    let mut want = None;
+    for rewrite in [false, true] {
+        let ir = lower_in(src, dir.path(), rewrite);
+        let rr = run(&ir, 10_000_000);
+        let got = done(&rr).to_string();
+        assert_eq!(got.lines().count(), 4);
+        let want = want.get_or_insert(got.clone());
+        assert_eq!(&got, want, "interp (rewrite={rewrite})");
+        let Some(clang) = emu::clang() else {
+            continue;
+        };
+        for (face, base) in [
+            ("exact", EmitOpts::exact()),
+            ("default", EmitOpts::default()),
+        ] {
+            let em = emission(&ir, "generic", base);
+            assert_eq!(read_calls(&em.text).len(), 1);
+            let (out, err, code) = native(&clang, &em.text, &[]);
+            assert_eq!(
+                (code, out.as_str()),
+                (0, want.as_str()),
+                "native {face}: {err}"
+            );
+        }
+        for (out, err, code) in gpu_runs(&clang, &ir) {
+            assert_eq!((code, out.as_str()), (0, want.as_str()), "GPU build: {err}");
+        }
+    }
+    // A file one byte short is a read failure naming the value's bytes.
+    std::fs::write(dir.path().join("model.bin"), &bytes[..95]).unwrap();
+    let rr = run(&lower_in(src, dir.path(), true), 10_000_000);
+    assert!(
+        matches!(rr.outcome, Outcome::ReadFailed(_)),
+        "{:?}",
+        rr.outcome
+    );
+}

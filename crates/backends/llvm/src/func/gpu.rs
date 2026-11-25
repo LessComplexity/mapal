@@ -2595,6 +2595,7 @@ fn launch_key(l: &Launch) -> String {
         // range cells write in place, a cell's lanes — keyed by the cell).
         .replace(", trip_cells: false", "")
         .replace(", bytes_place: false", "")
+        .replace(", once_bytes: false", "")
         .replace(", range_chain: false", "")
         .replace(", stride_lanes: false", "")
         .replace(", carry_fwd: false", "")

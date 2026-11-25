@@ -528,6 +528,35 @@ pub fn infer(
             solve(source, fname, &eqs, &mut env, &mut origin, span)?;
         }
     }
+    // D3.3': sizes that only appear in products of two or more unknowns
+    // (`rows * columns`, `tokens * columns`, `tokens * rows`): every whole
+    // assignment that satisfies all the equations, found by trying the
+    // divisors of one product's value — taken only when it is the one.
+    if unbound(&env).is_some() {
+        let mut found = Vec::new();
+        joint(source, fname, &eqs, &env, span, &mut found);
+        if let [one] = found.as_slice() {
+            env = one.clone();
+        } else if found.len() > 1 {
+            let show = |e: &SizeEnv| {
+                declared
+                    .iter()
+                    .map(|d| format!("`{d}` = {}", e.get(d).copied().unwrap_or(0)))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            return Err(diag(
+                LCode::SizeUnbound,
+                span,
+                format!(
+                    "the sizes of `{fname}` are ambiguous in this call: {} and {} both fit — \
+                     bind the result with its type (`-> y: [f32; …]`)",
+                    show(&found[0]),
+                    show(&found[1])
+                ),
+            ));
+        }
+    }
     // D3.5: every parameter bound, every equation holds, the output well formed.
     if let Some(p) = unbound(&env) {
         return Err(diag(
@@ -684,6 +713,82 @@ fn solve(
             return Ok(());
         }
     }
+}
+
+/// D3.3': the whole solutions of `eqs` past what [`solve`] binds alone, at
+/// most two (enough to tell one from many). One unknown of an equation that
+/// is a product of names and literals takes each divisor of the equation's
+/// value in turn; [`solve`] propagates it; an assignment that still leaves
+/// unknowns recurses. Equations with `+` / `-` are not searched.
+fn joint(
+    source: &str,
+    fname: &str,
+    eqs: &[Equation],
+    env: &SizeEnv,
+    span: syn::SourceLoc,
+    found: &mut Vec<SizeEnv>,
+) {
+    let unknowns = |eq: &Equation| -> Vec<String> {
+        let mut used = BTreeMap::new();
+        names(source, &eq.expr, &mut used);
+        used.into_keys().filter(|n| !env.contains_key(n)).collect()
+    };
+    let pick = eqs
+        .iter()
+        .filter(|eq| product_only(&eq.expr))
+        .map(|eq| (unknowns(eq), eq.n))
+        .filter(|(u, _)| !u.is_empty())
+        .min_by_key(|(u, _)| u.len());
+    let Some((names_left, n)) = pick else {
+        // Nothing left to search: every equation must hold as bound.
+        let holds = eqs
+            .iter()
+            .all(|eq| matches!(value(source, &eq.expr, env), Ok(Some(v)) if v == i128::from(eq.n)));
+        if holds && !found.contains(env) {
+            found.push(env.clone());
+        }
+        return;
+    };
+    let p = &names_left[0];
+    for v in divisors(n) {
+        if found.len() > 1 {
+            return;
+        }
+        let mut trial = env.clone();
+        trial.insert(p.clone(), v);
+        let mut origin = BTreeMap::new();
+        if solve(source, fname, eqs, &mut trial, &mut origin, span).is_err() {
+            continue;
+        }
+        joint(source, fname, eqs, &trial, span, found);
+    }
+}
+
+/// Whether `e` is built from names and literals by `*` alone.
+fn product_only(e: &SizeExpr) -> bool {
+    match &e.kind {
+        SizeKind::Name(_) | SizeKind::Int(_) => true,
+        SizeKind::Binary { op, lhs, rhs } => {
+            matches!(op, SizeOp::Mul) && product_only(lhs) && product_only(rhs)
+        }
+    }
+}
+
+/// The divisors of `n`, ascending.
+fn divisors(n: u64) -> Vec<u64> {
+    let (mut small, mut large) = (Vec::new(), Vec::new());
+    let mut d = 1u64;
+    while d.saturating_mul(d) <= n {
+        if n % d == 0 {
+            small.push(d);
+            if d != n / d {
+                large.push(n / d);
+            }
+        }
+        d += 1;
+    }
+    small.extend(large.into_iter().rev());
+    small
 }
 
 fn contains(source: &str, e: &SizeExpr, p: &str) -> bool {

@@ -138,7 +138,9 @@ fn add_chain_fn(b: &mut IrBuilder, name: &str, n: u32) -> mapal_ir::FuncId {
 
 #[test]
 fn oversized_callee_stays_a_call() {
-    // big(x) = x + 86: 86 Adds × 3 morphisms + Output = 259 > INLINE_MAX_BODY.
+    // big(x) = x + 86: 86 Adds × 3 morphisms + Output = 259 > INLINE_MAX_BODY,
+    // called at two sites (full-model: a callee with one site inlines
+    // whatever its size — nothing is copied twice).
     let mut b = IrBuilder::new();
     let big = add_chain_fn(&mut b, "big", 86);
     let main = b
@@ -147,7 +149,8 @@ fn oversized_callee_stays_a_call() {
     {
         let mut fb = b.build_fn(main).unwrap();
         let x = fb.input();
-        fb.call(big, x, Dest::Ret { slot: None }, L).unwrap();
+        let c = fb.call(big, x, Dest::Fresh(None), L).unwrap();
+        fb.call(big, c, Dest::Ret { slot: None }, L).unwrap();
         fb.finish().unwrap();
     }
     let ir = b.seal(main).unwrap();
@@ -163,15 +166,37 @@ fn oversized_callee_stays_a_call() {
     assert!(validate(&out).is_empty());
     assert_eq!(
         call_count(&out),
-        1,
-        "the kept call survives (region boundary)"
+        2,
+        "the kept calls survive (region boundaries)"
     );
     assert_eq!(out.funcs().count(), 2, "the callee is still referenced");
 
     let before = eval_call(&ir, main, scalar(3), BUDGET);
     let after = eval_call(&out, out.entry(), scalar(3), BUDGET);
-    assert_eq!(before, Outcome::Done(scalar(89)));
+    assert_eq!(before, Outcome::Done(scalar(175)));
     assert_eq!(after, before);
+}
+
+#[test]
+fn oversized_callee_with_one_site_inlines() {
+    let mut b = IrBuilder::new();
+    let big = add_chain_fn(&mut b, "big", 86);
+    let main = b
+        .declare(FuncKind::Named, "main", Ty::i32(), Ty::i32(), L)
+        .unwrap();
+    {
+        let mut fb = b.build_fn(main).unwrap();
+        let x = fb.input();
+        fb.call(big, x, Dest::Ret { slot: None }, L).unwrap();
+        fb.finish().unwrap();
+    }
+    let ir = b.seal(main).unwrap();
+    assert_eq!(analyze_inline(&ir).inline.len(), 1, "one site ⇒ inlined");
+    let out = replay(&ir, &analyze_inline(&ir)).unwrap();
+    assert!(validate(&out).is_empty());
+    assert_eq!(call_count(&out), 0);
+    let after = eval_call(&out, out.entry(), scalar(3), BUDGET);
+    assert_eq!(after, Outcome::Done(scalar(89)));
 }
 
 #[test]

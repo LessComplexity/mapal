@@ -1109,6 +1109,12 @@ pub struct GpuRungs {
     /// to the device when a device kernel reads the output). Off: every
     /// operand must already be on the device.
     pub bytes_place: bool,
+    /// full-model `once-bytes`: `bytes-place`'s rule for a cell outside every
+    /// loop too — it runs where it moves fewer bytes, once (a prompt's RMSNorm
+    /// reads a 4 KB gain the host holds and 4 MB the device does: the gain
+    /// goes up, not the 4 MB down and back). Off: such a cell needs every
+    /// operand on the device already.
+    pub once_bytes: bool,
     /// model-ready placement `range-chain`: a chain of in-place range maps
     /// over a carried state (a trip's appends to one cache) writes the
     /// carry's buffer link by link, each written array dead past its
@@ -1288,6 +1294,7 @@ impl GpuRungs {
         kvec_swizzle: true,
         trip_cells: true,
         bytes_place: true,
+        once_bytes: true,
         range_chain: true,
         stride_lanes: true,
         carry_fwd: true,
@@ -1296,7 +1303,7 @@ impl GpuRungs {
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 155] = [
+    pub const NAMES: [&'static str; 156] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1448,6 +1455,7 @@ impl GpuRungs {
         "kvec-swizzle",
         "trip-cells",
         "bytes-place",
+        "once-bytes",
         "range-chain",
         "stride-lanes",
         "carry-fwd",
@@ -1608,6 +1616,7 @@ impl GpuRungs {
             "kvec-swizzle" => &mut self.kvec_swizzle,
             "trip-cells" => &mut self.trip_cells,
             "bytes-place" => &mut self.bytes_place,
+            "once-bytes" => &mut self.once_bytes,
             "range-chain" => &mut self.range_chain,
             "stride-lanes" => &mut self.stride_lanes,
             "carry-fwd" => &mut self.carry_fwd,

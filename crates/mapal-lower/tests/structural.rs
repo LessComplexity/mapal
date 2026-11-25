@@ -431,3 +431,36 @@ fn array_update_emits_no_token_edges() {
         );
     }
 }
+
+/// full-model: `time` inside a loop that exits through a binding — the
+/// loop's token forks into the body's clock read and the exit route (the
+/// fork's body consumer takes the bare token). Was: seal failed, TokenNotLinear.
+#[test]
+fn a_clock_read_in_a_loop_body() {
+    let src = r#"
+fn main() {
+    () -> time -> start;
+    mut i: i32 <- 0;
+    loop {
+        (i < 3) -> {
+            -true-> {
+                () -> time -> now;
+                i -> print;
+                " " -> print;
+                (now >= start) -> println;
+                i + 1 -> i;
+                -> loop;
+            }
+            -false-> i -> last;
+        }
+    }
+    last -> println;
+}
+"#;
+    let po = mapal_syntax::parse(src);
+    assert!(po.diagnostics.is_empty(), "{:?}", po.diagnostics);
+    let ir = mapal_lower::lower(src, &po.program).expect("lowers");
+    assert!(mapal_ir::validate(&ir).is_empty());
+    let rr = mapal_interp::run(&ir, 1_000_000);
+    assert_eq!(rr.output, "0 true\n1 true\n2 true\n3\n");
+}

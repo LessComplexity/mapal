@@ -164,3 +164,14 @@ instances.
 It runs the monomorphized IR: nothing changes. `mapal run`, `mapal test` and the differential tests compare a generic
 program with the interpreter as any other; the tests compare it with its hand-specialized twin on the interpreter,
 the native CPU, the GPU and every emulator mode.
+
+## Amendment (full-model, 2026-11-25): products of unknowns
+
+D3's solving step gains one rule (D3.3′, `sizes.rs` `joint`): when no equation has an unknown alone and sizes are
+still unbound — `project<tokens, rows, columns>(weight: [bf16; rows * columns], x: [f32; tokens * columns]) ->
+[f32; tokens * rows]`, every dimension a product of two unknowns — one unknown of a product-only equation takes each
+divisor of that equation's value in turn, the rest propagate as before, and an assignment is kept when every
+equation holds. Exactly one assignment: it is the call's (the result's annotation usually decides it: `columns² =
+W·X / Y`); two or more: L1706 names two of them (`… are ambiguous in this call: … and … both fit — bind the result
+with its type`); none: the existing errors. Equations with `+` / `−` are not searched. Test: `size_generics`
+`product_systems_solve_with_the_results_type`.

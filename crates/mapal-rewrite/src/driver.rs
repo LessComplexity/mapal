@@ -16,6 +16,7 @@ use crate::inline::analyze_inline;
 use crate::lift::analyze_lift;
 use crate::plan::RewritePlan;
 use crate::replay::{is_canonical, replay};
+use crate::unroll::analyze_unroll;
 
 /// Fixpoint round cap (DESIGN §5). No implemented rule grows the graph except
 /// fusion's body synthesis, which strictly decreases the `Map`-edge count — every
@@ -37,6 +38,8 @@ pub enum PassId {
     Inline,
     /// R-LF / R-LM — canonical counted loops to captured `Fold` / `Map`.
     LiftLoops,
+    /// R-UN — counted loops replayed trip by trip ([`crate::unroll`]).
+    Unroll,
 }
 
 /// The rewrite of one graph plus its diagnostic log (DESIGN §5). Not `Clone`/
@@ -69,6 +72,7 @@ pub fn rewrite(ir: CategoryIr) -> RewriteResult {
         ir,
         &[
             PassId::Inline,
+            PassId::Unroll,
             PassId::LiftLoops,
             PassId::ConstFold,
             PassId::Cse,
@@ -145,6 +149,7 @@ fn analyze(pass: PassId, ir: &CategoryIr) -> RewritePlan {
         PassId::MapFusion => analyze_map_fusion(ir),
         PassId::Inline => analyze_inline(ir),
         PassId::LiftLoops => analyze_lift(ir),
+        PassId::Unroll => analyze_unroll(ir),
     }
 }
 
@@ -155,7 +160,8 @@ fn plan_len(plan: &RewritePlan) -> u64 {
         + plan.drop.len()
         + plan.fuse.len()
         + plan.inline.len()
-        + plan.lift.len()) as u64
+        + plan.lift.len()
+        + plan.unroll.len()) as u64
 }
 
 /// Accumulate `n` applications of `pass` (first-occurrence order, deterministic).

@@ -164,3 +164,14 @@ that does not find its data when run from another directory.
 `Operation::Read` resolves the literal against `CategoryIr::data_dir` (D5), checks the length, and decodes the
 little-endian elements into the array (`mapal_ir::read::{load, decode}`); a failure is `Outcome::ReadFailed` with
 D4's message. `mapal run --interp` prints the message and exits 103.
+
+## Amendment (full-model, 2026-11-25): records
+
+D2 / D3 generalized at the user's request for the readable model (`"model.bin" -> read -> model: Model;`): a `read`
+target is any array, struct or tuple whose every leaf is one of D2's scalars, at any depth (arrays of arrays, arrays
+of structs, structs of arrays), laid out with no padding — each leaf at an offset that is a multiple of its width,
+each product's size a multiple of its widest leaf (`mapal_ir::read::readable`); otherwise L1617, which now says so.
+The file is the value's bytes, leaves in declaration order — which is also how the backends store the value, so the
+host still reads straight into its storage (one `mapal_read`) and D9's data movement is unchanged. The interpreter
+decodes the nested value (`decode_value`). Tests: `read.rs` unit tests, `mapal-lower` `read_builtin`, the backend's
+`a_record_read_whole_on_every_backend` (`local-rtx-5080/full-model.md`).

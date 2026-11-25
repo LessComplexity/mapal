@@ -585,3 +585,47 @@ fn main() {
         ]
     );
 }
+
+/// full-model: sizes that appear only in products of two unknowns —
+/// `project<tokens, rows, columns>` over `tokens` rows of `columns` and a
+/// `rows × columns` matrix — are solved jointly with the result's annotation
+/// (the one whole assignment: `columns² = W·X / Y`); without the annotation
+/// several fit, and the error names two of them.
+#[test]
+fn product_systems_solve_with_the_results_type() {
+    let generic = "fn project<tokens, rows, columns>(weight: [bf16; rows * columns], x: [f32; tokens * columns]) -> [f32; tokens * rows] {
+    columns -> iota -> along;
+    tokens * rows -> iota -> map { cell -> cell / rows -> t; cell % rows -> row; (0.0, along) -> fold { sum, k -> weight[row * columns + k] -> widen_f32 -> w; sum + w * x[t * columns + k] } } -> ret;
+}
+";
+    let ok = format!(
+        "{generic}
+fn main() {{
+    12 -> iota -> map {{ i -> i -> widen_f32 -> to_bf16 }} -> w: [bf16; 12];
+    8 -> iota -> map {{ i -> i -> widen_f32 }} -> x: [f32; 8];
+    (w, x) -> project -> y: [f32; 6];
+    y[5] -> println;
+}}
+"
+    );
+    // 12 weights, 8 inputs, 6 outputs: `columns² = 12 · 8 / 6`, so 4 columns,
+    // 2 tokens, 3 rows.
+    let ir = lower_ok(&ok);
+    assert!(
+        named(&ir).iter().any(|n| n == "project<2, 3, 4>"),
+        "{:?}",
+        named(&ir)
+    );
+    let ambiguous = format!(
+        "{generic}
+fn main() {{
+    12 -> iota -> map {{ i -> i -> widen_f32 -> to_bf16 }} -> w: [bf16; 12];
+    8 -> iota -> map {{ i -> i -> widen_f32 }} -> x: [f32; 8];
+    (w, x) -> project -> y;
+    y[0] -> println;
+}}
+"
+    );
+    let m = message(&ambiguous, "L1706");
+    assert!(m.contains("ambiguous") && m.contains("both fit"), "{m}");
+}
