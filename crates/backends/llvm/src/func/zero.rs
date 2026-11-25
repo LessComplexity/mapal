@@ -246,6 +246,22 @@ impl<'a> FnEmit<'a> {
                     matches!(seq[k], Step::Op(m)
                         if matches!(self.ir.morphism(m).map(|x| &x.op), Some(Operation::TimeMs)))
                 });
+                // full-model: a step's accesses happen at its launch, and a
+                // deferred `horizontal` member launches with its group, at
+                // the group's last member — the zero is issued after that
+                // (else it clears bytes the group has yet to read: an
+                // operand whose arena bytes the site's output takes next).
+                let launched = |i: usize| -> usize {
+                    let Step::Op(m) = seq[i] else { return i };
+                    let Some(&(g, _)) = plan.hz_of.get(m) else {
+                        return i;
+                    };
+                    let last = *plan.hz[g].members.last().expect("a group has members");
+                    (i..j)
+                        .find(|&x| matches!(seq[x], Step::Op(y) if y == last))
+                        .unwrap_or(j)
+                };
+                let stop = stop.map(launched);
                 let from = stop.unwrap_or(0).max(fence.unwrap_or(0));
                 let at = (from..j).find(|&k| {
                     matches!(seq[k], Step::Op(_)) && bytes.saturating_add(between(k)) <= keep

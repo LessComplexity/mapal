@@ -450,3 +450,69 @@ fn horizontal_on_generated_programs() {
         "{cv:?}"
     );
 }
+
+/// full-model: **a hoisted zero waits for the merged launch.** Two
+/// projections, the rotary embedding of each (two cells the rule merges: the
+/// first is deferred to the second's position), then two projections of the
+/// rotated query. The arena gives the second pair's outputs the bytes of the
+/// first pair's (dead after the rotations), and `zero-hoist` issues their
+/// zero ops early — it once stopped at the deferred member's own position,
+/// so the zero cleared `q` before the merged launch read it (the rotated
+/// query and everything after it were 0: the readable Llama's prompt
+/// computed wrong logits). The walk now stops at the group's launch (its last
+/// member). Every emulator mode prints the oracle's values; the emission has
+/// the merged launch and the hoisted zeros (else the test proves nothing).
+/// Without the fix the reversed-grid and serial modes print 0 for the rotated
+/// query (as the RTX 5080 did).
+#[test]
+fn a_hoisted_zero_waits_for_the_merged_launch() {
+    let Some(clang) = emu::clang() else {
+        return;
+    };
+    let src = std::fs::read_to_string(format!(
+        "{}/tests/fixtures/hoisted_zero_merged.mapal",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap();
+    let ir = lower(&src);
+    let rr = run(&ir, 20_000_000_000);
+    let Outcome::Done(_) = rr.outcome else {
+        panic!("oracle: {:?}", rr.outcome);
+    };
+    // The second pair split along `k` (atomic outputs, each zeroed first):
+    // the sites this machine's measured profile splits by rule (`native-gpu`
+    // on the RTX 5080), on the static part's profile.
+    let mut opts = EmitOpts {
+        host: "generic",
+        target: "rtx-5080",
+        ..EmitOpts::default()
+    };
+    mapal_backend_llvm::flags::apply(&mut opts, "--splitk=2").expect("a flag");
+    let em = emit_detailed(&ir, &opts).expect("emits");
+    assert!(em.text.contains("; mapal.hz kernel="), "no merged launch");
+    let zero = em
+        .text
+        .lines()
+        .map(str::trim)
+        .find(|l| l.starts_with("; mapal.zero.host "))
+        .unwrap_or("")
+        .to_string();
+    assert!(
+        field(&zero, "hoisted").parse::<u32>().unwrap_or(0) > 0,
+        "{zero}"
+    );
+    let ex = emu::build_emulated(&clang, &em.text, em.device.as_deref().unwrap());
+    for mode in [
+        [("MAPAL_EMU_SERIAL", "0"), ("MAPAL_EMU_GRID", "3")],
+        [("MAPAL_EMU_SERIAL", "1"), ("MAPAL_EMU_GRID", "3")],
+        [("MAPAL_EMU_SERIAL", "2"), ("MAPAL_EMU_GRID", "2")],
+        [("MAPAL_EMU_REVERSE", "1"), ("MAPAL_EMU_GRID", "1")],
+    ] {
+        let (out, err) = ex.run(&mode);
+        assert!(
+            within(&out, &rr.output),
+            "{mode:?}\n{out}\nwant\n{}\n{err}",
+            rr.output
+        );
+    }
+}

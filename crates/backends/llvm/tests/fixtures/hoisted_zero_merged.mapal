@@ -1,0 +1,112 @@
+// full-model regression (`horizontal.rs` `a_hoisted_zero_waits_for_the_merged_launch`, the CLI's live leg):
+// two projections, the rotary embedding of each (merged into one launch), two projections of the rotated query.
+64 -> head_size;
+head_size / 2 -> rotation_pairs;
+13.122363377404328 -> log_rope_theta;
+32.0 -> rope_factor;
+1.0 -> rope_low_frequency_factor;
+4.0 -> rope_high_frequency_factor;
+8192.0 -> rope_original_context;
+
+type Matrix<rows, columns> {
+    _: [bf16; rows * columns]
+}
+
+// The rotation frequency of pair `pair` of a head: theta^(-2 pair / head_size). Llama 3 stretches the slow
+// ones: wavelengths longer than the original context / low factor are divided by the factor, those shorter
+// than the original context / high factor are kept, and those between are blended smoothly.
+fn inverse_frequency(pair: i32) -> f32 {
+    pair * 2 -> widen_f32 -> twice_pair;
+    head_size -> widen_f32 -> width;
+    -(twice_pair / width) * log_rope_theta -> exp -> frequency;
+    6.2831855 / frequency -> wavelength;
+    (wavelength > rope_original_context / rope_low_frequency_factor) -> {
+        -true-> frequency / rope_factor;
+        -false-> {
+            (wavelength < rope_original_context / rope_high_frequency_factor) -> {
+                -true-> frequency;
+                -false-> {
+                    rope_original_context / wavelength - rope_low_frequency_factor -> above_low;
+                    above_low / (rope_high_frequency_factor - rope_low_frequency_factor) -> smooth;
+                    (1.0 - smooth) * frequency / rope_factor + smooth * frequency
+                }
+            }
+        }
+    } -> ret;
+}
+
+// Computed before the program runs: it depends on nothing the run reads.
+rotation_pairs -> iota -> map {
+    pair -> pair -> inverse_frequency
+} -> inverse_frequencies: [f32; rotation_pairs];
+
+// Rotate each head of each token by its position's angles: in a head, element i < half and its partner
+// i + half are a pair (x, y) that becomes (x cos - y sin, y cos + x sin), at angle position * frequency.
+fn rotate<tokens, width>(x: [f32; tokens * width], positions: [i32; tokens]) -> [f32; tokens * width] {
+    tokens * width -> iota -> map {
+        cell ->
+        cell / width -> t;
+        cell % head_size -> within_head;
+        within_head % rotation_pairs -> pair;
+        positions[t] -> widen_f32 -> position;
+        position * inverse_frequencies[pair] -> angle;
+        angle -> cos -> cosine;
+        angle -> sin -> sine;
+        (within_head < rotation_pairs) -> {
+            -true-> x[cell] * cosine - x[cell + rotation_pairs] * sine;
+            -false-> x[cell] * cosine + x[cell - rotation_pairs] * sine;
+        }
+    } -> ret;
+}
+
+// A linear layer without bias: out[t][row] = sum over columns of weight[row][column] * x[t][column].
+fn project<tokens, rows, columns>(weight: Matrix<rows, columns>, x: [f32; tokens * columns]) -> [f32; tokens * rows] {
+    columns -> iota -> along;
+    tokens * rows -> iota -> map {
+        cell ->
+        cell / rows -> t;
+        cell % rows -> row;
+        (0.0, along) -> fold {
+            sum, column ->
+            weight[row * columns + column] -> widen_f32 -> w;
+            sum + w * x[t * columns + column]
+        }
+    } -> ret;
+}
+
+fn main() {
+    65536 -> iota -> map {
+        i -> (i * 7 + 13) % 101 - 50 -> widen_f32 -> v;
+        v / 400.0 -> to_bf16
+    } -> wq: Matrix<256, 256>;
+    32768 -> iota -> map {
+        i -> (i * 11 + 5) % 103 - 51 -> widen_f32 -> v;
+        v / 400.0 -> to_bf16
+    } -> wk: Matrix<128, 256>;
+    32768 -> iota -> map {
+        i -> (i * 3 + 1) % 97 - 48 -> widen_f32 -> v;
+        v / 48.0
+    } -> x: [f32; 32768];
+    128 -> iota -> map {
+        t -> t
+    } -> positions;
+    (wq, x) -> project -> q: [f32; 32768];
+    (wk, x) -> project -> k: [f32; 16384];
+    (q, positions) -> rotate -> rq;
+    (k, positions) -> rotate -> rk;
+    (wq, rq) -> project -> q2: [f32; 32768];
+    (wk, rq) -> project -> k2: [f32; 16384];
+    16384 -> iota -> map {
+        i -> k2[i] + rk[i]
+    } -> both;
+    (0.0, q2) -> fold {
+        s, e -> s + e * e
+    } -> sq;
+    (0.0, both) -> fold {
+        s, e -> s + e * e
+    } -> sk;
+    rq[20000] -> println;
+    rk[6001] -> println;
+    sq -> println;
+    sk -> println;
+}
