@@ -146,7 +146,7 @@ pub fn encode(values: &[Value]) -> Vec<u8> {
             Value::F32(x) => out.extend_from_slice(&x.to_le_bytes()),
             Value::F64(x) => out.extend_from_slice(&x.to_le_bytes()),
             Value::Narrow(_, b) => out.extend_from_slice(&b.to_le_bytes()),
-            Value::Bool(_) | Value::Str(_) => panic!("encode of an unreadable value"),
+            Value::Bool(_) | Value::Str(_) | Value::Unit => panic!("encode of an unreadable value"),
         }
     }
     out

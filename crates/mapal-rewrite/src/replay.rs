@@ -1158,20 +1158,12 @@ fn inline_return(
             fb, ir, plan, fmap, fused, lifted, local, writers[0], ret_dest,
         ),
         op => {
-            // The callee's Return written straight by a Call the plan inlines
-            // (`(..) -> g -> ret;` in an inlined `f`): inline `g` here too —
-            // `live_functions` walked that edge as inlined, so `g` itself may
-            // not be declared (same rule as `replay_fn`'s Return writers).
-            if plan.inline.contains_key(writers[0]) {
-                return inline_call(
-                    fb, ir, plan, fmap, fused, lifted, local, writers[0], ret_dest,
-                );
-            }
             let dest = match ret_dest {
                 RetDest::Fresh(name) => Dest::Fresh(name),
                 RetDest::Own => Dest::Ret { slot: None },
             };
-            // ... or by a fused `Map{g}` (DESIGN §4): `Map{h}` on the original array.
+            // A Return written by a fused `Map{g}` (DESIGN §4): `Map{h}` on the
+            // original array.
             if let Some(&h) = fused.get(writers[0]) {
                 return emit_fused_map(fb, ir, plan, local, h, writers[0], dest, mo.loc);
             }

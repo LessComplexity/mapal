@@ -4577,6 +4577,13 @@ impl CategoryIr {
             let mut grew = false;
             for &m in &topo {
                 let morph = &self.morphisms[m];
+                // A file read (and the `Proj` of its array) is a task its
+                // readers depend on by dataflow edges (ADR-0045 D8): the token
+                // it takes orders nothing it computes, and its array is no
+                // host value.
+                if is_read(m) {
+                    continue;
+                }
                 let on_host = (is_token(m) && !is_clock(m) && !is_read(m))
                     || is_clock(m)
                     || host_loop_member.contains_key(m)
@@ -5025,9 +5032,12 @@ impl CategoryIr {
                 // entry state from a struct a task filled, a `Proj` of it, the
                 // scalar host cone — waits for that task first. A checkpoint's
                 // wait list covers what it reaches through host-built edges; this
-                // covers the rest, once per task.
+                // covers the rest, once per task. A token alone (a read's
+                // `Proj` of it) reads no bytes: the read stays asynchronous,
+                // its next checkpoint waits for it.
                 if is_host(m)
                     && !covered.contains_key(m)
+                    && self.objects[morph.target].ty != Ty::IoToken
                     && let Some(t) = producer.get(morph.source).copied()
                     && !waited[t]
                 {
