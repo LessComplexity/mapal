@@ -439,9 +439,12 @@ impl<'a> FnEmit<'a> {
                 if !self.gpu_arms.off.lanes_unroll
                     && n / l.max(1) >= crate::profile::NAIVE_UNROLL =>
             {
-                ", !llvm.loop !@UNROLL@"
+                match self.lane_trips {
+                    crate::profile::NAIVE_UNROLL => ", !llvm.loop !@UNROLL@".to_string(),
+                    u => format!(", !llvm.loop !@UNROLL:{}@", u.min(n / l.max(1))),
+                }
             }
-            _ => "",
+            _ => String::new(),
         };
         self.line(format!("br label %{lh}{unroll}"));
         self.label_line(&ld);

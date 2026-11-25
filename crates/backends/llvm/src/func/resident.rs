@@ -3943,7 +3943,17 @@ impl<'a> FnEmit<'a> {
                 } else {
                     name
                 };
-                let mut fns = vec![(name, self.body_text_with(c.body, vals.clone(), lanes))];
+                // residency `fly-unroll`: the lane loop's depth from the grid's
+                // warps an SM against the part's stream bytes in flight.
+                let trips = self.fly_trips(m, c);
+                let name = match trips {
+                    crate::profile::NAIVE_UNROLL => name,
+                    t => format!("{name}_u{t}"),
+                };
+                let mut fns = vec![(
+                    name,
+                    self.body_text_lanes(c.body, vals.clone(), lanes, trips),
+                )];
                 let caps: Vec<gpu::CapArg> = (0..c.caps.len() as u32)
                     .map(|s| {
                         if c.uniform.contains(&s) {
@@ -4114,6 +4124,53 @@ impl<'a> FnEmit<'a> {
         vals: Vec<(u32, String)>,
         lanes: Option<(ObjectId, mapal_ir::RowFoldOp, u64)>,
     ) -> String {
+        self.body_text_lanes(f, vals, lanes, crate::profile::NAIVE_UNROLL)
+    }
+
+    /// residency `fly-unroll`: the trips a warp-a-cell fold of cell `c`
+    /// unrolls. A grid of `n · lanes` threads holds `w` warps an SM; each
+    /// unrolled trip a warp loads `lanes` elements of the narrowest array its
+    /// nested fold walks (the streamed operand). Little's law at the part's
+    /// stream bytes in flight (`Gpu::stream_fly_per_sm`) asks `fly / (w ·
+    /// lanes · e)` trips in flight — the next power of two, never under
+    /// [`crate::profile::NAIVE_UNROLL`], capped at 32 (the registers a lane
+    /// holds them in).
+    fn fly_trips(&self, m: MorphismId, c: &Cell) -> u64 {
+        let naive = crate::profile::NAIVE_UNROLL;
+        let Some(g) = self.profile.gpu() else {
+            return naive;
+        };
+        if c.lanes <= 1 || !gpu::host_rungs(self.profile, self.contract, self.gpu_arms).fly_unroll {
+            return naive;
+        }
+        let fly = g.stream_fly_per_sm();
+        let plan = self.ir.cell_plan(self.f);
+        let Some(site) = plan.get(m) else {
+            return naive;
+        };
+        let e = site
+            .nested
+            .iter()
+            .filter_map(|&s| c.caps.get(s as usize))
+            .map(|&o| crate::profile::elem_bytes(array_elem(&self.obj_ty(o))))
+            .min()
+            .unwrap_or(0);
+        if fly == 0 || e == 0 {
+            return naive;
+        }
+        let warps = (c.n * c.lanes).div_ceil(g.warp).div_ceil(g.sms).max(1);
+        fly.div_ceil(warps * c.lanes * e)
+            .next_power_of_two()
+            .clamp(naive, 32)
+    }
+
+    fn body_text_lanes(
+        &self,
+        f: FuncId,
+        vals: Vec<(u32, String)>,
+        lanes: Option<(ObjectId, mapal_ir::RowFoldOp, u64)>,
+        trips: u64,
+    ) -> String {
         let mut fe = FnEmit::new(
             self.ir,
             f,
@@ -4131,6 +4188,7 @@ impl<'a> FnEmit<'a> {
         fe.set_gpu_arms(self.gpu_arms);
         fe.cell_vals = vals;
         fe.lanes = lanes;
+        fe.lane_trips = trips;
         fe.emit()
     }
 

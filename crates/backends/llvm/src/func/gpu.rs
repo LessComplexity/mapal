@@ -2649,6 +2649,7 @@ fn launch_key(l: &Launch) -> String {
         // never a tile kernel's text — tuned picks keep their ids.
         .replace(", math_hw: false", "")
         .replace(", lanes_unroll: false", "")
+        .replace(", fly_unroll: false", "")
         .replace(", cells: 1 }", " }")
 }
 
@@ -5222,11 +5223,18 @@ pub(crate) fn device_module(
     }
     // model-ready `lanes-unroll`: each warp-a-cell fold loop its own loop id,
     // unrolled `NAIVE_UNROLL` trips (`FnEmit::emit_fold`'s `!@UNROLL@`).
+    // residency `fly-unroll`: `!@UNROLL:<n>@` names its own count.
     let mut id = 2 * kernels.len();
-    while let Some(at) = out.find("!@UNROLL@") {
-        out.replace_range(at..at + "!@UNROLL@".len(), &format!("!{id}"));
+    while let Some(at) = out.find("!@UNROLL") {
+        let tail = at + "!@UNROLL".len();
+        let close = tail + out[tail..].find('@').expect("a closed placeholder");
+        let count = out[tail..close]
+            .strip_prefix(':')
+            .and_then(|c| c.parse::<u64>().ok())
+            .unwrap_or(NAIVE_UNROLL);
+        out.replace_range(at..close + 1, &format!("!{id}"));
         md.push_str(&format!(
-            "!{id} = distinct !{{!{id}, !{}}}\n!{} = !{{!\"llvm.loop.unroll.count\", i32 {NAIVE_UNROLL}}}\n",
+            "!{id} = distinct !{{!{id}, !{}}}\n!{} = !{{!\"llvm.loop.unroll.count\", i32 {count}}}\n",
             id + 1,
             id + 1
         ));

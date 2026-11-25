@@ -139,6 +139,23 @@ fn check(clang: &str, i: usize, g: &testgen::DecodeProg) -> Vec<(&'static str, u
     if unrolled > 0 {
         c.push(("unrolled-lane-loops", unrolled));
     }
+    // residency `fly-unroll`: a warp-a-cell fold over a grid too small to
+    // keep the part's stream bytes in flight at 8 loads a lane unrolls
+    // deeper (its own body variant, its own loop count).
+    let deep = ["16", "32"]
+        .iter()
+        .map(|n| {
+            dev.matches(&format!("\"llvm.loop.unroll.count\", i32 {n}}}"))
+                .count() as u64
+        })
+        .sum::<u64>();
+    if deep > 0 {
+        assert!(
+            dev.contains("_lanes_u"),
+            "a deeper loop without its variant\n{src}"
+        );
+        c.push(("fly-unrolled-loops", deep));
+    }
     let ex = emu::build_emulated(clang, &em.text, dev);
     for (mode, (got, _)) in MODES.iter().zip(ex.run_each(&MODES)) {
         assert_eq!(got, want, "{mode:?}\n{src}");
@@ -150,12 +167,24 @@ fn check(clang: &str, i: usize, g: &testgen::DecodeProg) -> Vec<(&'static str, u
     );
     assert_eq!(cpu, want, "cpu\n{src}");
     if i % 3 == 0 {
-        let arm = ["range-cell", "devmap", "cell-lanes", "lanes-unroll"][(i / 3) % 4];
+        let arm = [
+            "range-cell",
+            "devmap",
+            "cell-lanes",
+            "lanes-unroll",
+            "fly-unroll",
+        ][(i / 3) % 5];
         let off = device_emission(&ir, &[arm]);
         let off_dev = off.device.as_deref().unwrap_or("");
         if arm == "lanes-unroll" {
             assert!(
                 !off_dev.contains("llvm.loop.unroll.count"),
+                "{arm} off\n{src}"
+            );
+        }
+        if arm == "fly-unroll" {
+            assert!(
+                !off_dev.contains("_lanes_u") && !off_dev.contains("unroll.count\", i32 32"),
                 "{arm} off\n{src}"
             );
         }
@@ -200,6 +229,7 @@ fn placement_on_generated_programs() {
         "lane-cells",
         "gather-cells",
         "unrolled-lane-loops",
+        "fly-unrolled-loops",
         "off-arm-runs",
     ] {
         assert!(c.get(key).copied().unwrap_or(0) > 0, "{key}: {c:?}");

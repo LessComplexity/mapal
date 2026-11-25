@@ -98,6 +98,7 @@ impl<'a> FnEmit<'a> {
             cell_suffix: "_cell".into(),
             cell_vals: Vec::new(),
             lanes: None,
+            lane_trips: crate::profile::NAIVE_UNROLL,
             post_fold: None,
             path_plan: None,
             split_slots: Vec::new(),

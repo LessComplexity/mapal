@@ -1142,6 +1142,13 @@ pub struct GpuRungs {
     /// index left it rolled, one weight load in flight a warp). Off
     /// (`--gpu-off=lanes-unroll`): no loop metadata.
     pub lanes_unroll: bool,
+    /// residency `fly-unroll`: a warp-a-cell fold whose grid holds too few
+    /// warps an SM to keep the part's stream bytes in flight
+    /// (`Gpu::stream_fly_per_sm`) at `NAIVE_UNROLL` loads a lane unrolls
+    /// deeper — the power of two that keeps them, at most the lane's trips
+    /// (a 512-row one-row projection: 6 warps an SM). Off
+    /// (`--gpu-off=fly-unroll`): every lane loop `NAIVE_UNROLL`.
+    pub fly_unroll: bool,
 }
 
 impl GpuRungs {
@@ -1304,11 +1311,12 @@ impl GpuRungs {
         stride_lanes: true,
         carry_fwd: true,
         lanes_unroll: true,
+        fly_unroll: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 157] = [
+    pub const NAMES: [&'static str; 158] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1466,6 +1474,7 @@ impl GpuRungs {
         "stride-lanes",
         "carry-fwd",
         "lanes-unroll",
+        "fly-unroll",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -1628,6 +1637,7 @@ impl GpuRungs {
             "stride-lanes" => &mut self.stride_lanes,
             "carry-fwd" => &mut self.carry_fwd,
             "lanes-unroll" => &mut self.lanes_unroll,
+            "fly-unroll" => &mut self.fly_unroll,
             _ => return None,
         })
     }
