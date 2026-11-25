@@ -173,6 +173,12 @@ impl Facts {
             arms: FactArms::default(),
         }
     }
+
+    /// A slot for a function made after the graph was sealed (a body copy,
+    /// `apply_store`), before any fact of the graph is read.
+    pub(crate) fn add_func(&mut self, f: FuncId) {
+        self.per.insert(f, FuncFacts::default());
+    }
 }
 
 impl CategoryIr {

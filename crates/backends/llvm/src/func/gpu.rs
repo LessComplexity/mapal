@@ -5089,9 +5089,12 @@ pub(crate) fn device_module(
     // `devgen`: each body once, then its kernel. A body is a clean leaf, so
     // its text names no host symbol — checked, since a stray one would fail
     // only at `llc` on the bundle machine.
+    // Two producers of one body and length (the inliner's copies share
+    // their bodies) are one kernel: its id names the body and the length.
     let mut bodies = std::collections::BTreeSet::new();
+    let mut ids = std::collections::BTreeSet::new();
     for (id, callee, elem, text) in gens {
-        if !live.contains(&format!("mapal_gen_{id:016x}")) {
+        if !live.contains(&format!("mapal_gen_{id:016x}")) || !ids.insert(*id) {
             continue;
         }
         assert!(
