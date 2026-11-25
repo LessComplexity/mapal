@@ -98,6 +98,8 @@ for o in "$PROF"/*.host.o; do
         tf=(); [ -s "tiles/${base}_xabs.expect" ] && tf=("tiles/${base}_xabs.expect")  # D2 absolute, with M
         grep -q ': tf32' "tiles/$base.mapal" 2>/dev/null && tf+=(--tf32)
         grep -q ': bf16' "tiles/$base.mapal" 2>/dev/null && tf+=(--bf16)
+        # bound-blkdec: a program admitting a reduced member answers to its composed bound (ADR-0041 D5).
+        [ -s "tiles/${base}_xbound.expect" ] && tf=(--bound "tiles/${base}_xbound.expect")
         g="process exit $rc"
         if [ $rc -eq 0 ] && g=$(python3 value_gate.py "$exp" "$(tr '\n' ' ' <<< "$got")" "$(cat "tiles/$base.kmax")" ${tf[@]+"${tf[@]}"}); then
             pass=$((pass + 1)); say "PASS-BOUND $bp K=$(cat "tiles/$base.kmax") $g $(tr '\n' ' ' <<< "$got")"
@@ -429,6 +431,8 @@ for o in "$PROF"/pt_*.host.o; do
             grep -q ': tf32' "tiles/$b.mapal" 2>/dev/null && xabs+=(--tf32)
             # ADR-0043 D4: a bf16 member answers to D3's bound with u_t = 2⁻⁸.
             grep -q ': bf16' "tiles/$b.mapal" 2>/dev/null && xabs+=(--bf16)
+            # bound-blkdec: where the oracle composed the program's bound (ADR-0041 D5), that bound.
+            [ -s "tiles/${b}_xbound.expect" ] && xabs=(--bound "tiles/${b}_xbound.expect")
             if ! g=$(python3 value_gate.py "tiles/${b}_x.expect" "$got" "$kmax" ${xabs[@]+"${xabs[@]}"}); then
                 fails; say "VALUE-FAIL prog=$b face=_default arm=$arm got=[$got] $g"
             else

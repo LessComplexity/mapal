@@ -112,7 +112,8 @@ iff `|got − ref| ≤ D3 bound`, `ref` and `M` in f64 (ADR-0040 D2 pattern). `p
   accumulations exceed ADR-0040 D2's `γ_{K+1}·M` by a constant, so it is **not** admitted by `{f32}` as written. It
   becomes admissible only if D2 gains a stated slack term — a separate decision, to be argued from an H100 measurement.
 - **Path composition of bounds.** D5 `bound` is per site and per probe, as ADR-0040 D2. Composing bounds along a
-  path through non-linear ops (`exp`, division) needs condition numbers; open.
+  path through non-linear ops (`exp`, division) needs condition numbers — implemented 2026-11-26 as the output's
+  bound (below, "Amendment: `bound(o)`, the composed bound").
 
 ## Alternatives rejected
 
@@ -132,3 +133,23 @@ iff `|got − ref| ≤ D3 bound`, `ref` and `M` in f64 (ADR-0040 D2 pattern). `p
 - Measured: on every part, the tensor-core realization of a `tf32` site is not faster than the FFMA tile (the 4090
   measurement says it is: 77.9 vs 52.8 TF/s).
 - A chain where every per-site gate passes but the program output exceeds the composed bound.
+
+## Amendment: `bound(o)`, the composed bound (2026-11-26, bound-blkdec)
+
+The whole-program probe gate gave a program admitting a member one site's coefficient for its whole output
+(`value_gate.py --bf16`: relative `2·((1 + u_t)²·(1 + γ_{K+1}) − 1)`). That counts two multiplicand roundings; a
+chain of admitting products performs one per product on the path, and cancellation turns a relative bound into none.
+The five-GPU round's `px_llm_blkdec_b2_l16_bf16` printed 2.30·10⁻² relative against 1.62·10⁻² with every realized
+rounding admitted (`round-store`'s stored arrays, bit for bit the oracle over the stored graph) — the falsifier above,
+but on the gate's side: the gate's number was not the composed bound.
+
+D5's `bound(o)` for an output is now the composition, evaluated by the oracle over the program's data
+(`mapal_interp::run_bound`, `mapal run --interp --bound`): each operation's own default-face deviation from the IR
+facts — a member's rounding of each multiplicand off its grid (D3; the rounding error `δ = member(x) − x` known per
+value, one sign per `(product, slot)`: a realization rounds a slot at every execution or none), a regrouped fold's
+order (ADR-0040 D2, `u_a = 2⁻²³` under a member), an fma pair, a rounding of an operand carrying a deviation that may
+reach a tie (ADR-0043 D3, decided per value against that operand's own bound), a math builtin's contract (ADR-0042,
+ADR-0046) — composed to first order through the program's derivatives (a reverse sweep per printed value; the signs
+kept, so a Newton step or a cancellation contracts as the program does). A default-face gate on such a program checks
+`|got − exact| ≤ bound(o)` per printed value (`value_gate.py --bound`, `tiles/<stem>_xbound.expect`). First order:
+a float comparison that may flip within its operands' bound is assumed not to.

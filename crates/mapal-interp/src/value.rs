@@ -32,6 +32,9 @@ pub enum RValue {
     Array(Rc<Vec<RValue>>),
     /// The world token: the output log accumulated so far (§5).
     Token(String),
+    /// A float scalar of a [`crate::run_bound`] run and its operation's node
+    /// on the bound's tape (`crate::bound`); never produced by any other run.
+    Tracked(Value, u32),
     /// The `Unit` witness (mirrors `Ty::Unit`; `Tuple` stays arity ≥ 2).
     Unit,
 }

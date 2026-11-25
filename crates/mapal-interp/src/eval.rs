@@ -249,12 +249,16 @@ pub(crate) fn eval_morphism(
             } else {
                 Weak::None
             };
-            let v = arith(ctx, source, op, weak)?;
+            let v = arith(ctx, m, source, op, weak)?;
             write(ctx, target, v);
             Ok(())
         }
         Operation::Neg => {
-            let v = neg(read(ctx, source));
+            let x = read(ctx, source);
+            let v = match (neg(x), x) {
+                (RValue::Scalar(y), RValue::Tracked(..)) => crate::bound::neg(x, y),
+                (v, _) => v,
+            };
             write(ctx, target, v);
             Ok(())
         }
@@ -282,21 +286,23 @@ pub(crate) fn eval_morphism(
             Ok(())
         }
         Operation::Widen => {
-            let v = match (read(ctx, source), ctx.ty_of(target)) {
-                (RValue::Scalar(Value::I32(x)), Ty::Int { bits: 64, .. }) => Value::I64(*x as i64),
-                (RValue::Scalar(Value::I32(x)), Ty::Float { bits: 32 }) => Value::F32(*x as f32),
-                (RValue::Scalar(Value::I32(x)), Ty::Float { bits: 64 }) => Value::F64(*x as f64),
-                (RValue::Scalar(Value::F32(x)), Ty::Float { bits: 64 }) => Value::F64(*x as f64),
+            let x = read(ctx, source);
+            let v = match (scalar(x), ctx.ty_of(target)) {
+                (Value::I32(x), Ty::Int { bits: 64, .. }) => Value::I64(*x as i64),
+                (Value::I32(x), Ty::Float { bits: 32 }) => Value::F32(*x as f32),
+                (Value::I32(x), Ty::Float { bits: 64 }) => Value::F64(*x as f64),
+                (Value::F32(x), Ty::Float { bits: 64 }) => Value::F64(*x as f64),
                 // ADR-0043: a narrow value widens exactly.
-                (RValue::Scalar(Value::Narrow(n, b)), Ty::Float { bits: 32 }) => {
+                (Value::Narrow(n, b), Ty::Float { bits: 32 }) => {
                     Value::F32(mapal_ir::narrow::widen(*n, *b))
                 }
-                (RValue::Scalar(Value::Narrow(n, b)), Ty::Float { bits: 64 }) => {
+                (Value::Narrow(n, b), Ty::Float { bits: 64 }) => {
                     Value::F64(f64::from(mapal_ir::narrow::widen(*n, *b)))
                 }
                 _ => unreachable!("invalid Widen pair passed validation"),
             };
-            write(ctx, target, RValue::Scalar(v));
+            let v = crate::bound::widen(x, v);
+            write(ctx, target, v);
             Ok(())
         }
         Operation::Narrow => {
@@ -304,23 +310,35 @@ pub(crate) fn eval_morphism(
             let Ty::Narrow(n) = *ctx.ty_of(target) else {
                 unreachable!("Narrow into a non-narrow ty passed validation")
             };
-            let x = match read(ctx, source) {
-                RValue::Scalar(Value::F32(x)) => f64::from(*x),
+            let xr = read(ctx, source);
+            let x = match scalar(xr) {
+                Value::F32(x) => f64::from(*x),
                 _ => unreachable!("Narrow of a non-f32 passed validation"),
             };
             let v = Value::Narrow(n, mapal_ir::narrow::round(n, x));
-            write(ctx, target, RValue::Scalar(v));
+            let v = if crate::bound::on() {
+                crate::bound::narrow(xr, n, v)
+            } else {
+                RValue::Scalar(v)
+            };
+            write(ctx, target, v);
             Ok(())
         }
         Operation::Math(f) => {
             // ADR-0042 / ADR-0046: the builtin's reference (`mapal_ir::math`),
             // bit for bit.
-            let v = match read(ctx, source) {
-                RValue::Scalar(Value::F32(x)) => Value::F32(mapal_ir::math::eval_f32(f, *x)),
-                RValue::Scalar(Value::F64(x)) => Value::F64(mapal_ir::math::eval_f64(f, *x)),
+            let xr = read(ctx, source);
+            let (v, bits) = match scalar(xr) {
+                Value::F32(x) => (Value::F32(mapal_ir::math::eval_f32(f, *x)), 32),
+                Value::F64(x) => (Value::F64(mapal_ir::math::eval_f64(f, *x)), 64),
                 _ => unreachable!("Math on a non-float passed validation"),
             };
-            write(ctx, target, RValue::Scalar(v));
+            let v = if crate::bound::on() {
+                crate::bound::math(f, bits, xr, v)
+            } else {
+                RValue::Scalar(v)
+            };
+            write(ctx, target, v);
             Ok(())
         }
         Operation::Phi => {
@@ -452,7 +470,11 @@ pub(crate) fn eval_morphism(
                     Some(t) => add_floats(&t, &acc),
                 });
             }
-            write(ctx, target, total.expect("one partition at least"));
+            let mut total = total.expect("one partition at least");
+            if crate::bound::on() {
+                total = crate::bound::fold_end(ctx.ir, body, elems.len(), total);
+            }
+            write(ctx, target, total);
             Ok(())
         }
         Operation::Index => {
@@ -696,7 +718,7 @@ fn finalize_product(ty: &Ty, comps: Vec<RValue>) -> RValue {
 /// `Neg` (IEEE fneg for floats; arithmetic negation for ints).
 fn neg(x: &RValue) -> RValue {
     match x {
-        RValue::Scalar(v) => RValue::Scalar(match v {
+        RValue::Scalar(v) | RValue::Tracked(v, _) => RValue::Scalar(match v {
             Value::I32(n) => Value::I32(n.wrapping_neg()),
             Value::I64(n) => Value::I64(n.wrapping_neg()),
             Value::U8(n) => Value::U8(n.wrapping_neg()),
@@ -749,7 +771,13 @@ impl Weak {
 }
 
 /// `Add/Sub/Mul/Div/Mod` at the operand width; integer ÷/% by 0 ⇒ trap.
-fn arith(ctx: &EvalCtx, source: ObjectId, op: Operation, weak: Weak) -> Result<RValue, Abort> {
+fn arith(
+    ctx: &EvalCtx,
+    m: MorphismId,
+    source: ObjectId,
+    op: Operation,
+    weak: Weak,
+) -> Result<RValue, Abort> {
     let pair = read(ctx, source);
     let a = scalar(component(pair, 0));
     let b = scalar(component(pair, 1));
@@ -802,6 +830,17 @@ fn arith(ctx: &EvalCtx, source: ObjectId, op: Operation, weak: Weak) -> Result<R
         (Value::F64(x), Value::F64(y)) => float_arith!(Value::F64, *x, *y),
         _ => unreachable!("arith on mismatched/non-numeric operands"),
     };
+    if matches!(v, Value::F32(_) | Value::F64(_)) && crate::bound::on() {
+        return Ok(crate::bound::arith(
+            ctx.ir,
+            ctx.f,
+            m,
+            op,
+            component(pair, 0),
+            component(pair, 1),
+            v,
+        ));
+    }
     Ok(RValue::Scalar(v))
 }
 
@@ -904,6 +943,7 @@ fn print_op(ctx: &EvalCtx, source: ObjectId, newline: bool) -> RValue {
         _ => unreachable!("Print's first component is not a token"),
     };
     let p = scalar(component(pair, 1));
+    crate::bound::printed(component(pair, 1), newline);
     let mut out = log;
     out.push_str(&crate::value::render(p));
     if newline {
@@ -921,9 +961,9 @@ fn as_array(x: &RValue) -> &[RValue] {
 }
 
 /// Extract the scalar payload, panicking on a non-scalar.
-fn scalar(x: &RValue) -> &Value {
+pub(crate) fn scalar(x: &RValue) -> &Value {
     match x {
-        RValue::Scalar(v) => v,
+        RValue::Scalar(v) | RValue::Tracked(v, _) => v,
         _ => unreachable!("expected a scalar value"),
     }
 }
