@@ -24,10 +24,12 @@ mod fmt;
 const USAGE: &str = "usage: mapal <build|run|dump-ir|test|fmt> <file.mapal> [options]
   fmt      [--check | --stdout] <files... | ->  format source (use fmt --help for modes)
   build    [-o <exe>] [--emit-only]       emit <exe>.ll (+ .dev.ll/.ptx on a GPU profile) and link
-  run      [--interp [--weakest]] [--budget N]  compile and execute (--interp: the oracle)
+  run      [--interp [--weakest | --bound]] [--budget N]  compile and execute (--interp: the oracle;
+           --bound: the output with each float printed as its composed default-face bound)
   dump-ir  [--stage=lowered|rewritten|llvm|device]
   test     [--budget N] [--timeout SECS]  the fixed face (or --exact) vs the oracle, byte for byte
-           [--weakest]                    vs the weakest-member oracle, within ADR-0041 D3's bound
+           [--weakest]                    vs the exact face within the composed bound (ADR-0041 D5;
+                                          implied where a product admits a reduced member)
 common: --target=<profile> --no-rewrite --static=off -v, and the emitter flags
   --static=off                            no compile-time evaluation (ADR-0048 D3; MAPAL_STATIC=off)
   --perf --no-tile --no-pack --kc --move-panel=off|W:B
@@ -50,6 +52,9 @@ struct Args {
     interp: bool,
     /// ADR-0041: the oracle evaluates each product with its weakest member.
     weakest: bool,
+    /// ADR-0041 D5 `bound(o)`: the oracle prints each printed value's
+    /// composed default-face bound instead of the value.
+    bound: bool,
     budget: u64,
     timeout: u64,
     stage: String,
@@ -98,6 +103,7 @@ fn parse_args(mut it: impl Iterator<Item = String>) -> Res<Args> {
         emit_only: false,
         interp: false,
         weakest: false,
+        bound: false,
         budget: 100_000_000,
         timeout: 60,
         stage: "llvm".into(),
@@ -127,6 +133,7 @@ fn parse_args(mut it: impl Iterator<Item = String>) -> Res<Args> {
             "--emit-only" => a.emit_only = true,
             "--interp" => a.interp = true,
             "--weakest" => a.weakest = true,
+            "--bound" => a.bound = true,
             "--budget" => a.budget = num(it.next(), "--budget")?,
             "--timeout" => a.timeout = num(it.next(), "--timeout")?,
             "--no-rewrite" => a.rewrite = false,
@@ -482,6 +489,23 @@ fn run_cmd(a: &Args) -> Res<u8> {
         })?;
         return Ok(code as u8);
     }
+    // ADR-0041 D5: the composed bound of each printed value, on the IR the
+    // compiler realizes (its fold and fma facts) — every value computed at
+    // run time: a value ADR-0048 computes before the program runs is the
+    // oracle's own, inside any bound.
+    if a.bound {
+        let (_, bounds) = composed(a, ir)?;
+        print!("{}", bound_shape(&bounds));
+        if a.verbose {
+            for b in bounds.iter().filter(|b| b.text.is_none()) {
+                eprintln!(
+                    "bound {:e}: member {:e} order {:e} fma {:e} flip {:e} math {:e}",
+                    b.total, b.member, b.order, b.fma, b.flip, b.math
+                );
+            }
+        }
+        return Ok(0);
+    }
     // The oracle prints the observable the compiled program must (L1/BL8),
     // and exits with its code: 0, or 101 on a trap.
     let rr = if a.weakest {
@@ -510,6 +534,41 @@ fn run_cmd(a: &Args) -> Res<u8> {
         _ => {}
     }
     Ok(code as u8)
+}
+
+/// ADR-0041 D5 `bound(o)`: the exact face's output and each print's
+/// composed bound, on the IR the compiler realizes (its fold and fma facts)
+/// with every value computed at run time (a value ADR-0048 computes before
+/// the program runs is the oracle's own, inside any bound).
+fn composed(a: &Args, ir: CategoryIr) -> Res<(String, Vec<mapal_interp::Bound>)> {
+    let mut b = a.clone();
+    b.static_eval = false;
+    let ir = rewritten(&b, ir);
+    let (rr, bounds) = mapal_interp::run_bound(&ir, a.budget);
+    if !matches!(rr.outcome, Outcome::Done(_)) {
+        eprintln!(
+            "mapal: the composed bound needs a run that completes: {:?}",
+            rr.outcome
+        );
+        return Err(1);
+    }
+    Ok((rr.output, bounds))
+}
+
+/// The output's shape with each float printed as its bound (a string as
+/// itself, an integer as `0e0`): a gate's line filters apply alike.
+fn bound_shape(bounds: &[mapal_interp::Bound]) -> String {
+    let mut s = String::new();
+    for b in bounds {
+        match &b.text {
+            Some(t) => s.push_str(t),
+            None => s.push_str(&format!("{:e}", b.total)),
+        }
+        if b.newline {
+            s.push('\n');
+        }
+    }
+    s
 }
 
 fn dump_ir(a: &Args) -> Res<u8> {
@@ -601,34 +660,34 @@ fn test_cmd(a: &Args) -> Res<u8> {
         println!("FAIL {tag}: exit want {want_code}, got {got_code}");
         return Ok(1);
     }
-    // ADR-0041 D3 from the other side: the compiled f32 realization against
-    // the weakest-member oracle, each float within both faces' bounds of the
-    // program's longest fold — relative, value_gate.py's fallback (a value
-    // under cancellation needs the magnitude oracle there).
-    if a.weakest
-        && let Some(want) = &want_out
-    {
-        let rel = weakest_rel(longest_fold(oracle));
-        let (w, g): (Vec<_>, Vec<_>) = (
-            want.split_whitespace().collect(),
+    // ADR-0041 D3: the compiled realization of a program admitting a member
+    // against the exact face within each printed value's composed bound
+    // (D5 `bound(o)`; bound-blkdec: one site's coefficient is no bound of a
+    // chain of admitting products).
+    if a.weakest && want_out.is_some() {
+        let (exact, bounds) = composed(a, frontend(a)?)?;
+        let shape = bound_shape(&bounds);
+        let (w, g, e): (Vec<_>, Vec<_>, Vec<_>) = (
+            exact.split_whitespace().collect(),
             got_out.split_whitespace().collect(),
+            shape.split_whitespace().collect(),
         );
-        let bad = (w.len() != g.len())
+        let bad = (w.len() != g.len() || e.len() != w.len())
             .then(|| format!("{} tokens, want {}", g.len(), w.len()))
             .or_else(|| {
-                w.iter()
-                    .zip(&g)
-                    .find_map(|(x, y)| match (x.parse::<f64>(), y.parse::<f64>()) {
-                        (Ok(p), Ok(q)) if (p - q).abs() <= rel * p.abs().max(q.abs()) => None,
-                        (Ok(_), Ok(_)) => Some(format!("{y} vs {x} beyond rel {rel:.3e}")),
+                w.iter().zip(&g).zip(&e).find_map(|((x, y), z)| {
+                    match (x.parse::<f64>(), y.parse::<f64>(), z.parse::<f64>()) {
+                        (Ok(p), Ok(q), Ok(b)) if (p - q).abs() <= b => None,
+                        (Ok(_), Ok(_), Ok(b)) => Some(format!("{y} vs {x} beyond {b:e}")),
                         _ => (x != y).then(|| format!("{y} != {x}")),
-                    })
+                    }
+                })
             });
         if let Some(b) = bad {
-            println!("FAIL {tag} (--weakest): {b}");
+            println!("FAIL {tag} (composed bound): {b}");
             return Ok(1);
         }
-        println!("PASS {tag} (--weakest, rel {rel:.3e})");
+        println!("PASS {tag} (composed bound)");
         return Ok(0);
     }
     if let Some(want) = want_out
@@ -648,29 +707,6 @@ fn test_cmd(a: &Args) -> Res<u8> {
     }
     println!("PASS {tag}");
     Ok(0)
-}
-
-/// The longest fold's trip count in `ir` (ADR-0040's `K`).
-fn longest_fold(ir: &CategoryIr) -> u64 {
-    ir.morphisms()
-        .filter_map(|(_, m)| match m.op {
-            mapal_ir::Operation::Fold { captures, .. } => {
-                match ir.object(m.source)?.ty.component_ty(captures + 1)? {
-                    mapal_ir::Ty::Array { size, .. } => Some(*size),
-                    _ => None,
-                }
-            }
-            _ => None,
-        })
-        .max()
-        .unwrap_or(1)
-}
-
-/// `--weakest`'s relative tolerance at fold length `k`: twice (value_gate's
-/// fallback) the sum of ADR-0041 D3's TF32 bound and ADR-0040 D2's f32 one
-/// (`mapal_ir::bound_coef`, the IR's own) — the two sides of the exact value.
-fn weakest_rel(k: u64) -> f64 {
-    2.0 * (mapal_ir::bound_coef(k, true) + mapal_ir::bound_coef(k, false))
 }
 
 /// Spawn and wait, time-boxed; `Ok(None)` on timeout. Stdout is drained on a
