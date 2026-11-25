@@ -85,6 +85,13 @@ impl<'a> FnEmit<'a> {
             return;
         }
         let acc = self.ir.access_plan(self.f);
+        // gap-fixes merge (`zero-hoist`): a hoisted zero's bytes must still be
+        // in the L2 when its site's atomic adds read them — the bytes every
+        // step between touches (`access_plan`, each array's `residence_plan`
+        // bytes, once) and the zero's own within what the L2 keeps
+        // ([`crate::profile::Gpu::l2_keep_bytes`]).
+        let res = self.ir.residence_plan(self.f);
+        let keep = self.profile.gpu().map_or(u64::MAX, |g| g.l2_keep_bytes());
         let sites = self.zero_sites(plan);
         if sites.is_empty() {
             return;
@@ -213,7 +220,36 @@ impl<'a> FnEmit<'a> {
                     .arena
                     .as_ref()
                     .is_some_and(|a| a.offset.get(out).is_some());
-                let at = (stop.unwrap_or(0)..j).find(|&k| matches!(seq[k], Step::Op(_)));
+                // The earliest step after which the zero's lines survive to
+                // the site: the bytes the working steps after it touch (a
+                // step that writes: a product or a projection only names
+                // its fields), with the zero's, fit the keep
+                // (`pj_m128_n6144_k4096_tf32`: hoisted past the 100 MB `b`
+                // generator its 3 MB output went cold — 0.180 -> 0.187 ms on
+                // the same PTX).
+                let between = |k: usize| -> u64 {
+                    let mut seen = std::collections::HashSet::new();
+                    access[k + 1..j]
+                        .iter()
+                        .filter(|a| !a.1.is_empty())
+                        .flat_map(|a| a.0.iter().chain(&a.1))
+                        .filter(|&&x| seen.insert(x))
+                        .map(|&x| res.bytes(x))
+                        .fold(0u64, u64::saturating_add)
+                };
+                // A clock read (`TimeMs`) observes the device work issued
+                // before it (the walk syncs there): the zero is the site's
+                // own work and is not moved across it — moved, a program's
+                // timed region would leave out part of what it times
+                // (`softmax_rows_4096`'s 64 MiB zero).
+                let fence = (0..j).rev().find(|&k| {
+                    matches!(seq[k], Step::Op(m)
+                        if matches!(self.ir.morphism(m).map(|x| &x.op), Some(Operation::TimeMs)))
+                });
+                let from = stop.unwrap_or(0).max(fence.unwrap_or(0));
+                let at = (from..j).find(|&k| {
+                    matches!(seq[k], Step::Op(_)) && bytes.saturating_add(between(k)) <= keep
+                });
                 // The straight-line walk only (the last sequence): a loop
                 // trip's sites keep their zero at the site.
                 if let (true, true, Some(k)) = (hoist && si == top, arena, at)

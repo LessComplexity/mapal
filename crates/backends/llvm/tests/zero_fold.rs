@@ -7,7 +7,7 @@
 //! serialized, on hand-written and generated programs
 //! (`testgen::zero_prog_strategy`).
 
-use mapal_backend_llvm::{Emission, EmitOpts, GpuArms, emit_detailed};
+use mapal_backend_llvm::{Emission, EmitOpts, GpuArms, emit_detailed, resolve_profile};
 use mapal_interp::{Outcome, run};
 use mapal_ir::CategoryIr;
 use proptest::strategy::{Strategy, ValueTree};
@@ -477,5 +477,88 @@ fn zero_fold_on_generated_programs() {
             && cv.none > 0
             && cv.hoisted > 0,
         "{cv:?}"
+    );
+}
+
+/// gap-fixes merge (`zero-hoist`): **a hoisted zero stays with its site's
+/// timed work and in the L2.** Generated GEMVs / skinny products on the RTX
+/// 5080 (atomic split sites): the zero op (`mapal_gpu_zero_for`) is issued
+/// after the generators of `a` and `b` where their bytes and its own pass
+/// what the L2 keeps (its lines would be cold at the site's adds), before
+/// them where they fit; with a clock read between the generators and the
+/// product, never before the clock (the zero is the product's own work).
+#[test]
+fn hoisted_zero_keeps_its_lines_and_its_clock() {
+    let keep = resolve_profile("rtx-5080")
+        .and_then(|p| p.gpu())
+        .expect("a GPU part")
+        .l2_keep_bytes();
+    let mut runner = TestRunner::deterministic();
+    let (mut before, mut after, mut fenced) = (0, 0, 0);
+    for i in 0..24u8 {
+        let p = testgen::gemm_prog_strategy()
+            .new_tree(&mut runner)
+            .unwrap()
+            .current();
+        let pick = |d: u8, v: &[u64]| v[usize::from(d) % v.len()];
+        let m = pick(p.dims[0] ^ i, &[1, 2, 8, 16, 32]);
+        let n = pick(p.dims[1], &[2048, 4096, 6144]);
+        let k = pick(p.dims[2], &[4096, 7168]);
+        let src = testgen::gemm_src_at(&p, m, n, k);
+        let pos = |em: &Emission, pat: &str| -> Vec<usize> {
+            em.text
+                .lines()
+                .enumerate()
+                .filter(|(_, l)| l.contains(pat) && !l.starts_with("declare"))
+                .map(|(i, _)| i)
+                .collect()
+        };
+        let em = shipped(&lower(&src), "rtx-5080", true);
+        let zeros = pos(&em, "@mapal_gpu_zero_for(");
+        let gens = pos(&em, "@mapal_gpu_gen(");
+        if zeros.is_empty() || gens.is_empty() {
+            continue;
+        }
+        let bytes = (m * k + k * n + m * n) * 4;
+        let first_gen = gens[0];
+        let last_gen = *gens.last().expect("a generator");
+        for &z in &zeros {
+            match bytes <= keep {
+                true => {
+                    assert!(z < first_gen, "{m}x{n}x{k}: fits, hoisted ahead\n{src}");
+                    before += 1;
+                }
+                false => {
+                    assert!(
+                        z > last_gen,
+                        "{m}x{n}x{k}: past the keep, after the generators\n{src}"
+                    );
+                    after += 1;
+                }
+            }
+        }
+        // A clock read ahead of the product: the zero after it.
+        let timed = src.replacen(
+            &format!("    {} -> iota -> ic;", m * n),
+            &format!("    () -> time -> t0;\n    {} -> iota -> ic;", m * n),
+            1,
+        );
+        assert_ne!(timed, src, "the clock inserted");
+        let et = shipped(&lower(&timed), "rtx-5080", true);
+        let clock = pos(&et, "@mapal_time_ms()");
+        for &z in &pos(&et, "@mapal_gpu_zero_for(") {
+            assert!(
+                clock.first().is_some_and(|&c| z > c),
+                "{m}x{n}x{k}: the zero after the clock\n{timed}"
+            );
+            fenced += 1;
+        }
+    }
+    eprintln!(
+        "hoisted zeros: ahead of the generators {before}, after them {after}, after the clock {fenced}"
+    );
+    assert!(
+        before > 0 && after > 0 && fenced > 0,
+        "{before} {after} {fenced}"
     );
 }
