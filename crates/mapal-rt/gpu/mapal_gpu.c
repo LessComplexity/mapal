@@ -796,8 +796,15 @@ void mapal_gpu_zero_for(const struct mapal_cand *c, uint64_t d, uint64_t bytes) 
   mapal_gpu_zero(d, bytes);
 }
 
+/* `device-trap`: an armed copy-out is a checkpoint (`trap_poll`, below). */
+static void trap_poll(void);
+
 /* `bytes` from byte `off` of the device buffer `d` into host `h`.
- * Synchronous: it waits for every launch before it on the stream. */
+ * Synchronous: it waits for every launch before it on the stream. A copy-out
+ * hands the host device values, so a recorded trap is raised here (armed
+ * only: a checking cell ran since the last checkpoint) — the host never
+ * computes on the element a trapped read stands in for (a loop whose exit
+ * reads it may never end; the oracle stopped at the read). */
 void mapal_gpu_d2h(void *h, uint64_t d, uint64_t off, uint64_t bytes) {
   double t0 = now_ms();
   CK(cuMemcpyDtoH(h, (CUdeviceptr)(d + off), bytes));
@@ -809,6 +816,7 @@ void mapal_gpu_d2h(void *h, uint64_t d, uint64_t off, uint64_t bytes) {
   if (trace)
     fprintf(stderr, "mapal_gpu_trace op=d2h ms=%.3f bytes=%llu\n", ms,
             (unsigned long long)bytes);
+  trap_poll();
 }
 
 /* `wait` waits for everything `record` has enqueued so far. */
@@ -1222,6 +1230,7 @@ void mapal_gpu_d2h_on(uint32_t stream, void *h, uint64_t d, uint64_t off,
   if (trace)
     fprintf(stderr, "mapal_gpu_trace op=d2h ms=%.3f bytes=%llu stream=%u\n", ms,
             (unsigned long long)bytes, k);
+  trap_poll();
 }
 
 /* `pinned`: page-lock a host array that crosses the bus, once. Best effort —
@@ -1513,7 +1522,8 @@ void mapal_gpu_free(uint64_t *slot) {
  * `topo << 8 | kind`). Its launch arms the next host checkpoint (a print, the
  * clock, a trap, the exit: `mapal_rt_checkpoint_hook`), which waits for the
  * device and reads the word — a recorded trap is raised there, the oracle's
- * outcome. Unarmed, a checkpoint costs nothing. */
+ * outcome. A copy-out is a checkpoint too (`mapal_gpu_d2h`, `_d2h_on`): the
+ * host computes on what it copies. Unarmed, a checkpoint costs nothing. */
 extern void mapal_trap(uint32_t kind) __attribute__((noreturn));
 extern void mapal_rt_checkpoint_hook(void (*f)(void));
 static int trap_armed, trap_hooked;

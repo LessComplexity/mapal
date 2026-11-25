@@ -896,10 +896,12 @@ void mapal_gpu_d2h_on(uint32_t stream, void *h, uint64_t d, uint64_t off, uint64
   (void)stream;
   mapal_gpu_d2h(h, d, off, bytes);
 }
+/* `device-trap`: a copy-out is a checkpoint (`mapal_gpu.c`). */
 void mapal_gpu_d2h(void *h, uint64_t d, uint64_t off, uint64_t bytes) {
   memcpy(h, (void *)(d + off), bytes);
   n_d2h++;
   b_out += bytes;
+  trap_poll();
 }
 /* S63: the output an atomic split adds into. */
 void mapal_gpu_zero(uint64_t d, uint64_t bytes) {

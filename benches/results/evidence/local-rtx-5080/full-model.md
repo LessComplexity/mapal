@@ -183,9 +183,95 @@ read a decode step, against Mapal's 2.47 GB of bf16 weights widened in registers
   (residency's `fly-unroll`). The runtime differs (the checkpoint hook) on all. ABBA of the three, 5 repetitions, value
   gates pass (`changed/results`, load 7 → 4): causal 12.61 vs 12.75 ms (0.989), prefill 6.48 vs 6.50 (0.998), gen 6.57
   vs 6.44 (1.019, ranges 6.45–6.60 vs 6.44–6.60 overlap; residency's −13 % on gen did not reproduce here). `cand-made`
-  on / off: 45 of 45 equal. The full-suite safety net for the runtime change did not run in this step.
+  on / off: 45 of 45 equal. That run's evidence check printed 103 mismatches, and this report did not list them; the
+  full-suite safety net for the runtime change did not run in this step. Both are covered under *Review fixes* below.
 - In the model (ABBA, bf16 512, 3 + 3 runs): the walk on 14.06–14.08 ms TTFT, off 15.07–15.10 (−1.02 ms), decode
   equal, peak 2 870 vs 2 700 MB.
+
+## Review fixes (2026-11-26, after `b8429388`)
+
+An independent review raised three findings. All three were real. Raw output (never in git):
+`.claude/raw-evidence/local-rtx-5080/bf16-review/`.
+
+1. **`device-trap` could hang where the oracle traps.** A checking cell stores 0.0 in place of an out-of-range read.
+   The runtime raised the recorded trap only at a print, the clock, a host trap or the exit. A copy-out to the host
+   (`mapal_gpu_d2h`, `_d2h_on`) did not check it. So a host loop whose exit reads the copied element could walk
+   forever on the 0.0. Repro: the reviewer's gather (id 45 past a 40-row table) → GEMM, then `rows[300·1024+1]` into
+   `x <- 0.5; while x != target { x + 0.5 }`. Oracle: `index_oob`, rc 101. Before the fix: no output, killed at
+   20 s. **Fix**: every copy-out is a checkpoint (`trap_poll` after the copy; armed only after a checking cell has
+   run). Now on the RTX 5080: `mapal trap: index_oob`, rc 101, the oracle's outcome. A device value reaches host
+   control only through a copy-out. A device kernel cannot spin on the stand-in, because cells are loop-free
+   (`cell_plan`). A variant with the walk inside a map stays on the host, together with its gather. The emulator
+   runtime has the same checkpoint.
+   **Test**: `onto_device::device_trap_on_generated_gathers` now gives every other generated program a host probe:
+   one gathered element copied out and walked to. A clean probe reads a positive element. Emulated runs are bounded
+   (`Emulated::run_status_within`, 60 s, code 124). Counters: 27 programs, 27 device cells, 9 / 9 / 9
+   clean / past / negative, **9 probed trapping device cells**. Without the emulator's copy-out checkpoint the test
+   fails: `left: 124, right: 101`.
+   **Cost**: the model's first checkpoint after a checking cell is now the token's copy-out, not the clock read just
+   after it. The work is the same: one context sync and an 8-byte read. ABBA on the same emission (host and device
+   text equal but the data path): 3c629486's builds F against this tree's G, F G G F, warmup 2 + 5 reps a pass,
+   CPUs 16-23,48-55, load 1.2–2.1. TTFT G/F is 1.000 for bf16 128 / 512 / 2048 and 1.002 / 1.002 / 1.000 for f32;
+   decode G/F is 1.000 everywhere; the ranges overlap. G's medians: bf16 5.58 / 14.09 / 52.23 ms with decode 3.258 /
+   3.293 / 3.395, and f32 8.57 / 25.43 / 95.47 with decode 3.239 / 3.292 / 3.445. These match the tables' pass D
+   within 0.2 %, so the rows above stand (`model-ab.md`).
+2. **The integration's evidence mismatches.** 18 of the 19 head-only rows were a checker fault. confirm_pick.py
+   reverts a trial pick by appending `key site n 0 0`, a line without minima. The runtime reads that line: its last
+   line of a key wins. `evidence.py` `wisdom_lines` dropped it. So the checker expected the trial's pick 5 where
+   AUTO correctly launched 0. Now `wisdom_lines` reads the wisdom as `choice_load` does. A revert keeps the key's
+   trial for the argmin check (` confirm=0`).
+   The 19th row was AUTO ≤ RULES × (1 + null) on `pt_gen_1024_512_256` (6.568 vs 6.444). It compared equal launches:
+   AUTO's every pick was 0, which is RULES. That makes the difference null by construction, and the row now says
+   so (`same launches`).
+   A third fault showed up in this step's own suite run. The runtime's head-to-head pairs can veto the minima's
+   argmin (`0, w, w, 0, 0, w`; cross-arch). The pairs' runs enter the stored minima. So a vetoed trial stores 0
+   where the minima say 5. The checker now recomputes the pairs from the tune traces (`pair_vetoes`,
+   ` pairs=veto`).
+   Tests: `test_harness` `test_choice_rows_read_a_confirm_revert_as_the_runtime_does` (revert, same launches, veto).
+   It fails on `b8429388`'s `evidence.py`.
+   **Re-judged integration run**: 103 → **84 mismatches**. The head arm has 32 and the on-base arm has 32, row for
+   row; `.c1` has 20. These are the suite's pre-existing tile-kernel classes: `kmajor-a` 128-bit LDS / STS,
+   `full-tile` FFMA per LDS / accumulators / threads, `grid-share`, `nest-cell`, `flow-host`, `arch-rungs`. They
+   were untriaged before this step and remain so; none is new here.
+   `differential: 0 pass, 0 fail` is structural. box_run's differential skips `pt_*` stems, and the timed suite has
+   only `pt_*` stems. Their check against the oracle is the probe value gate (`value-gate prog=… pass`, every arm):
+   35 of 35 in each suite run below.
+3. **The full-suite safety net**, the runtime A/B it needs, and the walk through `evidence.py`.
+   - **Suite, both runtimes, ABBA.** The step built one bundle of the 35 programs and 2 cells from this tree (calibrated).
+     Its copy links bb9bbed7's runtime: its `mapal_gpu.c` and `libmapal_rt.a`, without the checkpoint hook or the
+     copy-out poll. The objects and PTX are identical. Runs went head, base, base, head (`LADDER=1`, every program
+     timed, no competitor legs; CPUs 16-23,48-55; 7.5 min a run; load 1.1–7). Value gates passed in every run
+     (35 of 35).
+     **34 of 35 programs are null.** `pt_pj_m16_n2048_k7168` (0.954) is bimodal in every arm, 0.033 or 0.037 ms,
+     and its head and base ranges overlap (`suite-cmp.md`). Run 4 re-tuned because the step's script deleted the
+     head bundle's wisdom. Only `pt_gen`'s pick moved (5 → 0, confirm revert), and its ratio is 1.009 with null 1.2 %.
+     Evidence: 13 028 checks and **202 mismatches, the same rows on both runtimes**, in the same pre-existing classes:
+     `kmajor-a` 82, `full-tile` 32, `grid-share` 18, `wide-fma` / `min-blocks` / `face-registers` 12 each,
+     `staged-regs` 8, `nest-cell` / `flow-host` 6, `panel-regs` 4, `window` / `prefetch` / `fill-wave` / `face-fma` /
+     `arch-rungs` 2. These were untriaged before this step and remain so.
+     The run also had 63 `n/a` rows: "no local-memory traffic in the hot loop" read `sass.hot.stl` / `ldl`, which the
+     hot-loop facts never recorded. `evidence.py facts` records them now, and the re-judged run has 0 `n/a`.
+   - **`mma-walk` through `evidence.py`.** The three `benches/algorithms` bf16 projections that walk ran with their
+     `.off-mma-walk` arms, value-gated: 3 arms each, all pass. They were probe-timed ABBA. Evidence: 232 checks,
+     **0 mismatch, 0 n/a**. Every `mma-walk` row is ok: `plan.walk = mma`; `atom_add` 64 / 128 / 128;
+     `ctas` 168 = 2 × 84 (one wave); hot-loop `STL` / `LDL` 0.
+     Time, ON / OFF in ms (null ≤ 1 %):
+
+     | projection | ON | OFF | ON/OFF |
+     |---|---:|---:|---:|
+     | 128 × 4096 × 14336 | 0.170 | 0.221 | 0.77 |
+     | 2048 × 4096 × 4096 | 0.646 | 0.677 | 0.95 |
+     | 2048 × 4096 × 14336 | 2.106 | 2.266 | 0.93 |
+
+     SASS explains the gain: each walk is 168 CTAs. The OFF grids are 128 tiles (0.76 of the slots), 512 tiles (3.05
+     rounds, the 4th 5 % full) and 512 tiles × S = 4 splits. The hot loops are equal per panel at 2048 (HMMA 64,
+     LDSM 16, LDGSTS 8). At 128 the walk takes the 128 × 128 tile: 124 regs against 48, and `REDG` 64 for the shared
+     tiles' partials.
+   - Tests (`--release`, `RUST_TEST_THREADS=8 MAPAL_TESTGEN_JOBS=4`): `onto_device` 12, `read` 10, `placement` 4,
+     `resident` 17, `streams` 19, `caching_memory` 11, `differential` 41 all pass. `test_harness` passes 28 of 34.
+     The 6 failures (`k_over_its_longest_fold`, `wrapper_retrieves…` × 3, `search_plan_and_pick`,
+     `request_clock_and_retention_placement`) fail identically with `b8429388`'s `evidence.py`. They pre-date this
+     step and are not its subject.
 
 ## Where Mapal still loses, why, and what is next (generic)
 

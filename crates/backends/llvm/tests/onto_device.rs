@@ -807,14 +807,36 @@ fn hoisted_next_state_is_no_device_carry() {
 /// arm of a guard (`(x > n + 5)` never taken, `x ==
 /// n − 1` the last id past the table, `x == 0` a negative one). `(r, w, n,
 /// kind)`: the table's rows and width, the ids.
-fn gather_src(r: u64, w: u64, n: u64, kind: u8) -> String {
+fn gather_src(r: u64, w: u64, n: u64, kind: u8, probe: bool) -> String {
     let (cond, far) = match kind {
         0 => (format!("x > {}", n + 5), "100000".to_string()),
         1 => (format!("x == {}", n - 1), format!("{}", r + 3)),
         _ => ("x == 0".to_string(), "-1".to_string()),
     };
+    // `probe`: one element of the row the far id gathers (row `n - 1` in a
+    // clean program) copied to the host, where a loop walks up to it from
+    // 0.5 — a clean probe reads a positive element (the loop ends), the
+    // checking cell's stand-in for an out-of-range read is 0.0, never
+    // reached: the host must not run the loop on it (the oracle trapped at
+    // the read).
+    let (walk, probe) = if probe {
+        let p = if kind == 2 { 0 } else { n - 1 };
+        let id = (p * 5 + 3) % r;
+        let j = (0..w)
+            .find(|j| ((id * w + j) * 7 + 3) % 13 > 6)
+            .expect("a positive element in every row");
+        (
+            "fn walk_to(target: f32) -> f32 {\n    mut x: f32 <- 0.5;\n    loop {\n        (x != target) -> {\n            -true-> {\n                x + 0.5 -> x;\n                -> loop;\n            }\n            -false-> x -> ret;\n        }\n    }\n}\n\n",
+            format!(
+                "    rows[{}] -> tg;\n    tg -> walk_to -> reached;\n    reached -> println;\n",
+                p * w + j
+            ),
+        )
+    } else {
+        ("", String::new())
+    };
     format!(
-        "fn main() {{\n    {rw} -> iota -> i_t;\n    i_t -> map {{\n        x -> (x * 7 + 3) % 13 - 6 -> widen_f32 -> v;\n        v / 4.0\n    }} -> table;\n    {n} -> iota -> i_ids;\n    i_ids -> map {{\n        x -> ({cond}) -> {{\n            -true-> {far};\n            -false-> (x * 5 + 3) % {r};\n        }}\n    }} -> ids;\n    table[3] -> println;\n    {nw} -> iota -> map {{\n        cell -> table[ids[cell / {w}] * {w} + cell % {w}] * 2.0\n    }} -> rows;\n    {w} -> iota -> i_w2;\n    i_w2 -> map {{\n        x -> (x * 3 + 1) % 7 - 3 -> widen_f32 -> v;\n        v / 8.0\n    }} -> w2;\n    {w} -> iota -> rw;\n    {n} -> iota -> map {{\n        i -> (0.0, rw) -> fold {{\n            acc, k -> acc + rows[i * {w} + k] * w2[k]\n        }}\n    }} -> y;\n    y[0] -> println;\n    y[{last}] -> println;\n    0.0 -> zero: f32;\n    (zero, y) -> fold {{\n        acc, v -> acc + v\n    }} -> total;\n    total -> println;\n}}\n",
+        "{walk}fn main() {{\n    {rw} -> iota -> i_t;\n    i_t -> map {{\n        x -> (x * 7 + 3) % 13 - 6 -> widen_f32 -> v;\n        v / 4.0\n    }} -> table;\n    {n} -> iota -> i_ids;\n    i_ids -> map {{\n        x -> ({cond}) -> {{\n            -true-> {far};\n            -false-> (x * 5 + 3) % {r};\n        }}\n    }} -> ids;\n    table[3] -> println;\n    {nw} -> iota -> map {{\n        cell -> table[ids[cell / {w}] * {w} + cell % {w}] * 2.0\n    }} -> rows;\n{probe}    {w} -> iota -> i_w2;\n    i_w2 -> map {{\n        x -> (x * 3 + 1) % 7 - 3 -> widen_f32 -> v;\n        v / 8.0\n    }} -> w2;\n    {w} -> iota -> rw;\n    {n} -> iota -> map {{\n        i -> (0.0, rw) -> fold {{\n            acc, k -> acc + rows[i * {w} + k] * w2[k]\n        }}\n    }} -> y;\n    y[0] -> println;\n    y[{last}] -> println;\n    0.0 -> zero: f32;\n    (zero, y) -> fold {{\n        acc, v -> acc + v\n    }} -> total;\n    total -> println;\n}}\n",
         rw = r * w,
         nw = n * w,
         last = n - 1,
@@ -827,23 +849,27 @@ fn gather_src(r: u64, w: u64, n: u64, kind: u8) -> String {
 /// clean run prints the oracle's values; a trapping run exits as the oracle
 /// does (`index_oob`, 101) after the lines the host's own map prints before
 /// its trap (OFF, `device-trap`: the compiled program's effects before a
-/// trap, which the oracle's evaluation order may not print).
+/// trap, which the oracle's evaluation order may not print). Every other
+/// program probes a gathered element on the host (`probe`): a loop whose exit
+/// reads it, behind a copy-out — the copy-out raises a recorded trap (without
+/// it the loop walks forever from the stand-in 0.0; the run is killed and
+/// fails, code 124).
 #[test]
 fn device_trap_on_generated_gathers() {
     let Some(clang) = emu::clang() else {
         return;
     };
     let mut progs = Vec::new();
-    for r in [5u64, 13, 40] {
+    for (ri, r) in [5u64, 13, 40].into_iter().enumerate() {
         for (i, w) in [3u64, 256, 1024].into_iter().enumerate() {
             for kind in 0..3u8 {
                 let n = [16u64, 128, 512][(i + kind as usize) % 3];
-                progs.push((r, w, n, kind));
+                progs.push((r, w, n, kind, (ri + i + kind as usize) % 2 == 1));
             }
         }
     }
-    let covers = testgen::par_check(&progs, |i, &(r, w, n, kind)| {
-        let src = gather_src(r, w, n, kind);
+    let covers = testgen::par_check(&progs, |_, &(r, w, n, kind, probe)| {
+        let src = gather_src(r, w, n, kind, probe);
         let ir = lower(&src);
         let rr = run(&ir, 2_000_000_000);
         let trapped = matches!(rr.outcome, Outcome::Trapped(_));
@@ -855,8 +881,9 @@ fn device_trap_on_generated_gathers() {
             cells.values().any(|c| !c.traps.is_empty()),
             "the gather is a trap cell\n{src}"
         );
-        let mut cover = [1u64, 0, 0, 0, 0];
-        let _ = i;
+        // programs, device cells, clean / past / negative device cells,
+        // probed trapping device cells
+        let mut cover = [1u64, 0, 0, 0, 0, 0];
         let arms = [
             (
                 "off",
@@ -875,7 +902,7 @@ fn device_trap_on_generated_gathers() {
             let ex = emu::build_emulated(&clang, &em.text, dev);
             let modes: &[[(&str, &str); 2]] = if *arm == "on" { &MODES } else { &MODES[..1] };
             for mode in modes {
-                let (out, err, code) = ex.run_status(mode);
+                let (out, err, code) = ex.run_status_within(mode, 60);
                 match trapped {
                     true => {
                         assert_eq!(code, 101, "{arm} {mode:?}: {err}\n{src}");
@@ -891,16 +918,19 @@ fn device_trap_on_generated_gathers() {
             }
             if *arm == "on" && on_device {
                 cover[2 + usize::from(kind)] += 1;
+                cover[5] += u64::from(probe && trapped);
             }
         }
         cover
     });
-    let mut c = [0u64; 5];
+    let mut c = [0u64; 6];
     for k in covers {
         for (a, b) in c.iter_mut().zip(k) {
             *a += b;
         }
     }
-    eprintln!("device-trap generated: programs, device cells, clean / past / negative: {c:?}");
+    eprintln!(
+        "device-trap generated: programs, device cells, clean / past / negative, probed traps: {c:?}"
+    );
     assert!(c.iter().all(|&x| x > 0), "{c:?}");
 }

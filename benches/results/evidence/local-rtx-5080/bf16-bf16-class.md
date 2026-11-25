@@ -135,7 +135,8 @@ Every suite program and cell face emits **the same host and device text** at the
 2 cells × 5 faces, `changed/suite.tsv`: every `head_hash = on-base_hash`) — no kernel of the suite changes; null by
 construction. Only the runtime differs (the checkpoint hook: unarmed, one atomic load a print or clock read), which
 `suite_diff` flags for a full-suite run at both runtimes; the bundle step failed in the worktree (its CUTLASS
-scratch lives in the main checkout), so that run is open.
+scratch lives in the main checkout), so that run is open. (Run since: `full-model.md` *Review fixes* 3 — ABBA at
+both runtimes, 34 of 35 null, the same evidence rows.)
 
 ## What stays open, and why
 

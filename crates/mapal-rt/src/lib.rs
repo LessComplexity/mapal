@@ -37,7 +37,10 @@ pub extern "C" fn mapal_rt_checkpoint_hook(f: extern "C" fn()) {
 
 /// A host checkpoint (a print, the clock, a trap): a device trap recorded
 /// before it is raised here — the oracle's outcome, the program's effects
-/// up to the trapping operation and no later.
+/// up to the trapping operation and no later. The GPU runtime's copy-outs
+/// (`mapal_gpu_d2h`, `_d2h_on`) poll the same word: the host never computes
+/// on a trapped read's stand-in (device cells are loop-free, `cell_plan`, so
+/// only host control can fail to reach a checkpoint).
 fn checkpoint() {
     let p = CHECKPOINT.load(std::sync::atomic::Ordering::Acquire);
     if p != 0 {

@@ -33,7 +33,8 @@ block-row).
 tiles' partials with fire-and-forget `REDG`; per SM it runs `blocks_per_sm · iters` panels where the ordered grid
 runs `⌈tiles / sms⌉` tiles.
 
-**Realized** (ptxas -v, cuobjdump, sm_120; `sass/`):
+**Realized** (ptxas -v, cuobjdump, sm_120; `sass/`; read by hand here — the three walked `benches/algorithms` bf16
+projections went through `evidence.py` since: `full-model.md` *Review fixes* 3, 232 checks, 0 mismatch):
 
 | kernel | regs / spill | HMMA | LDSM | LDGSTS | BAR | REDG / ATOMG | STG | grid |
 |---|---|---:|---:|---:|---:|---|---:|---|

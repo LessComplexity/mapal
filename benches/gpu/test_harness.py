@@ -242,6 +242,55 @@ exit 0
         self.assertEqual(got[("AUTO launches the stored pick (src=wisdom)", "pick=1 src=wisdom")], "ok")
         self.assertEqual(got[("AUTO <= RULES x (1 + null)", "auto <= rules*(1+null)")], "ok")
 
+    def test_choice_rows_read_a_confirm_revert_as_the_runtime_does(self):
+        # bf16-integrate: a trial's pick that confirm_pick.py reverts (`key site n 0 0`, no minima) is the key's
+        # decision — the runtime launches candidate 0 from it; the checker kept the trial's pick and flagged 18
+        # launches. AUTO then launches what RULES does: its time against RULES is null by construction.
+        import sys
+        sys.path.insert(0, str(HERE))
+        import evidence
+        part = self.root / "rtx-5080"
+        part.mkdir()
+        ids = [5, -7]
+        (part / "pt_a_64.host.ll").write_text(
+            "  call void @mapal_gpu_site(i64 5, i32 1, i32 0, i32 2, ptr @m.cands1, i32 3, ptr %p, i32 2, ptr null)\n"
+            "@m.cands1 = private unnamed_addr constant [2 x %mapal_cand] ["
+            + ", ".join(f"%mapal_cand {{ i64 {i}, i64 0, i64 0, i64 0, i32 1, i32 1, i32 32, i32 0, i32 0, i32 0 }}"
+                        for i in ids) + "]\n")
+        k = "\t".join(evidence.kname(i) for i in ids)
+        (self.root / "wisdom").mkdir()
+        (self.root / "wisdom" / "wisdom-x.tsv").write_text(
+            f"00000000000000aa\t0000000000000005\t2\t1\t5\t100000\t90000\t{k}\n"  # the trial: pick 1
+            "00000000000000aa\t0000000000000005\t2\t0\t0\n")  # confirm_pick.py: reverted to 0
+        w = evidence.wisdom_lines(str(self.root / "wisdom" / "wisdom-x.tsv"))["00000000000000aa"]
+        self.assertEqual((w["pick"], w["trial"], w["ns"]), (0, 1, [100000, 90000]))
+        res = self.root / "results.txt"
+        res.write_text("".join(
+            f"probe prog=pt_a_64 face=_default arm={a} rep={r} wall_us=1 out=[1 iter ms={ms} ] rc=0{x}\n"
+            for r in (1, 2, 3) for a, ms, x in (("on", 10.2, " sites=[00000000000000aa:0:wisdom ]"),
+                                                ("rules", 10.0, ""), ("null", 10.21, ""))))
+        rows = evidence.choice_rows("rtx-5080", str(part), {"pt_a_64": {}}, str(res))
+        got = {(r[4], r[5]): (r[6], r[7]) for r in rows}
+        self.assertEqual(got[("AUTO launches the stored pick (src=wisdom)", "pick=0 src=wisdom")][1], "ok")
+        argmin = got[("stored pick = measured argmin beyond max(3 %, 1 us)", "pick=1")]
+        self.assertEqual(argmin, ("pick=1 ns=100000,90000 confirm=0", "ok"))
+        auto = got[("AUTO <= RULES x (1 + null)", "auto <= rules*(1+null)")]
+        self.assertIn("same launches", auto[0])
+        self.assertEqual(auto[1], "ok")
+        # A trial whose head-to-head pairs kept candidate 0 (cross-arch) stores 0 although its minima's argmin is
+        # the challenger (the pairs' runs enter the minima): candidate 0 is the trial's decision.
+        (self.root / "wisdom" / "wisdom-x.tsv").write_text(
+            f"00000000000000cc\t0000000000000005\t2\t0\t5\t15519\t13216\t{k}\n")
+        (self.root / "tune").mkdir()
+        (self.root / "tune" / "pt_a_64.trace").write_text("".join(
+            f"mapal_gpu_trace op=trial site=0000000000000005 cand={c} kernel=x rep={5 + i // 2} ns={ns} confirm=1\n"
+            for i, (c, ns) in enumerate([(0, 15807), (1, 19999), (1, 13216), (0, 15744), (0, 15519), (1, 13344)]))
+            + "mapal_gpu_trace op=site site=0000000000000005 key=00000000000000cc n=2 pick=0 src=trial reps=5\n")
+        rows = evidence.choice_rows("rtx-5080", str(part), {"pt_a_64": {}}, str(res))
+        got = {(r[4], r[5]): (r[6], r[7]) for r in rows}
+        self.assertEqual(got[("stored pick = measured argmin beyond max(3 %, 1 us)", "pick=0")],
+                         ("pick=0 ns=15519,13216 pairs=veto", "ok"))
+
     def test_decode_status_after_differential_passes(self):
         self.timing_stubs()
         (self.root / "tiles/decode_1024_256.expect").write_text("42\n")
