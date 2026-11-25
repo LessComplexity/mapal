@@ -390,9 +390,10 @@ fn same_cells(em: &Emission) -> u64 {
 }
 
 /// `retain-same`: a loop that re-lays out a carried array it never writes
-/// (a transpose of constants, every trip) uploads the transpose on the
-/// first trip only (nothing crosses after: `h2d=0`); the history's
-/// projection reads it. Every emulator mode and the OFF arm print the
+/// (a transpose of constants, every trip) builds the transpose on the
+/// device on the first trip only (`trip-cells` and `bytes-place` off:
+/// uploads it on the first trip only); nothing crosses after (`h2d=0`); the
+/// history's projection reads it. Every emulator mode and the OFF arm print the
 /// interpreter's values.
 #[test]
 fn same_every_trip_launches_once() {
@@ -432,8 +433,14 @@ fn same_every_trip_launches_once() {
     let up = ir.unchanged_plan(ir.entry());
     assert!(up.same_every_trip(named(&ir, "wt")), "{up:?}");
     let em = device_emission(&ir, &[]);
-    assert_eq!(same_cells(&em), 1, "{}", em.text);
+    // The transpose is a device cell launched on the first trip only, its
+    // carried operand uploaded on the first trip only (model-ready
+    // `trip-cells` / `bytes-place`: a loop's cell is placed by the bytes it
+    // moves; both off, the transpose is uploaded once instead).
+    assert_eq!(same_cells(&em), 2, "{}", em.text);
     assert!(em.text.contains(" h2d=0 "), "{}", em.text);
+    let host = device_emission(&ir, &["trip-cells", "bytes-place"]);
+    assert_eq!(same_cells(&host), 1, "{}", host.text);
     let dev = em.device.as_deref().unwrap_or("");
     let ex = emu::build_emulated(&clang, &em.text, dev);
     for (mode, (got, _)) in MODES.iter().zip(ex.run_each(&MODES)) {
@@ -529,6 +536,17 @@ fn check_history(clang: &str, i: usize, p: &testgen::HistoryProg) -> Vec<(&'stat
     }
     if on_b > birth {
         c.push(("fit-larger", 1));
+    }
+    // The same on the placement without model-ready `trip-cells` /
+    // `bytes-place` (a loop's small cells on the host): another set of
+    // members to color.
+    let host_cells = arena_bytes(&device_emission(&ir, &["trip-cells", "bytes-place"]));
+    let host_birth = arena_bytes(&device_emission(
+        &ir,
+        &["trip-cells", "bytes-place", "arena-fit"],
+    ));
+    if host_cells < host_birth {
+        c.push(("fit-smaller", 1));
     }
     if em.text.contains("call void @mapal_gpu_copy2d(") {
         c.push(("gathered-sites", 1));

@@ -7402,3 +7402,127 @@ impl GenericProg {
         (text, u)
     }
 }
+
+/// placement: a decode-like loop (model-ready `placement`) — a token's
+/// layers called with a literal layer index (the second reads the first's
+/// output, as a model's layers do: `x + a0 · 0`), each normalizing the hidden
+/// row, projecting a key / value / query row (nested folds over
+/// k-contiguous weights), rotating the key by its partner half (`i % w <
+/// w/2`), appending both rows to a struct-typed loop state (`mut kv:
+/// Cache`, which the rewriter carries as its leaves) in place, attending
+/// over the cache's first `position + 1` rows and projecting back; the
+/// logits' argmax picks the next token, whose embedding row is gathered (an
+/// index the selecting fold ranges) and shifted by the token. Values are
+/// small integers and each score its sign, so every sum is exact in any
+/// order. Nothing prints inside the loop (the host-task ordering of a
+/// printing loop's exit value is the scout's open `r2` / `p23`).
+#[derive(Clone, Debug)]
+pub struct DecodeProg {
+    /// Hidden width `h`, row width `w`, vocabulary `v`, layers (1 or 2).
+    pub h: u64,
+    pub w: u64,
+    pub v: u64,
+    pub layers: u64,
+    /// Cache positions `p`; the loop runs positions `[s0, s0 + trips)`.
+    pub p: u64,
+    pub s0: i64,
+    pub trips: i64,
+    /// The key row is rotated by its partner half.
+    pub rot: bool,
+    /// The cache's values row is appended before its keys row.
+    pub swap: bool,
+}
+
+pub fn decode_strategy() -> impl Strategy<Value = DecodeProg> {
+    (
+        prop::sample::select(vec![32u64, 64]),
+        prop::sample::select(vec![4u64, 8]),
+        prop::sample::select(vec![8u64, 16]),
+        1u64..3,
+        0i64..3,
+        1i64..5,
+        any::<bool>(),
+        any::<bool>(),
+    )
+        .prop_map(|(h, w, v, layers, s0, trips, rot, swap)| DecodeProg {
+            h,
+            w,
+            v,
+            layers,
+            p: (s0 + trips) as u64 + 1,
+            s0,
+            trips,
+            rot,
+            swap,
+        })
+}
+
+pub fn decode_prog_src(g: &DecodeProg) -> String {
+    let (h, w, v, l, p) = (g.h, g.w, g.v, g.layers, g.p);
+    let (cn, half, lwh, lh) = (l * p * w, w / 2, l * w * h, l * h);
+    let data = |name: &str, len: u64, a: u64, c: u64| {
+        format!(
+            "    {len} -> iota -> map {{\n        t -> (t * {a} + {c}) % 3 - 1 -> widen_f32\n    }} -> {name};\n"
+        )
+    };
+    let rotate = if g.rot {
+        format!(
+            "    {w} -> iota -> map {{\n        i ->\n        (i % {w} < {half}) -> {{\n            -true-> i + {half};\n            -false-> i - {half};\n        }} -> partner;\n        row[i] - row[partner]\n    }} -> ret;\n"
+        )
+    } else {
+        format!("    {w} -> iota -> map {{\n        i -> row[i] * 2.0\n    }} -> ret;\n")
+    };
+    let appends = if g.swap {
+        "    (cache.values, value, layer, position) -> append -> values;\n    (cache.keys, rotated, layer, position) -> append -> keys;\n"
+    } else {
+        "    (cache.keys, rotated, layer, position) -> append -> keys;\n    (cache.values, value, layer, position) -> append -> values;\n"
+    };
+    let mut s = String::new();
+    s += &format!("type Cache {{\n    keys: [f32; {cn}],\n    values: [f32; {cn}]\n}}\n\n");
+    s += &format!(
+        "fn append(cache: [f32; {cn}], row: [f32; {w}], layer: i32, position: i32) -> [f32; {cn}] {{\n    {cn} -> iota -> map {{\n        cell ->\n        (cell / {w} == layer * {p} + position) -> {{\n            -true-> row[cell % {w}];\n            -false-> cache[cell];\n        }}\n    }} -> ret;\n}}\n\n"
+    );
+    s += &format!("fn rotate(row: [f32; {w}]) -> [f32; {w}] {{\n{rotate}}}\n\n");
+    s += &format!(
+        "fn project(weights: [f32; {lwh}], layer: i32, x: [f32; {h}]) -> [f32; {w}] {{\n    {h} -> iota -> columns;\n    {w} -> iota -> map {{\n        r -> (0.0, columns) -> fold {{\n            s, c -> s + weights[(layer * {w} + r) * {h} + c] * x[c]\n        }}\n    }} -> ret;\n}}\n\n"
+    );
+    s += &format!(
+        "fn attend(q: [f32; {w}], keys: [f32; {cn}], values: [f32; {cn}], layer: i32, position: i32) -> [f32; {w}] {{\n    {w} -> iota -> dims;\n    {p} -> iota -> map {{\n        past ->\n        (past <= position) -> {{\n            -true-> {{\n                (0.0, dims) -> fold {{\n                    s, d -> s + q[d] * keys[(layer * {p} + past) * {w} + d]\n                }} -> dot;\n                (dot > 0.0) -> {{\n                    -true-> dot * 0.0 + 1.0;\n                    -false-> dot * 0.0 - 1.0;\n                }}\n            }}\n            -false-> 0.0;\n        }}\n    }} -> scores;\n    {p} -> iota -> pasts;\n    {w} -> iota -> map {{\n        d -> (0.0, pasts) -> fold {{\n            s, past -> s + scores[past] * values[(layer * {p} + past) * {w} + d]\n        }}\n    }} -> ret;\n}}\n\n"
+    );
+    s += &format!(
+        "fn back(weights: [f32; {lwh}], layer: i32, a: [f32; {w}]) -> [f32; {h}] {{\n    {w} -> iota -> dims;\n    {h} -> iota -> map {{\n        i -> (0.0, dims) -> fold {{\n            s, d -> s + weights[(layer * {h} + i) * {w} + d] * a[d]\n        }}\n    }} -> ret;\n}}\n\n"
+    );
+    s += &format!(
+        "fn layer_step(x: [f32; {h}], layer: i32, position: i32, wk: [f32; {lwh}], wv: [f32; {lwh}], wq: [f32; {lwh}], wo: [f32; {lwh}], gains: [f32; {lh}], cache: Cache) -> ([f32; {h}], Cache) {{\n    {h} -> iota -> map {{\n        i -> x[i] * gains[layer * {h} + i]\n    }} -> normed;\n    (wk, layer, normed) -> project -> key;\n    key -> rotate -> rotated;\n    (wv, layer, normed) -> project -> value;\n{appends}    (wq, layer, normed) -> project -> query;\n    (query, keys, values, layer, position) -> attend -> attended;\n    (wo, layer, attended) -> back -> out;\n    Cache {{\n        keys: keys,\n        values: values\n    }} -> next;\n    (out, next) -> ret;\n}}\n\n"
+    );
+    s += "fn main() {\n";
+    s += &data("wk", lwh, 7, 1);
+    s += &data("wv", lwh, 5, 2);
+    s += &data("wq", lwh, 11, 0);
+    s += &data("wo", lwh, 13, 1);
+    s += &data("gains", lh, 3, 1);
+    s += &data("emb", v * h, 17, 2);
+    s += &format!(
+        "    (0.0, {cn}) -> fill -> zeros;\n    Cache {{\n        keys: zeros,\n        values: zeros\n    }} -> empty;\n    {h} -> iota -> map {{\n        i -> emb[i]\n    }} -> x0;\n    {v} -> iota -> tokens;\n    {h} -> iota -> features;\n    mut x: [f32; {h}] <- x0;\n    mut kv: Cache <- empty;\n    mut position: i32 <- {s0};\n    loop {{\n        (position < {end}) -> {{\n            -true-> {{\n",
+        s0 = g.s0,
+        end = g.s0 + g.trips,
+    );
+    let ind = "                ";
+    s += &format!(
+        "{ind}(x, 0, position, wk, wv, wq, wo, gains, kv) -> layer_step -> l0;\n{ind}l0.0 -> a0;\n"
+    );
+    let (mut last, mut sum) = ("l0", "x[i] + a0[i]".to_string());
+    if l == 2 {
+        s += &format!(
+            "{ind}{h} -> iota -> map {{\n{ind}    i -> x[i] + a0[i] * 0.0\n{ind}}} -> x1;\n{ind}(x1, 1, position, wk, wv, wq, wo, gains, l0.1) -> layer_step -> l1;\n{ind}l1.0 -> a1;\n"
+        );
+        last = "l1";
+        sum += " + a1[i]";
+    }
+    s += &format!(
+        "{ind}{h} -> iota -> map {{\n{ind}    i -> {sum}\n{ind}}} -> hidden;\n{ind}tokens -> map {{\n{ind}    t -> (0.0, features) -> fold {{\n{ind}        s, c -> s + emb[t * {h} + c] * hidden[c]\n{ind}    }}\n{ind}}} -> logits;\n{ind}((logits[0], 0), tokens) -> fold {{\n{ind}    best, t ->\n{ind}    (logits[t] > best.0) -> {{\n{ind}        -true-> (logits[t], t);\n{ind}        -false-> best;\n{ind}    }}\n{ind}}} -> winner;\n{ind}winner.1 -> token;\n{ind}token % 2 -> widen_f32 -> picked;\n{ind}{h} -> iota -> map {{\n{ind}    i -> emb[token * {h} + i] + picked\n{ind}}} -> next_x;\n{ind}next_x -> x;\n{ind}{last}.1 -> kv;\n{ind}position + 1 -> position;\n{ind}-> loop;\n            }}\n            -false-> x -> done;\n        }}\n    }}\n    done[0] -> println;\n    done[{m}] -> println;\n    done[{e}] -> println;\n}}\n",
+        m = h / 2,
+        e = h - 1,
+    );
+    s
+}

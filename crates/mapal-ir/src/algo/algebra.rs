@@ -234,9 +234,38 @@ impl CategoryIr {
                 _ => return false,
             }
         };
+        // placement `lanes`: else a captured array's affine read (through a
+        // narrow widening) — its address's coefficient of the fold index
+        // (`radix_plan` of the body: one unscaled `k` digit), `w[row·K + k]`
+        // read at unit stride along the fold.
+        let forms = self.radix_plan(f);
+        let affine = |o: ObjectId| -> Option<u64> {
+            let o = match self.tile_definer(o, Operation::Widen) {
+                Some(w) => w.source,
+                None => o,
+            };
+            let ix = self.tile_definer(o, Operation::Index)?;
+            let form = forms.get(self.pair_slot_source(ix.source, 1)?)?;
+            match form
+                .digits
+                .iter()
+                .filter(|d| d.slot == captures + 1)
+                .collect::<Vec<_>>()
+                .as_slice()
+            {
+                [d] if d.stride == 1 && d.radix == 0 => Some(d.coef),
+                _ => None,
+            }
+        };
         let reads = factors
             .iter()
-            .map(|&o| if of_elem(o) { Some(1) } else { whole })
+            .map(|&o| {
+                if of_elem(o) {
+                    Some(1)
+                } else {
+                    whole.or_else(|| affine(o))
+                }
+            })
             .collect();
         Some(Regroup {
             fold,

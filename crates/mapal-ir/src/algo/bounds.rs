@@ -271,7 +271,17 @@ impl Eval<'_> {
                     let comp = self.slot(payload, index)?;
                     return self.under(rng, comp, &[(c, true)]);
                 }
-                self.slot(src, index).and_then(|s| rng.get(s).copied())
+                // A view of a product no `Pair` builds (a body's input): its
+                // own range — its seed, met with any pin a sibling view of
+                // the same slot passed on (`narrow`); a component of a
+                // selecting fold's result: its `select_range`.
+                match self.slot(src, index) {
+                    Some(s) => rng.get(s).copied(),
+                    None => rng
+                        .get(t)
+                        .copied()
+                        .or_else(|| self.select_range(rng, src, index)),
+                }
             }
             Operation::Index => {
                 let arr = self.slot(morph.source, 0)?;
@@ -305,6 +315,78 @@ impl Eval<'_> {
             }
             _ => None,
         }
+    }
+
+    /// Component `k` of a fold's result when the fold **selects** it: every
+    /// step's new component `k` is the accumulator's own, the step's element
+    /// or a constant (an argmax / argmin / first-match index). Its range is
+    /// the hull of the seed's component, the items' element range and those
+    /// constants — the values it can ever hold.
+    fn select_range(&self, rng: &RngMap, folded: ObjectId, k: u32) -> Option<Rng> {
+        let ir = self.ir;
+        let m = self.def(folded)?;
+        let Operation::Fold { body, captures } = ir.morphisms[m].op else {
+            return None;
+        };
+        let src = ir.morphisms[m].source;
+        let seed = self.slot(src, captures)?;
+        let items = self.slot(src, captures + 1)?;
+        let mut range = int(rng.get(self.slot(seed, k)?).copied())?;
+        let bd = ir.func(body)?;
+        let input = bd.input;
+        // The body param a view `Proj{slot}` of the body's input stands for.
+        let param = |o: ObjectId| -> Option<u32> {
+            let &e = ir.in_edges(o).first()?;
+            match ir.morphisms[e].op {
+                Operation::Proj { index } if ir.morphisms[e].source == input => Some(index),
+                _ => None,
+            }
+        };
+        let mut todo = vec![bd.output];
+        let mut seen = 0;
+        while let Some(o) = todo.pop() {
+            seen += 1;
+            if seen > 64 {
+                return None;
+            }
+            // A whole step result: the accumulator itself, a `Phi` of step
+            // results, or a pack whose component `k` is an allowed value.
+            if param(o) == Some(captures) {
+                continue;
+            }
+            let o = ir.through_pairs(o);
+            if param(o) == Some(captures) {
+                continue;
+            }
+            let &e = ir.in_edges(o).first()?;
+            match ir.morphisms[e].op {
+                Operation::Phi => {
+                    let ps = ir.morphisms[e].source;
+                    todo.push(self.slot(ps, 0)?);
+                    todo.push(self.slot(ps, 1)?);
+                }
+                Operation::Pair { .. } => {
+                    let c = ir.through_pairs(self.slot(o, k)?);
+                    if let Some(v) = const_int(ir, c) {
+                        range = hull(range, (v, v));
+                        continue;
+                    }
+                    if param(c) == Some(captures + 1) {
+                        range = hull(range, int(ir.element_range(items))?);
+                        continue;
+                    }
+                    // Else only the accumulator's own component `k`.
+                    let &ce = ir.in_edges(c).first()?;
+                    let cm = &ir.morphisms[ce];
+                    if cm.op != (Operation::Proj { index: k }) || param(cm.source) != Some(captures)
+                    {
+                        return None;
+                    }
+                }
+                _ => return None,
+            }
+        }
+        Some(Rng::Int(range.0, range.1))
     }
 
     /// The full forward pass: seeds, then every morphism in topo order, each
@@ -585,11 +667,25 @@ impl Eval<'_> {
                     self.narrow(rng, pins, morph.source, new, depth + 1);
                 }
             }
-            Operation::Proj { index } => {
-                if let Some(x) = self.slot(morph.source, index) {
-                    self.narrow(rng, pins, x, new, depth + 1);
+            Operation::Proj { index } => match self.slot(morph.source, index) {
+                Some(x) => self.narrow(rng, pins, x, new, depth + 1),
+                // Views of one slot of a product no `Pair` builds (a body's
+                // input: `i` read twice is two `Proj`s) are one value: each
+                // sibling view takes the pin too.
+                None => {
+                    let ir = self.ir;
+                    for &e in ir.out_edges(morph.source) {
+                        let sib = ir.morphisms[e].target;
+                        if sib != o
+                            && ir.morphisms[e].op == (Operation::Proj { index })
+                            && let Some(c) = self.cur(rng, pins, sib)
+                            && let Some(r) = meet(c, new)
+                        {
+                            pins.insert(sib, r);
+                        }
+                    }
                 }
-            }
+            },
             _ => {}
         }
     }

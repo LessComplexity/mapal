@@ -1095,6 +1095,34 @@ pub struct GpuRungs {
     /// word group (the bank geometry: `Gpu::smem_banks`). Off: the dense
     /// panel.
     pub kvec_swizzle: bool,
+    /// model-ready placement `trip-cells`: a cell a loop runs every trip is a
+    /// candidate whatever its size, and an operand made once (outside every
+    /// loop and guard arm) is in device memory for it (uploaded once at its
+    /// producer) — the fixed point keeps it where it moves no bytes. Off
+    /// (`--gpu-off=trip-cells`): a cell is a candidate only where it pays
+    /// (`place`) or is fed, the placement before it.
+    pub trip_cells: bool,
+    /// model-ready placement `bytes-place`: a per-trip cell runs where it
+    /// moves fewer bytes per trip (uploads of operands the device lacks and
+    /// the copy-out of a host-read output, against the copy-out of operands
+    /// only the device holds and the upload of a device-read output; a tie
+    /// to the device when a device kernel reads the output). Off: every
+    /// operand must already be on the device.
+    pub bytes_place: bool,
+    /// model-ready placement `range-chain`: a chain of in-place range maps
+    /// over a carried state (a trip's appends to one cache) writes the
+    /// carry's buffer link by link, each written array dead past its
+    /// writer. Off: only a range map writing the next state over the view.
+    pub range_chain: bool,
+    /// model-ready placement `stride-lanes`: a nest cell whose fold reads an
+    /// operand at unit stride along the fold (`step_algebra`'s regroup
+    /// reads) takes a warp a cell — coalesced — even when its cells fill
+    /// the part. Off: a warp a cell only where the cells leave threads idle.
+    pub stride_lanes: bool,
+    /// model-ready placement `carry-fwd`: a cell's output that is a device
+    /// carry's next state forwards its pointer into the back edge — no host
+    /// read there. Off: the back edge's pack is a host read.
+    pub carry_fwd: bool,
 }
 
 impl GpuRungs {
@@ -1249,11 +1277,16 @@ impl GpuRungs {
         stream_ld: true,
         shfl_tree: true,
         kvec_swizzle: true,
+        trip_cells: true,
+        bytes_place: true,
+        range_chain: true,
+        stride_lanes: true,
+        carry_fwd: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 149] = [
+    pub const NAMES: [&'static str; 154] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1403,6 +1436,11 @@ impl GpuRungs {
         "stream-ld",
         "shfl-tree",
         "kvec-swizzle",
+        "trip-cells",
+        "bytes-place",
+        "range-chain",
+        "stride-lanes",
+        "carry-fwd",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -1557,6 +1595,11 @@ impl GpuRungs {
             "stream-ld" => &mut self.stream_ld,
             "shfl-tree" => &mut self.shfl_tree,
             "kvec-swizzle" => &mut self.kvec_swizzle,
+            "trip-cells" => &mut self.trip_cells,
+            "bytes-place" => &mut self.bytes_place,
+            "range-chain" => &mut self.range_chain,
+            "stride-lanes" => &mut self.stride_lanes,
+            "carry-fwd" => &mut self.carry_fwd,
             _ => return None,
         })
     }

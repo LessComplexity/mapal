@@ -24,6 +24,7 @@ use crate::plan::RewritePlan;
 pub fn analyze_const_fold(ir: &CategoryIr) -> RewritePlan {
     let mut plan = RewritePlan::new();
     let scc = scc_membership(ir);
+    let views = loop_views(ir);
 
     // plan-s39: resolving a guard's condition decides the arm, so the LOSING
     // arm's exclusive work is dropped in the same plan. It must happen here,
@@ -128,8 +129,13 @@ pub fn analyze_const_fold(ir: &CategoryIr) -> RewritePlan {
             continue;
         }
         // P2: keys sit outside every loop SCC (loop-carried arithmetic is left
-        // alone; loop-invariants sit outside the SCC and still fold).
+        // alone; loop-invariants sit outside the SCC and still fold) — but a
+        // view (`Proj` of a pack-built product: an inlined call's argument
+        // tuple, a struct field) forwards its slot feeder inside a loop too.
         if scc.contains_key(o) {
+            if !guarded_work.contains_key(o) {
+                forward_loop_view(ir, &views, &mut plan, o);
+            }
             continue;
         }
         // Folding an arm member can detach its trapping/loop dependencies and
@@ -591,6 +597,78 @@ fn slot_feeders(ir: &CategoryIr, product: ObjectId) -> Vec<ObjectId> {
         .collect();
     v.sort_by_key(|(s, _)| *s);
     v.into_iter().map(|(_, s)| s).collect()
+}
+
+/// P2 for views (DESIGN §1.2): each loop-SCC object's SCC, and the route
+/// products of every canonical loop — its `LoopBack` route, the next-state
+/// pack that route carries and its `LoopExit` route.
+struct LoopViews {
+    scc: SecondaryMap<ObjectId, usize>,
+    routes: SecondaryMap<ObjectId, ()>,
+}
+
+fn loop_views(ir: &CategoryIr) -> LoopViews {
+    let mut views = LoopViews {
+        scc: SecondaryMap::new(),
+        routes: SecondaryMap::new(),
+    };
+    let mut id = 0;
+    for (f, _) in ir.funcs() {
+        for lscc in ir.loop_structure(f) {
+            for &o in &lscc.objects {
+                views.scc.insert(o, id);
+            }
+            id += 1;
+            for &merge in &lscc.merges {
+                let Some(lp) = ir.loop_plan(f, merge) else {
+                    continue;
+                };
+                views.routes.insert(lp.back_route, ());
+                views.routes.insert(lp.exit_route, ());
+                if let Some(&next) = slot_feeders(ir, lp.back_route).first() {
+                    views.routes.insert(next, ());
+                }
+            }
+        }
+    }
+    views
+}
+
+/// proj∘pack inside a loop SCC (P2 for views): a `Proj` of a pack-built
+/// product — an inlined call's argument tuple, a struct's field — is its slot
+/// feeder, so its readers read the feeder. The feeder is in the view's own SCC
+/// or in none (a loop invariant the body reads, as any body reads one); a
+/// view that feeds a loop's route forwards only within its SCC, so a back
+/// edge's state never leaves it (`LoopBackOutsideScc`).
+fn forward_loop_view(ir: &CategoryIr, views: &LoopViews, plan: &mut RewritePlan, o: ObjectId) {
+    let Some(m) = op_edge(ir, o) else {
+        return;
+    };
+    let morph = ir.morphism(m).expect("op edge");
+    let Operation::Proj { index } = morph.op else {
+        return;
+    };
+    if !is_pack(ir, morph.source) {
+        return;
+    }
+    let Some(&x) = slot_feeders(ir, morph.source).get(index as usize) else {
+        return;
+    };
+    if x == o || ty_contains_token(&ir.object(x).expect("view feeder").ty) {
+        return;
+    }
+    let same = match (views.scc.get(o), views.scc.get(x)) {
+        (Some(a), Some(b)) if a != b => return,
+        (Some(_), Some(_)) => true,
+        _ => false,
+    };
+    let routes = ir.out_edges(o).iter().any(|&u| {
+        let um = ir.morphism(u).expect("out edge");
+        matches!(um.op, Operation::Pair { .. }) && views.routes.contains_key(um.target)
+    });
+    if same || !routes {
+        plan.alias.insert(o, x);
+    }
 }
 
 /// Per-object membership in **any** loop SCC (each function's SCCs disjoint by

@@ -70,6 +70,10 @@ pub(crate) struct Carry {
     /// `range-cell`: `next` is written in place over the state (a range
     /// cell), so it shares the carry's buffer.
     pub inplace: bool,
+    /// placement `chain`: the range cells' outputs before `next`, each
+    /// written in place over the one before (the first over a view): they
+    /// share the carry's buffer too (a trip's appends to one cache).
+    pub chain: Vec<ObjectId>,
 }
 
 impl Carry {
@@ -582,7 +586,11 @@ impl ResidentPlan {
     pub(crate) fn alias(&self, o: ObjectId) -> ObjectId {
         self.carries
             .iter()
-            .find(|c| c.views.contains(&o) || c.exit == Some(o) || (c.inplace && c.next == o))
+            .find(|c| {
+                c.views.contains(&o)
+                    || c.exit == Some(o)
+                    || (c.inplace && (c.next == o || c.chain.contains(&o)))
+            })
             .map_or(o, Carry::key)
     }
 }
@@ -865,20 +873,18 @@ impl<'a> FnEmit<'a> {
                             // `range-cell`: `next` is a range cell over this
                             // state's own view (so its buffer holds the cells off
                             // the interval).
-                            let range = self
-                                .ir
-                                .in_edges(next)
-                                .first()
-                                .and_then(|&m| Some((m, cells.get(m)?)))
-                                .filter(|(_, c)| {
-                                    c.range
-                                        .is_some_and(|ou| views.contains(&c.caps[ou.slot as usize]))
-                                });
+                            // placement `chain`: or the end of a chain of range
+                            // cells, each written over the one before, the first
+                            // over the view.
+                            let (range, chain) = match self.range_chain(next, &views, cells) {
+                                Some((cs, chain)) => (Some(cs), chain),
+                                None => (None, Vec::new()),
+                            };
                             // The state rides the device for the range cell alone
                             // only when something else holds it there: a device
                             // site reading the state, or an operand of the cell
                             // made on the device (else the host keeps it).
-                            if let Some((_, c)) = range {
+                            if let Some(cs) = &range {
                                 // A site reading the state (a view, or the written
                                 // state, which shares the buffer) — a cell reader
                                 // is no support: it is on the device only because
@@ -891,10 +897,12 @@ impl<'a> FnEmit<'a> {
                                             .any(|&k| self.pair_source(src, k) == Some(o))
                                     })
                                 };
-                                let other =
-                                    views.iter().any(|&v| read_by_site(v)) || read_by_site(next);
-                                let fed = c.operands().iter().any(|&(o, _)| {
+                                let other = views.iter().any(|&v| read_by_site(v))
+                                    || read_by_site(next)
+                                    || chain.iter().any(|&o| read_by_site(o));
+                                let fed = cs.iter().flat_map(|c| c.operands()).any(|(o, _)| {
                                     !views.contains(&o)
+                                        && !chain.contains(&o)
                                         && (site_out(o) || out.iter().any(|x| x.views.contains(&o)))
                                 });
                                 if !other && !fed {
@@ -909,6 +917,7 @@ impl<'a> FnEmit<'a> {
                                 views,
                                 exit,
                                 inplace,
+                                chain,
                             });
                         }
                     }
@@ -919,6 +928,30 @@ impl<'a> FnEmit<'a> {
             }
         }
         out
+    }
+
+    /// placement `chain`: `next` as the end of a chain of range cells over
+    /// one of `views` — each cell's written array the output of the one
+    /// before, the first's a view — with the chain's intermediate outputs.
+    /// A one-cell chain is the S65 `range-cell` carry.
+    fn range_chain<'c>(
+        &self,
+        next: ObjectId,
+        views: &[ObjectId],
+        cells: &'c SecondaryMap<MorphismId, Cell>,
+    ) -> Option<(Vec<&'c Cell>, Vec<ObjectId>)> {
+        let (mut o, mut cs, mut chain) = (next, Vec::new(), Vec::new());
+        for _ in 0..256 {
+            let c = cells.get(*self.ir.in_edges(o).first()?)?;
+            let w = c.caps[c.range?.slot as usize];
+            cs.push(c);
+            if views.contains(&w) {
+                return Some((cs, chain));
+            }
+            chain.push(w);
+            o = w;
+        }
+        None
     }
 
     /// The `devgen` law gate: `out[i] = body(i)` with a clean body that calls
@@ -1895,30 +1928,43 @@ impl<'a> FnEmit<'a> {
     /// `range-cell`'s legality: `m` is a piecewise map ([`mapal_ir::Outside`])
     /// over a loop state's view whose output is that state's next value, and
     /// no view of the state is read after `m` — the trip writes its state in
-    /// place, so its cells off the interval are already the state's. As
+    /// place, so its cells off the interval are already the state's.
+    /// placement `chain`: or a link of a chain of such maps from the view to
+    /// the next value, each writing over the one before, each written array
+    /// dead past its writer (a trip's appends to one cache). As
     /// `state_death` (frame.rs) has it, a whole-state use or a guard-arm read
     /// (run at its `Phi`, past its own position) reads any time.
     ///
     /// ponytail: not `in_place_source` itself — this runs in the residency
     /// plan, before `prepare_storage` indexes the roots `state_death` walks.
     fn range_in_place(&self, m: MorphismId) -> Option<mapal_ir::Outside> {
-        let Some(ElemSrc::Apply {
-            outside: Some(ou),
-            source,
-            ..
-        }) = self.ir.map_law(m)
-        else {
-            return None;
-        };
-        let arr = self.pair_source(source, ou.slot)?;
+        let (ou, arr) = self.range_write(m)?;
         let target = self.ir.morphism(m)?.target;
-        let view = self.ir.morphism(*self.ir.in_edges(arr).first()?)?;
-        let Operation::Proj { index: k } = view.op else {
-            return None;
+        let chain = gpu::host_rungs(self.profile, self.contract, self.gpu_arms).range_chain;
+        // placement `chain`: the written array is a state view, or the output
+        // of a range map written over one (each dead past its writer).
+        let mut w = arr;
+        let mut steps = 0;
+        let (view, k, merge) = loop {
+            steps += 1;
+            if steps > 256 {
+                return None;
+            }
+            let p = self.ir.morphism(*self.ir.in_edges(w).first()?)?;
+            if let Operation::Proj { index } = p.op
+                && self.ir.object(p.source)?.kind == ObjectKind::LoopMerge
+            {
+                break (w, index, p.source);
+            }
+            if !chain {
+                return None;
+            }
+            let (_, before) = self.range_write(*self.ir.in_edges(w).first()?)?;
+            w = before;
         };
-        let merge = view.source;
         let plan = self.ir.loop_plan(self.f, merge)?;
         let state = self.pair_source(plan.back_route, 0)?;
+        let next = self.pair_source(state, k)?;
         let views: Vec<ObjectId> = self
             .ir
             .out_edges(merge)
@@ -1930,10 +1976,49 @@ impl<'a> FnEmit<'a> {
                 _ => Some(None), // a whole-state use
             })
             .collect::<Option<_>>()?;
-        (self.pair_source(state, k) == Some(target)
-            && !views.iter().any(|&v| self.guard_read(v, Some(m)))
-            && self.lup.view_dead_after(arr, self.lup.position(m)?))
-        .then_some(ou)
+        // ... and the target is the next state, or written over by a range
+        // map whose output is (each dead past its writer).
+        let mut t = target;
+        for _ in 0..256 {
+            if t == next {
+                let pos = self.lup.position(m)?;
+                let dead = if arr == view {
+                    self.lup.view_dead_after(arr, pos)
+                } else {
+                    self.lup.dead_after(arr, pos)
+                };
+                return (!views.iter().any(|&v| self.guard_read(v, Some(m))) && dead).then_some(ou);
+            }
+            if !chain {
+                return None;
+            }
+            let after = self.ir.out_edges(t).iter().find_map(|&e| {
+                let pm = self.ir.morphism(e)?;
+                if !matches!(pm.op, Operation::Pair { .. }) {
+                    return None;
+                }
+                self.ir.out_edges(pm.target).iter().find_map(|&u| {
+                    let (_, over) = self.range_write(u)?;
+                    (over == t).then_some(u)
+                })
+            })?;
+            t = self.ir.morphism(after)?.target;
+        }
+        None
+    }
+
+    /// A piecewise in-place range map (`map_law`'s `Outside`): its interval
+    /// and the array its cells off the interval are (the one it writes over).
+    fn range_write(&self, m: MorphismId) -> Option<(mapal_ir::Outside, ObjectId)> {
+        let Some(ElemSrc::Apply {
+            outside: Some(ou),
+            source,
+            ..
+        }) = self.ir.map_law(m)
+        else {
+            return None;
+        };
+        Some((ou, self.pair_source(source, ou.slot)?))
     }
 
     /// `cell-lanes`: threads a nest cell takes — a warp, when the order is
@@ -1944,8 +2029,24 @@ impl<'a> FnEmit<'a> {
         let rungs = gpu::host_rungs(self.profile, self.contract, self.gpu_arms);
         match site.tree {
             Some((fold, _, k)) if rungs.cell_lanes => {
-                let elem = self.obj_ty(self.ir.morphism(fold).expect("fold").target);
-                gpu::warp_lanes(self.profile, self.order, &elem, k, site.extent)
+                let fm = self.ir.morphism(fold).expect("fold");
+                let elem = self.obj_ty(fm.target);
+                // placement `lanes`: a fold that reads an array along its
+                // own axis at unit stride (`step_algebra`'s regroup reads: a
+                // row of `w` for a 1-row projection) is read coalesced by a
+                // warp a cell and `k` elements apart by a thread a cell —
+                // there a warp a cell whether or not the cells fill the part.
+                let unit = rungs.stride_lanes
+                    && match fm.op {
+                        Operation::Fold { body, .. } => self
+                            .ir
+                            .step_algebra(body)
+                            .regroup
+                            .is_some_and(|r| r.reads.contains(&Some(1))),
+                        _ => false,
+                    };
+                let units = if unit { 1 } else { site.extent };
+                gpu::warp_lanes(self.profile, self.order, &elem, k, units)
             }
             _ => 1,
         }
@@ -2061,12 +2162,19 @@ impl<'a> FnEmit<'a> {
         let body = self.ir.morphisms().any(|(_, x)| {
             matches!(x.op, Operation::Map { body, .. } | Operation::Fold { body, .. } if body == self.f)
         });
+        let straight = self.straight_line();
+        let trip = gpu::host_rungs(self.profile, self.contract, self.gpu_arms).trip_cells;
         if !body && gpu::host_rungs(self.profile, self.contract, self.gpu_arms).devmap {
             for (m, site) in self.ir.cell_plan(self.f).iter() {
                 // An epilogue member (R1) runs in its site's store already.
+                // placement `trip`: a cell a loop runs every trip is a
+                // candidate whatever its size — [`Self::cell_round`] keeps it
+                // only where it moves no bytes (its operands on the device,
+                // its output not needed whole on the host), so a host
+                // placement is what would cross the bus each trip.
                 if !sites_mut.contains_key(m)
                     && self.member_src(m, 0).is_none()
-                    && self.cell_pays(m, site)
+                    && (self.cell_pays(m, site) || (trip && !straight.contains_key(m)))
                     && let Some(c) = self.cell_of(m, site)
                 {
                     cells.insert(m, c);
@@ -2136,20 +2244,89 @@ impl<'a> FnEmit<'a> {
                             .iter()
                             .any(|&p| self.gen_law(p).is_some()))
             };
+            // placement `trip`: an operand made once (outside every loop and
+            // guard arm, or a parameter) is uploaded at its producer once
+            // (F1/F2) — for a cell a loop runs every trip it is there.
+            let straight = self.straight_line();
+            let rungs = gpu::host_rungs(self.profile, self.contract, self.gpu_arms);
+            let made_once = |o: ObjectId| {
+                rungs.trip_cells
+                    && self
+                        .ir
+                        .in_edges(o)
+                        .first()
+                        .is_none_or(|&p| straight.contains_key(p))
+            };
             let drop: Vec<MorphismId> = cells
                 .iter()
                 .filter(|(m, c)| {
                     let ops = c.operands();
+                    let per_trip = !straight.contains_key(*m);
+                    // placement `bytes-place`: a nest cell that finishes
+                    // sooner on the device by its own roofline (a 1-row
+                    // projection) is a tile site's kin — like one, it copies
+                    // its host operands in at their producers and its output
+                    // out where the host reads it.
+                    let alone = rungs.bytes_place
+                        && !c.nested.is_empty()
+                        && self.ir.cell_plan(self.f).get(*m).is_some_and(|site| {
+                            let (flops, bytes) = self.cell_roofline(*m, site);
+                            self.profile.device_pays(flops, bytes)
+                        });
+                    let there = |o: ObjectId| there(o) || alone || (per_trip && made_once(o));
                     let t = self.ir.morphism(*m).expect("cell").target;
-                    let host = || self.uses(sites, cells, t, &[]).contains(&Use::Host);
+                    // placement `carry`: a carry's next state forwards its
+                    // pointer into the back edge (no host read there).
+                    let fwd: Vec<MorphismId> = carries
+                        .iter()
+                        .filter(|k| rungs.carry_fwd && k.next == t)
+                        .filter_map(|k| {
+                            let lp = self.ir.loop_plan(self.f, k.merge)?;
+                            let state = self.pair_source(lp.back_route, 0)?;
+                            Some(self.ir.out_edges(t).iter().copied().filter(move |&e| {
+                                self.ir.morphism(e).is_some_and(|x| x.target == state)
+                            }))
+                        })
+                        .flatten()
+                        .collect();
+                    let host = || self.uses(sites, cells, t, &fwd).contains(&Use::Host);
                     let walked = |o| !c.nested.is_empty() && iota(o);
                     // `range-cell`: written in place, so only into an
                     // in-place carry's buffer.
-                    let homeless =
-                        c.range.is_some() && !carries.iter().any(|k| k.inplace && k.next == t);
-                    homeless
-                        || !ops.iter().all(|&(o, _)| there(o) || walked(o))
-                        || !(ops.iter().any(|&(o, _)| device_only(o)) || !host())
+                    let homeless = c.range.is_some()
+                        && !carries
+                            .iter()
+                            .any(|k| k.inplace && (k.next == t || k.chain.contains(&t)));
+                    let held = ops.iter().all(|&(o, _)| there(o) || walked(o))
+                        && (alone || ops.iter().any(|&(o, _)| device_only(o)) || !host());
+                    // placement `bytes`: a cell a loop runs every trip runs
+                    // where it moves fewer bytes per trip. On the device it
+                    // uploads the operands the device holds no copy of and
+                    // copies its output out when the host reads it whole; on
+                    // the host it copies out the operands only the device
+                    // holds and uploads its output when a device kernel reads
+                    // it. A tie goes to the device when a device kernel waits
+                    // for the output (the data stays where its readers are).
+                    let moved = || {
+                        let bytes = |o: ObjectId| self.array_bytes(&self.obj_ty(o));
+                        let up: u64 = ops
+                            .iter()
+                            .filter(|&&(o, _)| !(there(o) || walked(o)))
+                            .map(|&(o, _)| bytes(o))
+                            .sum();
+                        let down: u64 = ops
+                            .iter()
+                            .filter(|&&(o, _)| device_only(o))
+                            .map(|&(o, _)| bytes(o))
+                            .sum();
+                        let dev_reader = self.uses(sites, cells, t, &[]).contains(&Use::Dev);
+                        let (out_down, out_up) = (
+                            if host() { bytes(t) } else { 0 },
+                            if dev_reader { bytes(t) } else { 0 },
+                        );
+                        down + out_up > 0 && up + out_down <= down + out_up
+                    };
+                    homeless || !(held || (rungs.bytes_place && per_trip && moved()))
                 })
                 .map(|(m, _)| m)
                 .collect();
@@ -4717,6 +4894,7 @@ mod tests {
             views: vec![view],
             exit: Some(exit),
             inplace: false,
+            chain: Vec::new(),
         });
         for o in [merge, view, exit, output] {
             assert_eq!(plan.stream_of(&ir, &groups, o), 2);

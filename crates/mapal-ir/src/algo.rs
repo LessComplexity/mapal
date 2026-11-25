@@ -4037,7 +4037,7 @@ impl CategoryIr {
         let input = bd.input;
         let phi = self.tile_definer(bd.output, Operation::Phi)?;
         let arm = |k| self.pair_slot_source(phi.source, k);
-        let (iv, inside_true) = self.index_interval(arm(2)?, input, captures)?;
+        let (iv, inside_true) = self.index_interval(arm(2)?, input, captures, morph.source)?;
         let outer = arm(if inside_true { 1 } else { 0 })?;
         let ix = self.tile_definer(outer, Operation::Index)?;
         let slot = self
@@ -4104,6 +4104,7 @@ impl CategoryIr {
         cond: ObjectId,
         input: ObjectId,
         captures: u32,
+        site: ObjectId,
     ) -> Option<(Interval, bool)> {
         let c = self.morphisms.get(*self.in_edges(cond).first()?)?;
         let (x, y) = (
@@ -4147,7 +4148,7 @@ impl CategoryIr {
                     None => (split_of_t(y)?, x),
                 };
                 let mut e = None;
-                let (a, b) = self.capture_affine(other, input, captures, &mut e, 0)?;
+                let (a, b) = self.capture_affine(other, input, captures, site, &mut e, 0)?;
                 Some((
                     Interval {
                         d,
@@ -4163,8 +4164,8 @@ impl CategoryIr {
             }
             Operation::And => {
                 let (bx, by) = (
-                    self.t_bound(x, input, captures)?,
-                    self.t_bound(y, input, captures)?,
+                    self.t_bound(x, input, captures, site)?,
+                    self.t_bound(y, input, captures, site)?,
                 );
                 let ((e1, a1, b1), (e2, a2, b2)) = match (bx, by) {
                     (Bound::Lo(e1, a1, b1), Bound::Hi(e2, a2, b2))
@@ -4193,7 +4194,13 @@ impl CategoryIr {
 
     /// One comparison of `t` against an affine bound: `t ≥ a·e + b` as
     /// `Lo(e, a, b)`, `t < a·e + b` as `Hi(e, a, b)`.
-    fn t_bound(&self, cmp: ObjectId, input: ObjectId, captures: u32) -> Option<Bound> {
+    fn t_bound(
+        &self,
+        cmp: ObjectId,
+        input: ObjectId,
+        captures: u32,
+        site: ObjectId,
+    ) -> Option<Bound> {
         let c = self.morphisms.get(*self.in_edges(cmp).first()?)?;
         let (x, y) = (
             self.pair_slot_source(c.source, 0)?,
@@ -4216,7 +4223,7 @@ impl CategoryIr {
             return None;
         };
         let mut e = None;
-        let (a, b) = self.capture_affine(bound, input, captures, &mut e, 0)?;
+        let (a, b) = self.capture_affine(bound, input, captures, site, &mut e, 0)?;
         match op {
             Operation::Ge => Some(Bound::Lo(e, a, b)),
             Operation::Gt => Some(Bound::Lo(e, a, b.checked_add(1)?)),
@@ -4234,6 +4241,7 @@ impl CategoryIr {
         o: ObjectId,
         input: ObjectId,
         captures: u32,
+        site: ObjectId,
         e: &mut Option<u32>,
         depth: u32,
     ) -> Option<(i64, i64)> {
@@ -4248,6 +4256,17 @@ impl CategoryIr {
             };
         }
         if let Some(k) = self.tile_input_proj_index(o, input) {
+            // placement `chain`: a capture the site passes as a constant (an
+            // inlined layer's index) is that constant at this site.
+            if k < captures
+                && let Some(c) = self
+                    .pair_slot_source(site, k)
+                    .and_then(|c| self.objects.get(c))
+                && c.kind == ObjectKind::Constant
+                && let Some(Value::I32(v)) = c.value
+            {
+                return Some((0, v.into()));
+            }
             return (k < captures && obj.ty == Ty::i32() && *e.get_or_insert(k) == k)
                 .then_some((1, 0));
         }
@@ -4257,8 +4276,8 @@ impl CategoryIr {
         }
         let x = self.pair_slot_source(mm.source, 0)?;
         let y = self.pair_slot_source(mm.source, 1)?;
-        let (xa, xb) = self.capture_affine(x, input, captures, e, depth + 1)?;
-        let (ya, yb) = self.capture_affine(y, input, captures, e, depth + 1)?;
+        let (xa, xb) = self.capture_affine(x, input, captures, site, e, depth + 1)?;
+        let (ya, yb) = self.capture_affine(y, input, captures, site, e, depth + 1)?;
         match mm.op {
             Operation::Add => Some((xa.checked_add(ya)?, xb.checked_add(yb)?)),
             Operation::Sub => Some((xa.checked_sub(ya)?, xb.checked_sub(yb)?)),

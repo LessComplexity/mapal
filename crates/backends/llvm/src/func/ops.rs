@@ -33,6 +33,9 @@ impl<'a> FnEmit<'a> {
     fn emit_op(&mut self, m: MorphismId) {
         self.emit_checkpoint(m);
         let morph = self.ir.morphism(m).expect("morphism resolves");
+        if !matches!(morph.op, Operation::LoopEnter) {
+            self.emit_pre_loop(m);
+        }
         let op = morph.op;
         let source = morph.source;
         let target = morph.target;
