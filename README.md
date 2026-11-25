@@ -460,10 +460,11 @@ Done so far, and how each step turned out, including what was tried and did not 
 | Tests               | about 1,700 across the workspace; the GPU tests skip without a CUDA toolchain                                                                                   |
 | CI                  | `cargo fmt` + the full suite on Linux and macOS, per push; a skipped LLVM differential fails the run                                                            |
 
-**Exact means exact.** On the exact faces every compiled program is checked to print exactly what the interpreter
-prints, for the examples and for programs from the random generator; changing the thread count or the device does
-not change the answer. On the default face, compiled values are checked against the interpreter within the stated
-bound.
+**Checked against the interpreter.** On the default face, compiled values are checked against the interpreter within
+the stated bound, in whatever order the compiler chose. In the development modes (the exact faces,
+[ADR-0049](docs/decisions/ADR-0049-correctness-is-the-flow-and-the-bound.md)) every compiled program is checked to
+print exactly what the interpreter prints, for the examples and for programs from the random generator, at any
+thread count and on any device: the mode for testing and debugging.
 
 **Not in the language yet:** recursion, sum types, pattern matching, strings beyond printing and file paths,
 closures, dynamic arrays, type-generic functions, modules.
