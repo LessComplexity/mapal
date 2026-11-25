@@ -468,7 +468,16 @@ impl<'a> FnEmit<'a> {
                     // reads that number; no narrow element yet.
                     // mask-frontend: the epilogue's arrays memory (a mask's
                     // per-row limit), its numbers launch arguments
-                    // (`stream-numbers`).
+                    // (`stream-numbers`; off: none read after the fold, no
+                    // array read).
+                    if self.gpu_arms.off.stream_numbers
+                        && site
+                            .post
+                            .as_ref()
+                            .is_some_and(|p| !p.after.is_empty() || !p.reads.is_empty())
+                    {
+                        return Err("site");
+                    }
                     let ok = site.a.narrow.is_none()
                         && site.b.narrow.is_none()
                         && site.a.ksplit.is_none()
@@ -486,6 +495,11 @@ impl<'a> FnEmit<'a> {
                     // operand may be moved.
                     if site.radix.as_ref().is_some_and(|r| !r.ua.is_empty()) {
                         return Err("consume-ua");
+                    }
+                    if self.gpu_arms.off.stream_numbers
+                        && site.post.as_ref().is_some_and(|p| !p.after.is_empty())
+                    {
+                        return Err("site");
                     }
                     let ok =
                         site.b.narrow.is_none() && site.b.ksplit.is_none() && site.elem == f32t;

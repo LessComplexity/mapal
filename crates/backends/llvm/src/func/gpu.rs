@@ -2581,6 +2581,11 @@ fn launch_key(l: &Launch) -> String {
         // sweep-attention: `unit-uniform` decides which units exist (no
         // kernel text of a tile site's).
         .replace(", unit_uniform: false", "")
+        // mask-frontend: a stream unit's mask terms, walk order and
+        // epilogue numbers (keyed by the unit; no tile site's text).
+        .replace(", guard_terms: false", "")
+        .replace(", walk_order: false", "")
+        .replace(", stream_numbers: false", "")
         // sweep-attention-2: `stream-mma` decides a stream unit's kernel (no
         // tile site's text); `kmajor-b` changes how a candidate copies `b`,
         // not which candidate it is: its id is the arms' one (as candidate

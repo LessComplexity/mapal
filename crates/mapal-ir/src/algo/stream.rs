@@ -869,6 +869,7 @@ impl CategoryIr {
             return None;
         }
         let source = self.morphisms.get(m)?.source;
+        let forms_plain = self.radix_plan(body);
         // mask-frontend: a digit form as row / lane digits of the cell, a
         // captured number's digits folded into the base where it is a
         // literal, a per-launch term where it is not.
@@ -925,9 +926,19 @@ impl CategoryIr {
                 }
                 Some((base, row, lane, uniform))
             };
+        let terms = self.fact_arms().guard_terms;
         let side = |o| -> Option<GuardSide> {
-            let term = self.guard_term(source, body, captures, o, 0)?;
+            let term = match terms {
+                true => self.guard_term(source, body, captures, o, 0)?,
+                false => SideTerm {
+                    form: forms_plain.get(o)?.clone(),
+                    load: None,
+                },
+            };
             let (base, row, lane, uniform) = split(&term.form)?;
+            if !terms && !uniform.is_empty() {
+                return None;
+            }
             let load = match term.load {
                 None => None,
                 Some((slot, at, coef)) => {

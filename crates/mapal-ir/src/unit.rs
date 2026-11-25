@@ -776,7 +776,7 @@ impl CategoryIr {
             .sum();
         // mask-frontend: walked in the seed's tile order where it permutes
         // the seed's output rows (the group's).
-        let order = g[0].3.clone();
+        let order = g[0].3.clone().filter(|_| self.fact_arms().walk_order);
         let panel = self.panel_rows(rows, &members, order.as_ref());
         UnitGroup {
             rows,
