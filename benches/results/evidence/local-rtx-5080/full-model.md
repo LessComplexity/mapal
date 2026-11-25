@@ -43,14 +43,20 @@ with each other (below). Raw output (never in git):
 
 | program | 128 | 512 | 2048 |
 |---|---|---|---|
-| Mapal f32 class (calibrated and no calib file) vs HF f32 (`hf_reference.py`, eager attention, TF32 off) | **128** | **128** | **128** |
-| Mapal bf16 class vs HF bf16 eager attention (`hf_reference.py`) | 128 | 67 | 61 |
-| Mapal bf16 class vs the harness's `hf-eager` (bf16, SDPA) | 49 | **128** | 57 |
+| Mapal f32 class (calibrated and no calib file) vs HF f32 (`hf_reference.py`, eager attention, TF32 off) | **128** | **128** | **128** <!-- tokens prefix(full-f32,hf-f32)@128,512,2048 --><!-- tokens prefix(full-f32-nocalib,hf-f32)@128,512,2048 --> |
+| Mapal bf16 class vs HF bf16 eager attention (`hf_reference.py`) | 128 | 67 | 61 <!-- tokens prefix(full-bf16,hf-bf16-eager)@128,512,2048 --> |
+| Mapal bf16 class vs the harness's `hf-eager` (bf16, SDPA) | 49 | **128** | 57 <!-- tokens prefix(full-bf16,hf-eager-sdpa)@128,512,2048 --> |
+| HF f32 vs HF bf16 eager attention (both `hf_reference.py`) | 128 | 32 | 61 <!-- tokens prefix(hf-f32,hf-bf16-eager)@128,512,2048 --> |
 | the competitors vs the harness's `hf-eager` | gpt-fast 49, llama.cpp 49, SGLang 109, TRT-LLM 128, vLLM 128 | 32, 67 (bf16) / 32 (f16), 95, 95, 128 | 57 for every tool |
 
-HF's two bf16 runs agree with each other on 49 / 67 / 57 tokens and HF f32 with `hf-eager` on 49 / 32 / 57: past a
-near tie every bf16 run follows its own kernels. The bf16-class Mapal run sits inside that spread (first-step top
-logit 18.37 against HF f32's 18.40 at 512). The f32-compute legs give 128 / 128 of HF f32 at every length.
+HF's two bf16 runs agree with each other on 49 / 67 / 57<!-- tokens prefix(hf-bf16-eager,hf-eager-sdpa)@128,512,2048
+--> tokens, HF f32 with `hf-eager` on 49 / 32 / 57<!-- tokens prefix(hf-f32,hf-eager-sdpa)@128,512,2048 --> and HF f32
+with HF bf16 eager on 128 / 32 / 61<!-- tokens prefix(hf-f32,hf-bf16-eager)@128,512,2048 -->: past a near tie every
+bf16 run follows its own kernels. The bf16-class Mapal run sits inside that spread (first-step top logit 18.37
+against HF f32's 18.40 at 512). The f32-compute legs give 128 / 128 of HF f32 at every length. Every marked token
+count in this report and in `prefill-precision.md` is the `token-agreement.tsv` value (built from the raw token files
+by `benches/model/token_agree.py`, checked by `benches/model/test_token_agree.py`); the HF references re-run on
+2026-11-25 (raw `prefill-token-agreement/hf/`) equal the ones used in all 128 tokens at every length.
 
 ## Time (RTX 5080, batch 1, 128 generated, medians)
 

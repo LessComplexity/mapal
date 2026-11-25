@@ -109,15 +109,20 @@ gate is the operand's own bytes against the L2 keep; a 1 MiB keep arm left every
 
 ## Full model: before → after (calibrated native-gpu; ABBA medians, load 20–58)
 
-| prompt | f32, FFMA (before) | f32, bf16x2n (after) | bf16 permitted (after) | decode ms/token (f32 off / on / bf16) | tokens = HF f32 (off / on / bf16) | bf16 run = HF bf16 eager (prefix / equal) |
+| prompt | f32, FFMA (before) | f32, bf16x2n (after) | bf16 permitted (after) | decode ms/token (f32 off / on / bf16) | tokens = HF f32, prefix (off / on / bf16) | bf16 run = HF bf16 eager (prefix / equal) |
 |---|---:|---:|---:|---|---|---|
-| 128 | 29.3 | **25.5** | **23.4** | 3.53 / 3.51 / 3.63 | 128 / 128 / 128 | 128 / 128 |
-| 512 | 90.7 | **80.3** | **68.0** | 3.67 / 3.57 / 3.63 | 128 / 128 / 37 | 67 / 70 |
-| 2048 | 353.6 | **310.0** | **279.1** | 3.87 / 3.72 / 3.81 | 128 / 128 / 124 | 61 / 61 |
+| 128 | 29.3 | **25.5** | **23.4** | 3.53 / 3.51 / 3.63 | 128 / 128 / 128 | 128 / 128 <!-- tokens prefix(precision-f32,hf-f32)@128 prefix(precision-bf16,hf-f32)@128 prefix(precision-bf16,hf-bf16-eager)@128 equal(precision-bf16,hf-bf16-eager)@128 --> |
+| 512 | 90.7 | **80.3** | **68.0** | 3.67 / 3.57 / 3.63 | 128 / 128 / 32 | 67 / 70 <!-- tokens prefix(precision-f32-off,hf-f32)@512 prefix(precision-f32,hf-f32)@512 prefix(precision-bf16,hf-f32)@512 prefix(precision-bf16,hf-bf16-eager)@512 equal(precision-bf16,hf-bf16-eager)@512 --> |
+| 2048 | 353.6 | **310.0** | **279.1** | 3.87 / 3.72 / 3.81 | 128 / 128 / 124 | 61 / 61 <!-- tokens prefix(precision-f32,hf-f32)@2048 prefix(precision-bf16,hf-f32)@2048 prefix(precision-bf16,hf-bf16-eager)@2048 equal(precision-bf16,hf-bf16-eager)@2048 --> |
 
-TTFT ms. (For scale, the task's quiet-machine baseline of the uncalibrated build: 28.3 / 85.2 / 332.7 ms; HF f32
-itself equals HF bf16 eager in 49 / 32 / 57 tokens, so the bf16 run follows the bf16 reference at least as closely
-as the f32 math does.) Prompt launches: 242 (f32) / 258 (bf16) at 512. Peak memory (nvidia-smi): FFMA 5.2 / 5.4 / 6.8 GB,
+TTFT ms. (For scale, the task's quiet-machine baseline of the uncalibrated build: 28.3 / 85.2 / 332.7 ms.) HF f32
+itself equals HF bf16 eager (both `hf_reference.py`, eager attention) in 128 / 32 / 61<!-- tokens
+prefix(hf-f32,hf-bf16-eager)@128,512,2048 --> tokens against the bf16 run's 128 / 67 / 61<!-- tokens
+prefix(precision-bf16,hf-bf16-eager)@128,512,2048 -->, so the bf16 run follows the bf16 reference at least as closely
+as the f32 math does. (Corrected 2026-11-25: this sentence gave 49 / 32 / 57, HF f32 against the harness's SDPA
+`hf-eager`; the 512 cell of the HF f32 column gave 37, the equal count — its prefix is 32. Every marked token count
+here is checked against `token-agreement.tsv` by `benches/model/token_agree.py check`.)
+Prompt launches: 242 (f32) / 258 (bf16) at 512. Peak memory (nvidia-smi): FFMA 5.2 / 5.4 / 6.8 GB,
 split 4.8 / 4.9 / 6.2, bf16 4.7 / 4.9 / 6.2 (the difference not traced here; the weights are still held twice).
 
 **Where the rest of the TTFT goes** (512, bf16: 68 ms with 20.4 ms of kernels): the prompt's cache chain through the
