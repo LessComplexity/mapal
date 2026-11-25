@@ -2777,6 +2777,10 @@ impl UnitGen<'_> {
         let fmt = st.mma.expect("stream-mma");
         let a = Addr::of(&site, Operand::A);
         let x2 = self.op("mul", x, 2);
+        // prefill-integrate: each row as the producer numbers its rows (its
+        // tile order, [`mapal_ir::out_rows`]) — `stage_panel`'s mapping;
+        // the group row read as the tile row took another token's query.
+        let rows: Vec<String> = grow.iter().map(|r| self.member_row(st, k, r)).collect();
         let mut out = Vec::new();
         for s in 0..site.k / MMA_K {
             let mut q: Vec<String> = Vec::new();
@@ -2784,7 +2788,7 @@ impl UnitGen<'_> {
                 let mut v: Vec<String> = Vec::new();
                 for e in 0..2 {
                     let kk = self.op("add", &x2, s * MMA_K + kc + e);
-                    let i = self.addr_at(&a, &grow[yy], "0", &kk);
+                    let i = self.addr_at(&a, &rows[yy], "0", &kk);
                     let ptr = self.tmp();
                     self.line(format!(
                         "{ptr} = getelementptr inbounds float, ptr addrspace(1) %x{gi}, i64 {i}"

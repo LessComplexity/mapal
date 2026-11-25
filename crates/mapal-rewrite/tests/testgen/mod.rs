@@ -6537,7 +6537,8 @@ pub fn flash_strategy() -> impl Strategy<Value = FlashProg> {
 /// sweep-attention-2 `stream-mma`: [`FlashProg`]'s model-scale forms whose
 /// products admit `bf16` — 16–64 tokens (whole 16-row warps; 48 leaves a
 /// 32-key window a tail), heads of width 16 or 32 in groups of 1–4, causal
-/// or not (the mask `−1e9` / `−8`), the head-group loop or not. The data are
+/// or not (the mask `−1e9` / `−8`), the head-group loop or not, head-major or
+/// token-major (each of [`FlashProg::tm`]'s mask forms). The data are
 /// small multiples of `¼`, exact in `bf16`: the scores are exact on the
 /// tensor core, and the probabilities' rounding (`2⁻⁹` relative) is the
 /// member's whole error.
@@ -6550,8 +6551,11 @@ pub fn flash_half_strategy() -> impl Strategy<Value = FlashProg> {
         any::<bool>(),
         0u8..2,
         any::<bool>(),
+        // prefill-integrate: the token-major forms (`tm`, a readable
+        // model's `attend`) on the matrix product too.
+        prop::sample::select(vec![0u8, 0, 1, 2, 3, 4]),
     )
-        .prop_map(|(n, d, heads, group, causal, mask, lp)| FlashProg {
+        .prop_map(|(n, d, heads, group, causal, mask, lp, tm)| FlashProg {
             n,
             w: n,
             d,
@@ -6566,9 +6570,9 @@ pub fn flash_half_strategy() -> impl Strategy<Value = FlashProg> {
             group: group.min(heads),
             causal,
             mask,
-            lp,
+            lp: lp && tm == 0,
             half: true,
-            tm: 0,
+            tm,
         })
 }
 
@@ -6808,9 +6812,10 @@ pub fn flash_tm_src(p: &FlashProg) -> String {
         kvh * d
     );
     s += &format!(
-        "    attf[0] -> println;\n    attf[{}] -> println;\n    attf[{}] -> println;\n    0.0 -> zero: f32;\n    (zero, attf) -> fold {{\n        acc, v -> acc + v\n    }} -> so;\n    so -> println;\n",
+        "    attf[0] -> println;\n    attf[{}] -> println;\n    attf[{}] -> println;\n{}    0.0 -> zero: f32;\n    (zero, attf) -> fold {{\n        acc, v -> acc + v\n    }} -> so;\n    so -> println;\n",
         t * h * d - 1,
-        (t * h * d) / 2 + d + 1
+        (t * h * d) / 2 + d + 1,
+        flash_spread(p, "attf", t * h * d)
     );
     if p.stored {
         s += &format!("    den[{}] -> println;\n", h * t - 1);

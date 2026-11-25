@@ -714,6 +714,10 @@ fn check_flash_mma(clang: &str, i: usize, p: &testgen::FlashProg) -> Vec<(&'stat
         out.push(("mma d32", u64::from(p.d == 32)));
         out.push(("mma group>1", u64::from(p.group > 1)));
         out.push(("mma kb32", u64::from(kb == 32)));
+        // prefill-integrate: the scores' tile rows a digit permutation of
+        // the group's (`out_rows`), the rows walked in the seed's order.
+        out.push(("mma token-major", u64::from(p.tm > 0 && p.heads > 1)));
+        out.push(("mma run-time mask", u64::from(matches!(p.tm, 3 | 4))));
     }
     let off = emission(&ir, Some((16, kb, 2, 0, 0)), &["stream-mma"]);
     let off_lines = stream_lines(&off);
@@ -803,6 +807,8 @@ fn stream_mma_on_generated_attention() {
         "mma d32",
         "mma group>1",
         "mma kb32",
+        "mma token-major",
+        "mma run-time mask",
         "mma split-kv",
         "off streams ffma",
         "runs",
