@@ -651,3 +651,136 @@ fn round_store_on_generated_programs() {
     ];
     assert!(all.iter().all(|&x| x > 0), "{c:?}");
 }
+
+/// precision `shared-store`: what one generated program covers.
+#[derive(Default, Clone, Copy, Debug)]
+struct SharedCover {
+    programs: u64,
+    /// Copies whose `a` is stored rounded (`PrecisionPlan::store`).
+    stored: u64,
+    /// Copies whose `a` an f32 reader keeps f32, beside a stored copy of the
+    /// same bodies — the case the shared bodies broke.
+    kept_beside_stored: u64,
+    /// Programs whose every copy is stored (one rewrite per copy).
+    all_stored: u64,
+    /// `twin`: one store's walk entering two folds of one body.
+    twin: u64,
+    /// A body named by more than one map or fold (the premise).
+    shared_bodies: u64,
+}
+
+impl std::ops::AddAssign for SharedCover {
+    fn add_assign(&mut self, o: SharedCover) {
+        self.programs += o.programs;
+        self.stored += o.stored;
+        self.kept_beside_stored += o.kept_beside_stored;
+        self.all_stored += o.all_stored;
+        self.twin += o.twin;
+        self.shared_bodies += o.shared_bodies;
+    }
+}
+
+/// One `testgen::SharedStoreProg`: the facts (each unread copy's `a` a
+/// store, each read copy's not), the rewritten graph valid and idempotent,
+/// and the emulated device's values against the weakest member's
+/// interpreter within D3 in every emulator mode (a read copy's `a` exact).
+fn check_shared_store(clang: &str, p: &testgen::SharedStoreProg) -> SharedCover {
+    let (src, (pairs, k)) = testgen::shared_store_src(p);
+    let ir = lower(&src);
+    let mut users: std::collections::HashMap<mapal_ir::FuncId, u64> = Default::default();
+    for (_, fd) in ir.funcs() {
+        for &m in &fd.morphisms {
+            if let Some(
+                mapal_ir::Operation::Map { body, .. } | mapal_ir::Operation::Fold { body, .. },
+            ) = ir.morphism(m).map(|x| x.op)
+            {
+                *users.entry(body).or_default() += 1;
+            }
+        }
+    }
+    let shared = users.values().any(|&n| n > 1);
+    let stored: usize = ir
+        .funcs()
+        .map(|(f, _)| ir.precision_plan(f).store.len())
+        .sum();
+    let read = p.read.count_ones() as usize;
+    let copies = usize::from(p.copies);
+    assert_eq!(stored, copies - read, "one store per unread copy\n{src}");
+    if let Some(g) = ir.narrow_stored() {
+        assert!(mapal_ir::validate(&g).is_empty(), "{src}");
+        assert!(g.narrow_stored().is_none(), "idempotent\n{src}");
+    }
+    let weak = floats(&run_weakest(&ir, 4_000_000_000, &[]).output);
+    let c = bound_coef_unit(k, Some(2f64.powi(-8))) + bound_coef_unit(k, None);
+    let on = emission(&ir, "rtx-5080", EmitOpts::default(), &["half-fill"]);
+    let dev = on.device.as_deref().unwrap_or("").to_string();
+    let built = emu::build_emulated(clang, &on.text, &dev);
+    for mode in MODES {
+        let (got, _) = built.run(&mode);
+        let g = floats(&got);
+        assert_eq!(g.len(), weak.len(), "{mode:?}\n{src}");
+        for i in 0..pairs {
+            let (y, w, m) = (g[2 * i], weak[2 * i], weak[2 * i + 1]);
+            let tol = 2.0 * c * m + 2f64.powi(-22) * w.abs();
+            assert!(
+                (y - w).abs() <= tol,
+                "{mode:?} pair {i}: {y} vs {w} (M {m}, tol {tol})\n{src}"
+            );
+        }
+    }
+    SharedCover {
+        programs: 1,
+        stored: stored as u64,
+        kept_beside_stored: u64::from(stored > 0) * read as u64,
+        all_stored: u64::from(read == 0),
+        twin: u64::from(p.twin && stored > 0),
+        shared_bodies: u64::from(shared),
+    }
+}
+
+/// precision `shared-store` on 24 generated programs: a GEMM function
+/// inlined at two or three sites (the copies share their map and fold
+/// bodies), its `a` read by `: bf16 | f32` products, some copies' `a` also
+/// printed (kept f32). A store rewrites only its own copy's bodies, so the
+/// kept copies' producers and readers stay f32 (before, they rounded and
+/// widened through the shared bodies: the full model's `fold: bf16 | f32`
+/// build, token 84707 repeated). Values on the emulated device in every mode
+/// within the bound; every coverage counter non-zero.
+#[test]
+fn round_store_shared_bodies_on_generated_programs() {
+    let Some(clang) = emu::clang() else {
+        return;
+    };
+    let mut runner = TestRunner::deterministic();
+    let progs: Vec<testgen::SharedStoreProg> = (0..24)
+        .map(|i| {
+            let mut p = testgen::shared_store_strategy()
+                .new_tree(&mut runner)
+                .unwrap()
+                .current();
+            // Lean to the case the bodies broke: one copy read, another not;
+            // one program in six reads none (every copy stored).
+            if i % 6 == 5 {
+                p.read = 0;
+            } else if i % 3 != 2 && (p.read == 0 || p.read.count_ones() == u32::from(p.copies)) {
+                p.read = 1 << (i % usize::from(p.copies));
+            }
+            p
+        })
+        .collect();
+    let covers = testgen::par_check(&progs, |_, p| check_shared_store(&clang, p));
+    let mut c = SharedCover::default();
+    for k in covers {
+        c += k;
+    }
+    eprintln!("shared-store generated: {c:?}");
+    let all = [
+        c.programs,
+        c.stored,
+        c.kept_beside_stored,
+        c.all_stored,
+        c.twin,
+        c.shared_bodies,
+    ];
+    assert!(all.iter().all(|&x| x > 0), "{c:?}");
+}

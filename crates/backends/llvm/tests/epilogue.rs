@@ -61,6 +61,21 @@ fn mapal_main(ll: &str) -> &str {
     &ll[start..end]
 }
 
+/// A device function `@fn<id>_u<slots>…` (an epilogue member's variant,
+/// `gpu::slots_variant`) defined with parameters starting `params`.
+fn member_variant(dev: &str, params: &str) -> bool {
+    dev.lines().filter(|l| l.starts_with("define ")).any(|l| {
+        l.split('@').nth(1).is_some_and(|n| {
+            let name = n.split('(').next().unwrap_or("");
+            let mut parts = name.splitn(2, "_u");
+            let (head, tail) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""));
+            head.starts_with("fn")
+                && tail.starts_with(|c: char| c.is_ascii_digit())
+                && n[name.len()..].starts_with(params)
+        })
+    })
+}
+
 /// The runtime calls of `mapal_main` in order: `launch`, `launchv <n>`,
 /// `gen`, `h2d <bytes>`, `d2h <bytes>` (alloc and free dropped).
 fn transfers(ll: &str) -> Vec<String> {
@@ -239,8 +254,9 @@ fn bias_reads_its_vector_in_gmem() {
         ["gen", "gen", "gen", "launchv 5", "d2h 4", "d2h 4"]
     );
     let dev = e.device.expect("a device unit");
-    // `c[t]` arrives as a one-cell buffer: the body's device variant.
-    assert!(dev.contains("_cell({ ptr, ptr, i32 }"), "{dev}");
+    // `c[t]` arrives as a one-cell buffer: the body's device variant
+    // (`<body>_u<slots>`, `gpu::slots_variant`).
+    assert!(member_variant(&dev, "({ ptr, ptr, i32 }"), "{dev}");
 }
 
 #[test]
@@ -465,7 +481,7 @@ fn every_kernel_takes_the_epilogue() {
         .expect("emits");
         let dev = e.device.expect("a device unit");
         assert!(e.text.contains("@mapal_gpu_launchv("), "{target}");
-        assert!(dev.contains("%y0") && dev.contains("_cell("), "{target}");
+        assert!(dev.contains("%y0") && member_variant(&dev, "("), "{target}");
     }
     // An indivisible site: the one-thread-per-cell kernel.
     let odd = bias()

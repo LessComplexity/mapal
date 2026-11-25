@@ -1029,9 +1029,11 @@ impl<'a> FnEmit<'a> {
             .and_then(|mb| mb.srcs.get(slot as usize).copied())
     }
 
-    /// Emit this map body as its epilogue device variant (S54): the captured
-    /// arrays in `slots` arrive as one-cell buffers holding cell `t`.
+    /// Emit this map body as its epilogue / unit device variant (S54): the
+    /// captured arrays in `slots` arrive as one-cell buffers holding cell `t`,
+    /// under its slots' own name ([`gpu::slots_variant`]).
     pub(crate) fn set_cell_slots(&mut self, slots: Vec<u32>) {
+        self.cell_suffix = gpu::slots_variant("", &slots);
         self.cell_slots = slots;
     }
 

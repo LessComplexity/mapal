@@ -5402,6 +5402,252 @@ pub fn half_src_escaping(p: &HalfProg) -> (String, (usize, u64, u64)) {
     half_src_full(p, true, true)
 }
 
+/// precision `shared-cell`: a block — an elementwise map of its input `x`
+/// (`law`: one of four forms, two constants) feeding a GEMM over an f32 or
+/// `bf16` weight — chained over `copies` calls the inliner copies, so every
+/// copy's map runs one shared body. The first copy's `x` is closed-form (an
+/// `iota` law: a `cell-law` cell with `x`'s value forwarded); each later
+/// copy's `x` is the previous GEMM's output (the map an S54 epilogue member
+/// of that tile, its cell read as a one-cell buffer) — one body, two device
+/// variants. The weight is square (`c × c`) so the copies chain; `fw` 1:
+/// stored `bf16`.
+#[derive(Clone, Debug)]
+pub struct SharedCellProg {
+    pub dims: [u8; 2],
+    pub copies: u8,
+    pub law: u8,
+    pub consts: [u8; 2],
+    pub fw: u8,
+}
+
+pub fn shared_cell_strategy() -> impl Strategy<Value = SharedCellProg> {
+    (
+        (any::<u8>(), any::<u8>()),
+        2u8..=3,
+        0u8..4,
+        (any::<u8>(), any::<u8>()),
+        prop::sample::select(vec![0u8, 1]),
+    )
+        .prop_map(|(d, copies, law, (c0, c1), fw)| SharedCellProg {
+            dims: [d.0, d.1],
+            copies,
+            law,
+            consts: [c0, c1],
+            fw,
+        })
+}
+
+/// [`SharedCellProg`]'s source: each copy's output prints three cells.
+pub fn shared_cell_src(p: &SharedCellProg) -> String {
+    let pick = |d: u8, v: &[u64]| v[usize::from(d) % v.len()];
+    let t = pick(p.dims[0], &[8, 16, 32, 48]);
+    let c = pick(p.dims[1], &[32, 64, 128]);
+    let (s, o) = (
+        f64::from(p.consts[0] % 7 + 1) / 8.0,
+        f64::from(p.consts[1] % 9) / 16.0 - 0.25,
+    );
+    let off = match o < 0.0 {
+        true => format!("- {:?}", -o),
+        false => format!("+ {o:?}"),
+    };
+    let body = match p.law % 4 {
+        0 => format!("x[i] * {s:?} {off}"),
+        1 => format!("x[i] * x[i] * {s:?} {off}"),
+        2 => format!("x[i] -> v; (v > 0.0) -> {{ -true-> v; -false-> v * {s:?}; }}"),
+        _ => format!("x[i] -> v; v / (1.0 + v * v * {s:?}) {off}"),
+    };
+    let (tw, sw, ww) = match p.fw {
+        1 => ("bf16", " -> to_bf16", " -> widen_f32"),
+        _ => ("f32", "", ""),
+    };
+    let mut src = format!(
+        "fn block(w: [{tw}; {cc}], x: [f32; {tc}]) -> [f32; {tc}] {{
+    {tc} -> iota -> map {{
+        i -> {body}
+    }} -> mixed;
+    {c} -> iota -> along;
+    {tc} -> iota -> map {{
+        cell ->
+        cell / {c} -> t;
+        cell % {c} -> row;
+        (0.0, along) -> fold {{
+            sum, column ->
+            w[row * {c} + column]{ww} -> wv;
+            sum + wv * mixed[t * {c} + column]
+        }}
+    }} -> ret;
+}}
+fn main() {{
+    {cc} -> iota -> map {{
+        e -> (e % 103 * 11 + 57) % 103 - 51 -> widen_f32 -> v;
+        v / {wd:?}{sw}
+    }} -> w;
+    {tc} -> iota -> map {{
+        e -> (e * 7 + 3) % 31 - 15 -> widen_f32 -> v;
+        v / 9.0
+    }} -> y0;
+",
+        cc = c * c,
+        tc = t * c,
+        wd = (c * 8) as f64,
+    );
+    for k in 1..=p.copies {
+        src += &format!("    (w, y{}) -> block -> y{k};\n", k - 1);
+    }
+    let cells = [0, t * c / 2 + 1, t * c - 1];
+    for k in 1..=p.copies {
+        for x in cells {
+            src += &format!("    y{k}[{x}] -> println;\n");
+        }
+    }
+    src += "}\n";
+    src
+}
+
+/// precision `shared-store`: one GEMM function called at `copies` sites
+/// (the inliner's copies share every map and fold body — as a layer loop's
+/// unrolled trips and a prompt's and a decode step's projections do), its
+/// `a` produced in the function and read by `: bf16 | f32` products; the
+/// sites in `read` (a bit per copy) also print elements of their copy's
+/// `a` — an f32 reader, so that copy's `a` stays f32 while the others are
+/// stored rounded (`PrecisionPlan::store`). `twin`: `a` read by two
+/// projections through one helper (two folds of one body in a single
+/// store's walk). `fb` 1: `b` stored `bf16`.
+#[derive(Clone, Debug)]
+pub struct SharedStoreProg {
+    pub dims: [u8; 3],
+    pub copies: u8,
+    pub read: u8,
+    pub twin: bool,
+    pub fb: u8,
+    pub law: [u8; 2],
+}
+
+pub fn shared_store_strategy() -> impl Strategy<Value = SharedStoreProg> {
+    (
+        (any::<u8>(), any::<u8>(), any::<u8>()),
+        2u8..=3,
+        any::<u8>(),
+        any::<bool>(),
+        prop::sample::select(vec![0u8, 1]),
+        (any::<u8>(), any::<u8>()),
+    )
+        .prop_map(|(d, copies, read, twin, fb, (l0, l1))| SharedStoreProg {
+            dims: [d.0, d.1, d.2],
+            copies,
+            read: read % (1 << copies),
+            twin,
+            fb,
+            law: [l0, l1],
+        })
+}
+
+/// [`SharedStoreProg`]'s source and `(pairs, k)`: each copy prints, per
+/// projection, three cells beside their `M = Σ|a·b|` (from copies of the
+/// operands no product reads); then each read copy prints two elements of
+/// its `a` beside a magnitude of 0 (exact: the producer's f32 values).
+pub fn shared_store_src(p: &SharedStoreProg) -> (String, (usize, u64)) {
+    let pick = |d: u8, v: &[u64]| v[usize::from(d) % v.len()];
+    let m = pick(p.dims[0], &[16, 32, 48, 64]);
+    let n = pick(p.dims[1], &[8, 16, 32, 64]);
+    let k = pick(p.dims[2], &[16, 32, 64, 128]);
+    let (mk, kn, mn) = (m * k, k * n, m * n);
+    let (a1, a2) = (
+        u64::from(p.law[0] % 13) * 2 + 3,
+        u64::from(p.law[1] % 11) * 2 + 5,
+    );
+    let (bt, bs, br) = match p.fb {
+        1 => ("bf16", " -> to_bf16", " -> widen_f32"),
+        _ => ("f32", "", ""),
+    };
+    let projs = if p.twin { 2 } else { 1 };
+    let mut src = format!(
+        "fn project(a: [f32; {mk}], b: [{bt}; {kn}]) -> [f32; {mn}] {{
+    {mn} -> iota -> ic;
+    {k} -> iota -> kr;
+    ic -> map {{
+        t -> t / {n} -> i;
+        t % {n} -> j;
+        (0.0, kr) -> fold: bf16 | f32 {{
+            acc, q -> a[i * {k} + q] -> x;
+            b[q * {n} + j]{br} -> y;
+            acc + x * y
+        }}
+    }} -> ret;
+}}
+
+fn magnitude(a: [f32; {mk}], b: [{bt}; {kn}]) -> [f32; {mn}] {{
+    {mn} -> iota -> ic;
+    {k} -> iota -> kr;
+    ic -> map: f32 {{
+        t -> t / {n} -> i;
+        t % {n} -> j;
+        (0.0, kr) -> fold {{
+            acc, q -> a[i * {k} + q] -> x;
+            b[q * {n} + j]{br} -> y;
+            x * y -> pv;
+            (pv > 0.0) -> {{
+                -true-> pv;
+                -false-> 0.0 - pv;
+            }} -> av;
+            acc + av
+        }}
+    }} -> ret;
+}}
+
+fn gemm(s: i32) -> ([f32; {mn}], [f32; {mn}], [f32; {mn}], [f32; {mn}], [f32; {mk}]) {{
+    {mk} -> iota -> ia;
+    ia -> map {{
+        t -> (t * {a1} + 13 + s) % 101 - 50 -> widen_f32 -> v;
+        v / 7.0
+    }} -> a;
+    ia -> map {{
+        t -> (t * {a1} + 13 + s) % 101 - 50 -> widen_f32 -> v;
+        v / 7.0
+    }} -> am;
+    {kn} -> iota -> ib;
+    ib -> map {{
+        t -> (t * {a2} + 57) % 103 - 51 -> widen_f32 -> v;
+        v / 9.0{bs}
+    }} -> b;
+    ib -> map {{
+        t -> (t * {a2} + 41) % 97 - 48 -> widen_f32 -> v;
+        v / 9.0{bs}
+    }} -> c;
+    (a, b) -> project -> y;
+    (am, b) -> magnitude -> my;
+"
+    );
+    if p.twin {
+        src += "    (a, c) -> project -> z;\n    (am, c) -> magnitude -> mz;\n";
+    } else {
+        src += "    y -> z;\n    my -> mz;\n";
+    }
+    src += "    (y, my, z, mz, a) -> ret;\n}\n\nfn main() {\n";
+    let cells = [u64::from(p.law[0]) * 7 % mn, mn / 2 + 1, mn - 1];
+    let mut pairs = 0;
+    for c in 0..p.copies {
+        src += &format!("    {} -> gemm -> r{c};\n", 3 * u64::from(c) + 1);
+    }
+    for c in 0..p.copies {
+        for (out, mag) in [("0", "1"), ("2", "3")].into_iter().take(projs) {
+            for x in cells {
+                src +=
+                    &format!("    r{c}.{out}[{x}] -> println;\n    r{c}.{mag}[{x}] -> println;\n");
+                pairs += 1;
+            }
+        }
+        if p.read >> c & 1 == 1 {
+            for x in [u64::from(p.law[1]) * 5 % mk, mk - 1] {
+                src += &format!("    r{c}.4[{x}] -> println;\n    0.0 -> println;\n");
+                pairs += 1;
+            }
+        }
+    }
+    src += "}\n";
+    (src, (pairs, k))
+}
+
 fn half_src_full(p: &HalfProg, once: bool, ret: bool) -> (String, (usize, u64, u64)) {
     let pick = |d: u8, v: &[u64]| v[usize::from(d) % v.len()];
     let set = match p.set {

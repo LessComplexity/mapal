@@ -2407,10 +2407,8 @@ impl<'a> FnEmit<'a> {
         if slots.is_empty() {
             return (self.fnames[f].clone(), fe.emit());
         }
-        let suffix: Vec<String> = slots.iter().map(u32::to_string).collect();
-        fe.cell_suffix = format!("_u{}", suffix.join("_"));
         fe.set_cell_slots(slots.to_vec());
-        (format!("{}{}", self.fnames[f], fe.cell_suffix), fe.emit())
+        (gpu::slots_variant(&self.fnames[f], slots), fe.emit())
     }
 
     /// `tile-post`: map body `f`'s epilogue variant (its fold `fold`'s value
@@ -2433,13 +2431,10 @@ impl<'a> FnEmit<'a> {
         );
         fe.set_gpu_arms(self.gpu_arms);
         fe.set_post_fold(Some(fold));
-        let mut name = self.fnames[f].clone();
         if !slots.is_empty() {
-            let suffix: Vec<String> = slots.iter().map(u32::to_string).collect();
-            fe.cell_suffix = format!("_u{}", suffix.join("_"));
             fe.set_cell_slots(slots.to_vec());
-            name = format!("{name}{}", fe.cell_suffix);
         }
+        let name = gpu::slots_variant(&self.fnames[f], slots);
         (gpu::post_variant(&name), fe.emit())
     }
 

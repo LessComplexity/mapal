@@ -4553,6 +4553,22 @@ pub(crate) fn cell_variant(name: &str) -> String {
     format!("{name}_cell")
 }
 
+/// The device variant of body `name` that reads the captured arrays in
+/// `slots` as one-cell buffers (`FnEmit::cell_slots`: an S54 epilogue member,
+/// a unit's member): `<name>_u<slots>`; `name` itself for no slot. Its own
+/// name per slot set, apart from [`cell_variant`]'s: the inliner's copies of
+/// a map share one body, so one body can be a cell-law cell here and an
+/// epilogue member there — two texts, two signatures (precision: the shared
+/// body's two `_cell` texts were one symbol, and the cell kernel called the
+/// member's one-argument text with its forwarded value: a poison pointer).
+pub(crate) fn slots_variant(name: &str, slots: &[u32]) -> String {
+    if slots.is_empty() {
+        return name.to_string();
+    }
+    let s: Vec<String> = slots.iter().map(u32::to_string).collect();
+    format!("{name}_u{}", s.join("_"))
+}
+
 /// `tile-post`'s epilogue variant of map body `name` (`FnEmit::post_fold`).
 pub(crate) fn post_variant(name: &str) -> String {
     format!("{name}_post")
@@ -5089,9 +5105,12 @@ pub(crate) fn device_module(
     // `devgen`: each body once, then its kernel. A body is a clean leaf, so
     // its text names no host symbol — checked, since a stray one would fail
     // only at `llc` on the bundle machine.
+    // Two producers of one body and length (the inliner's copies share
+    // their bodies) are one kernel: its id names the body and the length.
     let mut bodies = std::collections::BTreeSet::new();
+    let mut ids = std::collections::BTreeSet::new();
     for (id, callee, elem, text) in gens {
-        if !live.contains(&format!("mapal_gen_{id:016x}")) {
+        if !live.contains(&format!("mapal_gen_{id:016x}")) || !ids.insert(*id) {
             continue;
         }
         assert!(
@@ -11156,14 +11175,15 @@ impl<'a> FnEmit<'a> {
                         resident::EpiSrc::Uniform(_) => unreachable!("a member takes no uniform"),
                     })
                     .collect();
-                let cell = fields.iter().any(|a| matches!(a, EpiArg::Cell(_)));
+                let slots: Vec<u32> = fields
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, a)| matches!(a, EpiArg::Cell(_)))
+                    .map(|(s, _)| s as u32)
+                    .collect();
                 let (ret, _) = array_parts(&self.obj_ty(mb.out));
                 EpiCall {
-                    callee: format!(
-                        "{}{}",
-                        self.fnames[mb.body],
-                        if cell { "_cell" } else { "" }
-                    ),
+                    callee: slots_variant(&self.fnames[mb.body], &slots),
                     arg,
                     ret,
                     fields,

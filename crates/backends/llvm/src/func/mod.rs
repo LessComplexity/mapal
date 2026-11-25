@@ -435,8 +435,8 @@ pub(crate) struct FnEmit<'a> {
     /// arrays read only at the cell `t`, passed as one-cell buffers, so every
     /// `Index` on them reads element 0 (`emit_index`).
     cell_slots: Vec<u32>,
-    /// The name suffix of that variant: `_cell` (an epilogue's), `_u<slots>`
-    /// (a unit's, `func/flow.rs`).
+    /// The name suffix of that variant: `_u<slots>` (an epilogue member's or a
+    /// unit's, [`gpu::slots_variant`]).
     cell_suffix: String,
     /// S54 `streams`: the function's path plan (the entry's, from `lib.rs`),
     /// which says which device sites are independent.

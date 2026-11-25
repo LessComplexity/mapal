@@ -95,7 +95,7 @@ impl<'a> FnEmit<'a> {
             row_bounds: None,
             groups: SecondaryMap::new(),
             cell_slots: Vec::new(),
-            cell_suffix: "_cell".into(),
+            cell_suffix: String::new(),
             cell_vals: Vec::new(),
             lanes: None,
             post_fold: None,

@@ -6,7 +6,8 @@
 use slotmap::SecondaryMap;
 
 use crate::graph::{
-    CategoryIr, FuncId, Morphism, MorphismId, Object, ObjectId, ObjectKind, Operation, Precision,
+    CategoryIr, FuncDef, FuncId, Morphism, MorphismId, Object, ObjectId, ObjectKind, Operation,
+    Precision,
 };
 use crate::ty::{NarrowFloat, Ty};
 
@@ -405,7 +406,29 @@ impl CategoryIr {
         out
     }
 
+    /// Rewrites `s`'s array narrow. A body is the code of every `Map` /
+    /// `Fold` that names it (the inliner and the loop replay share one body
+    /// between the copies of a map: a layer loop's 16 trips, a prompt's and
+    /// a decode step's output head), so the rewrite first gives each body it
+    /// changes — the producer's, and each body the walk enters — to the one
+    /// morphism it enters through ([`Self::own_body`]); the walk is then
+    /// taken again over the owned bodies. Without it the rounding and the
+    /// widenings reached the other copies, whose arrays stay f32: their
+    /// producers wrote bf16 values into f32 storage, their readers widened
+    /// f32 bytes as bf16 (the full model's `fold: bf16 | f32` build).
     fn apply_store(&mut self, s: &NarrowStore) {
+        let mut users = self.body_users();
+        self.own_body(self.in_edges(s.array)[0], &mut users);
+        self.own_walk(s.array, &mut users);
+        let mut owned = NarrowStore {
+            array: s.array,
+            fmt: s.fmt,
+            carriers: Vec::new(),
+            reads: Vec::new(),
+        };
+        let walked = self.store_carriers(s.array, &mut owned);
+        debug_assert!(walked && owned.reads.len() >= s.reads.len());
+        let s = &owned;
         let Ty::Array { size, .. } = self.objects[s.array].ty else {
             unreachable!("a stored array")
         };
@@ -452,6 +475,141 @@ impl CategoryIr {
             self.out_edges.insert(e, vec![n]);
             self.in_edges.insert(e1, vec![n]);
         }
+    }
+
+    /// How many `Map` / `Fold` morphisms name each body.
+    fn body_users(&self) -> std::collections::HashMap<FuncId, usize> {
+        let mut users = std::collections::HashMap::new();
+        for m in self.morphisms.values() {
+            if let Operation::Map { body, .. } | Operation::Fold { body, .. } = m.op {
+                *users.entry(body).or_insert(0) += 1;
+            }
+        }
+        users
+    }
+
+    /// Map / fold `u`'s body its own: a body other morphisms also name is
+    /// copied ([`Self::clone_body`]) and `u` takes the copy.
+    fn own_body(&mut self, u: MorphismId, users: &mut std::collections::HashMap<FuncId, usize>) {
+        let (Operation::Map { body, .. } | Operation::Fold { body, .. }) = self.morphisms[u].op
+        else {
+            return;
+        };
+        if users.get(&body).copied().unwrap_or(0) <= 1 {
+            return;
+        }
+        let copy = self.clone_body(body, users);
+        *users.get_mut(&body).expect("counted") -= 1;
+        match &mut self.morphisms[u].op {
+            Operation::Map { body, .. } | Operation::Fold { body, .. } => *body = copy,
+            _ => unreachable!("a map or fold"),
+        }
+    }
+
+    /// [`Self::store_carriers`]'s walk from `x`, owning every body it enters
+    /// ([`Self::own_body`]) before it enters it.
+    fn own_walk(&mut self, x: ObjectId, users: &mut std::collections::HashMap<FuncId, usize>) {
+        for e in self.out_edges(x).to_vec() {
+            let Operation::Pair { slot, .. } = self.morphisms[e].op else {
+                continue;
+            };
+            let t = self.morphisms[e].target;
+            for u in self.out_edges(t).to_vec() {
+                match self.morphisms[u].op {
+                    Operation::Map { captures, .. } | Operation::Fold { captures, .. }
+                        if slot < captures =>
+                    {
+                        self.own_body(u, users);
+                        let (Operation::Map { body, .. } | Operation::Fold { body, .. }) =
+                            self.morphisms[u].op
+                        else {
+                            unreachable!("a map or fold")
+                        };
+                        let p = self.funcs[body].input;
+                        for v in self.out_edges(p).to_vec() {
+                            if self.morphisms[v].op == (Operation::Proj { index: slot }) {
+                                self.own_walk(self.morphisms[v].target, users);
+                            }
+                        }
+                    }
+                    Operation::Proj { index } if index == slot => {
+                        self.own_walk(self.morphisms[u].target, users);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    /// A copy of body `b` — its objects, morphisms (each with its admitted
+    /// set) and, recursively, the bodies its maps and folds name — that no
+    /// morphism names yet (`users` counts it once: the caller's).
+    fn clone_body(
+        &mut self,
+        b: FuncId,
+        users: &mut std::collections::HashMap<FuncId, usize>,
+    ) -> FuncId {
+        let fd = self.funcs[b].clone();
+        let owned: Vec<ObjectId> = self
+            .objects
+            .keys()
+            .filter(|&o| self.owner.get(o) == Some(&b))
+            .collect();
+        let c = self.funcs.insert(FuncDef {
+            morphisms: Vec::new(),
+            ..fd.clone()
+        });
+        self.facts.add_func(c);
+        users.insert(c, 1);
+        let mut objs = std::collections::HashMap::new();
+        for &o in &owned {
+            let obj = self.objects[o].clone();
+            let n = self.objects.insert_with_key(|id| Object { id, ..obj });
+            self.owner.insert(n, c);
+            objs.insert(o, n);
+        }
+        let mut ms = std::collections::HashMap::new();
+        let mut list = Vec::with_capacity(fd.morphisms.len());
+        for &x in &fd.morphisms {
+            let mx = self.morphisms[x].clone();
+            let op = match mx.op {
+                Operation::Map { body, captures } => Operation::Map {
+                    body: self.clone_body(body, users),
+                    captures,
+                },
+                Operation::Fold { body, captures } => Operation::Fold {
+                    body: self.clone_body(body, users),
+                    captures,
+                },
+                op => op,
+            };
+            let n = self.morphisms.insert_with_key(|id| Morphism {
+                id,
+                source: objs[&mx.source],
+                target: objs[&mx.target],
+                op,
+                loc: mx.loc,
+            });
+            if let Some(&p) = self.precision.get(x) {
+                self.precision.insert(n, p);
+            }
+            ms.insert(x, n);
+            list.push(n);
+        }
+        for &o in &owned {
+            let map = |es: Option<&Vec<MorphismId>>| -> Vec<MorphismId> {
+                es.map(|v| v.iter().map(|e| ms[e]).collect())
+                    .unwrap_or_default()
+            };
+            let (outs, ins) = (map(self.out_edges.get(o)), map(self.in_edges.get(o)));
+            self.out_edges.insert(objs[&o], outs);
+            self.in_edges.insert(objs[&o], ins);
+        }
+        let f = &mut self.funcs[c];
+        f.input = objs[&fd.input];
+        f.output = objs[&fd.output];
+        f.morphisms = list;
+        c
     }
 
     fn mint_temp(

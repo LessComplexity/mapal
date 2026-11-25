@@ -1879,6 +1879,27 @@ impl Gpu {
         self.sms * self.fp32_lanes * 2 * self.clock_khz / 1_000_000
     }
 
+    /// precision `split-rate`: **the FFMA tile's own achieved rate**, flops
+    /// per ns — the measured compute-bound rate of the shipped FMA tile
+    /// ([`DeviceCost::flops_per_ns`]: Mapal's realization, not the silicon),
+    /// at most the FFMA peak; the peak where the part measured none. What a
+    /// realization that replaces the FMA tile is weighed against: on a part
+    /// whose FP32 lanes issue a warp FFMA every clock (128 lanes on 4
+    /// schedulers) the tile is issue-bound — the RTX 5080's SASS issues 1.08–
+    /// 1.23 slots an FFMA (LDS, STS, LDG, address) and its register-staged
+    /// panel's load latency is exposed (gaps-disasm C3-fma) — so it realizes
+    /// 0.54–0.68 of the peak on the prompt's projections (32200 of 52 700
+    /// flops a ns measured); the A100's 64 lanes take an FFMA every two
+    /// clocks, its tile 0.92 of the peak (5fcb401b, 4096² × 4096 3.832 ms).
+    pub fn ffma_tile_flops_per_ns(&self) -> u64 {
+        let peak = self.ffma_flops_per_ns();
+        match self.cost.map_or(0, |d| d.flops_per_ns) {
+            0 => peak,
+            r if peak == 0 => r,
+            r => r.min(peak),
+        }
+    }
+
     /// f32-tensor-cores P1: flops one SM issues a clock through `op`
     /// ([`Self::mma_tf32_per_clk`] and its siblings, by the operand format
     /// and where `a` lives); 0 for a product the part has no rate for.
