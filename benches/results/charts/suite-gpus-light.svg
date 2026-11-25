@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="402" viewBox="0 0 920 402" role="img" aria-labelledby="t d">
+<title id="t">Kernel and layer suite: Mapal against the fastest same-precision competitor</title>
+<desc id="d">Geometric mean of Mapal time divided by the fastest competitor's time, per GPU: RTX 5080 0.876; RTX 3090 0.996; A100 1.185; RTX 4090 0.954; H100 1.205</desc>
+<style>text { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; } .num { font-variant-numeric: tabular-nums; }</style>
+<rect width="920" height="402" rx="10" fill="#fcfcfb"/>
+<text x="28.0" y="38.0" font-size="17" font-weight="600" fill="#0b0b0b" text-anchor="start">Kernel and layer suite: Mapal against the fastest same-precision competitor</text>
+<text x="28.0" y="60.0" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="start">Geomean of Mapal time ÷ the fastest competitor's time over the 119 programs timed on every GPU. Below 1: Mapal faster.</text>
+<text x="28.0" y="78.0" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="start">Each program against competitors of its own precision: cuBLAS(Lt), CUTLASS, PyTorch eager / compiled, Triton, FlashAttention, FlashInfer, Liger.</text>
+<rect x="28.0" y="95.0" width="10.0" height="10.0" rx="2" fill="#2a78d6"/>
+<text x="43.0" y="104.0" font-size="12" font-weight="400" fill="#52514e" text-anchor="start">Mapal faster</text>
+<rect x="142.0" y="95.0" width="10.0" height="10.0" rx="2" fill="#898781"/>
+<text x="157.0" y="104.0" font-size="12" font-weight="400" fill="#52514e" text-anchor="start">within 5%</text>
+<rect x="235.0" y="95.0" width="10.0" height="10.0" rx="2" fill="#e34948"/>
+<text x="250.0" y="104.0" font-size="12" font-weight="400" fill="#52514e" text-anchor="start">Mapal slower</text>
+<text x="892.0" y="126.0" font-size="12" font-weight="400" fill="#52514e" text-anchor="end">programs faster / even / slower</text>
+<line x1="148.0" y1="136.0" x2="148.0" y2="306.0" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="283.7" y1="136.0" x2="283.7" y2="306.0" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="405.0" y1="136.0" x2="405.0" y2="306.0" stroke="#c3c2b7" stroke-width="1"/>
+<line x1="514.8" y1="136.0" x2="514.8" y2="306.0" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="662.0" y1="136.0" x2="662.0" y2="306.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="28.0" y="158.0" font-size="13" font-weight="600" fill="#0b0b0b" text-anchor="start">RTX 5080</text>
+<path d="M405.0,146.0 H257.1 A4,4 0 0 0 253.1,150.0 V156.0 A4,4 0 0 0 257.1,160.0 H405.0 Z" fill="#2a78d6"/>
+<text x="247.1" y="158.0" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="end" class="num">0.876</text>
+<text x="892.0" y="158.0" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="end" class="num">46 / 43 / 30</text>
+<text x="28.0" y="192.0" font-size="13" font-weight="600" fill="#0b0b0b" text-anchor="start">RTX 3090</text>
+<path d="M405.0,180.0 H404.6 A4,4 0 0 0 400.6,184.0 V190.0 A4,4 0 0 0 404.6,194.0 H405.0 Z" fill="#898781"/>
+<text x="394.6" y="192.0" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="end" class="num">0.996</text>
+<text x="892.0" y="192.0" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="end" class="num">42 / 18 / 59</text>
+<text x="28.0" y="226.0" font-size="13" font-weight="600" fill="#0b0b0b" text-anchor="start">A100</text>
+<path d="M405.0,214.0 H596.5 A4,4 0 0 1 600.5,218.0 V224.0 A4,4 0 0 1 596.5,228.0 H405.0 Z" fill="#e34948"/>
+<text x="606.5" y="226.0" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="start" class="num">1.185</text>
+<text x="892.0" y="226.0" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="end" class="num">41 / 6 / 72</text>
+<text x="28.0" y="260.0" font-size="13" font-weight="600" fill="#0b0b0b" text-anchor="start">RTX 4090</text>
+<path d="M405.0,248.0 H354.4 A4,4 0 0 0 350.4,252.0 V258.0 A4,4 0 0 0 354.4,262.0 H405.0 Z" fill="#898781"/>
+<text x="344.4" y="260.0" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="end" class="num">0.954</text>
+<text x="892.0" y="260.0" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="end" class="num">42 / 25 / 52</text>
+<text x="28.0" y="294.0" font-size="13" font-weight="600" fill="#0b0b0b" text-anchor="start">H100</text>
+<path d="M405.0,282.0 H615.6 A4,4 0 0 1 619.6,286.0 V292.0 A4,4 0 0 1 615.6,296.0 H405.0 Z" fill="#e34948"/>
+<text x="625.6" y="294.0" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="start" class="num">1.205</text>
+<text x="892.0" y="294.0" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="end" class="num">25 / 7 / 87</text>
+<text x="148.0" y="324.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.8</text>
+<text x="283.7" y="324.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.9</text>
+<text x="405.0" y="324.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1</text>
+<text x="514.8" y="324.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1.1</text>
+<text x="662.0" y="324.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1.25</text>
+<text x="148.0" y="342.0" font-size="11.5" font-weight="400" fill="#52514e" text-anchor="start">← Mapal faster</text>
+<text x="662.0" y="342.0" font-size="11.5" font-weight="400" fill="#52514e" text-anchor="end">Mapal slower →</text>
+<text x="28.0" y="368.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">Builds: RTX 5080 81a89c02, 9abeb446, d450014d, d945c641; RTX 3090 f1d3a04f; A100 f1d3a04f; RTX 4090 f1d3a04f; H100 f1d3a04f.</text>
+<text x="28.0" y="384.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">Data: benches/results/evidence/matrix.json (2026-11-25); even = within 5% or the row's own noise.</text>
+</svg>

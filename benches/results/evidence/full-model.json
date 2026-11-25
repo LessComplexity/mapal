@@ -1,0 +1,179 @@
+{
+  "meta": {
+    "model": "Llama-3.2-1B-Instruct",
+    "program": "examples/llama.mapal",
+    "gpu": "RTX 5080",
+    "part": "rtx-5080",
+    "date": "2026-11-25",
+    "mapal_build": "8bf54fb3",
+    "report": "benches/results/evidence/local-rtx-5080/full-model.md",
+    "prompt_lengths": [128, 512, 2048],
+    "generated_tokens": 128,
+    "batch": 1,
+    "definitions": {
+      "ttft_ms": "submit to first token on the host, ms, median of 5 (warmup 2)",
+      "decode_ms": "(t128 - t2) / 126, ms per generated token, median of 5",
+      "e2e_ms": "t128 at the 512-token prompt, ms",
+      "peak_mb": "the process's GPU memory (nvidia-smi), MB; reserved = the engine's reserved pool"
+    },
+    "rule": "classes compare type to type: the f32 class only against f32-compute engines, the bf16 class only against 16-bit engines; no gain is claimed across classes",
+    "fields": "engines[].chart = drawn in the README charts and used by the headline table (the first engine with mapal = true and chart = true is Mapal's row); precision = the engine's storage / compute when it differs from the class name"
+  },
+  "classes": [
+    {
+      "id": "f32",
+      "label": "f32 class",
+      "compute": "f32 activations, bf16 weights widened in registers (Mapal's default face, ADR-0040 D2 bound); competitors compute in f32 with TF32 off",
+      "chart_note": "Mapal as written: f32 activations × bf16 weights, within the default face's bound. Every other engine computes in f32 (TF32 off).",
+      "engines": [
+        {
+          "name": "Mapal",
+          "detail": "calibrated build, projections on the bf16x2n split tile",
+          "mapal": true,
+          "chart": true,
+          "ttft_ms": [10.40, 28.91, 125.3],
+          "decode_ms": [3.760, 3.594, 3.997],
+          "e2e_ms": 482,
+          "peak_mb": [2716, 2984, 4074]
+        },
+        {
+          "name": "Mapal, no calib file",
+          "detail": "FFMA tile",
+          "mapal": true,
+          "chart": false,
+          "ttft_ms": [14.14, 40.61, 162.9],
+          "decode_ms": [3.797, 3.705, 3.715],
+          "e2e_ms": 508,
+          "peak_mb": [3014, 3498, 4578]
+        },
+        {
+          "name": "Mapal at 16d668c6",
+          "detail": "no calib file, quiet machine",
+          "mapal": true,
+          "chart": false,
+          "ttft_ms": [28.3, 85.2, 332.7],
+          "decode_ms": [3.336, 3.396, 3.548],
+          "e2e_ms": null,
+          "peak_mb": [4882, 5086, 6180]
+        },
+        {
+          "name": "gpt-fast f32",
+          "detail": "max-autotune, CUDA graphs",
+          "chart": true,
+          "ttft_ms": [13.76, 47.99, 213.9],
+          "decode_ms": [5.729, 5.743, 5.919],
+          "e2e_ms": 778,
+          "peak_mb": [6298, 6628, 7690]
+        },
+        {
+          "name": "HF eager f32",
+          "chart": true,
+          "ttft_ms": [14.41, 41.75, 241.9],
+          "decode_ms": [7.163, 7.478, 8.160],
+          "e2e_ms": 991,
+          "peak_mb": [5104, 5204, 6494]
+        },
+        {
+          "name": "HF static + compile f32",
+          "detail": "static cache + torch.compile",
+          "chart": true,
+          "ttft_ms": [17.13, 44.35, 245.5],
+          "decode_ms": [6.771, 7.552, 10.494],
+          "e2e_ms": 1010,
+          "peak_mb": [5266, 5372, 6874]
+        }
+      ]
+    },
+    {
+      "id": "bf16",
+      "label": "bf16 class",
+      "compute": "bf16 operands with f32 accumulation on the sums of products (`fold: bf16 | f32`, ADR-0041); norms, softmax, RoPE and the cache stay f32 in Mapal; competitors bf16 end to end (llama.cpp f16 in f16)",
+      "chart_note": "Mapal with bf16 operands and f32 accumulation on the sums of products (fold: bf16 | f32). The other engines run bf16 (llama.cpp f16: f16).",
+      "engines": [
+        {
+          "name": "Mapal",
+          "detail": "fold: bf16 | f32",
+          "mapal": true,
+          "chart": true,
+          "ttft_ms": [6.95, 18.12, 74.05],
+          "decode_ms": [3.528, 3.673, 4.012],
+          "e2e_ms": 481,
+          "peak_mb": [2718, 2706, 3498]
+        },
+        {
+          "name": "gpt-fast",
+          "detail": "max-autotune, CUDA graphs",
+          "chart": true,
+          "ttft_ms": [4.91, 13.88, 51.96],
+          "decode_ms": [2.965, 2.979, 3.344],
+          "e2e_ms": 393,
+          "peak_mb": [3410, 3532, 4074]
+        },
+        {
+          "name": "SGLang",
+          "version": "0.5.23",
+          "chart": true,
+          "ttft_ms": [6.85, 14.54, 45.47],
+          "decode_ms": [3.333, 3.118, 3.164],
+          "e2e_ms": 410,
+          "peak_mb": [8614, 8710, 8746],
+          "peak_reserved": true
+        },
+        {
+          "name": "TensorRT-LLM",
+          "version": "1.3.0",
+          "chart": true,
+          "ttft_ms": [10.20, 14.38, 45.76],
+          "decode_ms": [3.048, 3.074, 3.203],
+          "e2e_ms": 405,
+          "peak_mb": [8666, 8670, 8744],
+          "peak_reserved": true
+        },
+        {
+          "name": "vLLM",
+          "version": "0.33.0",
+          "chart": true,
+          "ttft_ms": [6.96, 13.75, 53.16],
+          "decode_ms": [3.433, 3.466, 3.621],
+          "e2e_ms": 454,
+          "peak_mb": [9236, 9236, 9236],
+          "peak_reserved": true
+        },
+        {
+          "name": "llama.cpp bf16",
+          "chart": true,
+          "ttft_ms": [5.91, 14.01, 49.75],
+          "decode_ms": [3.183, 3.214, 3.258],
+          "e2e_ms": 422,
+          "peak_mb": [2804, 2846, 2896]
+        },
+        {
+          "name": "llama.cpp f16",
+          "precision": "f16",
+          "chart": true,
+          "ttft_ms": [6.07, 10.91, 37.04],
+          "decode_ms": [3.183, 3.230, 3.262],
+          "e2e_ms": 422,
+          "peak_mb": [2804, 2848, 2898]
+        },
+        {
+          "name": "HF eager",
+          "chart": true,
+          "ttft_ms": [6.57, 14.29, 47.98],
+          "decode_ms": [4.427, 4.481, 4.480],
+          "e2e_ms": 584,
+          "peak_mb": [2726, 2780, 2962]
+        },
+        {
+          "name": "HF static + compile",
+          "detail": "static cache + torch.compile",
+          "chart": true,
+          "ttft_ms": [8.40, 15.70, 49.07],
+          "decode_ms": [3.714, 4.038, 5.353],
+          "e2e_ms": 529,
+          "peak_mb": [2822, 2872, 3090]
+        }
+      ]
+    }
+  ]
+}

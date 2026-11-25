@@ -1,0 +1,216 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="602" viewBox="0 0 920 602" role="img" aria-labelledby="t d">
+<title id="t">Kernel and layer suite by family and by precision</title>
+<desc id="d">Geomean of Mapal time divided by the fastest same-precision competitor's time, per group and GPU.</desc>
+<style>text { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; } .num { font-variant-numeric: tabular-nums; }</style>
+<rect width="920" height="602" rx="10" fill="#fcfcfb"/>
+<text x="28.0" y="38.0" font-size="17" font-weight="600" fill="#0b0b0b" text-anchor="start">Kernel and layer suite by family and by precision</text>
+<text x="28.0" y="60.0" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="start">Geomean of Mapal time ÷ the fastest competitor's time at the row's own precision; below 1 (blue): Mapal faster. Rows per GPU in brackets.</text>
+<text x="384.4" y="90.0" font-size="12.5" font-weight="600" fill="#0b0b0b" text-anchor="middle">RTX 5080</text>
+<text x="497.2" y="90.0" font-size="12.5" font-weight="600" fill="#0b0b0b" text-anchor="middle">RTX 3090</text>
+<text x="610.0" y="90.0" font-size="12.5" font-weight="600" fill="#0b0b0b" text-anchor="middle">A100</text>
+<text x="722.8" y="90.0" font-size="12.5" font-weight="600" fill="#0b0b0b" text-anchor="middle">RTX 4090</text>
+<text x="835.6" y="90.0" font-size="12.5" font-weight="600" fill="#0b0b0b" text-anchor="middle">H100</text>
+<text x="28.0" y="119.5" font-size="12.5" font-weight="700" fill="#0b0b0b" text-anchor="start">All rows (120)</text>
+<rect x="329.0" y="101.0" width="110.8" height="28.0" rx="3" fill="#c8d3e2"/>
+<text x="384.4" y="119.5" font-size="12.5" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">0.88</text>
+<rect x="441.8" y="101.0" width="110.8" height="28.0" rx="3" fill="#efeeec"/>
+<text x="497.2" y="119.5" font-size="12.5" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">1.00</text>
+<rect x="554.6" y="101.0" width="110.8" height="28.0" rx="3" fill="#e0c1bc"/>
+<text x="610.0" y="119.5" font-size="12.5" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">1.18 (119)</text>
+<rect x="667.4" y="101.0" width="110.8" height="28.0" rx="3" fill="#e1e5e8"/>
+<text x="722.8" y="119.5" font-size="12.5" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">0.95</text>
+<rect x="780.2" y="101.0" width="110.8" height="28.0" rx="3" fill="#debdb7"/>
+<text x="835.6" y="119.5" font-size="12.5" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">1.20</text>
+<text x="28.0" y="148.0" font-size="12" font-weight="600" fill="#898781" text-anchor="start">By family</text>
+<text x="28.0" y="175.5" font-size="12.5" font-weight="400" fill="#0b0b0b" text-anchor="start">GEMM cells and projections (47)</text>
+<rect x="329.0" y="157.0" width="110.8" height="28.0" rx="3" fill="#d8dfe6"/>
+<text x="384.4" y="175.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">0.93</text>
+<rect x="441.8" y="157.0" width="110.8" height="28.0" rx="3" fill="#e6d1cd"/>
+<text x="497.2" y="175.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">1.12</text>
+<rect x="554.6" y="157.0" width="110.8" height="28.0" rx="3" fill="#cf9791"/>
+<text x="610.0" y="175.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">1.39 (46)</text>
+<rect x="667.4" y="157.0" width="110.8" height="28.0" rx="3" fill="#eadbd7"/>
+<text x="722.8" y="175.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">1.08</text>
+<rect x="780.2" y="157.0" width="110.8" height="28.0" rx="3" fill="#c5817a"/>
+<text x="835.6" y="175.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">1.51</text>
+<text x="28.0" y="205.5" font-size="12.5" font-weight="400" fill="#0b0b0b" text-anchor="start">MLP chains (6)</text>
+<rect x="329.0" y="187.0" width="110.8" height="28.0" rx="3" fill="#e8e9ea"/>
+<text x="384.4" y="205.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">0.97</text>
+<rect x="441.8" y="187.0" width="110.8" height="28.0" rx="3" fill="#e5cec9"/>
+<text x="497.2" y="205.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">1.13</text>
+<rect x="554.6" y="187.0" width="110.8" height="28.0" rx="3" fill="#d9b0aa"/>
+<text x="610.0" y="205.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">1.26</text>
+<rect x="667.4" y="187.0" width="110.8" height="28.0" rx="3" fill="#e5d0cb"/>
+<text x="722.8" y="205.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">1.12</text>
+<rect x="780.2" y="187.0" width="110.8" height="28.0" rx="3" fill="#cf9992"/>
+<text x="835.6" y="205.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">1.38</text>
+<text x="28.0" y="235.5" font-size="12.5" font-weight="400" fill="#0b0b0b" text-anchor="start">Attention, softmax, long rows (14)</text>
+<rect x="329.0" y="217.0" width="110.8" height="28.0" rx="3" fill="#6990c5"/>
+<text x="384.4" y="235.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">0.64</text>
+<rect x="441.8" y="217.0" width="110.8" height="28.0" rx="3" fill="#95b0d3"/>
+<text x="497.2" y="235.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">0.74</text>
+<rect x="554.6" y="217.0" width="110.8" height="28.0" rx="3" fill="#bfcddf"/>
+<text x="610.0" y="235.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">0.85</text>
+<rect x="667.4" y="217.0" width="110.8" height="28.0" rx="3" fill="#7b9dca"/>
+<text x="722.8" y="235.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">0.68</text>
+<rect x="780.2" y="217.0" width="110.8" height="28.0" rx="3" fill="#dbe0e7"/>
+<text x="835.6" y="235.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">0.93</text>
+<text x="28.0" y="265.5" font-size="12.5" font-weight="400" fill="#0b0b0b" text-anchor="start">LLM layers: decode, prefill, block (37)</text>
+<rect x="329.0" y="247.0" width="110.8" height="28.0" rx="3" fill="#ececeb"/>
+<text x="384.4" y="265.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">0.99</text>
+<rect x="441.8" y="247.0" width="110.8" height="28.0" rx="3" fill="#e4e7e9"/>
+<text x="497.2" y="265.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">0.96</text>
+<rect x="554.6" y="247.0" width="110.8" height="28.0" rx="3" fill="#e6d0cb"/>
+<text x="610.0" y="265.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">1.12</text>
+<rect x="667.4" y="247.0" width="110.8" height="28.0" rx="3" fill="#d0d9e4"/>
+<text x="722.8" y="265.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">0.90</text>
+<rect x="780.2" y="247.0" width="110.8" height="28.0" rx="3" fill="#ede7e3"/>
+<text x="835.6" y="265.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">1.03</text>
+<text x="28.0" y="295.5" font-size="12.5" font-weight="400" fill="#0b0b0b" text-anchor="start">Conv, FIR, elementwise (7)</text>
+<rect x="329.0" y="277.0" width="110.8" height="28.0" rx="3" fill="#1c5cab"/>
+<text x="384.4" y="295.5" font-size="12.5" font-weight="500" fill="#ffffff" text-anchor="middle" class="num">0.49</text>
+<rect x="441.8" y="277.0" width="110.8" height="28.0" rx="3" fill="#c8d4e2"/>
+<text x="497.2" y="295.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">0.88</text>
+<rect x="554.6" y="277.0" width="110.8" height="28.0" rx="3" fill="#dbb5af"/>
+<text x="610.0" y="295.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">1.24</text>
+<rect x="667.4" y="277.0" width="110.8" height="28.0" rx="3" fill="#c8d4e2"/>
+<text x="722.8" y="295.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">0.88</text>
+<rect x="780.2" y="277.0" width="110.8" height="28.0" rx="3" fill="#d2dbe4"/>
+<text x="835.6" y="295.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">0.91</text>
+<text x="28.0" y="325.5" font-size="12.5" font-weight="400" fill="#0b0b0b" text-anchor="start">Fan-in / fan-out, loops, CPU+GPU (9)</text>
+<rect x="329.0" y="307.0" width="110.8" height="28.0" rx="3" fill="#e9ebea"/>
+<text x="384.4" y="325.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">0.98</text>
+<rect x="441.8" y="307.0" width="110.8" height="28.0" rx="3" fill="#eee8e5"/>
+<text x="497.2" y="325.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">1.03</text>
+<rect x="554.6" y="307.0" width="110.8" height="28.0" rx="3" fill="#eeeae6"/>
+<text x="610.0" y="325.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">1.02</text>
+<rect x="667.4" y="307.0" width="110.8" height="28.0" rx="3" fill="#ede4e1"/>
+<text x="722.8" y="325.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">1.04</text>
+<rect x="780.2" y="307.0" width="110.8" height="28.0" rx="3" fill="#e0c2bc"/>
+<text x="835.6" y="325.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">1.18</text>
+<text x="28.0" y="354.0" font-size="12" font-weight="600" fill="#898781" text-anchor="start">By precision class</text>
+<text x="28.0" y="381.5" font-size="12.5" font-weight="400" fill="#0b0b0b" text-anchor="start">f32 (66)</text>
+<rect x="329.0" y="363.0" width="110.8" height="28.0" rx="3" fill="#a1b8d6"/>
+<text x="384.4" y="381.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">0.77</text>
+<rect x="441.8" y="363.0" width="110.8" height="28.0" rx="3" fill="#ccd6e3"/>
+<text x="497.2" y="381.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">0.89</text>
+<rect x="554.6" y="363.0" width="110.8" height="28.0" rx="3" fill="#e1e5e8"/>
+<text x="610.0" y="381.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">0.95 (65)</text>
+<rect x="667.4" y="363.0" width="110.8" height="28.0" rx="3" fill="#c5d1e1"/>
+<text x="722.8" y="381.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">0.87</text>
+<rect x="780.2" y="363.0" width="110.8" height="28.0" rx="3" fill="#e8e9ea"/>
+<text x="835.6" y="381.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">0.97</text>
+<text x="28.0" y="411.5" font-size="12.5" font-weight="400" fill="#0b0b0b" text-anchor="start">TF32 (13)</text>
+<rect x="329.0" y="393.0" width="110.8" height="28.0" rx="3" fill="#e3c8c3"/>
+<text x="384.4" y="411.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">1.15</text>
+<rect x="441.8" y="393.0" width="110.8" height="28.0" rx="3" fill="#e4ccc7"/>
+<text x="497.2" y="411.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">1.14</text>
+<rect x="554.6" y="393.0" width="110.8" height="28.0" rx="3" fill="#9e3432"/>
+<text x="610.0" y="411.5" font-size="12.5" font-weight="500" fill="#ffffff" text-anchor="middle" class="num">2.09</text>
+<rect x="667.4" y="393.0" width="110.8" height="28.0" rx="3" fill="#dbb5af"/>
+<text x="722.8" y="411.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">1.24</text>
+<rect x="780.2" y="393.0" width="110.8" height="28.0" rx="3" fill="#b6645d"/>
+<text x="835.6" y="411.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">1.69</text>
+<text x="28.0" y="441.5" font-size="12.5" font-weight="400" fill="#0b0b0b" text-anchor="start">bf16 weights, f32 activations (9)</text>
+<rect x="329.0" y="423.0" width="110.8" height="28.0" rx="3" fill="#c17972"/>
+<text x="384.4" y="441.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">1.56</text>
+<rect x="441.8" y="423.0" width="110.8" height="28.0" rx="3" fill="#cc928b"/>
+<text x="497.2" y="441.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">1.42</text>
+<rect x="554.6" y="423.0" width="110.8" height="28.0" rx="3" fill="#b7655e"/>
+<text x="610.0" y="441.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">1.68</text>
+<rect x="667.4" y="423.0" width="110.8" height="28.0" rx="3" fill="#d09a93"/>
+<text x="722.8" y="441.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">1.38</text>
+<rect x="780.2" y="423.0" width="110.8" height="28.0" rx="3" fill="#b15a54"/>
+<text x="835.6" y="441.5" font-size="12.5" font-weight="500" fill="#ffffff" text-anchor="middle" class="num">1.75</text>
+<text x="28.0" y="471.5" font-size="12.5" font-weight="400" fill="#0b0b0b" text-anchor="start">bf16 weights and KV cache (7)</text>
+<rect x="329.0" y="453.0" width="110.8" height="28.0" rx="3" fill="#e7e9ea"/>
+<text x="384.4" y="471.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">0.97</text>
+<rect x="441.8" y="453.0" width="110.8" height="28.0" rx="3" fill="#dce1e7"/>
+<text x="497.2" y="471.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">0.94</text>
+<rect x="554.6" y="453.0" width="110.8" height="28.0" rx="3" fill="#ede6e2"/>
+<text x="610.0" y="471.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">1.04</text>
+<rect x="667.4" y="453.0" width="110.8" height="28.0" rx="3" fill="#c3d0e0"/>
+<text x="722.8" y="471.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">0.86</text>
+<rect x="780.2" y="453.0" width="110.8" height="28.0" rx="3" fill="#eee9e6"/>
+<text x="835.6" y="471.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">1.02</text>
+<text x="28.0" y="501.5" font-size="12.5" font-weight="400" fill="#0b0b0b" text-anchor="start">bf16 storage, bf16 | f32 products (25)</text>
+<rect x="329.0" y="483.0" width="110.8" height="28.0" rx="3" fill="#bccbde"/>
+<text x="384.4" y="501.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">0.85</text>
+<rect x="441.8" y="483.0" width="110.8" height="28.0" rx="3" fill="#e5d0cb"/>
+<text x="497.2" y="501.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">1.12</text>
+<rect x="554.6" y="483.0" width="110.8" height="28.0" rx="3" fill="#cc918a"/>
+<text x="610.0" y="501.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">1.42</text>
+<rect x="667.4" y="483.0" width="110.8" height="28.0" rx="3" fill="#e3e6e9"/>
+<text x="722.8" y="501.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">0.96</text>
+<rect x="780.2" y="483.0" width="110.8" height="28.0" rx="3" fill="#bc6f68"/>
+<text x="835.6" y="501.5" font-size="12.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">1.62</text>
+<rect x="328.0" y="538.0" width="10.0" height="10.0" rx="0" fill="#205fac"/>
+<rect x="337.4" y="538.0" width="10.0" height="10.0" rx="0" fill="#2964af"/>
+<rect x="346.8" y="538.0" width="10.0" height="10.0" rx="0" fill="#3169b1"/>
+<rect x="356.2" y="538.0" width="10.0" height="10.0" rx="0" fill="#386eb4"/>
+<rect x="365.6" y="538.0" width="10.0" height="10.0" rx="0" fill="#3f72b6"/>
+<rect x="375.0" y="538.0" width="10.0" height="10.0" rx="0" fill="#4677b9"/>
+<rect x="384.4" y="538.0" width="10.0" height="10.0" rx="0" fill="#4d7cbb"/>
+<rect x="393.8" y="538.0" width="10.0" height="10.0" rx="0" fill="#5481bd"/>
+<rect x="403.2" y="538.0" width="10.0" height="10.0" rx="0" fill="#5b86c0"/>
+<rect x="412.6" y="538.0" width="10.0" height="10.0" rx="0" fill="#628bc2"/>
+<rect x="422.0" y="538.0" width="10.0" height="10.0" rx="0" fill="#6890c4"/>
+<rect x="431.4" y="538.0" width="10.0" height="10.0" rx="0" fill="#6f95c7"/>
+<rect x="440.8" y="538.0" width="10.0" height="10.0" rx="0" fill="#7699c9"/>
+<rect x="450.2" y="538.0" width="10.0" height="10.0" rx="0" fill="#7d9ecb"/>
+<rect x="459.6" y="538.0" width="10.0" height="10.0" rx="0" fill="#84a3cd"/>
+<rect x="469.0" y="538.0" width="10.0" height="10.0" rx="0" fill="#8aa8cf"/>
+<rect x="478.4" y="538.0" width="10.0" height="10.0" rx="0" fill="#91add2"/>
+<rect x="487.8" y="538.0" width="10.0" height="10.0" rx="0" fill="#98b2d4"/>
+<rect x="497.2" y="538.0" width="10.0" height="10.0" rx="0" fill="#9fb7d6"/>
+<rect x="506.6" y="538.0" width="10.0" height="10.0" rx="0" fill="#a6bcd8"/>
+<rect x="516.0" y="538.0" width="10.0" height="10.0" rx="0" fill="#adc0da"/>
+<rect x="525.4" y="538.0" width="10.0" height="10.0" rx="0" fill="#b4c5dc"/>
+<rect x="534.8" y="538.0" width="10.0" height="10.0" rx="0" fill="#bbcade"/>
+<rect x="544.2" y="538.0" width="10.0" height="10.0" rx="0" fill="#c2cfe0"/>
+<rect x="553.6" y="538.0" width="10.0" height="10.0" rx="0" fill="#c9d4e2"/>
+<rect x="563.0" y="538.0" width="10.0" height="10.0" rx="0" fill="#d0d9e4"/>
+<rect x="572.4" y="538.0" width="10.0" height="10.0" rx="0" fill="#d7dee6"/>
+<rect x="581.8" y="538.0" width="10.0" height="10.0" rx="0" fill="#dee3e7"/>
+<rect x="591.2" y="538.0" width="10.0" height="10.0" rx="0" fill="#e5e8e9"/>
+<rect x="600.6" y="538.0" width="10.0" height="10.0" rx="0" fill="#ecedeb"/>
+<rect x="610.0" y="538.0" width="10.0" height="10.0" rx="0" fill="#efece9"/>
+<rect x="619.4" y="538.0" width="10.0" height="10.0" rx="0" fill="#ede6e2"/>
+<rect x="628.8" y="538.0" width="10.0" height="10.0" rx="0" fill="#ebdfdb"/>
+<rect x="638.2" y="538.0" width="10.0" height="10.0" rx="0" fill="#e9d9d5"/>
+<rect x="647.6" y="538.0" width="10.0" height="10.0" rx="0" fill="#e7d3ce"/>
+<rect x="657.0" y="538.0" width="10.0" height="10.0" rx="0" fill="#e4cdc8"/>
+<rect x="666.4" y="538.0" width="10.0" height="10.0" rx="0" fill="#e2c7c1"/>
+<rect x="675.8" y="538.0" width="10.0" height="10.0" rx="0" fill="#e0c0bb"/>
+<rect x="685.2" y="538.0" width="10.0" height="10.0" rx="0" fill="#ddbab4"/>
+<rect x="694.6" y="538.0" width="10.0" height="10.0" rx="0" fill="#dbb4ae"/>
+<rect x="704.0" y="538.0" width="10.0" height="10.0" rx="0" fill="#d8aea8"/>
+<rect x="713.4" y="538.0" width="10.0" height="10.0" rx="0" fill="#d6a8a1"/>
+<rect x="722.8" y="538.0" width="10.0" height="10.0" rx="0" fill="#d3a29b"/>
+<rect x="732.2" y="538.0" width="10.0" height="10.0" rx="0" fill="#d19c95"/>
+<rect x="741.6" y="538.0" width="10.0" height="10.0" rx="0" fill="#ce968f"/>
+<rect x="751.0" y="538.0" width="10.0" height="10.0" rx="0" fill="#cb9089"/>
+<rect x="760.4" y="538.0" width="10.0" height="10.0" rx="0" fill="#c88982"/>
+<rect x="769.8" y="538.0" width="10.0" height="10.0" rx="0" fill="#c6837c"/>
+<rect x="779.2" y="538.0" width="10.0" height="10.0" rx="0" fill="#c37d76"/>
+<rect x="788.6" y="538.0" width="10.0" height="10.0" rx="0" fill="#c07770"/>
+<rect x="798.0" y="538.0" width="10.0" height="10.0" rx="0" fill="#bd716a"/>
+<rect x="807.4" y="538.0" width="10.0" height="10.0" rx="0" fill="#ba6b64"/>
+<rect x="816.8" y="538.0" width="10.0" height="10.0" rx="0" fill="#b7655e"/>
+<rect x="826.2" y="538.0" width="10.0" height="10.0" rx="0" fill="#b45f58"/>
+<rect x="835.6" y="538.0" width="10.0" height="10.0" rx="0" fill="#b05852"/>
+<rect x="845.0" y="538.0" width="10.0" height="10.0" rx="0" fill="#ad524c"/>
+<rect x="854.4" y="538.0" width="10.0" height="10.0" rx="0" fill="#aa4c47"/>
+<rect x="863.8" y="538.0" width="10.0" height="10.0" rx="0" fill="#a74541"/>
+<rect x="873.2" y="538.0" width="10.0" height="10.0" rx="0" fill="#a33f3b"/>
+<rect x="882.6" y="538.0" width="10.0" height="10.0" rx="0" fill="#a03835"/>
+<text x="328.0" y="562.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.5</text>
+<text x="447.1" y="562.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.67</text>
+<text x="519.2" y="562.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.8</text>
+<text x="610.0" y="562.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1</text>
+<text x="700.8" y="562.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1.25</text>
+<text x="775.0" y="562.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1.5</text>
+<text x="892.0" y="562.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">2</text>
+<text x="28.0" y="547.0" font-size="11.5" font-weight="400" fill="#52514e" text-anchor="start">Mapal faster ← → slower</text>
+<text x="28.0" y="584.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">A count after a value: that GPU timed fewer rows of the group. fp8-weight rows have no competitor leg yet and are left out. Data: benches/results/evidence/matrix.json.</text>
+</svg>
