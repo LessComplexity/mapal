@@ -16,7 +16,8 @@
 //!   them, on every backend; the coverage counters are non-zero.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use mapal_backend_llvm::{EmitOpts, emit_detailed};
 use mapal_interp::{Outcome, RunResult, run};
@@ -66,6 +67,7 @@ fn emission(ir: &CategoryIr, target: &'static str, base: EmitOpts) -> mapal_back
 }
 
 /// Compile a host module with the runtime and run it: stdout, stderr, code.
+/// Time-boxed: a host waiting on a task it has yet to run fails, not hangs.
 fn native(clang: &str, ll: &str, env: &[(&str, &str)]) -> (String, String, i32) {
     let dir = tempfile::tempdir().unwrap();
     let (p, exe) = (dir.path().join("p.ll"), dir.path().join("p"));
@@ -85,12 +87,23 @@ fn native(clang: &str, ll: &str, env: &[(&str, &str)]) -> (String, String, i32) 
     };
     assert!(ok, "clang failed");
     let _slot = emu::slot();
-    let out = Command::new(&exe)
+    let mut child = Command::new(&exe)
         .env("MAPAL_PAR", "2")
         .env("MAPAL_SPIN", "0")
         .envs(env.iter().copied())
-        .output()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .unwrap();
+    let start = Instant::now();
+    while child.try_wait().unwrap().is_none() {
+        if start.elapsed() > Duration::from_secs(60) {
+            let _ = child.kill();
+            panic!("native run timed out");
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let out = child.wait_with_output().unwrap();
     (
         String::from_utf8_lossy(&out.stdout).into_owned(),
         String::from_utf8_lossy(&out.stderr).into_owned(),
@@ -590,4 +603,74 @@ fn readable_types_match_the_golden_program() {
         .collect();
     elems.sort();
     assert_eq!(elems, ["bf16", "f16", "f32", "f64", "i32", "i64", "u8"]);
+}
+
+/// A read, then a loop calling a function that owns a loop, then a print:
+/// the print's wait is placed by `Checkpoint::at`, never at the read's token
+/// (it reads no bytes) ahead of the pinned call it needs — the native host
+/// used to wait there for a task only it could run (hang).
+#[test]
+fn a_print_after_a_read_waits_after_the_pinned_call() {
+    let src = "fn inner(x: [f32; 512], n: i32) -> [f32; 512] {
+    mut y: [f32; 512] <- x;
+    mut k: i32 <- 0;
+    loop {
+        (k < n) -> {
+            -true-> {
+                512 -> iota -> map {
+                    i -> y[i] * 0.5 + y[(i + 1) % 512] * 0.25
+                } -> y;
+                k + 1 -> k;
+                -> loop;
+            }
+            -false-> y -> ret;
+        }
+    }
+}
+
+fn main() {
+    \"f32.bin\" -> read -> w: [f32; 8];
+    512 -> iota -> map {
+        i -> w[i % 4]
+    } -> x0;
+    mut x: [f32; 512] <- x0;
+    mut t: i32 <- 0;
+    loop {
+        (t < 4) -> {
+            -true-> {
+                (x, t + 1) -> inner -> x;
+                t + 1 -> t;
+                -> loop;
+            }
+            -false-> x -> done;
+        }
+    }
+    done[0] -> println;
+    done[511] -> println;
+}
+";
+    let dir = fixtures();
+    for rewrite in [false, true] {
+        let ir = lower_in(src, &dir, rewrite);
+        let rr = run(&ir, 100_000_000);
+        let want = done(&rr).to_string();
+        let Some(clang) = emu::clang() else {
+            continue;
+        };
+        for (face, base) in [
+            ("exact", EmitOpts::exact()),
+            ("default", EmitOpts::default()),
+        ] {
+            let em = emission(&ir, "generic", base);
+            let (out, err, code) = native(&clang, &em.text, &[]);
+            assert_eq!(
+                (code, out.as_str()),
+                (0, want.as_str()),
+                "native {face} (rewrite={rewrite}): {err}"
+            );
+        }
+        for (out, _, code) in gpu_runs(&clang, &ir) {
+            assert_eq!((code, out.as_str()), (0, want.as_str()), "GPU build");
+        }
+    }
 }

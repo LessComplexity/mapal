@@ -1,0 +1,22 @@
+// An effectful unit fn whose loop exit prints, then returns value-less: the
+// print runs once, after the loop.
+fn count(n: i32) {
+    mut i: i32 <- 0;
+    loop {
+        (i < n) -> {
+            -true-> {
+                i + 1 -> i;
+                -> loop;
+            }
+            -false-> {
+                i -> println;
+                -> ret;
+            }
+        }
+    }
+}
+
+fn main() {
+    4 -> count;
+    "after" -> println;
+}

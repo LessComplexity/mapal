@@ -292,3 +292,55 @@ fn a_struct_state_is_carried_as_its_leaves() {
     }
     assert_eq!(output(&ir), output(&raw));
 }
+
+/// P2 (rewrite DESIGN §1.2) holds for the views the placement merge
+/// forwards: a `Proj` of a pack inside a loop SCC may alias a loop invariant
+/// (in no SCC) when it feeds no route, and `is_consistent` — the check
+/// `replay` asserts in debug builds — accepts every plan of every round.
+/// Checked explicitly so a release build (where the assert is compiled out)
+/// sees it too.
+#[test]
+fn every_rewrite_plan_is_consistent_with_forwarded_loop_views() {
+    use mapal_rewrite::{
+        analyze_const_fold, analyze_cse, analyze_dce, analyze_inline, analyze_lift,
+        analyze_map_fusion, replay,
+    };
+    let passes: [fn(&CategoryIr) -> mapal_rewrite::RewritePlan; 6] = [
+        analyze_inline,
+        analyze_lift,
+        analyze_const_fold,
+        analyze_cse,
+        analyze_dce,
+        analyze_map_fusion,
+    ];
+    let mut cur = parse_lower(STATE);
+    let mut invariant_views = 0;
+    for _ in 0..mapal_rewrite::MAX_ROUNDS {
+        let mut any = false;
+        for pass in passes {
+            let plan = pass(&cur);
+            if plan.is_empty() {
+                continue;
+            }
+            assert!(plan.is_consistent(&cur), "{plan:?}");
+            let mut in_loop = std::collections::HashSet::new();
+            for (f, _) in cur.funcs() {
+                for scc in cur.loop_structure(f) {
+                    in_loop.extend(scc.objects.iter().copied());
+                }
+            }
+            invariant_views += plan
+                .alias
+                .iter()
+                .filter(|&(k, v)| in_loop.contains(&k) && !in_loop.contains(v))
+                .count();
+            cur = replay(&cur, &plan).expect("canonical graph replays");
+            any = true;
+        }
+        if !any {
+            break;
+        }
+    }
+    assert!(invariant_views > 0, "no loop view forwarded an invariant");
+    assert_eq!(output(&cur), output(&parse_lower(STATE)));
+}

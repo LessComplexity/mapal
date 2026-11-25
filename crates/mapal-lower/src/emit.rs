@@ -3800,7 +3800,18 @@ impl Emitter<'_> {
             return Ok(());
         }
         // Determine the terminal: `-> ret`, a binding, or a bare value.
+        let token_before = self.token;
         let (value, terminal) = self.exit_arm_value(fb, payload, scrutinee, guard_sp)?;
+        // An arm not deferred past the loop feeds the exit route, which a loop
+        // decides every trip (ADR-0016): an effect there would run every trip,
+        // where the program runs it once.
+        if self.token != token_before {
+            return Err(diag(
+                LCode::GuardArmEffectful,
+                guard_sp,
+                "an effect in a loop exit arm that cannot run after its loop",
+            ));
+        }
         let tok = if token_carried { self.token } else { None };
         match terminal {
             ExitTerminal::Ret => {
@@ -4037,13 +4048,11 @@ impl Emitter<'_> {
             return Ok(false);
         }
         // A slot-wise exit (`x -> ret.0; y -> ret.1;`): every statement runs
-        // after the loop, its `ret.k` writes as the straight-line ones.
+        // after the loop, its `ret.k` writes as the straight-line ones — in an
+        // effectful fn (which returns whole, L1307) their values pack into the
+        // one return after the arm's effects.
         let slots = slot_exit(&block).is_some();
-        // ...a pure fn's: an effectful fn returns whole (L1307), so its slot
-        // exit packs in the loop (`slot_exit_value`).
-        if slots && self.in_effectful_fn() {
-            return Ok(false);
-        }
+        let packs = slots && self.in_effectful_fn();
         // The terminal chain: the tail, else the last statement chain.
         let stmts: Vec<&Stmt> = block
             .items
@@ -4067,9 +4076,38 @@ impl Emitter<'_> {
                 name_text(self.source, *name).to_string(),
                 mut_span.is_some(),
             )),
+            // `… -> name` with a fresh name binds the exit value (LD1).
+            Some(StageKind::Expr(e)) => match self.exit_bare_name_binding(e) {
+                Some(name) => Some((name, false)),
+                None => return Ok(false),
+            },
             _ => return Ok(false),
         };
-        if terminal.head.is_none() || !slots && before == 0 && terminal.stages.len() < 2 {
+        // The value-less `-> ret` marker after the arm's work (an effectful
+        // unit fn's exit) reads no scrutinee: it defers like a headed terminal.
+        let marker = terminal.head.is_none()
+            && terminal.stages.len() == 1
+            && matches!(terminal.stages[0].kind, StageKind::Ret { proj: None });
+        if terminal.head.is_none() && !(marker && before > 0)
+            || !slots && before == 0 && terminal.stages.len() < 2
+        {
+            return Ok(false);
+        }
+        // A packed slot exit reads every `ret.k` value after the loop: each
+        // `ret.k` chain names its value (a headless one would read the cond).
+        let arm_chains: Vec<&Chain> = stmts
+            .iter()
+            .filter_map(|s| match &s.kind {
+                StmtKind::Chain(c) => Some(c),
+                _ => None,
+            })
+            .chain(block.tail.as_ref())
+            .collect();
+        if packs
+            && arm_chains
+                .iter()
+                .any(|c| ret_slot_of(c).is_some() && c.head.is_none())
+        {
             return Ok(false);
         }
         // The loop-varying values the arm reads leave the loop as its exit.
@@ -4128,18 +4166,26 @@ impl Emitter<'_> {
         }
         // The arm's work, after the loop (outside it for the nesting rules).
         self.loop_depth -= 1;
-        let mut emitted = Ok(());
-        for s in &stmts[..before] {
-            emitted = self.emit_stmt(fb, s);
-            if emitted.is_err() {
-                break;
+        let emitted = if packs {
+            self.emit_packed_slot_exit(fb, &block, cond_exit, guard_sp)
+        } else {
+            let mut emitted = Ok(());
+            for s in &stmts[..before] {
+                emitted = self.emit_stmt(fb, s);
+                if emitted.is_err() {
+                    break;
+                }
             }
-        }
-        if emitted.is_ok() {
-            emitted = self
-                .emit_chain(fb, terminal, ChainCtx::Statement)
-                .map(|_| ());
-        }
+            if emitted.is_ok() {
+                emitted = if marker {
+                    self.emit_valueless_ret(fb, None, guard_sp)
+                } else {
+                    self.emit_chain(fb, terminal, ChainCtx::Statement)
+                        .map(|_| ())
+                };
+            }
+            emitted
+        };
         self.loop_depth += 1;
         emitted?;
         if let Some((name, mutable)) = bind {
@@ -4158,7 +4204,9 @@ impl Emitter<'_> {
     /// ret.1; }`): every statement runs in order, each `ret.k` chain's value is
     /// kept, and the complete set packs into the one exit value a full `-> ret`
     /// would carry (the canonical single `LoopExit` writer). An incomplete or
-    /// repeated slot set is L1306, as at the top level.
+    /// repeated slot set is L1306, as at the top level. In an effectful fn the
+    /// arm runs after the loop (`defer_exit_arm`); one that cannot is L1307:
+    /// in the loop its effects would run every trip.
     fn slot_exit_value(
         &mut self,
         fb: &mut FnBuilder,
@@ -4166,19 +4214,54 @@ impl Emitter<'_> {
         scrutinee: ObjectId,
         guard_sp: syn::SourceLoc,
     ) -> ER<(Option<ObjectId>, ExitTerminal)> {
+        if self.in_effectful_fn() {
+            return Err(diag(
+                LCode::EffectfulReturnShape,
+                guard_sp,
+                "slot `ret.k` loop exit in an effectful function that cannot run after its loop",
+            ));
+        }
+        let slots = self.slot_exit_slots(fb, b, scrutinee, guard_sp)?;
+        let packed = self.pack_ret_slots(fb, slots, guard_sp)?;
+        Ok((Some(packed), ExitTerminal::Ret))
+    }
+
+    /// An effectful fn's slot-wise loop exit, after its loop: the arm's
+    /// statements in order, then the `ret.k` values packed into the one whole
+    /// return (with the final token, as `x -> ret` writes it).
+    fn emit_packed_slot_exit(
+        &mut self,
+        fb: &mut FnBuilder,
+        b: &Block,
+        cond_exit: ObjectId,
+        guard_sp: syn::SourceLoc,
+    ) -> ER<()> {
+        let slots = self.slot_exit_slots(fb, b, cond_exit, guard_sp)?;
+        let packed = self.pack_ret_slots(fb, slots, guard_sp)?;
+        self.emit_ret_existing(fb, packed, None, guard_sp, &ChainCtx::Statement)
+    }
+
+    /// Emit a slot-wise exit arm's statements in order and return each `ret.k`
+    /// chain's slot and value.
+    fn slot_exit_slots(
+        &mut self,
+        fb: &mut FnBuilder,
+        b: &Block,
+        scrutinee: ObjectId,
+        guard_sp: syn::SourceLoc,
+    ) -> ER<Vec<(u64, ObjectId)>> {
         let mut slots: Vec<(u64, ObjectId)> = Vec::new();
-        for item in &b.items {
-            let BlockItem::Stmt(s) = item else {
-                continue;
-            };
-            let ret_slot = match &s.kind {
-                StmtKind::Chain(c) => match c.stages.last().map(|st| &st.kind) {
-                    Some(StageKind::Ret { proj: Some((k, _)) }) => Some((*k, c)),
-                    _ => None,
-                },
+        let tail = b.tail.as_ref().map(|t| (None, Some(t)));
+        let items = b.items.iter().filter_map(|item| match item {
+            BlockItem::Stmt(s) => Some((Some(s), None)),
+            _ => None,
+        });
+        for (stmt, tail) in items.chain(tail) {
+            let chain = match (stmt.map(|s| &s.kind), tail) {
+                (Some(StmtKind::Chain(c)), _) | (None, Some(c)) => Some(c),
                 _ => None,
             };
-            match ret_slot {
+            match chain.and_then(|c| ret_slot_of(c).map(|k| (k, c))) {
                 Some((k, c)) => {
                     let v = self
                         .exit_chain_value(fb, c, scrutinee, true)?
@@ -4191,9 +4274,26 @@ impl Emitter<'_> {
                         })?;
                     slots.push((k, v));
                 }
-                None => self.emit_stmt(fb, s)?,
+                None => match (stmt, chain) {
+                    (Some(s), _) => self.emit_stmt(fb, s)?,
+                    (None, Some(c)) => {
+                        self.emit_chain(fb, c, ChainCtx::Statement)?;
+                    }
+                    (None, None) => {}
+                },
             }
         }
+        Ok(slots)
+    }
+
+    /// Pack a slot-wise exit's `ret.k` values into the declared output (a
+    /// tuple or a struct); every slot written exactly once, else L1306.
+    fn pack_ret_slots(
+        &mut self,
+        fb: &mut FnBuilder,
+        mut slots: Vec<(u64, ObjectId)>,
+        guard_sp: syn::SourceLoc,
+    ) -> ER<ObjectId> {
         let out = self
             .fn_sigs
             .get(&self.owner_name)
@@ -4214,14 +4314,13 @@ impl Emitter<'_> {
             ));
         }
         let comps: Vec<ObjectId> = slots.into_iter().map(|(_, v)| v).collect();
-        let packed = match out {
+        match out {
             Some(ty @ Ty::Struct { .. }) => {
                 self.pack_struct(fb, ty, &comps, Dest::Fresh(None), guard_sp)
             }
             _ => self.pack(fb, &comps, Dest::Fresh(None), guard_sp),
         }
-        .map_err(|e| ir_err(e, guard_sp))?;
-        Ok((Some(packed), ExitTerminal::Ret))
+        .map_err(|e| ir_err(e, guard_sp))
     }
 
     /// If `e` is a bare `Var` that resolves to no existing binding and is not a
@@ -5055,6 +5154,14 @@ mod tests {
 
 /// The first `ret.k` slot a loop exit arm block writes as a statement, if any
 /// ([`Emitter::slot_exit_value`]).
+/// The slot a `… -> ret.k` chain writes.
+fn ret_slot_of(c: &Chain) -> Option<u64> {
+    match c.stages.last().map(|st| &st.kind) {
+        Some(StageKind::Ret { proj: Some((k, _)) }) => Some(*k),
+        _ => None,
+    }
+}
+
 fn slot_exit(b: &Block) -> Option<u64> {
     b.items.iter().find_map(|item| match item {
         BlockItem::Stmt(s) => match &s.kind {

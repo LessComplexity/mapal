@@ -1,0 +1,35 @@
+// A printing loop's exit, an effectful call on it, then a map reading both
+// the call's result and the exit: the map runs on the host spine after the
+// call (it reads a host value), and the final print waits for it there.
+fn noisy(x: [f32; 4096]) -> [f32; 4096] {
+    "noisy" -> println;
+    x -> map {
+        v -> v * 2.0 + 1.0
+    } -> ret;
+}
+
+fn main() {
+    4096 -> iota -> map {
+        k -> k % 13 -> widen_f32
+    } -> w;
+    mut i: i32 <- 0;
+    mut acc: [f32; 4096] <- w;
+    loop {
+        acc -> map {
+            v -> v * 0.5 + 1.0
+        } -> acc;
+        acc[i] -> println;
+        (i < 3) -> {
+            -true-> {
+                i + 1 -> i;
+                -> loop;
+            }
+            -false-> acc -> fin;
+        }
+    }
+    fin -> noisy -> z;
+    z -> map {
+        v -> v + fin[7]
+    } -> zz;
+    zz[3] -> println;
+}

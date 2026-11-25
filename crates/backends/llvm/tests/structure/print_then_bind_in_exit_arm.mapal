@@ -1,0 +1,30 @@
+// A loop exit arm that folds, prints and binds a value: the arm runs once,
+// after the loop (its print included), and binds in the enclosing scope.
+fn main() {
+    64 -> iota -> map {
+        i -> i -> widen_f32
+    } -> x;
+    mut hidden: [f32; 64] <- x;
+    mut layer: i32 <- 0;
+    loop {
+        (layer < 3) -> {
+            -true-> {
+                64 -> iota -> map {
+                    i -> hidden[i] * 0.5 + 1.0
+                } -> hidden;
+                layer + 1 -> layer;
+                -> loop;
+            }
+            -false-> {
+                (0.0, hidden) -> fold {
+                    acc, v -> acc + v
+                } -> total;
+                total -> println;
+                hidden -> map {
+                    v -> v / total
+                } -> shares;
+            }
+        }
+    }
+    shares[5] -> println;
+}

@@ -619,18 +619,9 @@ fn loop_views(ir: &CategoryIr) -> LoopViews {
                 views.scc.insert(o, id);
             }
             id += 1;
-            for &merge in &lscc.merges {
-                let Some(lp) = ir.loop_plan(f, merge) else {
-                    continue;
-                };
-                views.routes.insert(lp.back_route, ());
-                views.routes.insert(lp.exit_route, ());
-                if let Some(&next) = slot_feeders(ir, lp.back_route).first() {
-                    views.routes.insert(next, ());
-                }
-            }
         }
     }
+    views.routes = crate::plan::loop_routes(ir);
     views
 }
 
@@ -662,11 +653,7 @@ fn forward_loop_view(ir: &CategoryIr, views: &LoopViews, plan: &mut RewritePlan,
         (Some(_), Some(_)) => true,
         _ => false,
     };
-    let routes = ir.out_edges(o).iter().any(|&u| {
-        let um = ir.morphism(u).expect("out edge");
-        matches!(um.op, Operation::Pair { .. }) && views.routes.contains_key(um.target)
-    });
-    if same || !routes {
+    if same || !crate::plan::feeds_route(ir, &views.routes, o) {
         plan.alias.insert(o, x);
     }
 }

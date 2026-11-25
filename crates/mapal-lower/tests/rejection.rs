@@ -368,6 +368,60 @@ fn l1307_effectful_return_shape() {
     );
 }
 
+#[test]
+fn an_effectful_fns_slot_exit_runs_after_its_loop() {
+    // A loop exit's `ret.k` writes in an effectful fn: the arm runs after the
+    // loop (its print once), the slots packed into the one whole return — no
+    // print feeds the loop's exit route (decided every trip).
+    let src = "fn f(n: i32) -> (i32, i32) {
+    mut i: i32 <- 0;
+    loop {
+        (i < n) -> {
+            -true-> { i + 1 -> i; -> loop; }
+            -false-> { \"done\" -> print; i -> ret.0; i * 2 -> ret.1; }
+        }
+    }
+}
+fn main() { 3 -> f -> r; r.1 -> print; }
+";
+    let ir = lower_ok(src);
+    assert!(mapal_ir::validate(&ir).is_empty());
+    for (f, _) in ir.funcs() {
+        for scc in ir.loop_structure(f) {
+            for &m in &scc.merges {
+                let lp = ir.loop_plan(f, m).expect("canonical loop");
+                assert!(
+                    lp.decide_order.iter().all(|&d| !matches!(
+                        ir.morphism(d).unwrap().op,
+                        mapal_ir::Operation::Print { .. }
+                    )),
+                    "a print in a loop's decide phase"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn l1404_an_effect_in_an_exit_arm_that_cannot_follow_its_loop() {
+    // A headless exit binding reads the guard's condition, so its arm cannot
+    // run after the loop; its print would run every trip — rejected.
+    assert_rejects(
+        "fn main() {
+    mut i: i32 <- 0;
+    loop {
+        (i < 3) -> {
+            -true-> { i + 1 -> i; -> loop; }
+            -false-> { \"done\" -> print; -> b; }
+        }
+    }
+    b -> print;
+}
+",
+        "L1404",
+    );
+}
+
 // --- L1401–L1409: guards -----------------------------------------------------
 
 #[test]

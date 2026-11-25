@@ -384,11 +384,11 @@ available (§10). Catalogue (each gets ≥1 rejection test, §14):
 | L1304 | JumpMisplaced | `-> loop` outside a loop body, in a headed chain, in non-terminal position, or as an unconditional statement (a `LoopBack` needs a Bool cond; the only legal position is a routing-guard jump-arm terminal — review CP-8) |
 | L1305 | FanoutNoValue | chain continues after a fanout but some branch produces no value |
 | L1306 | IncompleteReturn | non-Unit declared output with no return write; partial/duplicate `ret.k` slot coverage; mixed bare-`ret`/`ret.k` in one fn; bare value-less `-> ret` where output is non-Unit. Checked in D1 (syntactic presence — sound for Core because L1405 bans ret in Phi arms and loop exits count); keeps `RetSlotMissing`-class IrErrors out of the user path (review RET-2/CP-3) |
-| L1307 | EffectfulReturnShape | in an effectful fn: surface `ret.k` writes, or >1 surface ret-write, or token use after a ret-terminal loop exit — each write consumes *the* final token, so at most one surface return site exists (review IR-1; ADR-candidate if surface demand appears) |
+| L1307 | EffectfulReturnShape | in an effectful fn: surface `ret.k` writes (a loop exit's slot-wise arm runs after its loop, packed into one return; one that cannot is L1307), or >1 surface ret-write, or token use after a ret-terminal loop exit — each write consumes *the* final token, so at most one surface return site exists (review IR-1; ADR-candidate if surface demand appears) |
 | L1401 | GuardArmMissing | bool guard without both poles (default may stand for the missing pole), or value-match without `-_->` |
 | L1402 | GuardArmDuplicate | duplicate discriminant |
 | L1403 | GuardArmMixed | bool and integer discriminants in one guard |
-| L1404 | GuardArmEffectful | `print`/effectful call in a Phi-position arm (honest coproducts are Core+1; tokens cannot pass Phi) |
+| L1404 | GuardArmEffectful | `print`/effectful call in a Phi-position arm (honest coproducts are Core+1; tokens cannot pass Phi); or in a loop exit arm that cannot run after its loop (a headless binding of the condition) — the exit route is decided every trip |
 | L1405 | GuardRetInPhiArm | `-> ret` inside a Phi-position arm (OQ3) |
 | L1406 | GuardScrutineeType | integer discrs on non-integer scrutinee / bool arms on non-bool scrutinee |
 | L1407 | RoutingGuardShape | routing guard not the final body item (statement **or tail**) of the loop body, or a routing-guard arm that neither jumps nor exits |

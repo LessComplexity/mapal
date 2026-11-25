@@ -238,7 +238,8 @@ struct PinnedEmit {
 }
 
 struct HostEmit {
-    checkpoints: SecondaryMap<MorphismId, CheckpointEmit>,
+    /// Each checkpoint's wait, at the morphism `Checkpoint::at` names.
+    checkpoints: SecondaryMap<MorphismId, Vec<CheckpointEmit>>,
     pinned: SecondaryMap<MorphismId, PinnedEmit>,
     /// Checkpoints living INSIDE an effectful loop, keyed by that loop's first
     /// `LoopEnter` in topo order: the loop's seed/entry glue reads
@@ -771,51 +772,6 @@ mod window;
 mod zero;
 
 // --- free helpers ---------------------------------------------------------
-
-fn checkpoint_injection(
-    ir: &CategoryIr,
-    checkpoint: MorphismId,
-    assigned: &SecondaryMap<MorphismId, ()>,
-    topo: &[MorphismId],
-) -> MorphismId {
-    let mut seen = SecondaryMap::new();
-    let mut stack = vec![
-        ir.morphism(checkpoint)
-            .expect("checkpoint morphism resolves")
-            .source,
-    ];
-    let mut boundary = Vec::new();
-    while let Some(object) = stack.pop() {
-        if seen.insert(object, ()).is_some() {
-            continue;
-        }
-        for &m in ir.in_edges(object) {
-            if assigned.contains_key(m) {
-                continue;
-            }
-            let morph = ir.morphism(m).expect("morphism resolves");
-            if matches!(morph.op, Operation::Pair { .. } | Operation::Proj { .. }) {
-                if ir
-                    .in_edges(morph.source)
-                    .iter()
-                    .any(|producer| assigned.contains_key(*producer))
-                {
-                    boundary.push(m);
-                } else {
-                    stack.push(morph.source);
-                }
-            }
-        }
-    }
-    boundary
-        .into_iter()
-        .min_by_key(|m| {
-            topo.iter()
-                .position(|candidate| candidate == m)
-                .unwrap_or(usize::MAX)
-        })
-        .unwrap_or(checkpoint)
-}
 
 fn wait_global(name: &str, wait: &[WaitEntry]) -> String {
     let len = wait.len();

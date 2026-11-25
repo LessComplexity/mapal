@@ -343,23 +343,24 @@ impl<'a> FnEmit<'a> {
                 );
             }
         }
-        let mut checkpoints = SecondaryMap::new();
+        let mut checkpoints: SecondaryMap<MorphismId, Vec<CheckpointEmit>> = SecondaryMap::new();
         for (ordinal, checkpoint) in plan
             .checkpoints
             .iter()
             .filter(|checkpoint| checkpoint.topo != u32::MAX)
             .enumerate()
         {
-            let site = topo[checkpoint.topo as usize];
-            let injection = checkpoint_injection(ir, site, &assigned, &topo);
-            checkpoints.insert(
-                injection,
-                CheckpointEmit {
-                    ordinal,
-                    topo: checkpoint.topo,
-                    len: checkpoint.wait.len(),
-                },
-            );
+            let emit = CheckpointEmit {
+                ordinal,
+                topo: checkpoint.topo,
+                len: checkpoint.wait.len(),
+            };
+            let at = topo[checkpoint.at as usize];
+            if let Some(list) = checkpoints.get_mut(at) {
+                list.push(emit);
+            } else {
+                checkpoints.insert(at, vec![emit]);
+            }
         }
         let mut pre_loop: SecondaryMap<MorphismId, Vec<CheckpointEmit>> = SecondaryMap::new();
         for scc in ir.loop_structure(f) {
@@ -1077,7 +1078,7 @@ impl<'a> FnEmit<'a> {
     }
 
     pub(super) fn emit_checkpoint(&mut self, m: MorphismId) {
-        let Some(checkpoint) = self
+        let Some(list) = self
             .host
             .as_ref()
             .and_then(|host| host.checkpoints.get(m))
@@ -1085,13 +1086,15 @@ impl<'a> FnEmit<'a> {
         else {
             return;
         };
-        self.line(format!(
-            "call void @mapal_par_wait(ptr %h, ptr @ckpt{}_entries, i32 {})",
-            checkpoint.ordinal, checkpoint.len
-        ));
-        self.line(format!(
-            "call void @mapal_par_check(ptr %h, i64 {})",
-            checkpoint.topo
-        ));
+        for checkpoint in list {
+            self.line(format!(
+                "call void @mapal_par_wait(ptr %h, ptr @ckpt{}_entries, i32 {})",
+                checkpoint.ordinal, checkpoint.len
+            ));
+            self.line(format!(
+                "call void @mapal_par_check(ptr %h, i64 {})",
+                checkpoint.topo
+            ));
+        }
     }
 }

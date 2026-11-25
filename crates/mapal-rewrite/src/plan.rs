@@ -8,7 +8,7 @@
 
 use slotmap::SecondaryMap;
 
-use mapal_ir::{CategoryIr, FuncId, MorphismId, ObjectId, ObjectKind, Value};
+use mapal_ir::{CategoryIr, FuncId, MorphismId, ObjectId, ObjectKind, Operation, Value};
 
 /// A fused `Map` synthesis request (DESIGN §4). `map g ∘ map f → map (g ∘ f)`:
 /// the `g`-edge is keyed in [`RewritePlan::fuse`]; `f`/`g` are the two bodies to
@@ -133,7 +133,9 @@ impl RewritePlan {
     /// - **P1**: `alias`/`constify`/`drop` key only `Temporary` objects (never
     ///   Parameter/Constant/Return/LoopMerge).
     /// - **P2**: `constify`/`drop` keys sit in **no** loop SCC; an `alias` key and
-    ///   its value share SCC membership (both out, or both the same SCC).
+    ///   its value share SCC membership (both out, or both the same SCC), or the
+    ///   key is a view inside a loop SCC forwarding a loop invariant (in no SCC)
+    ///   and feeds none of the loop's routes ([`feeds_route`]).
     ///
     /// Always compiled (the `debug_assert!` that calls it type-checks in release
     /// builds — e.g. benches — even though it only *runs* in debug).
@@ -179,13 +181,64 @@ impl RewritePlan {
                 return false;
             }
         }
+        let routes = loop_routes(ir);
         for (k, &val) in self.alias.iter() {
-            if scc_of.get(k).copied() != scc_of.get(val).copied() {
-                return false;
+            match (scc_of.get(k).copied(), scc_of.get(val).copied()) {
+                (a, b) if a == b => {}
+                // The body reads a loop invariant as it reads any; a route's
+                // state source never leaves its SCC (`LoopBackOutsideScc`).
+                (Some(_), None) if !feeds_route(ir, &routes, k) => {}
+                _ => return false,
             }
         }
         true
     }
+}
+
+/// The objects a loop routes (P2): each loop's back and exit route and the
+/// next state its back route carries.
+pub(crate) fn loop_routes(ir: &CategoryIr) -> SecondaryMap<ObjectId, ()> {
+    let mut routes: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
+    for (f, _) in ir.funcs() {
+        for lscc in ir.loop_structure(f) {
+            for &merge in &lscc.merges {
+                let Some(lp) = ir.loop_plan(f, merge) else {
+                    continue;
+                };
+                routes.insert(lp.back_route, ());
+                routes.insert(lp.exit_route, ());
+                let next = ir
+                    .in_edges(lp.back_route)
+                    .iter()
+                    .filter_map(|&m| {
+                        let morph = ir.morphism(m).expect("route in-edge");
+                        match morph.op {
+                            Operation::Pair { slot, .. } => Some((slot, morph.source)),
+                            _ => None,
+                        }
+                    })
+                    .min_by_key(|&(slot, _)| slot);
+                if let Some((_, next)) = next {
+                    routes.insert(next, ());
+                }
+            }
+        }
+    }
+    routes
+}
+
+/// Whether `o` is a slot of a loop route (a `Pair` into one of
+/// [`loop_routes`]): forwarding it out of its SCC would move a route's state
+/// source out of the loop.
+pub(crate) fn feeds_route(
+    ir: &CategoryIr,
+    routes: &SecondaryMap<ObjectId, ()>,
+    o: ObjectId,
+) -> bool {
+    ir.out_edges(o).iter().any(|&u| {
+        let um = ir.morphism(u).expect("out edge");
+        matches!(um.op, Operation::Pair { .. }) && routes.contains_key(um.target)
+    })
 }
 
 /// Per-object non-trivial-SCC index across all functions (each function's SCCs

@@ -8,7 +8,10 @@
 //! - a loop exit arm's work runs once, after the loop (its prints included);
 //! - CPU tasks reading a host-spine value (a printing loop's exit, a struct the
 //!   host builds) run after it;
-//! - `() -> f`, float literal widths from context, `ret.k` writes in an exit.
+//! - `() -> f`, float literal widths from context, `ret.k` writes in an exit
+//!   (an effectful fn's too: its arm's effects once, the slots one return);
+//! - no host wait comes before a pinned task it needs (`Checkpoint::at`): a
+//!   read's token, or an edge before a pinned host-read map, never hoists it.
 //!
 //! Plus a property sweep over generated programs of the same shapes (sizes,
 //! field counts, layer counts and element ops drawn per seed), with coverage
@@ -16,11 +19,12 @@
 #[path = "emu/mod.rs"]
 mod emu;
 
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use emu::{clang, rt_lib, run_emulated};
 use mapal_backend_llvm::{EmitOpts, emit_detailed, emit_with_opts};
-use mapal_ir::CategoryIr;
+use mapal_ir::{CategoryIr, TaskKind};
 
 const BUDGET: u64 = 400_000_000;
 
@@ -37,6 +41,10 @@ const PROGRAMS: &[&str] = &[
     "inline_return_call",
     "llama_tiny_readable",
     "big_frame_step",
+    "effectful_ret_slots_in_exit_arm",
+    "print_then_ret_in_exit_arm",
+    "print_loop_exit_effectful_call",
+    "print_then_bind_in_exit_arm",
 ];
 
 fn source(name: &str) -> String {
@@ -72,7 +80,46 @@ fn oracle(ir: &CategoryIr, tag: &str) -> String {
     rr.output
 }
 
-/// Compile `ll` with the runtime at `-O2` and run it (two pool lanes).
+/// The parallel host's waits (`Checkpoint::at`, the entry's path plan) come
+/// after every pinned task they need — the task or one it depends on — runs
+/// on the host spine (its first member's topo position): else the host waits
+/// for itself.
+fn waits_follow_pinned_runs(ir: &CategoryIr, tag: &str) {
+    for f in [ir.entry()] {
+        let plan = ir.path_plan(f);
+        let topo = ir.topo_order(f);
+        let pos = |m| topo.iter().position(|&x| x == m).unwrap() as u32;
+        for c in plan.checkpoints.iter().filter(|c| c.topo != u32::MAX) {
+            assert!(c.at <= c.topo, "{tag}: a wait after its checkpoint");
+            let mut stack: Vec<usize> = c.wait.iter().map(|e| e.task).collect();
+            let mut seen = vec![false; plan.tasks.len()];
+            while let Some(t) = stack.pop() {
+                if std::mem::replace(&mut seen[t], true) {
+                    continue;
+                }
+                let task = &plan.tasks[t];
+                if task.pinned {
+                    let first = match &task.kind {
+                        TaskKind::Split { site, .. } => *site,
+                        TaskKind::Seq { morphisms } => morphisms[0],
+                    };
+                    assert!(
+                        pos(first) <= c.at,
+                        "{tag}: the wait at topo {} (checkpoint {}, {:?}) precedes pinned task {t} (topo {})",
+                        c.at,
+                        c.topo,
+                        c.wait,
+                        pos(first)
+                    );
+                }
+                stack.extend(task.deps.iter().copied());
+            }
+        }
+    }
+}
+
+/// Compile `ll` with the runtime at `-O2` and run it (two pool lanes),
+/// time-boxed: a host that waits on itself fails here instead of hanging.
 fn native(clang: &str, ll: &str, tag: &str) -> String {
     let _slot = emu::slot();
     let dir = tempfile::tempdir().unwrap();
@@ -91,11 +138,21 @@ fn native(clang: &str, ll: &str, tag: &str) -> String {
         "{tag}: clang: {}",
         String::from_utf8_lossy(&out.stderr)
     );
-    let run = Command::new(&exe)
+    let mut child = Command::new(&exe)
         .env("MAPAL_PAR", "2")
         .env("MAPAL_SPIN", "0")
-        .output()
+        .stdout(Stdio::piped())
+        .spawn()
         .unwrap();
+    let start = Instant::now();
+    while child.try_wait().unwrap().is_none() {
+        if start.elapsed() > Duration::from_secs(60) {
+            let _ = child.kill();
+            panic!("{tag}: native run timed out (a wait the host cannot satisfy)");
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let run = child.wait_with_output().unwrap();
     assert!(run.status.success(), "{tag}: exit {:?}", run.status);
     String::from_utf8_lossy(&run.stdout).into_owned()
 }
@@ -130,6 +187,7 @@ fn structure_programs_native_equal_oracle() {
             let tag = format!("{name}/{}", if rewritten { "rewritten" } else { "raw" });
             let ir = ir_of(&source(name), rewritten);
             let want = oracle(&ir, &tag);
+            waits_follow_pinned_runs(&ir, &tag);
             let ll = emit_with_opts(&ir, &exact("generic"))
                 .unwrap_or_else(|e| panic!("{tag}: emit {e:?}"));
             let agg = array_aggregates(&ll);
@@ -202,6 +260,7 @@ fn generated(seed: u64) -> String {
     let layers = 1 + d.pick(3);
     let steps = 2 + d.pick(3);
     let print_in_exit = d.pick(2) == 0;
+    let slot_ret = d.pick(2) == 0;
     let ops = ["*", "+", "-"];
     let mut s = String::new();
     s.push_str("type Layer {\n");
@@ -246,11 +305,11 @@ fn generated(seed: u64) -> String {
     if print_in_exit {
         s.push_str("                energy -> println;\n");
     }
-    // A slot-wise return is a pure fn's (L1307); an effectful step returns whole.
-    let ret = if print_in_exit {
-        "-> out;\n                (out, updated) -> ret;"
-    } else {
+    // Whole or slot-wise (an effectful step's slots pack into one return).
+    let ret = if slot_ret {
         "-> ret.0;\n                updated -> ret.1;"
+    } else {
+        "-> out;\n                (out, updated) -> ret;"
     };
     s.push_str(&format!(
         "                {width} -> iota -> map {{\n                    i -> hidden[i] + model.bias[i] + energy * 0.001\n                }} {ret}\n            }}\n        }}\n    }}\n}}\n\n"
@@ -299,15 +358,23 @@ fn structure_generated_programs_equal_oracle() {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(12);
-    let (mut out_ptr, mut views, mut exit_prints) = (0, 0, 0);
+    let (mut out_ptr, mut views, mut exit_prints, mut effect_slots) = (0, 0, 0, 0);
     for seed in 0..n {
         // Generated source goes through the formatter like any other.
         let src = mapal_syntax::format_source(&generated(seed))
             .unwrap_or_else(|d| panic!("gen{seed}: format {d:?}"));
         let tag = format!("gen{seed}");
+        if let Some(dir) = std::env::var_os("MAPAL_STRUCTURE_DUMP") {
+            std::fs::write(
+                std::path::Path::new(&dir).join(format!("{tag}.mapal")),
+                &src,
+            )
+            .unwrap();
+        }
         for rewritten in [false, true] {
             let ir = ir_of(&src, rewritten);
             let want = oracle(&ir, &tag);
+            waits_follow_pinned_runs(&ir, &tag);
             let ll = emit_with_opts(&ir, &exact("generic")).expect("emits");
             assert!(
                 array_aggregates(&ll).is_empty(),
@@ -318,6 +385,8 @@ fn structure_generated_programs_equal_oracle() {
             assert_eq!(native(&clang, &ll, &tag), want, "{tag}/{rewritten}\n{src}");
             if rewritten {
                 exit_prints += src.contains("energy -> println") as u32;
+                effect_slots +=
+                    (src.contains("energy -> println") && src.contains("-> ret.0")) as u32;
                 let em = emit_detailed(&ir, &exact("rtx-4090")).expect("emits");
                 let got = match &em.device {
                     Some(dev) => run_emulated(&clang, &em.text, dev),
@@ -328,7 +397,10 @@ fn structure_generated_programs_equal_oracle() {
         }
     }
     eprintln!(
-        "structure coverage: {n} programs, out-ptr {out_ptr}, views {views}, exit prints {exit_prints}"
+        "structure coverage: {n} programs, out-ptr {out_ptr}, views {views}, exit prints {exit_prints}, effectful slot exits {effect_slots}"
     );
-    assert!(out_ptr > 0 && views > 0 && exit_prints > 0, "coverage");
+    assert!(
+        out_ptr > 0 && views > 0 && exit_prints > 0 && effect_slots > 0,
+        "coverage"
+    );
 }

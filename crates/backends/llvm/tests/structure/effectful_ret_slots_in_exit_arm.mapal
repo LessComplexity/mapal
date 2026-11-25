@@ -1,0 +1,27 @@
+// An effectful fn's slot-wise loop exit: the arm prints, then writes its
+// `ret.k` slots; the print runs once, after the loop, and the slots pack into
+// the one whole return.
+fn count(n: i32) -> (i32, f32) {
+    mut i: i32 <- 0;
+    mut s: f32 <- 0.0;
+    loop {
+        (i < n) -> {
+            -true-> {
+                s + 1.5 -> s;
+                i + 1 -> i;
+                -> loop;
+            }
+            -false-> {
+                "done" -> println;
+                i -> ret.0;
+                s * 2.0 -> ret.1;
+            }
+        }
+    }
+}
+
+fn main() {
+    5 -> count -> r;
+    r.0 -> println;
+    r.1 -> println;
+}

@@ -174,6 +174,11 @@ pub struct WaitEntry {
 pub struct Checkpoint {
     /// The token operation's topo position, or `u32::MAX` for function exit.
     pub topo: u32,
+    /// Where the host waits: the topo position of the earliest host-built
+    /// `Pair` / `Proj` edge that assembles the operation's value from a task's
+    /// object — never before a pinned task the wait depends on runs — else
+    /// `topo`.
+    pub at: u32,
     /// Task progress required before the host may pass this point.
     pub wait: Vec<WaitEntry>,
 }
@@ -970,7 +975,7 @@ impl PathPlan {
         self.tasks.len() <= 1
             && matches!(
                 self.checkpoints.as_slice(),
-                [Checkpoint { topo: u32::MAX, wait }]
+                [Checkpoint { topo: u32::MAX, wait, .. }]
                     if wait.len() == self.tasks.len()
                         && wait.iter().enumerate().all(|(task, entry)|
                             entry.task == task && entry.threshold.is_none())
@@ -4969,92 +4974,15 @@ impl CategoryIr {
         // The tasks an ungated earlier checkpoint already waited to complete:
         // a later host read of their objects needs no wait of its own.
         let mut waited: Vec<bool> = vec![false; tasks.len()];
-        // The host-built edges a checkpoint's wait already precedes: the
-        // `Pair` / `Proj` edges its value is assembled through (the emitter
-        // injects the wait before the earliest of them), except — for a
-        // checkpoint inside a loop, whose wait is hoisted to the loop's entry —
-        // the edges outside that loop, which run before the entry.
-        let mut member_loop: SecondaryMap<MorphismId, usize> = SecondaryMap::new();
-        for (id, members) in loop_members.iter().enumerate() {
-            for &m in members {
-                member_loop.entry(m).expect("live key").or_insert(id);
-            }
-        }
-        let mut covered: SecondaryMap<MorphismId, ()> = SecondaryMap::new();
-        for &m in &topo {
+        let is_checkpoint = |m: MorphismId| {
+            let op = self.morphisms[m].op;
+            matches!(op, Operation::Print { .. })
+                || matches!(op, Operation::TimeMs | Operation::Read) && !task_of.contains_key(m)
+                || matches!(op, Operation::Call(_)) && is_token(m)
+        };
+        // The progress a checkpoint at topo `point` waits for.
+        let checkpoint_wait = |m: MorphismId, point: u32| -> Vec<WaitEntry> {
             let morph = &self.morphisms[m];
-            let checkpoint = matches!(morph.op, Operation::Print { .. })
-                || matches!(morph.op, Operation::TimeMs | Operation::Read)
-                    && !task_of.contains_key(m)
-                || matches!(morph.op, Operation::Call(_)) && is_token(m);
-            if !checkpoint {
-                continue;
-            }
-            let home = member_loop.get(m).copied();
-            let mut seen: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
-            let mut stack = vec![morph.source];
-            while let Some(o) = stack.pop() {
-                if seen.insert(o, ()).is_some() || producer.contains_key(o) {
-                    continue;
-                }
-                for &incoming in self.in_edges(o) {
-                    if !matches!(
-                        self.morphisms[incoming].op,
-                        Operation::Pair { .. } | Operation::Proj { .. }
-                    ) {
-                        continue;
-                    }
-                    if home.is_none() || member_loop.get(incoming).copied() == home {
-                        covered.insert(incoming, ());
-                    }
-                    stack.push(self.morphisms[incoming].source);
-                }
-            }
-        }
-        for (i, &m) in topo.iter().enumerate() {
-            let morph = &self.morphisms[m];
-            // plan-s33b: a clock read that became a task carries its fence in
-            // its own dependency edges, and the emitter's pinned sequence still
-            // emits the `mapal_par_check` at this topo position — a second
-            // wait list here would be the same ordering stated twice (§3).
-            // A clock left on the spine (inside an effectful loop) keeps its
-            // checkpoint, which is the only fence it has.
-            // ADR-0045 D8: a read left on the spine (in an effectful loop)
-            // can fail there, so it observes like a print: every earlier
-            // trap is decided and delivered before it runs.
-            let checkpoint = matches!(morph.op, Operation::Print { .. })
-                || matches!(morph.op, Operation::TimeMs | Operation::Read)
-                    && !task_of.contains_key(m)
-                || matches!(morph.op, Operation::Call(_)) && is_token(m);
-            if !checkpoint {
-                // structure (host reads): any other host-spine morphism that
-                // reads a task's object — a `Pair` building a printing loop's
-                // entry state from a struct a task filled, a `Proj` of it, the
-                // scalar host cone — waits for that task first. A checkpoint's
-                // wait list covers what it reaches through host-built edges; this
-                // covers the rest, once per task. A token alone (a read's
-                // `Proj` of it) reads no bytes: the read stays asynchronous,
-                // its next checkpoint waits for it.
-                if is_host(m)
-                    && !covered.contains_key(m)
-                    && self.objects[morph.target].ty != Ty::IoToken
-                    && let Some(t) = producer.get(morph.source).copied()
-                    && !waited[t]
-                {
-                    if !gated.contains_key(m) {
-                        waited[t] = true;
-                    }
-                    checkpoints.push(Checkpoint {
-                        topo: i.min(u32::MAX as usize) as u32,
-                        wait: vec![WaitEntry {
-                            task: t,
-                            threshold: None,
-                        }],
-                    });
-                }
-                continue;
-            }
-            let point = i.min(u32::MAX as usize) as u32;
             let mut wait: Vec<WaitEntry> = trap_sites
                 .iter()
                 .enumerate()
@@ -5124,15 +5052,150 @@ impl CategoryIr {
                 }
             }
             wait.sort_unstable_by_key(|entry| entry.task);
+            wait
+        };
+        // Where the host spine runs each pinned task (`mapal_par_run_pinned`):
+        // its first member's topo position.
+        let run_at: Vec<Option<u32>> = tasks
+            .iter()
+            .map(|task| {
+                let first = match &task.kind {
+                    TaskKind::Split { site, .. } => *site,
+                    TaskKind::Seq { morphisms } => morphisms[0],
+                };
+                task.pinned.then(|| topo_pos[first])
+            })
+            .collect();
+        // The latest pinned run a wait needs behind it: a wait on a task that
+        // is — or depends on — a pinned task the host runs later never returns
+        // (the host is the one waiting).
+        let pinned_floor = |wait: &[WaitEntry]| -> u32 {
+            let mut seen = vec![false; tasks.len()];
+            let mut stack: Vec<TaskId> = wait.iter().map(|entry| entry.task).collect();
+            let mut floor = 0;
+            while let Some(t) = stack.pop() {
+                if std::mem::replace(&mut seen[t], true) {
+                    continue;
+                }
+                if let Some(at) = run_at[t] {
+                    floor = floor.max(at);
+                }
+                stack.extend(tasks[t].deps.iter().copied());
+            }
+            floor
+        };
+        // Where each checkpoint's wait goes (`Checkpoint::at`) and the
+        // host-built edges it already precedes. Its value is assembled through
+        // `Pair` / `Proj` edges; the wait goes before the earliest of them that
+        // reads a task's object — not a token alone (it reads no bytes), and
+        // none before a pinned run the wait needs (`pinned_floor`). Covered:
+        // the walked edges at or after the wait, except — for a checkpoint
+        // inside a loop, whose wait is hoisted to the loop's entry — the edges
+        // outside that loop, which run before the entry. An edge left
+        // uncovered takes its own host-read wait below.
+        let mut member_loop: SecondaryMap<MorphismId, usize> = SecondaryMap::new();
+        for (id, members) in loop_members.iter().enumerate() {
+            for &m in members {
+                member_loop.entry(m).expect("live key").or_insert(id);
+            }
+        }
+        let mut covered: SecondaryMap<MorphismId, ()> = SecondaryMap::new();
+        let mut planned: SecondaryMap<MorphismId, (u32, Vec<WaitEntry>)> = SecondaryMap::new();
+        for &m in &topo {
+            if !is_checkpoint(m) {
+                continue;
+            }
+            let point = topo_pos[m];
+            let wait = checkpoint_wait(m, point);
+            let floor = pinned_floor(&wait);
+            let home = member_loop.get(m).copied();
+            let mut at = point;
+            let mut walked: Vec<MorphismId> = Vec::new();
+            let mut seen: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
+            let mut stack = vec![self.morphisms[m].source];
+            while let Some(o) = stack.pop() {
+                if seen.insert(o, ()).is_some() || producer.contains_key(o) {
+                    continue;
+                }
+                for &incoming in self.in_edges(o) {
+                    let edge = &self.morphisms[incoming];
+                    if !matches!(edge.op, Operation::Pair { .. } | Operation::Proj { .. }) {
+                        continue;
+                    }
+                    if producer.contains_key(edge.source)
+                        && self.objects[edge.target].ty != Ty::IoToken
+                        && topo_pos[incoming] >= floor
+                    {
+                        at = at.min(topo_pos[incoming]);
+                    }
+                    walked.push(incoming);
+                    stack.push(edge.source);
+                }
+            }
+            for edge in walked {
+                if topo_pos[edge] >= at
+                    && (home.is_none() || member_loop.get(edge).copied() == home)
+                {
+                    covered.insert(edge, ());
+                }
+            }
+            planned.insert(m, (at, wait));
+        }
+        for (i, &m) in topo.iter().enumerate() {
+            let morph = &self.morphisms[m];
+            // plan-s33b: a clock read that became a task carries its fence in
+            // its own dependency edges, and the emitter's pinned sequence still
+            // emits the `mapal_par_check` at this topo position — a second
+            // wait list here would be the same ordering stated twice (§3).
+            // A clock left on the spine (inside an effectful loop) keeps its
+            // checkpoint, which is the only fence it has.
+            // ADR-0045 D8: a read left on the spine (in an effectful loop)
+            // can fail there, so it observes like a print: every earlier
+            // trap is decided and delivered before it runs.
+            let Some((at, wait)) = planned.remove(m) else {
+                // structure (host reads): any other host-spine morphism that
+                // reads a task's object — a `Pair` building a printing loop's
+                // entry state from a struct a task filled, a `Proj` of it, the
+                // scalar host cone — waits for that task first. A checkpoint's
+                // wait list covers what it reaches through host-built edges; this
+                // covers the rest, once per task. A token alone (a read's
+                // `Proj` of it) reads no bytes: the read stays asynchronous,
+                // its next checkpoint waits for it.
+                if is_host(m)
+                    && !covered.contains_key(m)
+                    && self.objects[morph.target].ty != Ty::IoToken
+                    && let Some(t) = producer.get(morph.source).copied()
+                    && !waited[t]
+                {
+                    if !gated.contains_key(m) {
+                        waited[t] = true;
+                    }
+                    let point = i.min(u32::MAX as usize) as u32;
+                    checkpoints.push(Checkpoint {
+                        topo: point,
+                        at: point,
+                        wait: vec![WaitEntry {
+                            task: t,
+                            threshold: None,
+                        }],
+                    });
+                }
+                continue;
+            };
             if !gated.contains_key(m) {
                 for entry in wait.iter().filter(|e| e.threshold.is_none()) {
                     waited[entry.task] = true;
                 }
             }
-            checkpoints.push(Checkpoint { topo: point, wait });
+            checkpoints.push(Checkpoint {
+                topo: i.min(u32::MAX as usize) as u32,
+                at,
+                wait,
+            });
         }
         checkpoints.push(Checkpoint {
             topo: u32::MAX,
+            at: u32::MAX,
             wait: (0..tasks.len())
                 .map(|task| WaitEntry {
                     task,
