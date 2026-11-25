@@ -1,204 +1,298 @@
-# local-rtx-5080 — the full model after the prefill integration: readable Llama-3.2-1B-Instruct in Mapal against six inference stacks, both precision classes (2026-11-25, evening)
+# local-rtx-5080 — the full model after the bf16 integration: readable Llama-3.2-1B-Instruct in Mapal against the inference stacks, type to type (2026-11-25, night)
 
-`local-rtx-5080` (the builds measured here: `8bf54fb3`): the merges of prefill/precision, prefill/residency and prefill/mask-frontend, and
-three fixes the integration found. The program is the readable `examples/llama.mapal` (403 lines, 56 of them
-comments), unchanged except as mask-frontend wrote it (`attend` reads the cache through the struct). The f32 class
-decodes HF f32's 128 tokens at every length; the bf16 class agrees with the bf16 references as far as they agree
-with each other (below). Raw output (never in git):
-`.claude/raw-evidence/local-rtx-5080/prefill-integrate/` (`mapal/` programs and builds, `time/` the timed runs,
-`competitors/` the sweep, `trace/` CUPTI traces, `changed*/` the suite emission diff and timing, `tools/`, logs).
+`local-rtx-5080` (the builds measured here: `3c629486`) merges bf16/tensor-tile (`mma-walk`), bf16/class (`finite-check`,
+`narrow-window` with the bf16 KV cache, `round-post`, `device-trap`) and prefill/residency's last three commits
+(residency calibration, carry-take's way out, `fly-unroll`; the `decode-done` flag named `6bbc6fa8`, its tip). The
+integration found one placement fault between `device-trap` and the calibrated pricing and fixed it generically
+(`cand-made`, below). The program is the readable `examples/llama.mapal`, unchanged; the bf16 class is
+`benches/model/variant.py --compute bf16` (now with the bf16 KV cache). **Type to type**: the bf16 class is compared
+only with bf16 engines, the f32 class only with f32-compute engines; no gain is claimed across classes. Raw output
+(never in git): `.claude/raw-evidence/local-rtx-5080/bf16-integrate/` (`mapal/` programs and builds, `time/` the
+timed passes, `competitors/{bf16,f32}/` the sweeps, `trace/` CUPTI traces, `changed*/` the suite emission and its
+ABBA, `tools/`, `test-*.log`).
 
 ## Method
 
-- **RTX 5080** (sm_120, 84 SMs, 16 GB, ~960 GB/s), Threadripper 9970X (shared; boost capped at 4.5 GHz), driver
-  620.73.04, CUDA 13.5. Every timed process held the bench lock and ran on CPUs 16-23,48-55 (`nice 10`); the
-  workspace test suite ran at the same time on CPUs 24-31,56-63 (moved there for the timing).
+- **RTX 5080** (sm_120, 84 SMs, 16 GB), Threadripper 9970X (shared with other agents; boost capped), driver 620.73.04,
+  CUDA 13.5. Every timed process held the bench lock and ran on CPUs 16-23,48-55 (`nice 10`); during the passes this
+  step ran only one targeted test and one build, on CPUs 24-31,56-63 (the workspace tests ran after the passes).
+- **Load**: before every run (each Mapal class × length, each engine × length) the 1-minute load had to fall below 10,
+  waiting at most 120 s; the load is logged per run (`time/*/load.log`, the engines' raw JSON `load`). Three engine
+  runs met a spike from other processes (vLLM bf16 2048 at load 53, llama.cpp f32 128 at 46, 512 after a 100 s wait);
+  they and the f32 512 legs whose spread exceeded 10 % (gpt-fast, vLLM, HF eager, HF static) were re-run at load 4.4
+  (`rerun.log`; the first runs kept in `raw-first/`). Every value in the tables ran at load 4–9.
 - **Definitions** (the harness's `common.py`): TTFT = submit → first token on the host; decode = (t₁₂₈ − t₂) / 126;
-  e2e = t₁₂₈; peak = the process's GPU memory (nvidia-smi). Greedy, batch 1, 128 generated, warmup 2 + 5 reps,
-  medians [min, max] in `time/`.
-- **Mapal**: `benches/model/run_mapal.py` (one process per repetition; weights load and upload before `() -> time`;
-  `tools/time_mapal.sh` holds the lock per length).
-  Builds: `MAPAL_GPU_CALIB=benches/results/evidence/local-rtx-5080/calib/rtx-5080.calib mapal build
-  --target=native-gpu` (the native-gpu profile is the device query + this box's calibration line; this box has no
-  `~/.cache/mapal/gpu-calib`, so the same build without the variable is also reported, "no calib file").
-  Programs from `benches/model/variant.py` (`prompt_length=N`; `--compute bf16` for the bf16 class).
-- **Competitors**: `~/.cache/mapal/model-compare/compare.py --batches 1 --lens 128,512,2048` (all eight legs, their
-  own warmup + 5 reps), 18:06–18:13, load 323 → 36 at start / end (a burst at the start; most
-  rows within 10 % of the afternoon's quiet sweep, vLLM at 2048 17 % slower, llama.cpp's 128 / 2048 rows faster).
-  Mapal: the table is the pass beside the sweep (`time/final2`, 18:13–18:16, load 36 → 28); the pass before it
-  (`time/final`, 18:01–18:04, load 68 → 18) and a third after the test suite (`time/final3`, 18:43–18:47, load 11 → 8) read TTFT up to 22 % and decode up to 17 %
-  slower — the decode spread is the host (below), not the load average.
-  The f32-compute competitor legs are the precision step's (`compare.py --runner-arg=--dtype --runner-arg=f32`,
-  TF32 off; 16:59–17:05, load 5–18; raw `prefill-precision/competitors-f32/`).
+  e2e = t₁₂₈; peak = the process's GPU memory (nvidia-smi, 20 Hz). Greedy, batch 1, 128 generated, warmup 2 + 5 reps,
+  medians.
+- **Mapal**: `benches/model/run_mapal.py` (one process per repetition; weights load and upload before `() -> time`),
+  builds `MAPAL_GPU_CALIB=benches/results/evidence/local-rtx-5080/calib/rtx-5080.calib mapal build --target=native-gpu`.
+  Re-timed back to back with the engines: pass A before the bf16 sweep, B right after it, C right after the f32 sweep,
+  D right after the re-runs (23:22–23:24, load 4.2–4.4). The tables give pass D; B and C agree within 0.5 % except bf16
+  2048 in B (55.1 ms, spread 52.3–55.8 at load 6).
+- **Engines**: `~/.cache/mapal/model-compare/compare.py` (own warmup + 5 reps) with the precision step's load-wait
+  patch. bf16: the harness's runners. f32: the precision step's runner copies with `--dtype f32` (TF32 off;
+  `prefill-precision/competitors-f32/`). **SGLang has no f32 mode. TensorRT-LLM's f32 build runs but its output is
+  wrong** (0 of 128 tokens equal HF f32 at every length; its first ids repeat one token, `prefill-precision`'s raw
+  `trtllm_n*_b1.json`): no f32 row. llama.cpp f16 is a 16-bit engine of another type (f16): shown for reference, not
+  compared.
 
-**Precision classes.** No gain is claimed across classes.
-- **f32 class** — the program as written (Mapal's default face): f32 activations × the bf16 weights,
-  f32-accurate within ADR-0040 D2's bound (the projections on the split tile `bf16x2n` where the calibrated rule
-  takes it, else the FFMA tile). Compared with the f32-compute legs.
-- **bf16 class** — the competitors' precision: `fold: bf16 | f32` on the three sums of products (`project`, the
-  scores, `P·V`; `variant.py --compute bf16`): operands rounded to bf16, f32 accumulation (ADR-0041). Norms,
-  softmax, RoPE and the cache stay f32. Compared with the bf16 legs.
+**Precision classes.**
+- **f32 class** — the program as written (Mapal's default face): f32 activations × the bf16 weights, within ADR-0040
+  D2's bound (the projections on the split tile `bf16x2n`). Against the f32-compute engines.
+- **bf16 class** — `fold: bf16 | f32` on the sums of products (projections, scores, `P·V`): operands rounded to bf16,
+  f32 accumulation (ADR-0041); the key/value cache stored bf16 (`[bf16; …]`, rounded once on write); arrays whose every
+  read is a bf16 multiplicand stored bf16 (`round-store`, now also an epilogue's array: the attention output). Norms,
+  softmax, RoPE and the residual stream stay f32. Against the bf16 engines.
 
 ## Tokens (greedy, 128, batch 1; tokens equal before the first difference)
 
 | program | 128 | 512 | 2048 |
 |---|---|---|---|
-| Mapal f32 class (calibrated and no calib file) vs HF f32 (`hf_reference.py`, eager attention, TF32 off) | **128** | **128** | **128** <!-- tokens prefix(full-f32,hf-f32)@128,512,2048 --><!-- tokens prefix(full-f32-nocalib,hf-f32)@128,512,2048 --> |
-| Mapal bf16 class vs HF bf16 eager attention (`hf_reference.py`) | 128 | 67 | 61 <!-- tokens prefix(full-bf16,hf-bf16-eager)@128,512,2048 --> |
-| Mapal bf16 class vs the harness's `hf-eager` (bf16, SDPA) | 49 | **128** | 57 <!-- tokens prefix(full-bf16,hf-eager-sdpa)@128,512,2048 --> |
-| HF f32 vs HF bf16 eager attention (both `hf_reference.py`) | 128 | 32 | 61 <!-- tokens prefix(hf-f32,hf-bf16-eager)@128,512,2048 --> |
-| the competitors vs the harness's `hf-eager` | gpt-fast 49, llama.cpp 49, SGLang 109, TRT-LLM 128, vLLM 128 | 32, 67 (bf16) / 32 (f16), 95, 95, 128 | 57 for every tool |
+| Mapal f32 class vs HF f32 (`hf_reference.py`, eager, TF32 off) | **128** | **128** | **128** <!-- tokens prefix(integ-f32,hf-f32)@128,512,2048 --> |
+| every f32-compute engine vs HF f32 (gpt-fast, vLLM, llama.cpp, HF eager, HF static) | 128 | 128 | 128 |
+| Mapal bf16 class (pass D, first repetition) vs HF bf16 eager (`hf_reference.py`) | 128 | 32 | 61 <!-- tokens prefix(integ-bf16,hf-bf16-eager)@128,512,2048 --> |
+| Mapal bf16 class, the five repetitions at 512 vs HF bf16 eager | | 32, 67, 89, 100 (4 sequences) | |
+| the bf16 engines vs HF bf16 eager | gpt-fast 128, llama.cpp 128, SGLang / TRT-LLM / vLLM / HF eager / HF static 49 | 24, 89, 67, 67, 67, 67, 7 | 61, 61, 61, 61, 89, 57, 57 |
 
-HF's two bf16 runs agree with each other on 49 / 67 / 57<!-- tokens prefix(hf-bf16-eager,hf-eager-sdpa)@128,512,2048
---> tokens, HF f32 with `hf-eager` on 49 / 32 / 57<!-- tokens prefix(hf-f32,hf-eager-sdpa)@128,512,2048 --> and HF f32
-with HF bf16 eager on 128 / 32 / 61<!-- tokens prefix(hf-f32,hf-bf16-eager)@128,512,2048 -->: past a near tie every
-bf16 run follows its own kernels. The bf16-class Mapal run sits inside that spread (first-step top logit 18.37
-against HF f32's 18.40 at 512). The f32-compute legs give 128 / 128 of HF f32 at every length. Every marked token
-count in this report and in `prefill-precision.md` is the `token-agreement.tsv` value (built from the raw token files
-by `benches/model/token_agree.py`, checked by `benches/model/test_token_agree.py`); the HF references re-run on
-2026-11-25 (raw `prefill-token-agreement/hf/`) equal the ones used in all 128 tokens at every length.
+HF f32 and HF bf16 eager agree on 128 / 32 / 61<!-- tokens prefix(hf-f32,hf-bf16-eager)@128,512,2048 --> tokens:
+past a near tie every bf16 run follows its own kernels, and the bf16 engines spread 7–89 at 512 among themselves.
+The Mapal bf16 class sits inside that spread at every length. **At 512 its tokens vary from run to run** (below:
+the tensor tile's stream-K walk adds three or more partials of a tile in arrival order; with `--gpu-off=mma-walk`
+the same build is deterministic). The f32 class and the bf16 class at 128 and 2048 give the same tokens every run.
+Every marked count is `token-agreement.tsv` (`benches/model/token_agree.py`, runs `integ-*`).
 
 ## Time (RTX 5080, batch 1, 128 generated, medians)
 
-### f32 class
+### f32 class — against the f32-compute engines
 
 | tool | TTFT 128 ms | TTFT 512 | TTFT 2048 | decode 128 ms/token | decode 512 | decode 2048 | e2e 512 ms | peak MB (128 / 512 / 2048) |
 |---|---:|---:|---:|---:|---:|---:|---:|---|
-| **Mapal**, calibrated (projections on `bf16x2n`) | **10.40** | **28.91** | **125.3** | **3.760** | **3.594** | **3.997** | **482** | **2 716 / 2 984 / 4 074** |
-| Mapal, no calib file (FFMA tile) | 14.14 | 40.61 | 162.9 | 3.797 | 3.705 | 3.715 | 508 | 3 014 / 3 498 / 4 578 |
-| Mapal at 16d668c6 (no calib file; quiet machine) | 28.3 | 85.2 | 332.7 | 3.336 | 3.396 | 3.548 | — | 4 882 / 5 086 / 6 180 |
-| gpt-fast f32 (max-autotune, CUDA graphs) | 13.76 | 47.99 | 213.9 | 5.729 | 5.743 | 5.919 | 778 | 6 298 / 6 628 / 7 690 |
-| HF eager f32 | 14.41 | 41.75 | 241.9 | 7.163 | 7.478 | 8.160 | 991 | 5 104 / 5 204 / 6 494 |
-| HF static cache + compile f32 | 17.13 | 44.35 | 245.5 | 6.771 | 7.552 | 10.494 | 1 010 | 5 266 / 5 372 / 6 874 |
+| **Mapal** (default face; projections on `bf16x2n`) | **8.54** | **25.39** | **95.48** | **3.241** | **3.294** | **3.447** | **441** | **2 722 / 2 730 / 3 018** |
+| gpt-fast f32 (max-autotune, CUDA graphs) | 13.70 | 47.71 | 213.7 | 5.849 | 5.718 | 5.896 | 774 | 6 296 / 6 626 / 7 688 |
+| vLLM 0.33.0 f32 | 14.57 | 41.03 | 178.8 | 6.225 | 5.935 | 6.220 | 795 | 9 188 / 9 188 / 9 236 (reserved) |
+| llama.cpp f32 | 14.21 | 41.27 | 203.9 | 6.028 | 6.312 | 7.751 | 843 | 5 148 / 5 200 / 5 396 |
+| HF eager f32 | 14.45 | 41.71 | 263.5 | 7.733 | 7.432 | 8.836 | 986 | 5 104 / 5 204 / 6 494 |
+| HF static cache + compile f32 | 16.85 | 44.17 | 244.8 | 7.389 | 7.502 | 10.418 | 997 | 5 202 / 5 306 / 6 782 |
 
-**Mapal leads the f32 class everywhere**: TTFT 1.32 / 1.44 / 1.71× faster than the best f32 tool, decode 1.48–1.60×
-faster than gpt-fast f32, end to end 1.6× faster, at less than half its memory. The decode lead is the weights'
-bytes (Mapal reads the bf16 bytes and widens in registers; the f32 tools store the widened weights, 4.9 GB a step);
-the TTFT lead is the split tile (bf16x2n: two bf16 products of the f32 activation's parts against the exact bf16
-weights, within D2's bound, against SGEMM).
+**Mapal leads the f32 class everywhere**: TTFT **1.60 / 1.62 / 1.87× faster** than the best f32 engine (gpt-fast,
+vLLM, vLLM), decode **1.80 / 1.74 / 1.71×** faster than gpt-fast f32, end to end 1.75× faster at 512, at about half
+the lowest engine's memory. Against the previous integration (10.40 / 28.91 / 125.3 ms and 3.76 / 3.59 / 4.00 ms/token,
+a louder sitting): the causal skip over a run-time-finite cache (attention at 2048 34.1 → 16.3 ms), the prompt's host
+chain gone (`cand-made`), and the decode step's calibrated placement (residency).
 
-### bf16 class
+### bf16 class — against the bf16 engines
 
 | tool | TTFT 128 ms | TTFT 512 | TTFT 2048 | decode 128 ms/token | decode 512 | decode 2048 | e2e 512 ms | peak MB (128 / 512 / 2048) |
 |---|---:|---:|---:|---:|---:|---:|---:|---|
-| **Mapal** (`fold: bf16 \| f32`) | 6.95 | 18.12 | 74.05 | 3.528 | 3.673 | 4.012 | 481 | 2 718 / 2 706 / 3 498 |
-| gpt-fast (max-autotune, CUDA graphs) | **4.91** | 13.88 | 51.96 | **2.965** | **2.979** | 3.344 | **393** | 3 410 / 3 532 / 4 074 |
-| SGLang 0.5.23 | 6.85 | 14.54 | 45.47 | 3.333 | 3.118 | **3.164** | 410 | 8 614 / 8 710 / 8 746 (reserved) |
-| TensorRT-LLM 1.3.0 | 10.20 | 14.38 | 45.76 | 3.048 | 3.074 | 3.203 | 405 | 8 666 / 8 670 / 8 744 (reserved) |
-| vLLM 0.33.0 | 6.96 | 13.75 | 53.16 | 3.433 | 3.466 | 3.621 | 454 | 9 236 (reserved) |
-| llama.cpp bf16 | 5.91 | 14.01 | 49.75 | 3.183 | 3.214 | 3.258 | 422 | 2 804 / 2 846 / 2 896 |
-| llama.cpp f16 | 6.07 | **10.91** | **37.04** | 3.183 | 3.230 | 3.262 | 422 | 2 804 / 2 848 / 2 898 |
-| HF eager | 6.57 | 14.29 | 47.98 | 4.427 | 4.481 | 4.480 | 584 | 2 726 / 2 780 / 2 962 |
-| HF static cache + compile | 8.40 | 15.70 | 49.07 | 3.714 | 4.038 | 5.353 | 529 | 2 822 / 2 872 / 3 090 |
+| **Mapal** (`fold: bf16 \| f32`, bf16 KV cache) | 5.58 | 14.07 | 52.14 | 3.258 | 3.294 | 3.395 | 429 | **2 652** / 2 870 / 3 228 |
+| gpt-fast (max-autotune, CUDA graphs) | **4.94** | 13.73 | 56.11 | **2.972** | **2.984** | 3.327 | **393** | 3 410 / 3 532 / 4 074 |
+| SGLang 0.5.23 | 6.83 | 13.80 | 49.30 | 3.336 | 3.078 | 3.506 | 405 | 8 902 / 8 838 / 8 906 (reserved) |
+| TensorRT-LLM 1.3.0 | 9.49 | 15.99 | 45.67 | 3.313 | 3.491 | **3.190** | 459 | 8 810 / 8 790 / 8 784 (reserved) |
+| vLLM 0.33.0 | 6.79 | 14.94 | **45.30** | 3.490 | 3.508 | 3.236 | 461 | 9 236 (reserved) |
+| llama.cpp bf16 | 5.61 | **13.46** | 49.23 | 3.157 | 3.172 | 3.234 | 417 | 2 804 / 2 846 / **2 896** |
+| HF eager | 6.63 | 15.50 | 55.96 | 4.674 | 4.743 | 5.033 | 618 | 2 726 / **2 780** / 2 962 |
+| HF static cache + compile | 8.81 | 17.60 | 56.05 | 4.043 | 4.561 | 6.030 | 597 | 2 822 / 2 872 / 3 090 |
+| *(llama.cpp f16 — another type, not compared)* | *5.66* | *10.27* | *36.74* | *3.153* | *3.180* | *3.235* | *415* | *2 804 / 2 848 / 2 898* |
 
-**bf16 class**: TTFT 1.42 / 1.66 / 2.00× behind the best tool (gpt-fast at 128, llama.cpp f16 at 512 and 2048); at
-128 Mapal is within 6 % of SGLang / vLLM / HF eager and ahead of TensorRT-LLM and HF static. Decode 1.19 / 1.23 /
-1.27× behind the best (gpt-fast, gpt-fast, SGLang), ahead of HF eager and HF static at every length. Peak memory is
-the lowest of every tool at 128 and 512 (one copy of the weights since CSE value scope; the f32 cache and
-activations put it above llama.cpp and HF at 2048). From 16d668c6 to here, the readable program's TTFT went 28.3 /
-85.2 / 332.7 → 10.4 / 28.9 / 125 ms as written and → 6.95 / 18.1 / 74.1 ms in the competitors' precision.
+**bf16 class**: TTFT **1.13 / 1.05 / 1.15× behind** the best bf16 engine (gpt-fast at 128, llama.cpp bf16 at 512,
+vLLM at 2048; was 1.42 / 1.66 / 2.00× at the previous integration, then against the best tool including f16). At 128
+Mapal ties llama.cpp bf16 and is ahead of SGLang, vLLM, TensorRT-LLM and both HF; at 512 within 2–5 % of gpt-fast,
+SGLang and llama.cpp and ahead of vLLM, TensorRT-LLM and both HF; at 2048 ahead of gpt-fast and both HF, 6–15 % behind
+llama.cpp, SGLang, TensorRT-LLM and vLLM. Decode **1.10 / 1.10 / 1.06× behind** the best (gpt-fast, gpt-fast,
+TensorRT-LLM); ahead of vLLM and TensorRT-LLM at 128 / 512, of SGLang at 128 / 2048 and of both HF everywhere.
+Peak memory is the lowest of every tool at 128; at 512 / 2048 HF eager and llama.cpp hold less (the walk's workspaces,
+below). Previous integration → now: TTFT 6.95 / 18.12 / 74.05 → 5.58 / 14.07 / 52.14 ms, decode 3.53 / 3.67 / 4.01 →
+3.26 / 3.29 / 3.40 ms/token.
 
-**Decode is bound by the host's launches.** CUPTI shows the step at 3.36 ms of kernels (288 launches, 0.32 ms idle;
-without the calibration file 3.27 ms / 323 launches / 0.17 ms). Untraced, one bf16-class run at 512 steps in 3.8–5.4
-ms (median 3.98; GPU at P1, 2.75–2.90 GHz): 226 of the 288 kernels run under 4 µs, shorter than the host's issue
-cost (`issue_ns` 1 690 ns, ~0.49 ms of host time a step), so the GPU waits on the CPU and the step follows the
-cores' state — 3.53–4.30 ms across the three passes for the same build. gpt-fast replays one CUDA graph a step
-(2.951 quiet, 2.965 here). The fix is fewer launches (below), not a graph.
+## Where each side's time goes (CUPTI, `tools/ktgroup.py`, `ktgaps.py`; the prompt pass from the first launch after the weights to the logits copy)
 
-## Where each side's time goes (CUPTI, `tools/ktgroup.py`; the prompt pass from the first launch after the weights to the logits copy)
-
-| prompt kernels, ms | 128 | 512 | 2048 |
+| prompt, ms | 128 | 512 | 2048 |
 |---|---:|---:|---:|
-| Mapal f32 class, calibrated: kernels (span) | 9.62 (11.1) | 26.89 (29.9) | 122.6 |
-| Mapal f32 class, no calib file | — | 35.54 (38.4) | 165.5 |
-| Mapal bf16 class | 5.79 (6.9) | 15.56 (18.3) | 69.1 (71.7) |
+| Mapal bf16 class: kernels / launches / host gaps > 20 µs | 5.42 / 276 / 0.10 | 13.96 / 324 / 0.09 | 52.21 / 308 / 0.08 |
+| Mapal f32 class: kernels / launches / host gaps > 20 µs | 8.37 / 261 / 0.06 | 25.24 / 277 / 0.06 | 95.48 / 277 / 0.06 |
 
-**bf16 class, 512** (15.56 ms of kernels, 274 launches): gate + up 6.19 ms (32 × 193 µs, 89 Tflop/s — 85 % of the
-calibrated bf16 pipe, `mma_half_per_clk` 512 × 84 SMs × 2.45 GHz = 105 Tflop/s), down 3.75 (73 Tflop/s), query +
-output 1.91 (69–75), key + value 0.62 (56), the streamed attention 1.47 (16 × 92 µs, `stream-mma`), 143 elementwise
-cells 0.99 (norms, RoPE, SiLU·up, residuals), the output head 0.61 (one row against the 525 MB embedding, 866 GB/s).
-The projections are within ~6 % of the precision step's cuBLAS bf16 per-layer times (779 vs 734 µs a layer).
-**The 2.5 ms between span and kernels is the host**: the embedding gather (`embedding[ids[t]·H + c]`) and layer 0's
-RMSNorm run on the host (0.95 ms + 1.51 ms gaps, then 4 MB + 2 MB uploads). **2048** (69.1 ms): gate + up 23.2
-(merged, 94 Tflop/s), attention 16.3 (1.02 ms a layer: the whole 2176-key context every row, no causal skip, 36
-Tflop/s), down 12.8, query + output 8.2, cells 5.0, key + value 3.0, head 0.6.
+**bf16 class, 512** (13.96 ms of kernels): gate + up 5.71 ms (32 × 178 µs, walked: 96 Tflop/s, 91 % of the
+calibrated 105 Tflop/s pipe), down 2.89 (16 × 180 µs, walked, 95 Tflop/s), query + output 1.93 (71 Tflop/s), the
+elementwise cells 0.99 (146: norms, RoPE, SiLU·up, residuals), the streamed attention 0.89 (16 × 56 µs, causal skip),
+key + value 0.61 (56 Tflop/s), the output head 0.60 (one row against the 525 MB embedding), the walk's zero passes
+0.34 (48). The host chain (embedding gather and layer 0's norm, 2.5 ms at the previous integration) is gone.
+**2048** (52.21 ms): merged gate + up 19.62 (16 × 1.23 ms, at the pipe's rate), down 11.07 (16 × 692 µs walked, 99
+Tflop/s), attention 7.91 (16 × 494 µs: the causal skip on a run-time-finite cache halves it, was 16.3 ms; ~37 Tflop/s
+on the unmasked half), query + output 5.96 (92 Tflop/s), cells 4.94, key + value 1.80, head 0.60. **128** (5.42 ms):
+the projections 4.35 ms (nothing walks: 128-row tiles), head 0.59, cells 0.27, attention 0.14.
 
-**f32 class, 512** (26.89 ms): the projections on `bf16x2n` 23.0 ms (gate + up 11.4, down 7.0, query + output 3.6,
-key + value 1.0), attention 2.67 (the FFMA stream: f32 products), cells 0.48, head 0.59; at 2048 the attention is
-34.1 of 122.6 ms.
+**f32 class, 512** (25.24 ms): projections on `bf16x2n` 22.3 ms (gate + up 10.79, down 6.98, query + output 3.52,
+key + value 1.04), attention 1.70 (the FFMA stream), head 0.59, cells 0.49; at 2048 the attention is 16.3 of 95.5 ms.
 
-**Decode step** (512, 3.36 ms of kernels, 288 launches): the merged horizontal GEMVs 1.34 ms (46 launches), the
-per-row cells and GEMV cells 1.42 ms (224 launches), the output head 0.58 ms. The 2.47 GB of weights at 960 GB/s are
-2.57 ms: the kernels run at 76 % of that roofline; gpt-fast's whole step is 2.97 ms (87 %).
+**Decode step** (512, both classes: 3.21–3.24 ms of kernels, 324 launches, 0.03 ms of gaps): the merged horizontal
+GEMVs 1.35 ms (48), per-row and GEMV cells 1.15 ms (194), output head 0.58 ms, the decode attention's tiles 0.10 ms.
+Untraced the step is 3.29 ms: the kernels, not the host, bound it now. The 2.47 GB of weights at the measured 890 GB/s
+are 2.78 ms; gpt-fast's step is 2.97 ms.
 
-**The competitors**: bf16 activations end to end (half Mapal's activation and cache bytes), cuBLAS / CUTLASS /
-FlashAttention / FlashInfer kernels (llama.cpp its own; its f16 build the fastest prompt here), causal attention
-that skips the masked half, fused norms and SiLU, and CUDA graphs for the decode step (gpt-fast, vLLM, SGLang,
-TensorRT-LLM, HF static).
+**The engines**: bf16 activations end to end, cuBLAS / CUTLASS / FlashAttention / FlashInfer kernels (llama.cpp its
+own), causal attention that skips the masked half, fused norms and SiLU, CUDA graphs for the decode step (gpt-fast,
+vLLM, SGLang, TensorRT-LLM, HF static). The f32 engines run SGEMM-class f32 kernels (TF32 off) on f32 weights (4.9 GB
+read a decode step, against Mapal's 2.47 GB of bf16 weights widened in registers).
 
 ## The integration
 
-- **Merges**: `4420f00c` prefill/precision, `06b708ed` prefill/residency (incl. its once-range commit `67f440c8`;
-  `zero.rs` conflict with `151953b5` resolved to `d4dedf0d`'s form — every touching step's launch, a superset;
-  both tests kept), `a29a219b` prefill/mask-frontend (rung names 157 / 159 → 160). The CLAUDE.md edits from the
-  three "For integration" sections are in the merge commits, plus `docs/components/lower/DESIGN.md` LD29.
-- **Found by the integration and fixed** (each with a generated-program test that fails without it):
-  1. `bf97ad67` **stream-mma**: the warp-matrix stream loaded its row operand at the group row, not the producer's
-     own row numbering (mask-frontend's `out_rows` permutation; the FFMA stream's `stage_panel` maps it). The bf16
-     class with attention admitted decoded 0 / 128 tokens (first logit 14.08); after, the table above.
-     `flash_half_strategy` now draws the token-major forms (`tm` 1–4): `stream_mma_on_generated_attention` counts
-     `mma token-major` 22 / 48, `mma run-time mask` 8.
-  2. `934ee80a` **carry-take**: a taken loop init read by a host fold before the loop lost its copy out
-     (`bulk.rs` "fold array ptr"): `generic_fusion` and `row_block` generated chains, `site_choice` calibrated
-     parts. A taken init's other readers now count (`edge_uses`).
-  3. `8bf54fb3` **stream_plan**: where the head width equals the key axis (`d = T`) the output projection after
-     `P·V` was taken as a second consumer of the pass (index out of bounds in the kernel) — reached once
-     `stream-numbers` streams a mask over a captured number (`placement::once_range_on_generated_prompts`). A
-     consumer's row is now a producer's or a cell's.
+- **Merges**: `08faa02c` bf16/tensor-tile (clean); `b80bd696` bf16/class (rung list 161 / 163 → 164); `e3a31d1e`
+  prefill/residency `30181082..6bbc6fa8` (the `decode-done` flag's commit). Conflicts: the rung list (`mma-walk` and
+  `fly-unroll`, 165); carry-take, where this branch's `934ee80a` (a taken init's uses by its out-edges, `edge_uses`)
+  met residency's `6badc822` (`uses` without the state's escape, the into-edges over every taking loop) — kept
+  residency's into-edges and `edge_uses` (the same uses, no escape entry to remove); `device-trap`'s checking body
+  against `fly-unroll`'s depth in the cell kernels — a trap cell has one lane, so its body takes no unroll.
+- **CLAUDE.md**: the facts-table rows of both "For integration" sections (`StreamGuard::check`, `TilePost::round`,
+  `precision_plan` `store` on an epilogue's array, the `trap_cell_plan` row, the backend rungs and runtime hooks, the
+  `mma_walk` / `MmaWalk` price) and `cand-made`.
+- **Found by the integration**:
+  1. **`cand-made`** (`3c629486`, rung `cand-made`, OFF arm `--gpu-off=cand-made`). Calibrated, the prompt at 128 and
+     512 still gathered the embedding rows and ran layer 0's norm on the host (`MAPAL_DEBUG_PLACE`: the gather dropped
+     in round 1 for a host reader): the norm's scale map was no placement candidate, its own roofline not paying at the
+     calibrated launch cost, and nothing tile-made upstream (`device_made` sees tile sites only), so it read the
+     gathered rows on the host, which kept the gather and the row fold there too — each map priced alone. S62's rule
+     "on the device when an operand is device-produced" now reads the candidates too: a map an operand of which a
+     candidate cell or device site makes is a candidate, and `cell_sites`' fixed point decides the chain whole (bytes,
+     readers). Prompt host gaps 1.45 → 0.06 ms (f32 512), 2.5 → 0.09 ms (bf16 512); the kernel suite's emission is
+     equal on both arms (45 of 45); generated test below.
+  2. **`mma-walk` × `round-post`: no interaction by construction** — a tile site whose epilogue is its own body (`post`,
+     where `TilePost::round` lives) is never walked, so the walk's `red` partials never meet a bf16 store; a split
+     epilogue (its own map over the site's f32 output, stored rounded) walks. `half_tile::round_post_under_the_walk`.
+  3. **The walk makes the bf16 class's tokens run-dependent at 512** and adds memory (open below).
+  4. **The suite bundle linked a stale runtime**: `integrated_bundle.sh` ships `target/x86_64-unknown-linux-gnu`'s
+     `libmapal_rt.a`, which nothing rebuilt; without bf16/class's `mapal_rt_checkpoint_hook` every arm failed to link and
+     `box_run.sh` timed nothing (`arms=0`). `benches/local/gpu_bundle.sh` now builds both runtimes from the tree.
+  5. `run_mapal.py` keeps each repetition's tokens (`tokens_per_rep`, `tokens_distinct`) instead of aborting when they
+     differ: the default face's order is unspecified (ADR-0040).
 
 ## Tests
 
-- Full workspace (`cargo test --workspace --release --no-fail-fast`, `RUST_TEST_THREADS=16 MAPAL_PAR=4`,
-  `MAPAL_TESTGEN_JOBS=4`) on the merge commit `a29a219b` (`test-full.log`): 154 test binaries, **1700 passed, 7
-  failed, 10 ignored**. The 7 failures, in 5 targets, are the three integration faults above and one golden:
-  `generic_fusion` (2) and `plan_cost` (2) and `row_block` (1) — carry-take's "fold array ptr"; `placement`
-  `once_range_on_generated_prompts` — the `d = T` stream; `site_choice` `candidate_zero_is_the_pre_sprint_emission`
-  — 36 golden rows (px_mlp2_64_f64, pt_rq_mlp2_512, pt_smlp_4096_256_1024 × 4 parts × 3 faces) that differ from
-  16d668c6 only by precision's `_u<slots>` variant name (host and device text equal with the names, kernel ids and
-  metadata ids normalized: the 24 default / exact (part, face) pairs checked): regolded in `716bc739`.
-- Re-run at `8bf54fb3` (site_choice after the regold): those five targets (generic_fusion 12/12, placement 2/2, plan_cost 3/3, row_block 9/9,
-  site_choice 9/9), the fixes' neighbours (flash_attention 6/6 with the extended `stream_mma_on_generated_attention`,
-  zero_fold 5/5, caching_memory 11/11, epilogue 13/13) and `mapal-ir` + `mapal-rewrite` (395 passed); each fix's
-  test fails without it (`fix*-*.log`).
-- **Suite emission** (`gpu_changed.sh --base 16d668c6`): same = 37, differs = 8 (`pt_indep_512`, `pt_indep_2048`,
-  `pt_mlp2_2048`, `pt_mlp2_2048_tf32`, `pt_rt_mlp2_1024`, `pt_rt_mlp2_2048`, `pt_diamond_2048`,
-  `pt_smlp_4096_256_1024`); equal at `8bf54fb3` and at the merge. All eight differ only by precision's `_u<slots>`
-  variant name (`0d9686a6`): with symbol names and metadata ids normalized, host and device IR are identical — the
-  same kernels, null by construction. The ladder run (`LADDER=1 gpu_run.sh`, value gates pass on every arm) times
-  them at 0.95–1.12× the best library leg (`changed/results/gap.md`).
+- Full workspace (`cargo test --workspace --release --no-fail-fast`, `RUST_TEST_THREADS=16 MAPAL_PAR=4
+  MAPAL_TESTGEN_JOBS=4`) on the final tree (`3c629486`, `test-full.log`, 8 120 s): **165 test binaries, 1716 passed,
+  0 failed, 10 ignored** — the walk's and the bf16 class's generated tests (`mma_walk`, `flash_attention`,
+  `half_tile`, `onto_device`) and residency's (`placement`) among them.
+- New, generated: `placement::cand_made_places_generated_prompt_heads` — 12 prompt heads (`prompt_head_src`: a gather
+  through run-time ids no proof bounds, its rows' sum of squares, the norm's scale, a projection, a residual; widths
+  256–2048, 8–512 rows) placed against x86-64-v3's measured host and the 5080: candidates only grow (a gather the
+  roofline put on the device stays), values within the default face's bound in every emulator mode and on the OFF arm.
+  Counters: 11 gathers on the device, **5 moved there by `cand-made`** (0 without it: the test fails), 9 with the norm,
+  8 with the residual, 8 OFF-arm runs. `half_tile::round_post_under_the_walk` — 4 rounding post sites kept ordered
+  under the forced walk, 3 split epilogues walked, 22 emulated runs within the bound.
+- **Kernel suite emission vs `bb9bbed7`** (`gpu_changed.sh --base bb9bbed7`): 35 programs + 2 cells × 5 faces, host and
+  device text equal on 42; `pt_causal_1024_256`, `pt_prefill_1024_512_256`, `pt_gen_1024_512_256` differ
+  (residency's `fly-unroll`). The runtime differs (the checkpoint hook) on all. ABBA of the three, 5 repetitions, value
+  gates pass (`changed/results`, load 7 → 4): causal 12.61 vs 12.75 ms (0.989), prefill 6.48 vs 6.50 (0.998), gen 6.57
+  vs 6.44 (1.019, ranges 6.45–6.60 vs 6.44–6.60 overlap; residency's −13 % on gen did not reproduce here). `cand-made`
+  on / off: 45 of 45 equal. That run's evidence check printed 103 mismatches, and this report did not list them; the
+  full-suite safety net for the runtime change did not run in this step. Both are covered under *Review fixes* below.
+- In the model (ABBA, bf16 512, 3 + 3 runs): the walk on 14.06–14.08 ms TTFT, off 15.07–15.10 (−1.02 ms), decode
+  equal, peak 2 870 vs 2 700 MB.
+
+## Review fixes (2026-11-26, after `b8429388`)
+
+An independent review raised three findings. All three were real. Raw output (never in git):
+`.claude/raw-evidence/local-rtx-5080/bf16-review/`.
+
+1. **`device-trap` could hang where the oracle traps.** A checking cell stores 0.0 in place of an out-of-range read.
+   The runtime raised the recorded trap only at a print, the clock, a host trap or the exit. A copy-out to the host
+   (`mapal_gpu_d2h`, `_d2h_on`) did not check it. So a host loop whose exit reads the copied element could walk
+   forever on the 0.0. Repro: the reviewer's gather (id 45 past a 40-row table) → GEMM, then `rows[300·1024+1]` into
+   `x <- 0.5; while x != target { x + 0.5 }`. Oracle: `index_oob`, rc 101. Before the fix: no output, killed at
+   20 s. **Fix**: every copy-out is a checkpoint (`trap_poll` after the copy; armed only after a checking cell has
+   run). Now on the RTX 5080: `mapal trap: index_oob`, rc 101, the oracle's outcome. A device value reaches host
+   control only through a copy-out. A device kernel cannot spin on the stand-in, because cells are loop-free
+   (`cell_plan`). A variant with the walk inside a map stays on the host, together with its gather. The emulator
+   runtime has the same checkpoint.
+   **Test**: `onto_device::device_trap_on_generated_gathers` now gives every other generated program a host probe:
+   one gathered element copied out and walked to. A clean probe reads a positive element. Emulated runs are bounded
+   (`Emulated::run_status_within`, 60 s, code 124). Counters: 27 programs, 27 device cells, 9 / 9 / 9
+   clean / past / negative, **9 probed trapping device cells**. Without the emulator's copy-out checkpoint the test
+   fails: `left: 124, right: 101`.
+   **Cost**: the model's first checkpoint after a checking cell is now the token's copy-out, not the clock read just
+   after it. The work is the same: one context sync and an 8-byte read. ABBA on the same emission (host and device
+   text equal but the data path): 3c629486's builds F against this tree's G, F G G F, warmup 2 + 5 reps a pass,
+   CPUs 16-23,48-55, load 1.2–2.1. TTFT G/F is 1.000 for bf16 128 / 512 / 2048 and 1.002 / 1.002 / 1.000 for f32;
+   decode G/F is 1.000 everywhere; the ranges overlap. G's medians: bf16 5.58 / 14.09 / 52.23 ms with decode 3.258 /
+   3.293 / 3.395, and f32 8.57 / 25.43 / 95.47 with decode 3.239 / 3.292 / 3.445. These match the tables' pass D
+   within 0.2 %, so the rows above stand (`model-ab.md`).
+2. **The integration's evidence mismatches.** 18 of the 19 head-only rows were a checker fault. confirm_pick.py
+   reverts a trial pick by appending `key site n 0 0`, a line without minima. The runtime reads that line: its last
+   line of a key wins. `evidence.py` `wisdom_lines` dropped it. So the checker expected the trial's pick 5 where
+   AUTO correctly launched 0. Now `wisdom_lines` reads the wisdom as `choice_load` does. A revert keeps the key's
+   trial for the argmin check (` confirm=0`).
+   The 19th row was AUTO ≤ RULES × (1 + null) on `pt_gen_1024_512_256` (6.568 vs 6.444). It compared equal launches:
+   AUTO's every pick was 0, which is RULES. That makes the difference null by construction, and the row now says
+   so (`same launches`).
+   A third fault showed up in this step's own suite run. The runtime's head-to-head pairs can veto the minima's
+   argmin (`0, w, w, 0, 0, w`; cross-arch). The pairs' runs enter the stored minima. So a vetoed trial stores 0
+   where the minima say 5. The checker now recomputes the pairs from the tune traces (`pair_vetoes`,
+   ` pairs=veto`).
+   Tests: `test_harness` `test_choice_rows_read_a_confirm_revert_as_the_runtime_does` (revert, same launches, veto).
+   It fails on `b8429388`'s `evidence.py`.
+   **Re-judged integration run**: 103 → **84 mismatches**. The head arm has 32 and the on-base arm has 32, row for
+   row; `.c1` has 20. These are the suite's pre-existing tile-kernel classes: `kmajor-a` 128-bit LDS / STS,
+   `full-tile` FFMA per LDS / accumulators / threads, `grid-share`, `nest-cell`, `flow-host`, `arch-rungs`. They
+   were untriaged before this step and remain so; none is new here.
+   `differential: 0 pass, 0 fail` is structural. box_run's differential skips `pt_*` stems, and the timed suite has
+   only `pt_*` stems. Their check against the oracle is the probe value gate (`value-gate prog=… pass`, every arm):
+   35 of 35 in each suite run below.
+3. **The full-suite safety net**, the runtime A/B it needs, and the walk through `evidence.py`.
+   - **Suite, both runtimes, ABBA.** The step built one bundle of the 35 programs and 2 cells from this tree (calibrated).
+     Its copy links bb9bbed7's runtime: its `mapal_gpu.c` and `libmapal_rt.a`, without the checkpoint hook or the
+     copy-out poll. The objects and PTX are identical. Runs went head, base, base, head (`LADDER=1`, every program
+     timed, no competitor legs; CPUs 16-23,48-55; 7.5 min a run; load 1.1–7). Value gates passed in every run
+     (35 of 35).
+     **34 of 35 programs are null.** `pt_pj_m16_n2048_k7168` (0.954) is bimodal in every arm, 0.033 or 0.037 ms,
+     and its head and base ranges overlap (`suite-cmp.md`). Run 4 re-tuned because the step's script deleted the
+     head bundle's wisdom. Only `pt_gen`'s pick moved (5 → 0, confirm revert), and its ratio is 1.009 with null 1.2 %.
+     Evidence: 13 028 checks and **202 mismatches, the same rows on both runtimes**, in the same pre-existing classes:
+     `kmajor-a` 82, `full-tile` 32, `grid-share` 18, `wide-fma` / `min-blocks` / `face-registers` 12 each,
+     `staged-regs` 8, `nest-cell` / `flow-host` 6, `panel-regs` 4, `window` / `prefetch` / `fill-wave` / `face-fma` /
+     `arch-rungs` 2. These were untriaged before this step and remain so.
+     The run also had 63 `n/a` rows: "no local-memory traffic in the hot loop" read `sass.hot.stl` / `ldl`, which the
+     hot-loop facts never recorded. `evidence.py facts` records them now, and the re-judged run has 0 `n/a`.
+   - **`mma-walk` through `evidence.py`.** The three `benches/algorithms` bf16 projections that walk ran with their
+     `.off-mma-walk` arms, value-gated: 3 arms each, all pass. They were probe-timed ABBA. Evidence: 232 checks,
+     **0 mismatch, 0 n/a**. Every `mma-walk` row is ok: `plan.walk = mma`; `atom_add` 64 / 128 / 128;
+     `ctas` 168 = 2 × 84 (one wave); hot-loop `STL` / `LDL` 0.
+     Time, ON / OFF in ms (null ≤ 1 %):
+
+     | projection | ON | OFF | ON/OFF |
+     |---|---:|---:|---:|
+     | 128 × 4096 × 14336 | 0.170 | 0.221 | 0.77 |
+     | 2048 × 4096 × 4096 | 0.646 | 0.677 | 0.95 |
+     | 2048 × 4096 × 14336 | 2.106 | 2.266 | 0.93 |
+
+     SASS explains the gain: each walk is 168 CTAs. The OFF grids are 128 tiles (0.76 of the slots), 512 tiles (3.05
+     rounds, the 4th 5 % full) and 512 tiles × S = 4 splits. The hot loops are equal per panel at 2048 (HMMA 64,
+     LDSM 16, LDGSTS 8). At 128 the walk takes the 128 × 128 tile: 124 regs against 48, and `REDG` 64 for the shared
+     tiles' partials.
+   - Tests (`--release`, `RUST_TEST_THREADS=8 MAPAL_TESTGEN_JOBS=4`): `onto_device` 12, `read` 10, `placement` 4,
+     `resident` 17, `streams` 19, `caching_memory` 11, `differential` 41 all pass. `test_harness` passes 28 of 34.
+     The 6 failures (`k_over_its_longest_fold`, `wrapper_retrieves…` × 3, `search_plan_and_pick`,
+     `request_clock_and_retention_placement`) fail identically with `b8429388`'s `evidence.py`. They pre-date this
+     step and are not its subject.
 
 ## Where Mapal still loses, why, and what is next (generic)
 
-1. **The prompt's host chain** (bf16 class: 2.5 of 18.1 ms at 512, 1.1 of 6.9 at 128). The embedding gather's index
-   `ids[t]·H + c` is proven only at run time, so the map is no `cell_plan` cell (`body_is_classifiable`: every
-   `Index` proven) and runs on the host, serially; layer 0's RMSNorm follows it there by the byte rule (its operand
-   is a host value). Next: a device cell whose index is unproven needs a device trap — a flag the kernel sets and
-   the next sync reports as the host's trap would (a runtime fact and a placement rule, not a model rule). The norm's
-   half is the residency worktree's in-progress `shared-upload` (an operand another device reader uploads anyway
-   adds no bytes).
-2. **Attention at 2048** (16.3 of 69 ms, bf16 class; 34 of 123 ms f32 class): every row reads the whole context —
-   the causal skip needs the cache proven finite (mask-frontend's open item: a run-time finite check, one reduction
-   a launch) — and the `stream-mma` geometry (32-row blocks, 16-key windows, 64 threads) reaches 36 Tflop/s.
-3. **Decode**: 288 launches, 3.36 ms of kernels at 76 % of the weights' DRAM roofline; ~200 small per-row kernels
-   (residency step: `flow` refuses the decode groups as `phase`; `horizontal` does not price latency-bound GEMVs).
-   **Calibrated, the decode step moves layer 0's chain (norm, key / value projections, rotated key) to the host**:
-   `device_pays` prices a per-trip cell's device side at the isolated `launch_ns` (11.1 µs: launch + completion)
-   where a launch queued behind the trip's device work costs `gap_ns` (260 ns) — +0.08 ms busy and +0.17 ms idle a
-   step against the uncalibrated build. Next: price a cell queued behind device work at the stream's dependent-launch
-   cost (a `DeviceCost` property already measured), with the suite A/B it needs.
-4. **Activation bytes**: the bf16 class still keeps f32 activations between the sums of products (cells 1.0 ms at
-   512, 5.0 ms at 2048; `attended` f32 into the output projection) where the competitors keep bf16.
-5. **The bf16 class builds slowly** (150–210 s against 10–20 s for the f32 class) — not traced here.
+1. **bf16 TTFT at 2048** (52.1 vs vLLM 45.3, TRT-LLM 45.7): attention 7.9 ms (FlashAttention-class kernels do the
+   causal half in ~3 ms; the `stream-mma` geometry at 2048 is 32-row blocks × 16-key windows, 64 threads), and 4.9 ms of
+   f32 elementwise cells (norms, RoPE, SiLU·up, residuals over f32 activations; the engines keep them bf16). Next:
+   the stream's block geometry from the pipe's rate (as the tensor tile's), and the activations' storage format from
+   their readers (`round-store` takes only arrays read solely as multiplicands).
+2. **bf16 TTFT at 128** (5.58 vs gpt-fast 4.94): the projections are 4.35 of 5.42 ms; at 128 rows nothing walks and
+   the 128 × N tiles fill 84 SMs in partial rounds (the tensor-tile report's open 1: the ordered tile's achieved pipe
+   share is no property yet, so the price misses wins at small grids).
+3. **Decode** (3.26–3.40 vs gpt-fast 2.97): 3.21 ms of kernels, 324 launches; the GEMVs run near the DRAM rate, the
+   rest is ~240 small kernels (residency step: merging q/k/v needs the inlined calls' walk order — open there).
+4. **The walk's side effects** (bf16 class): (a) at 512 the greedy tokens differ between runs (4 sequences in 5): a
+   shared tile's 3+ partials are added by `red` in arrival order, so the f32 sums round differently run to run and a
+   near tie flips (2 partials into the zeroed output commute exactly: 128 and 2048 are deterministic); (b) +170 MB peak
+   at 512 (and the 2048 peak above bf16/class's 2 954 MB): each walked site's workspace is its own buffer, not colored
+   by death across the 16 layers. Next, generic: the ticket sums each tile's partials in piece order (the tensor-tile
+   report's open 2, "per-block slots summed at the ticket") — deterministic and without the zero pass — and the
+   workspaces as arena values with their kernel's lifetime.
+5. **Peak memory** at 512 / 2048 above HF eager and llama.cpp (item 4b plus the f32 activations).
 
 No tailored fixes (`docs/tailored-fixes.md` unchanged).
 

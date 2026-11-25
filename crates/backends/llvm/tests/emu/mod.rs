@@ -158,6 +158,20 @@ pub fn host_device(dev: &str) -> String {
                 l = format!("{}add {ty} {v}, 0", &l[..i]);
             }
         }
+        // bf16 tensor-tile `mma-walk`: a group workspace's fire-and-forget add
+        // (`red`) is the atomic add whose value goes unread.
+        let red = "call void asm sideeffect \"red.relaxed.gpu.global.add.f32 [$0], $1;\", \"l,f,~{memory}\"(ptr ";
+        if let Some(i) = l.find(red)
+            && let Some((p, x)) = l[i + red.len()..]
+                .trim_end_matches(')')
+                .split_once(", float ")
+        {
+            let name = format!("%emu_red_{}", p.trim_start_matches('%'));
+            l = format!(
+                "{}{name} = atomicrmw fadd ptr {p}, float {x} monotonic, align 4",
+                &l[..i]
+            );
+        }
         // gapfix `stream-ld`: a streaming load (`ld.global.cs.nc`, the L2's
         // eviction priority) is a plain load of the same words.
         if let Some(i) = l.find(" asm \"ld.global.cs.nc.")
@@ -614,17 +628,43 @@ impl Emulated {
     /// exit code (ADR-0045: a failed read exits 103 with its message).
     #[allow(dead_code)]
     pub fn run_status(&self, env: &[(&str, &str)]) -> (String, String, i32) {
+        self.run_status_within(env, EMU_TIMEOUT_SECS)
+    }
+
+    /// [`Emulated::run_status`], the run killed after `secs`: exit code 124
+    /// (as `timeout(1)` reports it), so a run that never ends fails its test
+    /// instead of hanging it.
+    #[allow(dead_code)]
+    pub fn run_status_within(&self, env: &[(&str, &str)], secs: u64) -> (String, String, i32) {
         let _slot = slot();
-        let out = Command::new(self.dir.path().join("x"))
+        let mut child = Command::new(self.dir.path().join("x"))
             .env("MAPAL_PAR", "2")
             .env("MAPAL_SPIN", "0")
             .envs(env.iter().copied())
-            .output()
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
             .unwrap();
+        let start = Instant::now();
+        let mut timed_out = false;
+        while child.try_wait().unwrap().is_none() {
+            if start.elapsed() > Duration::from_secs(secs) {
+                let _ = child.kill();
+                timed_out = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let out = child.wait_with_output().unwrap();
+        let code = if timed_out {
+            124
+        } else {
+            out.status.code().unwrap_or(-1)
+        };
         (
             String::from_utf8_lossy(&out.stdout).into_owned(),
             String::from_utf8_lossy(&out.stderr).into_owned(),
-            out.status.code().unwrap_or(-1),
+            code,
         )
     }
 

@@ -24,7 +24,34 @@ use std::{
 
 /// Render `v` via `Display` (== interp `render`) and write it to stdout,
 /// appending a newline when `newline`; flush before returning.
+/// bf16-class `device-trap`: the host checkpoint's hook — the GPU runtime's
+/// read of the device's trap word (`mapal_gpu_trap_arm`), registered once a
+/// trap-checking kernel has launched; `0`: none.
+static CHECKPOINT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Register the checkpoint hook (`mapal_gpu.c` / `mapal_gpu_emu.c`).
+#[unsafe(no_mangle)]
+pub extern "C" fn mapal_rt_checkpoint_hook(f: extern "C" fn()) {
+    CHECKPOINT.store(f as usize, std::sync::atomic::Ordering::Release);
+}
+
+/// A host checkpoint (a print, the clock, a trap): a device trap recorded
+/// before it is raised here — the oracle's outcome, the program's effects
+/// up to the trapping operation and no later. The GPU runtime's copy-outs
+/// (`mapal_gpu_d2h`, `_d2h_on`) poll the same word: the host never computes
+/// on a trapped read's stand-in (device cells are loop-free, `cell_plan`, so
+/// only host control can fail to reach a checkpoint).
+fn checkpoint() {
+    let p = CHECKPOINT.load(std::sync::atomic::Ordering::Acquire);
+    if p != 0 {
+        // SAFETY: only `mapal_rt_checkpoint_hook` stores, an `extern "C" fn()`.
+        let f: extern "C" fn() = unsafe { std::mem::transmute(p) };
+        f();
+    }
+}
+
 fn emit(v: &dyn std::fmt::Display, newline: bool) {
+    checkpoint();
     let mut out = io::stdout();
     // Ignore write errors: a broken pipe is the harness's business, not ours.
     if newline {
@@ -69,6 +96,9 @@ pub unsafe extern "C" fn mapal_print_str(ptr: *const u8, len: usize, newline: bo
 /// `0 = div_zero`, `1 = index_oob`; the emitter only ever passes these two.
 #[unsafe(no_mangle)]
 pub extern "C" fn mapal_trap(kind: u32) -> ! {
+    // A device trap recorded earlier is the program's first (its launch
+    // precedes this host operation).
+    checkpoint();
     let msg = match kind {
         0 => "div_zero",
         1 => "index_oob",
@@ -679,6 +709,7 @@ static TIME_EPOCH: OnceLock<std::time::Instant> = OnceLock::new();
 /// measured against the process-lifetime [`TIME_EPOCH`].
 #[unsafe(no_mangle)]
 pub extern "C" fn mapal_time_ms() -> f64 {
+    checkpoint();
     TIME_EPOCH
         .get_or_init(std::time::Instant::now)
         .elapsed()

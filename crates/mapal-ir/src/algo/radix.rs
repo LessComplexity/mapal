@@ -396,13 +396,11 @@ impl CategoryIr {
             return None;
         };
         let n = self.tile_iota_size(self.pair_slot_source(map.source, map_captures)?)?;
-        let Ty::Array {
-            size,
-            elem: out_elem,
-        } = &self.objects.get(map.target)?.ty
-        else {
+        let Ty::Array { size, .. } = &self.objects.get(map.target)?.ty else {
             return None;
         };
+        // bf16-class `round-post`: an epilogue rounding the cell as stored.
+        let out_elem = &Box::new(self.tile_out_elem(map.target)?);
         // One output (`n = 1`) has no digit of `t` to tile along.
         if *size != n || n < 2 || map_captures == 0 {
             return None;

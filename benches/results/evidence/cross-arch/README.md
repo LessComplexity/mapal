@@ -4,9 +4,10 @@ Branch `local-rtx-5080` @ `8bba2a50` (kernel merging, hardware properties, model
 this round's tooling (`f4e6e270` vast wrappers, `3968f59c` / `bd9ae103` / `73360fbc` calibration on the box,
 `72ee9297` per-instance ssh key). Four vast.ai boxes in parallel, CUDA 13.0.2 devel image, torch 2.11.0+cu130.
 
-Cross-part matrix (120 rows + 7 fp8-weight rows, every competitor leg, five parts with the RTX 5080, all on
-`f1d3a04f`), Mapal vs the fastest same-precision competitor: [matrix.md](../matrix.md); the latest round:
-[f1d3a04f (confirmation, all competitors)](#f1d3a04f-confirmation-all-competitors).
+Cross-part matrix (120 rows + 7 fp8-weight rows, every competitor leg at the program boundary, five parts with the
+RTX 5080, the rented four on `b8429388`), Mapal vs the fastest same-precision competitor: [matrix.md](../matrix.md);
+the latest round, with the full model on every part:
+[b8429388 / 9be9886d (five-GPU round)](#b8429388--9be9886d-five-gpu-round-bf16-integration-every-competitor-leg-at-the-program-boundary-the-full-model).
 
 **Bundle, one per part** (`integrated_bundle.sh`, built locally, `LADDER=1`): the README GPU suite (35 programs and
 the two GEMM cells of `benches/local/gpu_bundle.sh`); the model-scale suite — the 12 natural Llama-layer programs
@@ -1810,3 +1811,306 @@ Raw (local, not in git): `.claude/raw-evidence/cross-arch/f1d3a04f/<part>/` (`re
 `gates.py`, cm / cmtab, peaks, f8tab, xcmp, replay-flips, a100-clock-test, the `emit_cmp` tables), `scripts/` (comp_box,
 xbox, launch, watchdog, phase_bc, build, stems, ops_c, gaps / gap_box / gapsum / gaprows / regap, emit_cmp, dbuild,
 replay_all, mkmatrix, the analysis scripts).
+
+## b8429388 / 9be9886d (five-GPU round: bf16 integration, every competitor leg at the program boundary, the full model)
+
+Branch `local-rtx-5080`: the bf16 integration `b8429388` (merges of bf16/tensor-tile `mma-walk`, bf16/class
+`finite-check` / `narrow-window` / `round-post` / `device-trap`, prefill/residency's last three commits, `cand-made`)
+and its reviewed final `9be9886d` (review fixes: a copy-out is a `device-trap` checkpoint; checker and test changes).
+Four vast.ai boxes, the f1d3a04f round's tooling (CUDA 13.0.2 devel image, torch 2.11.0+cu130 / Triton 3.6.0, Liger
+0.8.5, FlashInfer 0.7.5.post1, flash-attn v2.8.3.post2 built on every box with `NVCC_THREADS=2`, FA3 on the H100,
+`TORCH_SKIP` for the bf16-storage twins) with two changes. **(1) Every competitor leg is timed at the program
+boundary** (`fb909121`, gaps-disasm H): device idle, then the host clock around the call and a synchronize, the leg's
+host dispatch inside its clock as a Mapal program's dispatch and launches are inside its own `time` reads; the former
+event bracket is still printed as `dev_med_ms`. **(2) The full model** (Llama-3.2-1B-Instruct, `unsloth/`, no token)
+against seven inference stacks on every box, type to type, as `local-rtx-5080/full-model.md` does on the RTX 5080.
+Matrix over all five parts on `b8429388` (the RTX 5080 column: the sources of `matrix.md`'s command at that commit,
+`gapfix-integrate` @ d945c641 / d450014d / 9abeb446 + `gapfix-boundary` chain legs): [matrix.md](../matrix.md). Raw
+output (never in git): `.claude/raw-evidence/cross-arch/five-gpu/<part>/`, scripts in `five-gpu/scripts/`.
+
+**Phases, one rental a part.** A (before the integrated commit existed): box check (device facts + a 30 s FFMA burn:
+a box whose busy SM clock is below 0.6 × its max, or that reports a hardware / thermal slowdown, is replaced), the
+installs with the GPU idle (the kernel-suite stack, FA2 / FA3, and `~/.cache/mapal/model-compare/setup_box.sh`: HF
+transformers 5.22.2, gpt-fast 6ecad9b, vLLM 0.33.0, SGLang 0.5.23, TensorRT-LLM 1.3.0, llama.cpp 0ce7f21 with bf16 /
+f16 / f32 GGUFs), `calib.cu` every kind (incl. `math`, `lds bcast`) + `gsync` / `copy` / `body` twice more,
+`exp_calib`, `tma_calib` (H100), `mma_calib` (sm_89+), `l2keep.cu`, then `torch_bench.py` / `comp_bench.py` over the
+137 timed programs + the two GEMM cells (30 reps, the f1d3a04f round's reference values as their gate), the torch
+peaks, and the full-model engines in both classes. B (`b8429388`): `box_run.sh` (`TORCH=0 COMP=0 CALIB=0`, the
+bundle's 137 programs + cells + 18 px differentials, shipped emission, no arms: differential, probe value gates,
+ABBA × 5, the tune pass, `gemm_lib` / `tile_bench` / `chain_bench` / `mlp_bench` legs), the full model (the six
+builds linked on the box, weights exported on the box, the same-class HF references `hf_reference.py` first), then
+competitor legs re-timed back to back (drift). C (`9be9886d`): the emission compared, the changed builds re-timed.
+
+**Run notes.** (1) **H100 market**: one verified H100 SXM offer all night ($4.44 + disk = $4.625/h); the box started
+at 23:40 so that phase A ended as its bundle was ready (02:10). (2) **A100 box 1 was destroyed at 130 min by the
+watchdog** (the f1d3a04f watchdog's per-part default caps, 130 min A100 / 85 min H100, were not overridden at launch —
+an orchestration error; the H100's cap was raised before it fired): $1.61 lost, phase A redone on a second box.
+(3) **Harness fixes on the boxes** (runner-level, measurement unchanged): the f32 runner copy of `run_sglang.py` hangs
+in `engine.get_server_info()` → the bf16 class runs the original runner, its shutdown bounded (60 s) after the result
+is written; TensorRT-LLM needs `libnuma1` and, in a root container, Open MPI 5's `*_ALLOW_RUN_AS_ROOT` for its executor
+spawn; `setup_box.sh`'s driver parse failed on driver 610 (`CUDA UMD Version`). On the RTX 4090, SGLang 128 / 512 and
+TensorRT-LLM were re-run after phase A on the same box. (4) **Peak memory**: the 3090 container's NVML hides process
+memory — competitor peaks there (†) are the device's growth while the runner ran, Mapal's `n/a`.
+
+### Boxes and cost
+
+| part | GPU (driver, power limit) | host CPU | offer | $/h | hours | cost | status |
+|---|---|---|---|---:|---:|---:|---|
+| (3090 tries) | — | EPYC 7742 / 7663, Xeon 6330N | 61732988, 55384239, 52870151 | 0.30–0.41 | 0.31 | $0.13 | never running (status error) |
+| rtx-3090 | RTX 3090 24 GB (595.99.02, 390 W) | Ryzen 9 3900X | 52497112 | 0.389 | 5.66 | $2.20 | A, B, C |
+| (a100 box 1) | A100-SXM4-40GB (610.57.04, 370 W) | EPYC 7532 | 62381177 | 0.736 | 2.21 | $1.62 | destroyed by the watchdog's 130 min cap mid phase A |
+| a100 | A100-SXM4-40GB (590.48.01, 400 W) | EPYC 7713 | 36878334 | 0.770 | 4.38 | $3.38 | A, B, C |
+| rtx-4090 | RTX 4090 24 GB (595.99.02, 600 W; default 450 W, max 3120 MHz) | Ryzen 9 9950X | 61175417 | 0.511 | 5.95 | $3.04 | A (+ SGLang / TRT-LLM re-run), B, C |
+| h100 | H100 80GB HBM3 SXM (615.71.09, 700 W) | Xeon Platinum 8568Y+ | 41555537 | 4.625 | 4.26 | $19.72 | A, B, C |
+| **total** | | | | | | **$30.09** | every `mapal-five-*` destroyed (checked by label) |
+
+Budget $40 (watchdog at $39.5, 600 min a box). $/h is the instance's own (disk included).
+
+### Box conditions (no box throttled; none replaced for it)
+
+| part | FFMA burn: busy / max SM clock | power, temp under the burn | through the runs | calibration lines |
+|---|---|---|---|---|
+| rtx-3090 | 1 950 / 2 130 MHz (0.92) | 350 W of 390, 45 °C | 1 860–1 972 MHz, ≤ 45 °C (engines); 336 W, 42 °C after B | 510 (8 `math`, 8 `lds bcast`, 19 `l2keep`; no `mma_calib`: fp8 `mma` needs sm_89) |
+| a100 | 1 410 / 1 410 MHz (1.00) | 166 W of 400, 51 °C | 1 365–1 410 MHz, ≤ 50 °C | 522 (same kinds; no `mma_calib`) |
+| rtx-4090 | 2 445 / 3 120 MHz (0.78: the board's boost table; 2 445 sustained) | 255 W of 600, 59 °C | 2 445 MHz, ≤ 47 °C | 653 (+ 131 `mma`) |
+| h100 | 1 980 / 1 980 MHz (1.00) | 384 W of 700, 45 °C | 1 980 MHz, ≤ 42 °C | 680 (+ 131 `mma`, 19 `tma`) |
+
+Unlike f1d3a04f (4090 clock-locked at 1.2 GHz, H100 at 500 W), every part ran at its full clock and power. **Host
+noise** (drift, below): the A100's and H100's host-bound legs moved up to ±30–70 % between phase A and B on the same
+box; the RTX parts' within ±5 %.
+
+### Value gates
+
+| part | differential, first pass | differential, held | probe gates (programs) | arms · candidates within D2/D3 | device-exact oracles | split programs | gemm_lib legs within | torch legs within | competitor legs within | full model f32 tokens vs HF f32 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| rtx-3090 | 86 / 88 | 86 / 86 | 137 / 137 | 1130 / 1130 | 136 / 136 | 8 / 8 | 112 / 112 | 622 / 650 | 132 / 136 | 128 / 128 / 128 |
+| a100 | 112 / 116 | 112 / 112 | 137 / 137 | 897 / 897 | 136 / 136 | 8 / 8 | 112 / 112 | 622 / 650 | 133 / 136 | 128 / 128 / 128 |
+| rtx-4090 | 124 / 128 | 124 / 124 | 137 / 137 | 1175 / 1175 | 136 / 136 | 8 / 8 | 112 / 112 | 624 / 650 | 132 / 136 | 128 / 128 / 128 |
+| h100 | 112 / 116 | 112 / 112 | 137 / 137 | 1133 / 1133 | 136 / 136 | 8 / 8 | 112 / 112 | 626 / 650 | 149 / 153 | 128 / 128 / 128 |
+
+**Finding 1 — a Mapal value failure on every part: `px_llm_blkdec_b2_l16_bf16` (the bf16-storage block-decode
+differential) is outside ADR-0040 D2's bound.** Element 2 of 5: 0.13053171 against the exact face's 0.12759829, rel
+2.30·10⁻² > 1.62·10⁻² (K = 2168), the same value on the 3090, A100, 4090 and H100, in the shipped build and its
+`.off-place` arm, every site candidate. At gapfix-integrate (`d945c641`) the RTX 5080 printed 0.1293837 for it
+(rel 1.40·10⁻², within). Between them bf16/class put the `_bf16` class's KV cache in bf16 (`narrow-window`): a cached
+key / value is now rounded once more than the bound counts, or the bound's `--bf16` term misses the cache's rounding.
+**Points at**: the bf16 class's a-priori bound (`precision_plan.bound` with the cache's `NarrowForm` in the chain) —
+open for the compiler; the timed `pt_llm_blkdec_b1_l4096_bf16` passed its probe gate on every part (its probe gate is
+the program's own oracle within its bound). `box_run.sh` stops timing on any differential failure, so on the first
+three boxes B ran a second pass with that program's builds held out of the differential (kept in `mb/<part>/held/`;
+the A100 ran the differential over everything first, then the held pass). Outside, competitors only (as every round):
+torch's TF32 legs at 1e-3, `triton` on the two long `lsm` rows, `triton-tf32` on the TF32 MLPs. The A100's GEMM cell
+keeps `tile_bench`'s bit-exact gate off (split tile: the default face's bits, within D2) — the matrix drops it.
+
+**Finding 2 — on the A100 the bf16 class's greedy tokens vary run to run**: 3–5 distinct sequences in 5 repetitions at
+512 and 2048 (1 at 128; the f32 class 1 everywhere; the 3090, 4090 and H100 1 everywhere) — as on the RTX 5080 at
+512 (`full-model.md`: the 16-bit tensor tile's stream-K walk, `mma-walk`, adds a tile's partials in arrival order;
+`--gpu-off=mma-walk` is deterministic), meeting near ties; the tables give the first repetition's tokens.
+
+### Kernel suite — Mapal / best competitor at the same precision (program boundary; even = |ratio − 1| ≤ max(null, 5 %))
+
+| | rtx-5080 | rtx-3090 | a100 | rtx-4090 | h100 |
+|---|---:|---:|---:|---:|---:|
+| **all rows** (119 on every part) | 0.876 | **0.920** | 1.006 | **0.911** | 1.101 |
+| all rows, event bracket (`dev_med_ms`, the f1d3a04f definition) | — | 1.011 | 1.134 | 0.964 | 1.233 |
+| f1d3a04f, event bracket | 0.965 | 0.997 | 1.185 | 0.954 (1.2 GHz box) | 1.204 (500 W box) |
+| W / E / L (120 rows) | 46/44/30 | 39/30/51 | 57/11/51 | 49/25/46 | 30/8/82 |
+| GEMM cells & projections | 0.926 13/19/15 | 1.048 7/17/23 | 1.161 14/8/24 | 0.935 13/15/19 | 1.373 2/5/40 |
+| MLP chains | 0.974 1/5/0 | 1.094 0/1/5 | 1.075 3/0/3 | 0.945 4/0/2 | 1.285 0/0/6 |
+| attention / softmax / long rows | 0.639 9/5/0 | 0.517 9/0/5 | 0.628 12/0/2 | 0.647 12/2/0 | 0.790 5/1/8 |
+| LLM decode / prefill / block | 0.987 16/7/14 | 0.973 18/5/14 | 1.013 18/2/17 | 1.053 10/6/21 | 0.975 19/1/17 |
+| conv / FIR / elementwise | 0.493 6/0/1 | 0.695 5/0/2 | 0.944 4/1/2 | 0.646 5/0/2 | 0.805 4/0/3 |
+| fan-in/out, loops, CPU+GPU | 0.979 1/8/0 | 1.030 0/7/2 | 0.977 6/0/3 | 0.957 5/2/2 | 1.108 0/1/8 |
+| f32 rows (66) | 0.772 | 0.801 | 0.819 | 0.807 | 0.902 |
+| tf32 rows (13) | 1.154 | 1.149 | 1.716 | 1.208 | 1.646 |
+| bf16w rows (9) | 1.559 | 1.463 | 1.575 | 1.634 | 1.581 |
+| bf16kv rows (7) | 0.971 | 0.935 | 0.919 | 1.097 | 0.896 |
+| bf16 rows (25) | 0.846 | 1.005 | 1.135 | 0.835 | 1.409 |
+
+Geomean Mapal / best leg (family cells: geomean, W/E/L). The program boundary is the fair clock (both sides' host
+dispatch inside it); it moves every part 5–11 % in Mapal's favour against the event bracket (launch-bound torch
+legs). **Like for like with f1d3a04f** (event bracket, the same harness otherwise): the A100 0.954× of its ratio
+(1.185 → 1.134), the 3090 1.01× and the H100 1.02× (even), the 4090 1.01× (f1d3a04f's box was clock-locked). The
+`_f8w` rows stay `(no leg)`. The full table, every leg and the verdict flips: [matrix.md](../matrix.md); the event
+variant: `five-gpu/matrix-event-bracket/`.
+
+**Drift** (competitor legs re-timed on the same box right after Mapal's suite, against phase A): rtx-3090 70 legs,
+geomean 0.997 [0.88–1.04], gpt-fast / llama.cpp / HF at 512 within 4 %; rtx-4090 72 legs, 0.997 [0.95–1.02], model
+legs within 1 %; a100 70 legs, 1.033 [0.73–1.42], 26 beyond 5 % (host-bound: m1 projections, B1 decode, attention),
+llama.cpp bf16 TTFT at 512 43.4 → 18.3 ms; h100 72 legs, 1.003 [0.66–1.68], 23 beyond 5 % (the B1 decode's FA2 / FA3
+/ FlashInfer / Liger legs 0.66–0.70, i.e. phase A slower), model decode within 7 %. The matrix uses phase A's legs;
+on the A100 and H100 a host-bound row's ratio carries that box's ±30 % host noise.
+
+**Phase C (`9be9886d`)**: the shipped emission of all 137 programs on all four parts, and of the six full-model
+builds, is identical to `b8429388`'s (host and device text less the `; mapal.` comments; null by construction). The
+runtime changed (`mapal_gpu_d2h` polls an armed trap), so the full model was re-timed on every box with the final
+runtime: final / integrated TTFT 0.998–1.013 and decode 0.998–1.001 on the 3090, 0.998–1.002 / 0.998–0.999 on the
+4090, 0.957–1.004 / 0.983–1.014 on the H100, 0.886–1.132 / 0.767–0.959 on the A100 (its integrated pass's decode
+3.85–4.77 ms against 3.56–3.89: host noise), tokens equal except the A100's bf16 class (finding 2). The kernel suite's
+runtime safety net (the full suite on the final runtime) did not run on the rented parts (budget). The tables below
+are the final pass.
+
+### Full model — Llama-3.2-1B-Instruct, batch 1, 128 generated, prompts 128 / 512 / 2048, medians of 5 (warmup 2)
+
+Definitions (`model-compare/common.py`): TTFT = submit → first token on the host; decode = (t₁₂₈ − t₂) / 126 ms per
+token; e2e = t₁₂₈; peak = the process's GPU memory. **Type to type**, no gain claimed across classes: the **f32 class**
+is the program as written (Mapal's default face: f32 activations on the bf16 weights, within ADR-0040 D2) against the
+f32-compute engines (`--dtype f32`, TF32 off: gpt-fast, vLLM, llama.cpp f32 GGUF, HF eager, HF static + compile;
+SGLang has no f32 path and TensorRT-LLM's f32 output is wrong — not timed); the **bf16 class** is
+`benches/model/variant.py --compute bf16` (`fold: bf16 | f32` on the three sums of products, the bf16 KV cache)
+against the bf16 engines (gpt-fast, vLLM, SGLang, TensorRT-LLM, llama.cpp bf16, HF eager, HF static + compile;
+llama.cpp f16 is shown, not compared). Mapal: `mapal build --target=<part> --host=x86-64-v3` per prompt length, the
+host object linked on the box; `benches/model/run_mapal.py`. Tokens: equal before the first difference against the
+same-class HF reference run on the box (`hf_reference.py`, eager attention; f32: TF32 off). Bold = the class's best.
+
+#### rtx-3090 — f32 class
+
+| tool | TTFT 128 ms | TTFT 512 | TTFT 2048 | decode 128 ms/token | decode 512 | decode 2048 | e2e 512 ms | peak MB (128 / 512 / 2048) |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| **Mapal** (as written: f32 activations on the bf16 weights) | 19.37 | **55.98** | **225.7** | **3.974** | **4.038** | **4.222** | 565.3 | n/a / n/a / n/a |
+| gpt-fast f32 | 19.17 | 73.42 | 327.0 | 6.072 | 6.152 | 6.295 | 855.5 | 6188† / 6484† / 7546† |
+| vLLM f32 | 20.00 | 59.50 | 280.4 | 6.142 | 6.269 | 6.615 | 855.7 | 12498† / 12542† / 12738† |
+| llama.cpp f32 GGUF | **18.67** | 58.77 | 274.7 | 6.372 | 6.611 | 7.248 | 900.5 | 5068† / 5120† / 5316† |
+| HF eager f32 | 19.62 | 64.58 | 340.4 | 10.948 | 11.124 | 10.765 | 1477.2 | 5084† / 5184† / 6474† |
+| HF static + compile f32 | 23.17 | 67.57 | 342.9 | 7.428 | 8.693 | 13.734 | 1172.5 | 5134† / 5264† / 6732† |
+
+Mapal / best tool: TTFT 1.04 (llama.cpp-f32) / 0.95 (llama.cpp-f32) / 0.82 (llama.cpp-f32); decode 0.65 (gpt-fast-f32) / 0.66 (gpt-fast-f32) / 0.67 (gpt-fast-f32).
+Tokens equal before the first difference, Mapal f32 vs hf-f32 (`hf_reference.py`, eager, on the box): 128 / 128 / 128 of 128.
+
+#### rtx-3090 — bf16 class
+
+| tool | TTFT 128 ms | TTFT 512 | TTFT 2048 | decode 128 ms/token | decode 512 | decode 2048 | e2e 512 ms | peak MB (128 / 512 / 2048) |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| **Mapal** (`fold: bf16 \| f32`) | 10.62 | 23.84 | 91.65 | 3.960 | 4.015 | 4.104 | 529.5 | n/a / n/a / n/a |
+| gpt-fast (max-autotune, CUDA graphs) | **6.86** | 23.02 | 85.05 | **3.228** | **3.274** | **3.295** | 439.3 | 3306† / 3428† / 3948† |
+| vLLM 0.33.0 | 14.02 | 21.48 | 72.31 | 3.655 | 3.668 | 3.717 | 487.1 | 13048† / 13060† / 13180† |
+| SGLang 0.5.23 | 8.48 | **20.38** | 71.53 | 3.516 | 3.546 | 3.612 | 470.6 | 14711† / 180† / 216† |
+| TensorRT-LLM 1.3.0 | 10.86 | 20.50 | **70.25** | 3.537 | 3.594 | 3.681 | 477.0 | 13694† / 13285† / 13748† |
+| llama.cpp bf16 | 8.57 | 24.29 | 91.72 | 3.510 | 3.539 | 3.613 | 474.0 | 2724† / 2766† / 2816† |
+| HF eager | 12.22 | 22.93 | 81.44 | 10.611 | 10.120 | 9.655 | 1308.0 | 2712† / 2766† / 2948† |
+| HF static cache + compile | 12.45 | 24.52 | 83.18 | 4.215 | 4.641 | 6.420 | 613.9 | 2762† / 2810† / 3020† |
+| *(llama.cpp f16 — another type, not compared)* | *7.90* | *18.31* | *69.26* | *3.511* | *3.520* | *3.604* | *465.9* | *2724† / 2768† / 2818†* |
+
+Mapal / best tool: TTFT 1.55 (gpt-fast) / 1.17 (sglang) / 1.30 (trtllm); decode 1.23 (gpt-fast) / 1.23 (gpt-fast) / 1.25 (gpt-fast).
+Tokens equal before the first difference, Mapal bf16 vs hf-bf16-eager (`hf_reference.py`, eager, on the box): 49 / 128 / 66 of 128.
+
+#### a100 — f32 class
+
+| tool | TTFT 128 ms | TTFT 512 | TTFT 2048 | decode 128 ms/token | decode 512 | decode 2048 | e2e 512 ms | peak MB (128 / 512 / 2048) |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| **Mapal** (as written: f32 activations on the bf16 weights) | **16.19** | **40.00** | **137.0** | **3.559** | **3.819** | **3.889** | 513.5 | 2814 / 2892 / 3174 |
+| gpt-fast f32 | 27.13 | 88.73 | 349.1 | 4.137 | 4.212 | 4.374 | 625.4 | 6392 / 6692 / 7754 |
+| vLLM f32 | 29.24 | 76.77 | 315.6 | 4.549 | 4.439 | 5.049 | 643.0 | 21656 / 21700 / 21896 |
+| llama.cpp f32 GGUF | 22.14 | 87.91 | 322.1 | 4.652 | 5.099 | 5.669 | 738.3 | 5220 / 5272 / 5468 |
+| HF eager f32 | 26.24 | 84.94 | 352.1 | 12.658 | 14.907 | 13.354 | 1982.0 | 5268 / 5368 / 6658 |
+| HF static + compile f32 | 28.53 | 79.83 | 352.1 | 5.748 | 7.012 | 10.741 | 988.4 | 5362 / 5468 / 6942 |
+
+Mapal / best tool: TTFT 0.73 (llama.cpp-f32) / 0.52 (vllm-f32) / 0.43 (vllm-f32); decode 0.86 (gpt-fast-f32) / 0.91 (gpt-fast-f32) / 0.89 (gpt-fast-f32).
+Tokens equal before the first difference, Mapal f32 vs hf-f32 (`hf_reference.py`, eager, on the box): 128 / 128 / 128 of 128.
+
+#### a100 — bf16 class
+
+| tool | TTFT 128 ms | TTFT 512 | TTFT 2048 | decode 128 ms/token | decode 512 | decode 2048 | e2e 512 ms | peak MB (128 / 512 / 2048) |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| **Mapal** (`fold: bf16 \| f32`) | 8.57 | 16.10 | 59.84 | 3.663 | 3.689 | 3.768 | 480.9 | 2806 / 3070 / 3264 |
+| gpt-fast (max-autotune, CUDA graphs) | **4.58** | 11.55 | 31.02 | **2.352** | **2.384** | **2.394** | 314.8 | 3512 / 3634 / 4174 |
+| vLLM 0.33.0 | 19.64 | 19.70 | 29.76 | 3.081 | 2.888 | 2.966 | 386.2 | 22208 / 22220 / 22340 |
+| SGLang 0.5.23 | 9.20 | **11.14** | 29.98 | 3.535 | 3.182 | 3.224 | 414.5 | 23774 / 23790 / 23806 |
+| TensorRT-LLM 1.3.0 | 15.62 | 16.54 | **28.17** | 2.750 | 2.867 | 2.938 | 380.3 | 22034 / 22014 / 22088 |
+| llama.cpp bf16 | 51.75 | 43.42 | 130.6 | 2.724 | 2.794 | 2.856 | 398.9 | 2898 / 2940 / 2990 |
+| HF eager | 12.17 | 14.31 | 43.89 | 10.477 | 11.772 | 11.382 | 1510.4 | 2898 / 2952 / 3134 |
+| HF static cache + compile | 16.57 | 17.72 | 42.55 | 3.762 | 4.128 | 6.066 | 541.1 | 2996 / 3040 / 3282 |
+| *(llama.cpp f16 — another type, not compared)* | *49.14* | *14.76* | *56.38* | *2.746* | *2.746* | *2.847* | *364.2* | *2896 / 2940 / 2990* |
+
+Mapal / best tool: TTFT 1.87 (gpt-fast) / 1.44 (sglang) / 2.12 (trtllm); decode 1.56 (gpt-fast) / 1.55 (gpt-fast) / 1.57 (gpt-fast).
+Tokens equal before the first difference, Mapal bf16 vs hf-bf16-eager (`hf_reference.py`, eager, on the box): 49 / 32 / 57 of 128.
+
+#### rtx-4090 — f32 class
+
+| tool | TTFT 128 ms | TTFT 512 | TTFT 2048 | decode 128 ms/token | decode 512 | decode 2048 | e2e 512 ms | peak MB (128 / 512 / 2048) |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| **Mapal** (as written: f32 activations on the bf16 weights) | **7.42** | **20.10** | **75.65** | **3.416** | **3.470** | **3.611** | 457.3 | 2798 / 2854 / 3136 |
+| gpt-fast f32 | 10.31 | 37.34 | 159.7 | 5.533 | 5.543 | 5.713 | 742.0 | 6416 / 6722 / 7784 |
+| vLLM f32 | 10.57 | 31.57 | 142.5 | 5.632 | 5.697 | 5.886 | 755.1 | 12618 / 12662 / 12858 |
+| llama.cpp f32 GGUF | 11.96 | 33.74 | 144.8 | 5.801 | 5.987 | 6.497 | 794.6 | 5190 / 5242 / 5438 |
+| HF eager f32 | 11.99 | 35.30 | 201.4 | 7.288 | 7.693 | 8.555 | 1012.2 | 5226 / 5326 / 6616 |
+| HF static + compile f32 | 13.66 | 36.49 | 203.1 | 6.650 | 7.690 | 11.823 | 1013.6 | 5348 / 5454 / 6968 |
+
+Mapal / best tool: TTFT 0.72 (gpt-fast-f32) / 0.64 (vllm-f32) / 0.53 (vllm-f32); decode 0.62 (gpt-fast-f32) / 0.63 (gpt-fast-f32) / 0.63 (gpt-fast-f32).
+Tokens equal before the first difference, Mapal f32 vs hf-f32 (`hf_reference.py`, eager, on the box): 128 / 128 / 128 of 128.
+
+#### rtx-4090 — bf16 class
+
+| tool | TTFT 128 ms | TTFT 512 | TTFT 2048 | decode 128 ms/token | decode 512 | decode 2048 | e2e 512 ms | peak MB (128 / 512 / 2048) |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| **Mapal** (`fold: bf16 \| f32`) | 6.55 | 11.94 | 41.65 | 3.431 | 3.468 | 3.557 | 448.9 | 2778 / 2828 / 3018 |
+| gpt-fast (max-autotune, CUDA graphs) | **4.54** | **10.27** | 39.44 | **2.919** | **2.926** | **2.990** | 382.3 | 3500 / 3634 / 4162 |
+| vLLM 0.33.0 | 6.08 | 10.74 | 34.70 | 3.112 | 3.118 | 3.173 | 406.8 | 13168 / 13180 / 13300 |
+| SGLang 0.5.23 | 5.62 | 10.97 | 34.14 | 3.003 | 3.007 | 3.054 | 393.0 | 14758 / 14758 / 14794 |
+| TensorRT-LLM 1.3.0 | 6.37 | 10.53 | **33.72** | 3.006 | 3.044 | 3.106 | 397.2 | 13800 / 13796 / 13854 |
+| llama.cpp bf16 | 6.19 | 11.75 | 41.92 | 3.112 | 3.147 | 3.206 | 411.9 | 2860 / 2900 / 2950 |
+| HF eager | 6.42 | 11.11 | 37.37 | 4.465 | 4.459 | 4.586 | 577.5 | 2854 / 2908 / 3090 |
+| HF static cache + compile | 7.55 | 11.95 | 38.31 | 3.531 | 3.798 | 5.041 | 494.5 | 2976 / 3024 / 3284 |
+| *(llama.cpp f16 — another type, not compared)* | *6.30* | *10.49* | *36.81* | *3.117* | *3.138* | *3.208* | *409.4* | *2860 / 2902 / 2952* |
+
+Mapal / best tool: TTFT 1.44 (gpt-fast) / 1.16 (gpt-fast) / 1.24 (trtllm); decode 1.18 (gpt-fast) / 1.19 (gpt-fast) / 1.19 (gpt-fast).
+Tokens equal before the first difference, Mapal bf16 vs hf-bf16-eager (`hf_reference.py`, eager, on the box): 49 / 7 / 61 of 128.
+
+#### h100 — f32 class
+
+| tool | TTFT 128 ms | TTFT 512 | TTFT 2048 | decode 128 ms/token | decode 512 | decode 2048 | e2e 512 ms | peak MB (128 / 512 / 2048) |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| **Mapal** (as written: f32 activations on the bf16 weights) | 10.76 | **21.79** | **60.89** | **2.055** | **2.057** | **2.139** | 281.1 | 3432 / 3518 / 3296 |
+| gpt-fast f32 | **10.37** | 33.18 | 148.9 | 2.220 | 2.159 | 2.256 | 308.0 | 6664 / 6994 / 8040 |
+| vLLM f32 | 14.90 | 32.67 | 140.9 | 2.230 | 2.300 | 2.516 | 328.4 | 45236 / 45236 / 45236 |
+| llama.cpp f32 GGUF | 29.22 | 32.27 | 121.8 | 2.867 | 3.157 | 4.144 | 435.1 | 5408 / 5460 / 5656 |
+| HF eager f32 | 11.91 | 29.62 | 131.9 | 5.676 | 5.861 | 9.083 | 774.7 | 5462 / 5582 / 6856 |
+| HF static + compile f32 | 17.28 | 33.43 | 128.1 | 3.562 | 4.360 | 7.216 | 585.9 | 5672 / 5766 / 7176 |
+
+Mapal / best tool: TTFT 1.04 (gpt-fast-f32) / 0.74 (hf-eager-f32) / 0.50 (llama.cpp-f32); decode 0.93 (gpt-fast-f32) / 0.95 (gpt-fast-f32) / 0.95 (gpt-fast-f32).
+Tokens equal before the first difference, Mapal f32 vs hf-f32 (`hf_reference.py`, eager, on the box): 128 / 128 / 128 of 128.
+
+#### h100 — bf16 class
+
+| tool | TTFT 128 ms | TTFT 512 | TTFT 2048 | decode 128 ms/token | decode 512 | decode 2048 | e2e 512 ms | peak MB (128 / 512 / 2048) |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| **Mapal** (`fold: bf16 \| f32`) | 4.13 | 7.60 | 25.26 | 2.039 | 2.061 | 2.170 | 267.3 | 2908 / 2958 / 3156 |
+| gpt-fast (max-autotune, CUDA graphs) | **3.18** | **4.04** | **10.65** | **1.369** | **1.324** | **1.435** | 172.9 | 3756 / 3878 / 4440 |
+| vLLM 0.33.0 | 12.21 | 12.38 | 13.39 | 1.641 | 1.725 | 1.611 | 232.0 | 45384 / 45384 / 45384 |
+| SGLang 0.5.23 | 9.81 | 9.30 | 12.21 | 1.566 | 1.558 | 1.569 | 207.5 | 46632 / 46632 / 46656 |
+| TensorRT-LLM 1.3.0 | 17.75 | 17.89 | 18.49 | 1.410 | 1.452 | 1.496 | 202.6 | 42640 / 42652 / 42694 |
+| llama.cpp bf16 | 23.90 | 14.78 | 28.12 | 1.932 | 1.848 | 1.877 | 250.5 | 3100 / 3140 / 3190 |
+| HF eager | 7.57 | 11.20 | 14.25 | 5.924 | 8.996 | 8.827 | 1153.8 | 3122 / 3156 / 3326 |
+| HF static cache + compile | 8.63 | 12.88 | 17.78 | 2.207 | 2.371 | 2.637 | 314.2 | 3270 / 3350 / 3522 |
+| *(llama.cpp f16 — another type, not compared)* | *9.96* | *11.73* | *34.09* | *1.681* | *1.923* | *1.925* | *256.8* | *3100 / 3142 / 3192* |
+
+Mapal / best tool: TTFT 1.30 (gpt-fast) / 1.88 (gpt-fast) / 2.37 (gpt-fast); decode 1.49 (gpt-fast) / 1.56 (gpt-fast) / 1.51 (gpt-fast).
+Tokens equal before the first difference, Mapal bf16 vs hf-bf16-eager (`hf_reference.py`, eager, on the box): 43 / 7 / 66 of 128.
+
+#### Five-part summary — Mapal / best engine of the class (< 1 = Mapal faster)
+
+| part | class | TTFT 128 | TTFT 512 | TTFT 2048 | decode 128 | decode 512 | decode 2048 | tokens vs HF (128 / 512 / 2048) |
+|---|---|---:|---:|---:|---:|---:|---:|---|
+| rtx-5080 | f32 | **0.62** | **0.62** | **0.53** | **0.55** | **0.58** | **0.58** | 128 / 128 / 128 |
+| rtx-5080 | bf16 | 1.13 | 1.05 | 1.15 | 1.10 | 1.10 | 1.06 | 128 / 32 / 61 (`full-model.md`, first repetition) |
+| rtx-3090 | f32 | 1.04 | **0.95** | **0.82** | **0.65** | **0.66** | **0.67** | 128 / 128 / 128 |
+| rtx-3090 | bf16 | 1.55 | 1.17 | 1.30 | 1.23 | 1.23 | 1.25 | 49 / 128 / 66 |
+| a100 | f32 | **0.73** | **0.52** | **0.43** | **0.86** | **0.91** | **0.89** | 128 / 128 / 128 |
+| a100 | bf16 | 1.87 | 1.44 | 2.12 | 1.56 | 1.55 | 1.57 | 49 / 32 / 57 |
+| rtx-4090 | f32 | **0.72** | **0.64** | **0.53** | **0.62** | **0.63** | **0.63** | 128 / 128 / 128 |
+| rtx-4090 | bf16 | 1.44 | 1.16 | 1.24 | 1.18 | 1.19 | 1.19 | 49 / 7 / 61 |
+| h100 | f32 | 1.04 | **0.74** | **0.50** | **0.93** | **0.95** | **0.95** | 128 / 128 / 128 |
+| h100 | bf16 | 1.30 | 1.88 | 2.37 | 1.49 | 1.56 | 1.51 | 43 / 7 / 66 |
+
+The RTX 5080 (`local-rtx-5080/full-model.md`, `3c629486` = `b8429388`'s emission, measured by the local step):
+f32 class 0.62 / 0.62 / 0.53 TTFT and 0.55 / 0.58 / 0.58 decode against the best f32 engine; bf16 class 1.13 / 1.05 /
+1.15 TTFT and 1.10 / 1.10 / 1.06 decode against the best bf16 engine; f32 tokens 128 / 128 / 128.
+
+**Five parts**: the f32 class leads every f32-compute engine on decode on all five parts (0.55–0.95×) and on TTFT
+from 512 up (0.43–0.95×); at 128 it ties or trails by 4 % on the 3090 and H100 (llama.cpp f32, gpt-fast f32). The
+bf16 class trails the best bf16 engine on every part: closest on the RTX 5080 (1.05–1.15× TTFT, 1.06–1.10× decode),
+then the 4090 / 3090 (1.16–1.55×, 1.18–1.25×), furthest on the datacenter parts where gpt-fast's CUDA-graph decode
+and TensorRT-LLM / SGLang prefill are strongest (A100 1.44–2.12× / 1.55–1.57×, H100 1.30–2.37× / 1.49–1.56×).
+Mapal's decode step is ~2.0–4.2 ms on every part while gpt-fast's single-graph step is 1.32–3.33 ms: the launch-bound
+step the RTX 5080 report attributes to the host's issue cost (`full-model.md`, "Decode is bound by the host's
+launches") is the larger share on the faster GPUs.

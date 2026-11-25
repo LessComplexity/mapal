@@ -141,3 +141,143 @@ CLAUDE.md facts table (proposed; CLAUDE.md is not this step's to edit):
   `horizontal` member's launch is its group's last member.
 
 `docs/tailored-fixes.md`: unchanged (no tailored fix).
+
+---
+
+# Step 2 — decode launches, prompt host gaps, calibration (2026-11-25, later)
+
+Branch `prefill/residency` after 67f440c8: 30181082 (calibration: carry-induct, shared-upload, carry-take,
+calib-supply), 6badc822 (carry-take follow-up), then `fly-unroll` (item 1). Same box, harness and conditions as
+above (`run_mapal.py`-equivalent single processes under the bench lock, CPUs 24-31,56-63, `nice 10`). The GPU was
+shared: other agents' processes, memory clock seen at 7 GHz between runs, a 4.8 GB foreign process during one
+A/B. Every comparison below ran interleaved (ABBA, rotating order) in one sitting. Absolute values moved by
+up to 10 % between sittings, so compare within a table only. Raw output (not in git):
+`$SCRATCH/residency/` (per-build `kt.tsv` CUPTI traces, `ab.*` run lists, `tools`: `steplist.py`,
+`stepgap.py`, `apistep.py`, `promptgaps.py`).
+
+## Item 3 — calibration: why the calibrated build was slower, and the fix
+
+With `MAPAL_GPU_CALIB=…/rtx-5080.calib`, decode measured 3.70 ms against 3.39 ms uncalibrated (this sitting).
+The CUPTI step lists show three priced rules misfiring. In each case a fact was missing, and the priced
+roofline (an isolated 11.1 µs `launch_ns` against the host's flops) filled the gap:
+
+| finding (CUPTI, decode step at 512) | missing fact | fix |
+|---|---|---|
+| The decode attention's scores and P·V (32 tile sites a step) became nest cells: 6.4 + 1.5 + 8.7 µs a layer against 3.2 + 0.9 + 1.5 + 3.2 + 1.0. | The KV cache's device residence. `device_made` followed the carried view to its next state and stopped at the back-edge cycle, so the sites were not `fed`. | **carry-induct** (`device_made`, `carry-made` arm): a carried view whose loop enters with a device-made init, and whose next state the device makes from it, is device-made on every trip. |
+| Layer 0's RMSNorm and K/V projections ran on the host. The device waited 2 × 82 µs for `h2d 2048` copies after host GEMVs: `h2d=20484` a trip against 8196. | The bytes of an upload another device reader needs anyway. The embedding row was charged to the norm's cells. | **shared-upload** (the placement `bytes` rule): an operand another device reader loads adds no bytes. |
+| (Found while testing.) plan_cost's and row_block's generated programs panicked (`fold array ptr`, `init ptr`). Already broken at 67f440c8. | A taken loop init's other readers: a host fold before the loop, a second loop. | **carry-take**: only the taking loop's init pair (and the state's way out) belongs to the carry. Other readers get the bytes copied out. |
+
+Not changed: `cell_roofline` counts a nest cell's nested fold as one element per cell (a one-row projection
+priced at 6 KB instead of its 2 MB matrix). In the Llama, the two facts above decide every such cell first.
+No generated program found where the roofline alone decides, so the change is not shipped. It is open below.
+
+**Calibration supply** (`calib-supply`, `profile.rs`): `native-gpu` reads the line for its device key from
+`MAPAL_GPU_CALIB` or the user cache, else from the lines the repository commits
+(`COMMITTED_CALIB`, keyed by physical facts). This box is priced with no manual step and nothing is installed
+under `~/.cache`. With no line, the build warns on stderr and never falls back silently.
+`MAPAL_GPU_CALIB=none` is the uncalibrated measurement arm. `; mapal.host … calib=file|committed|none`.
+
+Decode, ABBA, 10 rounds, prompt 512 (ms/token, median [min–max]):
+
+| build | uncalibrated | calibrated |
+|---|---:|---:|
+| 67f440c8 | 3.391 [3.385–3.615] | 3.70 (single runs; 3.55 in step 1) |
+| 30181082 | 3.389 [3.384–3.593] | **3.329** [3.322–3.456] |
+
+Calibrated now beats uncalibrated: PDL is on, and the between-kernel gaps fall from 86 to 13–14 µs a step
+(CUPTI). Placement: `device_sites=176 host_sites=0` and `h2d=8196` a trip on both arms. TTFT at 512:
+39.2 → 38.0 ms. The prompt's layer-0 norm moved to the device (shared-upload); no copy was added.
+
+## Item 1 — decode launches
+
+The launches per step did not drop: 323 kernels (CUPTI) before and after. Where the step's time goes
+(final build, CUPTI, one step at 512): 3.24 ms of kernels, 13 µs between kernels, and a host turnaround of
+126 µs from the logits copy to the next step's first kernel (75 µs of host work between the API calls: the
+argmax over 128 256 logits, the print, the embedding row).
+
+**Landed: `fly-unroll`** (OFF arm `--gpu-off=fly-unroll`). A warp-a-cell fold whose grid holds too few warps an
+SM to keep the part's stream bytes in flight (`Gpu::stream_fly_per_sm`, 8 KiB on the 5080) unrolls its lane
+loop deeper. The depth is the power of two Little's law asks at the narrowest operand's element, in
+`[NAIVE_UNROLL, 32]`. Each variant gets its own body name (`_lanes_u<n>`) and loop count. In the Llama
+decode: the RMSNorm sums of squares (1 block) go 2.0 → 1.4 µs (×33), and the K/V GEMVs get 32 loads in flight.
+Their time stays 4.0 / 4.2 µs: they are bound by request count (2-byte bf16 loads, 64 B a warp
+instruction), not by bytes in flight.
+
+| ABBA, 8 rounds, calibrated | decode ms/token median [min–max] |
+|---|---:|
+| 30181082 state (without fly-unroll) | 3.343 [3.326–3.353] |
+| + fly-unroll | **3.314** [3.308–3.322] |
+
+Suite: `gpu_changed.sh --off fly-unroll` finds 3 of 35 programs whose text differs (`pt_causal_1024_256`,
+`pt_prefill_1024_512_256`, `pt_gen_1024_512_256`) and 0 cells. Timed by `gpu_run.sh` (probe section ABBA,
+5 reps, value gates pass; `$SCRATCH/residency/gc_fly/results`), as on / off-fly-unroll medians in ms:
+causal 15.34 / 15.65 (null 3.1 %), gen 8.19 / 9.40 (−13 %, null 3.7 %), prefill 9.65 / 9.56 (null 2.1 %).
+Emission is unchanged on 32 programs; one is better beyond null and two are within it.
+
+**Measured, not landed: merging q/k/v.** An experiment that only moved `fn rotate`'s definition below
+`fn project` in the source (not committed: the program is not bent to the compiler) let `horizontal` merge
+q+k+v (384 blocks, 16.4 µs against 10.5 + 4.0 + 4.3) and rotate_q+rotate_k. That gave 323 → 307 kernels and
+−50 µs of kernel time a step. Cause: `topo_order` keys an inlined callee's objects by the callee's source
+positions, so every inlined `rotate` sorts before every inlined `project`, and the walk interleaves
+q, rotate_q, k, rotate_k, v. `horizontal` groups greedily in walk order, so each dependent step closes the
+group. The generic fix is the walk order of inlined code: call-site position first, as the unrewritten
+program evaluates it. It touches every program with inlined calls (goldens, suite), so it needs its own A/B.
+
+**Why below gpt-fast is out of reach on this path.** The weight GEMVs already run at 860–912 GB/s: 2.88 ms of
+the 3.24 ms of kernels against 2.78 ms for 2.47 GB at the measured 890 GB/s. The other 0.36 ms are about 240
+kernels of 0.8–2.6 µs each. With PDL, a boundary costs about what a grid barrier does (`calls` refuses every
+chain on cost, correctly: `pdl_launch_ns=486` against `gsync_ns=553` + per block). So merging launches alone
+saves little. Removing phases, and overlapping the idle DRAM with prefetches of the next weights, is what
+would pay.
+
+## Item 2 — prompt host gaps
+
+The prompt pass at 512 is 4 copies, 4.7 MB, with 1.6–1.7 ms of device idle in a 39–44 ms span (CUPTI). Nearly
+all of it is one host chain: the 4 MB embedding gather for the prompt's rows (0.8 ms, then the upload).
+Its index comes from a file, so it is not proven in bounds, and the gather stays on the host. Layer 0's norm
+no longer follows it there (shared-upload). Per the integration step, the device-side index check (a device
+trap flag) belongs to the bf16 sprint's "bf16-class" agent. Nothing else in the window exceeds 20 µs.
+
+## Tokens and TTFT (final build, calibrated by the committed line)
+
+| prompt | TTFT ms | decode ms/token (this sitting) | tokens vs HF f32 |
+|---|---:|---:|---|
+| 128 | 15.7–16.5 | 3.62–3.67 | 128 / 128 |
+| 512 | 38.7 (quiet) / 42–43 (busy) | 3.30 (quiet) / 3.60–3.69 (busy) | 128 / 128 |
+| 2048 | 204–207 | 3.83 | 128 / 128 |
+
+## Tests
+
+- New: `placement::priced_placement_follows_the_carried_state`. 16 generated `testgen::CarryProg` loops: a
+  carried array made by a large site, rewritten each trip through a small site, with an optional second
+  carry, and optionally a host-gathered row with its norm and a bf16 one-row projection. Placed against
+  x86-64-v3's measured host. It asserts no site on the host, no state crossing, and at most the row uploaded
+  a trip, against the interpreter in every emulator mode and with `carry-made` off. **It fails without
+  carry-induct and without shared-upload.**
+- New: `profile::calib_supply_tests` (committed lines parse and resolve for their keys; a miss is named).
+- Extended: `placement_on_generated_programs` counts `fly-unrolled-loops` (decode generator `h = 1024`), and
+  the OFF-arm rotation includes `fly-unroll`.
+- Green: the backend's full suite (59 binaries) on the item-3 state, then `--lib`, placement, plan_cost
+  (green again), row_block (green again) and caching_memory on the final state.
+
+## Open
+
+1. **Walk order of inlined calls** (q/k/v merge, −50 µs a step measured): key inlined objects by call site
+   first. Needs a suite A/B.
+2. **Narrow GEMV requests**: k/v at 500 GB/s and q/o at 807 GB/s load bf16 2 bytes a lane. 16-byte vector
+   loads per lane (`TileRead` unit stride, regrouped lanes) cut requests 8×. The `fly-unroll` result shows
+   bytes in flight are not the bound.
+3. **Host turnaround, 75–126 µs a step**: the greedy argmax runs on the host over the 513 KB of logits.
+   It needs a keyed-select fold fact (associative with left priority on ties), on the device or regrouped
+   on the host.
+4. **Queued launch price** (integration's point): `device_pays` prices an isolated 11.1 µs launch. Behind
+   other device work, a launch costs `gap_ns` (260 ns). The Llama's case is now decided by facts, so this
+   rule change was not made. It needs a definition of "queued" from the sequence's device work, and a suite
+   A/B.
+5. **`cell_roofline`**: a nest cell's nested reads should count its walked arrays' bytes. Not shipped, for
+   want of a generated case that it decides (see item 3).
+6. **Calibration measured on first use**: a `mapal calibrate` that runs `benches/gpu/calib.cu` and writes the
+   user cache line. Only part of a line comes from `calib.cu` (launch, issue, gap, zero, l2keep and tma come
+   from other tools), so the committed line remains the supply for measured parts.
+
+No tailored fixes (`docs/tailored-fixes.md` unchanged).

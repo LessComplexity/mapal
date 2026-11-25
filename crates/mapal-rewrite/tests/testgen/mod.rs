@@ -7804,8 +7804,9 @@ pub struct DecodeProg {
 
 pub fn decode_strategy() -> impl Strategy<Value = DecodeProg> {
     (
-        // 256: a lane of a warp-a-row fold walks 8 steps (`lanes-unroll`).
-        prop::sample::select(vec![32u64, 64, 256]),
+        // 256: a lane of a warp-a-row fold walks 8 steps (`lanes-unroll`);
+        // 1024: 32, over a grid of a few warps (`fly-unroll`).
+        prop::sample::select(vec![32u64, 64, 256, 1024]),
         prop::sample::select(vec![4u64, 8]),
         prop::sample::select(vec![8u64, 16]),
         1u64..3,
@@ -7961,6 +7962,131 @@ pub fn prefill_strategy() -> impl Strategy<Value = PrefillProg> {
                 reread,
             }
         })
+}
+
+/// residency `carry-induct`: a loop whose carried array enters made on the
+/// device — the product of a large site (`n × m` over `k`, a roofline the
+/// device wins) — and is rewritten each trip from itself through a small
+/// site (`x · w`, `n × m` over `m`, one the host's roofline would take) and
+/// a map over the site and the state (`mix`: the next state reads the old
+/// one too, or only the site). `second`: a second carried array the trip
+/// scales alongside. `row`: each trip also gathers a host row `v` of `k`
+/// (a token's embedding row, by an index the host makes), takes its sum of
+/// squares (a one-cell nested fold) and a scaled copy (a norm) the next
+/// state reads — `v` read on the device by the state's map too — and
+/// projects a second row (a closed form of the index and the trip, `%` on
+/// floats) through an `m × k` bf16 matrix (a one-row nest cell whose fold
+/// walks the whole matrix). Values are small integers over powers
+/// of two, exact in any order.
+#[derive(Clone, Debug)]
+pub struct CarryProg {
+    pub n: u64,
+    pub m: u64,
+    pub k: u64,
+    pub trips: i64,
+    pub mix: bool,
+    pub second: bool,
+    pub row: bool,
+}
+
+pub fn carry_strategy() -> impl Strategy<Value = CarryProg> {
+    (
+        prop::sample::select(vec![2u64, 4, 8]),
+        prop::sample::select(vec![16u64, 32, 64]),
+        prop::sample::select(vec![1024u64, 2048]),
+        1i64..4,
+        any::<bool>(),
+        any::<bool>(),
+        any::<bool>(),
+    )
+        .prop_map(|(n, m, k, trips, mix, second, row)| CarryProg {
+            n,
+            m,
+            k,
+            trips,
+            mix,
+            second,
+            row,
+        })
+}
+
+/// The program [`CarryProg`] describes.
+pub fn carry_prog_src(g: &CarryProg) -> String {
+    let (n, m, k) = (g.n, g.m, g.k);
+    let data = |name: &str, len: u64, a: u64, c: u64| {
+        format!(
+            "    {len} -> iota -> map {{\n        t -> (t * {a} + {c}) % 5 - 2 -> widen_f32\n    }} -> {name};\n"
+        )
+    };
+    let mut s = String::from("fn main() {\n");
+    s += &data("a", n * k, 7, 1);
+    s += &data("b", k * m, 5, 2);
+    s += &data("w", m * m, 3, 0);
+    s += &format!("    {k} -> iota -> inner;\n    {m} -> iota -> cols;\n");
+    if g.row {
+        s += &data("emb", 4 * k, 11, 3);
+        // A bf16 matrix, as a checkpoint stores it: its one-row projection is
+        // a nest cell (a warp a row), not a strided site.
+        s += &data("proj", m * k, 13, 4).replace(
+            "widen_f32\n    } -> proj;",
+            "widen_f32 -> to_bf16\n    } -> proj;",
+        );
+    }
+    s += &format!(
+        "    {nm} -> iota -> map {{\n        c ->\n        c / {m} -> i;\n        c % {m} -> j;\n        (0.0, inner) -> fold {{\n            s, q -> s + a[i * {k} + q] * b[q * {m} + j]\n        }}\n    }} -> start;\n",
+        nm = n * m
+    );
+    s += &format!(
+        "    {nm} -> iota -> map {{\n        c -> (c % 7 - 3) -> widen_f32\n    }} -> other0;\n",
+        nm = n * m
+    );
+    s += "    mut x: [f32; N] <- start;\n"
+        .replace("N", &(n * m).to_string())
+        .as_str();
+    if g.second {
+        s += &format!("    mut y: [f32; {}] <- other0;\n", n * m);
+    }
+    s += "    mut trip: i32 <- 0;\n    loop {\n";
+    s += &format!(
+        "        (trip < {}) -> {{\n            -true-> {{\n",
+        g.trips
+    );
+    s += &format!(
+        "                {nm} -> iota -> map {{\n                    c ->\n                    c / {m} -> i;\n                    c % {m} -> j;\n                    (0.0, cols) -> fold {{\n                        s, q -> s + x[i * {m} + q] * w[q * {m} + j]\n                    }}\n                }} -> t;\n",
+        nm = n * m
+    );
+    if g.row {
+        s += &format!(
+            "                [trip % 4] -> ids;\n                {k} -> iota -> map {{\n                    c -> emb[ids[0] * {k} + c]\n                }} -> v;\n                1 -> iota -> map {{\n                    r -> (0.0, inner) -> fold {{\n                        s, c -> s + v[r * {k} + c] * v[r * {k} + c]\n                    }}\n                }} -> squares;\n                {k} -> iota -> map {{\n                    c -> v[c] * 0.5 + squares[0] * 0.0625\n                }} -> scaled;\n                {k} -> iota -> map {{\n                    c -> c * 3 + trip -> widen_f32 -> f;\n                    f % 5.0 - 2.0\n                }} -> other;\n                {m} -> iota -> map {{\n                    r -> (0.0, inner) -> fold {{\n                        s, c ->\n                        proj[r * {k} + c] -> widen_f32 -> weight;\n                        s + weight * other[c]\n                    }}\n                }} -> u;\n"
+        );
+    }
+    let next = match (g.mix, g.second) {
+        (true, true) => "t[c] * 0.125 + x[c] * 0.5 + y[c] * 0.25",
+        (true, false) => "t[c] * 0.125 + x[c] * 0.5",
+        (false, true) => "t[c] * 0.125 + y[c] * 0.25",
+        (false, false) => "t[c] * 0.125",
+    };
+    let next = match g.row {
+        true => format!("{next} + u[c % {m}] * 0.0078125 + v[c] * 0.25 + scaled[c] * 0.5"),
+        false => next.to_string(),
+    };
+    s += &format!(
+        "                {nm} -> iota -> map {{\n                    c -> {next}\n                }} -> next;\n                next -> x;\n",
+        nm = n * m
+    );
+    if g.second {
+        s += &format!(
+            "                {nm} -> iota -> map {{\n                    c -> y[c] * 0.5 + t[c] * 0.25\n                }} -> y2;\n                y2 -> y;\n",
+            nm = n * m
+        );
+    }
+    s += "                trip + 1 -> trip;\n                -> loop;\n            }\n            -false-> x -> done;\n        }\n    }\n";
+    s += &format!(
+        "    done[0] -> println;\n    done[{}] -> println;\n",
+        n * m - 1
+    );
+    s += "}\n";
+    s
 }
 
 /// The program [`PrefillProg`] describes.

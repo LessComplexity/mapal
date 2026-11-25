@@ -147,8 +147,11 @@ fn check_plans(p: &testgen::GemmProg, set: u8, part: &'static str) -> Cover {
     let ir = lower(&src);
     let prof = resolve_profile(part).expect("a part");
     let g = prof.gpu().expect("a GPU part");
-    let on = mma_kernels(&emission(&ir, part, &[], &[]));
-    let off = mma_kernels(&emission(&ir, part, &["mma-fly"], &[]));
+    // The ordered grid's ring and walk: bf16 tensor-tile's stream-K walk
+    // (its own rules: `mma_walk.rs`) held off on both arms — a ring's
+    // panels change the walk's price, so it would move the grid.
+    let on = mma_kernels(&emission(&ir, part, &["mma-walk"], &[]));
+    let off = mma_kernels(&emission(&ir, part, &["mma-fly", "mma-walk"], &[]));
     assert_eq!(on.len(), off.len(), "{ctx} the same tensor kernels");
     let mut c = Cover::default();
     for ((t, body), (o, _)) in on.iter().zip(&off) {

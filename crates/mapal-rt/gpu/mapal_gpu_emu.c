@@ -31,6 +31,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "mapal_choice.h"
 
@@ -798,6 +799,50 @@ static void total(void) {
   fprintf(stderr, "emu_total h2d=%llu d2h=%llu launches=%llu bytes_in=%llu bytes_out=%llu zeros=%llu\n", n_h2d,
           n_d2h, n_launch, b_in, b_out, n_zero);
 }
+
+/* bf16-class `device-trap`: a cell that checks an unproven index records a
+ * trap into the module's word `mapal_dev_trap` (i64::MAX: none; else
+ * `topo << 8 | kind`). Its launch arms the next host checkpoint (a print, the
+ * clock, a trap, the exit: `mapal_rt_checkpoint_hook`), which waits for the
+ * device and reads the word — a recorded trap is raised there, the oracle's
+ * outcome. Unarmed, a checkpoint costs nothing. */
+extern void mapal_trap(uint32_t kind) __attribute__((noreturn));
+extern void mapal_rt_checkpoint_hook(void (*f)(void));
+static int trap_armed, trap_hooked;
+static long long trap_word(void);
+static void trap_poll(void) {
+  if (!trap_armed)
+    return;
+  trap_armed = 0;
+  long long v = trap_word();
+  if (v != 0x7fffffffffffffffLL)
+    mapal_trap((uint32_t)(v & 0xff));
+}
+static void trap_exit(void) {
+  if (!trap_armed)
+    return;
+  trap_armed = 0;
+  long long v = trap_word();
+  if (v != 0x7fffffffffffffffLL) {
+    fflush(stdout);
+    fprintf(stderr, "mapal trap: %s\n", (v & 0xff) == 0 ? "div_zero" : "index_oob");
+    _exit(101);
+  }
+}
+void mapal_gpu_trap_arm(void) {
+  trap_armed = 1;
+  if (!trap_hooked) {
+    trap_hooked = 1;
+    mapal_rt_checkpoint_hook(trap_poll);
+    atexit(trap_exit);
+  }
+}
+
+static long long trap_word(void) {
+  /* The emulated device unit's own global (no address spaces here). */
+  long long *w = dlsym(RTLD_DEFAULT, "mapal_dev_trap");
+  return w ? __atomic_load_n(w, __ATOMIC_SEQ_CST) : 0x7fffffffffffffffLL;
+}
 void mapal_gpu_init(uint32_t f) { (void)f; atexit(total); }
 void mapal_gpu_sync(void) {}
 uint64_t mapal_gpu_alloc(uint64_t *slot, uint64_t bytes) {
@@ -851,10 +896,12 @@ void mapal_gpu_d2h_on(uint32_t stream, void *h, uint64_t d, uint64_t off, uint64
   (void)stream;
   mapal_gpu_d2h(h, d, off, bytes);
 }
+/* `device-trap`: a copy-out is a checkpoint (`mapal_gpu.c`). */
 void mapal_gpu_d2h(void *h, uint64_t d, uint64_t off, uint64_t bytes) {
   memcpy(h, (void *)(d + off), bytes);
   n_d2h++;
   b_out += bytes;
+  trap_poll();
 }
 /* S63: the output an atomic split adds into. */
 void mapal_gpu_zero(uint64_t d, uint64_t bytes) {

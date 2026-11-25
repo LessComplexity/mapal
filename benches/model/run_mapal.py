@@ -63,7 +63,7 @@ def main():
         cmd = ["taskset", "-c", args.cpus] + cmd
     peak = Peak()
     peak.start()
-    reps, tokens, walls = [], None, []
+    reps, tokens, walls, per_rep = [], None, [], []
     for k in range(args.warmup + args.reps):
         start = time.perf_counter()
         p = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -79,11 +79,19 @@ def main():
             g = args.gen
             reps.append({"ttft_ms": t[0], "decode_ms": (t[g - 1] - t[1]) / (g - 2), "e2e_ms": t[g - 1],
                          "top_logits": [float(r[1]) for r in rows]})
-            assert tokens is None or tokens == [ids], "greedy tokens differ between repetitions"
-            tokens = [ids]
+            # The default face's order is unspecified (ADR-0040): sums whose partials meet in a run-dependent
+            # order (stream-K's `red` adds) may round differently run to run, and a near tie may then pick
+            # another token. Each repetition's tokens are kept; `tokens` is the first one's.
+            per_rep.append(ids)
+            if tokens is None:
+                tokens = [ids]
     peak.stop.set()
+    distinct = len({tuple(x) for x in per_rep})
+    if distinct > 1:
+        print(f"[mapal] n={args.n}: greedy tokens differ between repetitions ({distinct} sequences)", flush=True)
     result = {"tool": "mapal", "version": "examples/llama.mapal", "batch": 1, "gen": args.gen, "n": args.n,
-              "reps": reps, "tokens": tokens, "extra": {"peak_proc_mb": peak.peak_mb, "wall_s": walls}}
+              "reps": reps, "tokens": tokens, "tokens_per_rep": per_rep, "tokens_distinct": distinct,
+              "extra": {"peak_proc_mb": peak.peak_mb, "wall_s": walls}}
     json.dump(result, open(args.out, "w"))
     med = lambda xs: sorted(xs)[len(xs) // 2]
     print(f"[mapal] n={args.n} b=1: ttft {med([r['ttft_ms'] for r in reps]):.2f} ms, decode "

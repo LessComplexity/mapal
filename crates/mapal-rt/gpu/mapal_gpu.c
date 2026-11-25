@@ -47,6 +47,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "mapal_choice.h"
 
@@ -795,8 +796,15 @@ void mapal_gpu_zero_for(const struct mapal_cand *c, uint64_t d, uint64_t bytes) 
   mapal_gpu_zero(d, bytes);
 }
 
+/* `device-trap`: an armed copy-out is a checkpoint (`trap_poll`, below). */
+static void trap_poll(void);
+
 /* `bytes` from byte `off` of the device buffer `d` into host `h`.
- * Synchronous: it waits for every launch before it on the stream. */
+ * Synchronous: it waits for every launch before it on the stream. A copy-out
+ * hands the host device values, so a recorded trap is raised here (armed
+ * only: a checking cell ran since the last checkpoint) — the host never
+ * computes on the element a trapped read stands in for (a loop whose exit
+ * reads it may never end; the oracle stopped at the read). */
 void mapal_gpu_d2h(void *h, uint64_t d, uint64_t off, uint64_t bytes) {
   double t0 = now_ms();
   CK(cuMemcpyDtoH(h, (CUdeviceptr)(d + off), bytes));
@@ -808,6 +816,7 @@ void mapal_gpu_d2h(void *h, uint64_t d, uint64_t off, uint64_t bytes) {
   if (trace)
     fprintf(stderr, "mapal_gpu_trace op=d2h ms=%.3f bytes=%llu\n", ms,
             (unsigned long long)bytes);
+  trap_poll();
 }
 
 /* `wait` waits for everything `record` has enqueued so far. */
@@ -1221,6 +1230,7 @@ void mapal_gpu_d2h_on(uint32_t stream, void *h, uint64_t d, uint64_t off,
   if (trace)
     fprintf(stderr, "mapal_gpu_trace op=d2h ms=%.3f bytes=%llu stream=%u\n", ms,
             (unsigned long long)bytes, k);
+  trap_poll();
 }
 
 /* `pinned`: page-lock a host array that crosses the bus, once. Best effort —
@@ -1506,6 +1516,56 @@ void mapal_gpu_free(uint64_t *slot) {
  * init still running is device work in flight too (S54: a program whose first
  * launch is after the read — every operand built in its kernel — would
  * otherwise time the context inside its clock): it is joined. */
+
+/* bf16-class `device-trap`: a cell that checks an unproven index records a
+ * trap into the module's word `mapal_dev_trap` (i64::MAX: none; else
+ * `topo << 8 | kind`). Its launch arms the next host checkpoint (a print, the
+ * clock, a trap, the exit: `mapal_rt_checkpoint_hook`), which waits for the
+ * device and reads the word — a recorded trap is raised there, the oracle's
+ * outcome. A copy-out is a checkpoint too (`mapal_gpu_d2h`, `_d2h_on`): the
+ * host computes on what it copies. Unarmed, a checkpoint costs nothing. */
+extern void mapal_trap(uint32_t kind) __attribute__((noreturn));
+extern void mapal_rt_checkpoint_hook(void (*f)(void));
+static int trap_armed, trap_hooked;
+static long long trap_word(void);
+static void trap_poll(void) {
+  if (!trap_armed)
+    return;
+  trap_armed = 0;
+  long long v = trap_word();
+  if (v != 0x7fffffffffffffffLL)
+    mapal_trap((uint32_t)(v & 0xff));
+}
+static void trap_exit(void) {
+  if (!trap_armed)
+    return;
+  trap_armed = 0;
+  long long v = trap_word();
+  if (v != 0x7fffffffffffffffLL) {
+    fflush(stdout);
+    fprintf(stderr, "mapal trap: %s\n", (v & 0xff) == 0 ? "div_zero" : "index_oob");
+    _exit(101);
+  }
+}
+void mapal_gpu_trap_arm(void) {
+  trap_armed = 1;
+  if (!trap_hooked) {
+    trap_hooked = 1;
+    mapal_rt_checkpoint_hook(trap_poll);
+    atexit(trap_exit);
+  }
+}
+
+static long long trap_word(void) {
+  static CUdeviceptr word;
+  size_t sz = 0;
+  long long v = 0x7fffffffffffffffLL;
+  if (!word && cuModuleGetGlobal(&word, &sz, module, "mapal_dev_trap") != CUDA_SUCCESS)
+    return v;
+  CK(cuCtxSynchronize());
+  CK(cuMemcpyDtoH(&v, word, sizeof v));
+  return v;
+}
 void mapal_gpu_sync(void) {
   if (init_state == 1)
     load_module();

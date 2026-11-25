@@ -50,6 +50,7 @@ impl<'a> FnEmit<'a> {
             frame: None,
             frame_geps: String::new(),
             guard_flavor: GuardFlavor::Host,
+            device_trap: false,
             split_range: false,
             watermark: false,
             host: None,
@@ -98,6 +99,7 @@ impl<'a> FnEmit<'a> {
             cell_suffix: String::new(),
             cell_vals: Vec::new(),
             lanes: None,
+            lane_trips: crate::profile::NAIVE_UNROLL,
             post_fold: None,
             path_plan: None,
             split_slots: Vec::new(),
@@ -1208,6 +1210,14 @@ impl<'a> FnEmit<'a> {
 
     pub(super) fn record_trap(&mut self, m: MorphismId, kind: u32) {
         let topo = self.task_site(m);
+        // bf16-class `device-trap`: a device body records into the module's
+        // trap word (`gpu::trap_variant`).
+        if self.device_trap {
+            self.line(format!(
+                "call void @dev_trap_record(i64 {topo}, i32 {kind})"
+            ));
+            return;
+        }
         self.line(format!("call void @mapal_par_trap(i64 {topo}, i32 {kind})"));
         self.runtime_write = true;
     }

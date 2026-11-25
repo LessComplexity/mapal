@@ -311,6 +311,9 @@ pub(crate) struct FnEmit<'a> {
     frame_geps: String,
     /// Host guards call `mapal_trap`; task/body guards record into the run.
     guard_flavor: GuardFlavor,
+    /// bf16-class `device-trap`: this is a cell body's device variant — a
+    /// recorded trap goes to the module's trap word (`@dev_trap_record`).
+    device_trap: bool,
     /// Split-task collection loops use `%lo..%hi`; every other loop keeps
     /// today's `0..n`.
     split_range: bool,
@@ -407,6 +410,11 @@ pub(crate) struct FnEmit<'a> {
     /// whose target is the first field walks every `lanes`-th step from the
     /// lane and combines the lanes' partials by `step` (a warp shuffle tree).
     lanes: Option<(ObjectId, mapal_ir::RowFoldOp, u64)>,
+    /// residency `fly-unroll`: the trips a `lanes` fold loop unrolls — the
+    /// loads a lane keeps in flight ([`crate::profile::NAIVE_UNROLL`] unless
+    /// the cell's grid holds too few warps an SM to keep the part's stream
+    /// bytes in flight at that depth).
+    lane_trips: u64,
     /// device-geometry `tile-post`: this body is a tile site's epilogue
     /// variant (`<name>_post`) — its fold's value arrives as `%fv` after
     /// `%arg` (the site's accumulator) instead of being folded here.

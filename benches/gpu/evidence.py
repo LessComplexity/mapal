@@ -288,6 +288,8 @@ def sass_facts(body):
             insns=len(loop), ffma=lc['FFMA'], fmul=lc['FMUL'], fadd=lc['FADD'], hmma=lc['HMMA'], hgmma=lc['HGMMA'], f2fp=sum(b == 'F2FP' for b in base),
             ldg=lc['LDG'], ldgsts=lc['LDGSTS'], lds=lc['LDS'], ldsm=lc['LDSM'], sts=lc['STS'], bar=lc['BAR'],
             ldg_ef=sum(o.startswith('LDG') and '.EF' in o for o in ops),
+            # local memory (spills) in the loop: the intents' `sass.hot.stl + sass.hot.ldl == 0`
+            stl=lc['STL'], ldl=lc['LDL'],
             bra=lc['BRA'], ldg128=lw.get('LDG.128', 0), lds128=lw.get('LDS.128', 0),
             # tile-efficiency: copy widths and the LSU mix (T2 / T4)
             ldgsts128=sum(o.startswith('LDGSTS') and o.endswith('.128') for o in ops),
@@ -1195,7 +1197,7 @@ def check(d, results=None, out=sys.stdout):
                     continue
                 # exp-hw: a face whose order is not free takes the oracle's steps (its OFF realization).
                 state = 'off' if rung in off or (rung == 'exp-hw' and not ns['free']) else 'on' if rung in kon or rung in (
-                    'row-slices', 'exp-hw', 'exp-rescale', 'slice-launches') or rung.startswith(('face', 'exec', 'module', 'window', 'radix-tile', 'tf32-tile', 'plan-cost', 'linear', 'choice', 'fma-pairs', 'horizontal-', 'calls-', 'narrow-tile', 'half-tile', 'narrow-async', 'staged-regs', 'split-tile', 'mma-combine', 'round-store', 'streamk-price', 'streamk-epi')) else 'off'  # plan-cost / linear / the site-priced split-tile, mma-combine, the module's round-store, streamk-price's walk, the group's streamk-epi ticket: gated by the plan line itself (`applies`), not rungs_on
+                    'row-slices', 'exp-hw', 'exp-rescale', 'slice-launches') or rung.startswith(('face', 'exec', 'module', 'window', 'radix-tile', 'tf32-tile', 'plan-cost', 'linear', 'choice', 'fma-pairs', 'horizontal-', 'calls-', 'narrow-tile', 'half-tile', 'narrow-async', 'staged-regs', 'split-tile', 'mma-combine', 'round-store', 'streamk-price', 'streamk-epi', 'mma-walk')) else 'off'  # plan-cost / linear / the site-priced split-tile, mma-combine, the module's round-store, streamk-price's walk, the group's streamk-epi ticket: gated by the plan line itself (`applies`), not rungs_on
                 rows += [(prof, stem, k, f'{rung}:{state}', *r) for r in run_intent(it, state, ns)]
         # host rungs: one row per stem (kernel `-`)
         if not e['host'].get('calls'):
@@ -1310,18 +1312,28 @@ def margin(t):
 
 
 def wisdom_lines(path):
-    """A wisdom file's decisions (`key site n pick reps ns.. kernels..`), the last line of a key winning."""
+    """A wisdom file's decisions (`key site n pick reps ns.. kernels..`), the last line of a key winning — as the
+    runtime reads them (`mapal_choice.h` `choice_load`: any line whose first four fields parse, `pick < n`). A line
+    without the trial's minima is a decision too: confirm_pick.py's revert (`key site n 0 0`, the program was not
+    faster with the trial's pick) — it keeps the key's trial (`trial`: its pick, `ns`, `kernels`) and stores 0."""
     out = {}
     for l in open(path, errors='replace'):
         f = l.rstrip('\n').split('\t')
         try:
-            n = int(f[2])
-            w = dict(key=f[0], site=kname(int(f[1], 16)), n=n, pick=int(f[3]), reps=int(f[4]),
+            n, pick = int(f[2]), int(f[3])
+            w = dict(key=f[0], site=kname(int(f[1], 16)), n=n, pick=pick, reps=int(f[4]),
                      ns=[int(x) for x in f[5:5 + n]], kernels=tuple(f[5 + n:5 + 2 * n]))
         except (IndexError, ValueError):
             continue
-        if len(w['ns']) == n == len(w['kernels']) and w['pick'] < n:
-            out[w['key']] = w
+        if pick >= n:
+            continue
+        if len(w['ns']) == n == len(w['kernels']):
+            w['trial'] = pick
+        else:
+            prev = out.get(w['key'])
+            w.update((k, prev[k]) if prev and prev['n'] == n else (k, d)
+                     for k, d in (('trial', None), ('ns', []), ('kernels', ())))
+        out[w['key']] = w
     return out
 
 
@@ -1329,6 +1341,29 @@ def argmin_pick(ns):
     """The decision the trial's minima make: the argmin when it beats candidate 0 beyond the margin, else 0."""
     w = min(range(len(ns)), key=ns.__getitem__)
     return w if w and ns[w] + margin(ns[0]) < ns[0] else 0
+
+
+def pair_vetoes(tdir):
+    """key -> True where a trial's head-to-head pairs kept candidate 0 (`mapal_choice.h`, cross-arch): the six
+    `confirm=1` runs before the table's `op=site … src=trial` line, in the order 0, w, w, 0, 0, w; the challenger stays
+    when its product is under 0.912673 of candidate 0's and its sum 3 us under. The pairs' minima enter the stored
+    `ns`, so a veto stores 0 where the minima's argmin is the challenger. From the tune pass's traces (`tune/*.trace`)."""
+    out = {}
+    for f in sorted(glob.glob(os.path.join(tdir, '*.trace'))):
+        pairs = []
+        for line in open(f, errors='replace'):
+            m = re.search(r'op=trial site=\S+ cand=\d+ .*?ns=(\d+) confirm=1', line)
+            if m:
+                pairs.append(int(m[1]))
+                continue
+            m = re.search(r'op=site site=\S+ key=([0-9a-f]{16}) .*?src=(\w+)', line)
+            if m:
+                if m[2] == 'trial' and len(pairs) == 6:
+                    z, w = pairs[0] * pairs[3] * pairs[4], pairs[1] * pairs[2] * pairs[5]
+                    zs, ws = pairs[0] + pairs[3] + pairs[4], pairs[1] + pairs[2] + pairs[5]
+                    out[m[1]] = not (w < 0.912673 * z and ws + 3000 < zs)
+                pairs = []
+    return out
 
 
 def choice_rows(prof, d, fx, results):
@@ -1345,13 +1380,22 @@ def choice_rows(prof, d, fx, results):
     for stem in fx:
         for t in site_tables(read(os.path.join(d, stem + '.host.ll')) or ''):
             owner[(t['site'], tuple(c['kernel'] for c in t['cands']))].append(stem)
+    vetoes = pair_vetoes(os.path.join(os.path.dirname(os.path.abspath(results)), 'tune'))
     for w in wis.values():
+        if w['trial'] is None:
+            continue
+        # The trial's pick against its minima — candidate 0 where its pairs vetoed the minima's argmin; a confirm
+        # revert after it (the stored 0) is the program's decision.
         want = argmin_pick(w['ns'])
+        veto = want != 0 and vetoes.get(w['key']) is True
+        want = 0 if veto else want
+        revert = (' pairs=veto' if veto else '') + (f" confirm={w['pick']}" if w['pick'] != w['trial'] else '')
         for stem in owner.get((w['site'], w['kernels']), ['?']):
             rows.append((prof, stem, w['site'], 'choice:on', 'stored pick = measured argmin beyond max(3 %, 1 us)',
-                         f'pick={want}', f"pick={w['pick']} ns={','.join(map(str, w['ns']))}",
-                         'ok' if w['pick'] == want else 'MISMATCH'))
+                         f'pick={want}', f"pick={w['trial']} ns={','.join(map(str, w['ns']))}{revert}",
+                         'ok' if w['trial'] == want else 'MISMATCH'))
     ms = defaultdict(list)
+    on_picks = defaultdict(set)  # stem -> the picks its AUTO runs launched
     for line in open(results, errors='replace'):
         m = re.match(r'probe prog=(\S+) face=(\S+) arm=(\S+) rep=\d+ .*?out=\[[^\]]*iter ms=([\d.]+)', line)
         if not m:
@@ -1360,6 +1404,7 @@ def choice_rows(prof, d, fx, results):
         ms[(stem, m[3])].append(float(m[4]))
         sites = line.split(' sites=[', 1)[1].split(']')[0] if m[3] == 'on' and ' sites=[' in line else ''
         for key, pick, src in re.findall(r'([0-9a-f]{16}):(\d+):(\w+)', sites):
+            on_picks[stem].add(int(pick))
             stored = wis.get(key)
             rows.append((prof, stem, key, 'choice:on', 'AUTO launches the stored pick (src=wisdom)',
                          f"pick={stored['pick'] if stored else '?'} src=wisdom", f'pick={pick} src={src}',
@@ -1371,9 +1416,13 @@ def choice_rows(prof, d, fx, results):
         auto, prog = med[(stem, 'on')], re.sub(r'_[cx]$', '', stem)
         null = abs(med[(prog, 'null')] / med[(prog, 'on')] - 1) if (prog, 'null') in med and (prog, 'on') in med \
             else None
+        # Every site AUTO launched ran candidate 0, RULES' pick (`MAPAL_GPU_PICK=rules`): the two arms launch the
+        # same kernels, decided at load off the clock — their difference is null by construction, not a finding.
+        same = on_picks.get(stem) == {0}
         rows.append((prof, stem, '-', 'choice:on', 'AUTO <= RULES x (1 + null)', 'auto <= rules*(1+null)',
-                     f'auto={auto:.4g} rules={rules:.4g} null={"n/a" if null is None else f"{null:.4f}"}',
-                     'n/a' if null is None else 'ok' if auto <= rules * (1 + null) else 'MISMATCH'))
+                     f'auto={auto:.4g} rules={rules:.4g} null={"n/a" if null is None else f"{null:.4f}"}'
+                     + (' same launches (every pick 0)' if same else ''),
+                     'ok' if same else 'n/a' if null is None else 'ok' if auto <= rules * (1 + null) else 'MISMATCH'))
     return rows
 
 

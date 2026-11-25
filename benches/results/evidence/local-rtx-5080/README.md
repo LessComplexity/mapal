@@ -417,3 +417,19 @@ legs). The rented columns keep event-bracket legs until their next round. $0.41 
 legs were still event-bracketed and the readers took tile_bench's bracket (fixed, 19 chain rows re-timed: **0.878
 (46 / 44 / 30)**, indep_512 loss → even); the 3090 shfl-tree replay line compared two picks (null at one pick; readers
 pair arms by launched picks, `picks.py`).
+
+**bf16-tensor-tile** (`bf16-tensor-tile.md`): `mma-walk` — a 16-bit tensor tile whose grid rounds over the SMs' matrix
+pipes cost more than the products spread evenly is walked by stream-K over every resident slot at its whole warp tile,
+priced by `MmaWalk` from existing properties: projections alone 99–104 % of the calibrated pipe (down 512 216 → 164
+µs); in the model −1.0 ms TTFT at 512 (ABBA in `full-model.md`), +170 MB of workspaces, and run-dependent sums (open).
+
+**bf16-class** (`bf16-bf16-class.md`): the causal skip over a cache finite only at run time (`finite-check`), bf16 stream
+windows on the matrix product (`narrow-window`, the bf16 KV cache of the bf16 class), the stored attention output
+(`round-post`), the device-checked gather (`device-trap`): bf16 class at 2048 67.6 → 60.5 ms TTFT, attention 16.3 →
+7.9 ms, f32 class at 2048 attention 34.1 → 16.3 ms.
+
+**bf16-integrate** (`full-model.md`): the two bf16 steps and prefill/residency's last three commits merged; `cand-made`
+(a map an operand of which a placement candidate makes is a candidate: the prompt's gather and norm leave the host).
+Llama-3.2-1B, type to type: f32 class 8.54 / 25.39 / 95.48 ms TTFT (128 / 512 / 2048), 3.24–3.45 ms/token — 1.60–1.87×
+and 1.71–1.80× ahead of the best f32 engine; bf16 class 5.58 / 14.07 / 52.14 ms, 3.26–3.40 ms/token — 1.05–1.15×
+behind the best bf16 engine on TTFT, 1.06–1.10× on decode.

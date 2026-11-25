@@ -527,7 +527,9 @@ impl FnEmit<'_> {
         }
         if let Some(c) = plan.cells.get(m) {
             let batched = plan.batch.iter().any(|b| b.writes.iter().any(|w| w.0 == m));
-            if c.range.is_some() || c.retain.is_some() || batched {
+            // bf16-class `device-trap`: a trap-checking cell launches alone
+            // (its launch arms the checkpoint's read).
+            if c.range.is_some() || c.retain.is_some() || batched || c.trap {
                 return None;
             }
             let (gx, block) = gpu::CellGeo {

@@ -940,6 +940,26 @@ pub struct GpuRungs {
     /// are launch arguments. Off (`--gpu-off=stream-numbers`): a unit whose
     /// epilogue reads a number after its fold is no stream (as before).
     pub stream_numbers: bool,
+    /// bf16-class `finite-check`: a stream group's masked windows are
+    /// skipped where a consumer's column operand is finite only at run time
+    /// (`mapal_ir::StreamGuard::check`) — the kernel reads the skipped
+    /// windows' column elements and runs those windows where one is not
+    /// finite. Off (`--gpu-off=finite-check`): such a group skips none.
+    pub finite_check: bool,
+    /// bf16-class `narrow-window`: a stream group whose column operand is
+    /// stored bf16 (a bf16 KV cache) streams on the matrix product, its
+    /// windows holding the operand's own bytes (half an f32 window's) and
+    /// its fragments taking them as they stand. Off
+    /// (`--gpu-off=narrow-window`): such a group is no stream.
+    pub narrow_window: bool,
+    /// bf16-class `device-trap`: a map whose only possible trap is an index
+    /// `bounds_proof` cannot prove (`mapal_ir::CategoryIr::trap_cell_plan`:
+    /// an embedding's row through a run-time token id) may run as a device
+    /// cell — each such read checked in the kernel (out of bounds: the trap
+    /// recorded in the module's word, element 0 read), the trap raised at
+    /// the next host checkpoint (a print, the clock, a trap, the exit).
+    /// Off (`--gpu-off=device-trap`): such a map runs on the host.
+    pub device_trap: bool,
     /// flash-attention F7 (a fact arm, `mapal_ir::FactArms::finite`):
     /// `finite_plan` proves values finite. Off (`--gpu-off=finite`,
     /// `--no-finite`): nothing is, so no masked window is skipped.
@@ -1032,6 +1052,17 @@ pub struct GpuRungs {
     /// (`--gpu-off=streamk-epi`): the group's ordered kernel, as before (a
     /// measurement flag; the stream-K rule decides where it applies).
     pub streamk_epi: bool,
+    /// bf16 tensor-tile `mma-walk`: a 16-bit tensor tile (no split form)
+    /// whose grid rounds over the SMs' matrix pipes (`⌈tiles / sms⌉` tiles
+    /// on the busiest SM) cost more than the same products spread evenly is
+    /// walked by stream-K over every resident slot at its whole warp tile
+    /// (`func::gpu::mma_walk`, priced by `func::gpu::MmaWalk`); the shared
+    /// tiles' partials add into the zeroed output, or an epilogue group's
+    /// workspace and ticket (`streamk-epi`). Off (`--gpu-off=mma-walk`): the
+    /// ordered tile or its `k` cut, as before (a measurement flag; the price
+    /// decides where it applies). `--gpu-on=mma-walk` walks every site the
+    /// walk admits, priced or not (the measurement and emulator arm).
+    pub mma_walk: bool,
     /// hopper-launch `tma-warm`: a module carrying a kernel that reads
     /// tensor maps (the `<kernel>_tmap` recipes the runtime finds in its
     /// text at load) has the runtime launch its own one-box TMA kernel once
@@ -1128,6 +1159,14 @@ pub struct GpuRungs {
     /// goes up, not the 4 MB down and back). Off: such a cell needs every
     /// operand on the device already.
     pub once_bytes: bool,
+    /// bf16-integrate `cand-made`: a map an operand of which a candidate
+    /// device cell or site makes is a placement candidate too (S62's
+    /// "operand device-produced" over the candidates, the fixed point
+    /// deciding it), not only where its own roofline pays — a prompt's gather,
+    /// its norm's row fold and the norm's scale are decided as one chain. Off
+    /// (`--gpu-off=cand-made`): the roofline or a tile site's output alone
+    /// makes a candidate (as before).
+    pub cand_made: bool,
     /// full-model `once-range`: a piecewise range map (`map_law` `Outside`)
     /// outside every loop that no carry writes in place is a whole-extent
     /// device cell, run once. Off: such a map is no cell (the host runs it).
@@ -1155,6 +1194,13 @@ pub struct GpuRungs {
     /// index left it rolled, one weight load in flight a warp). Off
     /// (`--gpu-off=lanes-unroll`): no loop metadata.
     pub lanes_unroll: bool,
+    /// residency `fly-unroll`: a warp-a-cell fold whose grid holds too few
+    /// warps an SM to keep the part's stream bytes in flight
+    /// (`Gpu::stream_fly_per_sm`) at `NAIVE_UNROLL` loads a lane unrolls
+    /// deeper — the power of two that keeps them, at most the lane's trips
+    /// (a 512-row one-row projection: 6 warps an SM). Off
+    /// (`--gpu-off=fly-unroll`): every lane loop `NAIVE_UNROLL`.
+    pub fly_unroll: bool,
 }
 
 impl GpuRungs {
@@ -1290,6 +1336,9 @@ impl GpuRungs {
         guard_terms: true,
         walk_order: true,
         stream_numbers: true,
+        finite_check: true,
+        narrow_window: true,
+        device_trap: true,
         finite: true,
         unit_uniform: true,
         mma_combine: true,
@@ -1302,6 +1351,7 @@ impl GpuRungs {
         warm_zero: true,
         streamk_price: true,
         streamk_epi: true,
+        mma_walk: true,
         tma_warm: true,
         ws_persist: true,
         load_dispatch: true,
@@ -1315,16 +1365,18 @@ impl GpuRungs {
         trip_cells: true,
         bytes_place: true,
         once_bytes: true,
+        cand_made: true,
         once_range: true,
         range_chain: true,
         stride_lanes: true,
         carry_fwd: true,
         lanes_unroll: true,
+        fly_unroll: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 160] = [
+    pub const NAMES: [&'static str; 166] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1453,6 +1505,9 @@ impl GpuRungs {
         "guard-terms",
         "walk-order",
         "stream-numbers",
+        "finite-check",
+        "narrow-window",
+        "device-trap",
         "finite",
         "mma-combine",
         "split-tile",
@@ -1485,6 +1540,9 @@ impl GpuRungs {
         "stride-lanes",
         "carry-fwd",
         "lanes-unroll",
+        "mma-walk",
+        "fly-unroll",
+        "cand-made",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -1620,6 +1678,9 @@ impl GpuRungs {
             "guard-terms" => &mut self.guard_terms,
             "walk-order" => &mut self.walk_order,
             "stream-numbers" => &mut self.stream_numbers,
+            "finite-check" => &mut self.finite_check,
+            "narrow-window" => &mut self.narrow_window,
+            "device-trap" => &mut self.device_trap,
             "finite" => &mut self.finite,
             "unit-uniform" => &mut self.unit_uniform,
             "mma-combine" => &mut self.mma_combine,
@@ -1632,6 +1693,7 @@ impl GpuRungs {
             "warm-zero" => &mut self.warm_zero,
             "streamk-price" => &mut self.streamk_price,
             "streamk-epi" => &mut self.streamk_epi,
+            "mma-walk" => &mut self.mma_walk,
             "tma-warm" => &mut self.tma_warm,
             "ws-persist" => &mut self.ws_persist,
             "load-dispatch" => &mut self.load_dispatch,
@@ -1645,11 +1707,13 @@ impl GpuRungs {
             "trip-cells" => &mut self.trip_cells,
             "bytes-place" => &mut self.bytes_place,
             "once-bytes" => &mut self.once_bytes,
+            "cand-made" => &mut self.cand_made,
             "once-range" => &mut self.once_range,
             "range-chain" => &mut self.range_chain,
             "stride-lanes" => &mut self.stride_lanes,
             "carry-fwd" => &mut self.carry_fwd,
             "lanes-unroll" => &mut self.lanes_unroll,
+            "fly-unroll" => &mut self.fly_unroll,
             _ => return None,
         })
     }
@@ -2161,8 +2225,16 @@ fn host_line(
             }
         }
     }
+    // residency `calib-supply`: where a `native-gpu` build's measured costs
+    // came from (`file`, `committed`), or `none`.
+    let calib = match (profile.name, profile::native_gpu_calib()) {
+        (profile::NATIVE_GPU, Some(profile::CalibSource::File(_))) => " calib=file",
+        (profile::NATIVE_GPU, Some(profile::CalibSource::Committed)) => " calib=committed",
+        (profile::NATIVE_GPU, _) => " calib=none",
+        _ => "",
+    };
     em.text.push_str(&format!(
-        "; mapal.host profile={} fma={} order={:?} device_sites={dev} host_sites={host}\n",
+        "; mapal.host profile={} fma={} order={:?} device_sites={dev} host_sites={host}{calib}\n",
         em.profile,
         u8::from(opts.contract),
         opts.order
@@ -2438,6 +2510,11 @@ fn emit_module(
     // `epilogue`, `devmap` and `streams` launch over n pointers: one declaration.
     if funcs.contains("@mapal_gpu_launchv(") {
         out.push_str(crate::func::gpu::LAUNCHV_DECL);
+    }
+    // bf16-class `device-trap`: a trap-checking cell's launch arms the
+    // checkpoint's read of the device's trap word.
+    if funcs.contains("@mapal_gpu_trap_arm(") {
+        out.push_str("declare void @mapal_gpu_trap_arm()\n");
     }
     // kernel-merging `calls`: a persistent kernel's cooperative launch.
     if funcs.contains("@mapal_gpu_launch_coop(") {
