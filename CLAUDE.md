@@ -136,8 +136,13 @@ only a fact that is not there yet is computed (from its stored inputs). Never re
 - **Benchmarks are written in idiomatic Mapal** (map / fold / loop / guards / captures), never unrolled or shaped to
   what the compiler already recognizes. If the natural form compiles worse, the facts are generalized — the program
   is never rewritten to suit them. `benches/algorithms/*.mapal` is the committed, readable snapshot. Every rung has an OFF arm for measurement; its default comes from the rule over facts, never per hardware.
-- Default float face: full precision, a-priori error bound, order unspecified, fastest for the native CPU+GPU
-  (ADR-0040). Exact/contract/fixed-order are opt-in; value gates on the default face check the bound.
+- **Correctness is the flow and the bound, not bit-identity** (Sapir, 2026-11-26, ADR-0049). A program is correct
+  when its flow of operations is the dataflow and every value is within the stated a-priori bound (default float face:
+  full precision, order unspecified, fastest for the target — ADR-0040). The compiler orders, splits and combines
+  freely (atomics, stream-K, split-K included); results may differ in the last bits between runs and targets. Never
+  refuse, price up or restrict an optimization to reproduce bits, and never require a target (CPU/GPU/ASIC) to provide
+  deterministic reductions. Exact/contract/fixed are **development modes** (oracle, replay, debugging, value gates),
+  not language promises; value gates on the default face check the bound.
 - GPU archs: RTX 4090 sm_89, RTX 5090 sm_120, H100 sm_90a, RTX 3090 sm_86, rented on vast.ai on demand
   (`benches/gpu/vast_part.sh`/`vast_run.sh`). `vastai destroy instance <id>` needs `-y`; never touch instances you
   did not create — any instance labeled `stocklab-*` belongs to another project; never print keys or provider logs. Same-box ABBA A/B, value gates first, report null variation.
