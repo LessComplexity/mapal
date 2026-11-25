@@ -1,150 +1,92 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="920" height="662" viewBox="0 0 920 662" role="img" aria-labelledby="t d">
-<title id="t">Llama-3.2-1B-Instruct on an RTX 5080: bf16 class</title>
-<desc id="d">Time to first token and decode time per token for Mapal, gpt-fast, SGLang, TensorRT-LLM, vLLM, llama.cpp bf16, llama.cpp f16, HF eager, HF static + compile, at prompt lengths 128, 512, 2048. Mapal with bf16 operands and f32 accumulation on the sums of products (fold: bf16 | f32). The other engines run bf16 (llama.cpp f16: f16).</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="618" viewBox="0 0 920 618" role="img" aria-labelledby="t d">
+<title id="t">Llama-3.2-1B, bf16 class: Mapal against the fastest bf16 engine</title>
+<desc id="d">Mapal with bf16 operands and f32 accumulation on the sums of products and a bf16 KV cache, against the bf16 engines. Time to first token, 512-token prompt: RTX 5080 1.05 (14.1 vs 13.5 ms, llama.cpp bf16); RTX 3090 1.17 (23.8 vs 20.4 ms, SGLang); A100 1.44 (16.1 vs 11.1 ms, SGLang); RTX 4090 1.16 (11.9 vs 10.3 ms, gpt-fast); H100 1.88 (7.60 vs 4.04 ms, gpt-fast). Decode, per generated token, 512-token prompt: RTX 5080 1.10 (3.29 vs 2.98 ms, gpt-fast); RTX 3090 1.23 (4.01 vs 3.27 ms, gpt-fast); A100 1.55 (3.69 vs 2.38 ms, gpt-fast); RTX 4090 1.19 (3.47 vs 2.93 ms, gpt-fast); H100 1.56 (2.06 vs 1.32 ms, gpt-fast).</desc>
 <style>text { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; } .num { font-variant-numeric: tabular-nums; }</style>
-<rect width="920" height="662" rx="10" fill="#1a1a19"/>
-<text x="28.0" y="38.0" font-size="17" font-weight="600" fill="#f0efec" text-anchor="start">Llama-3.2-1B-Instruct on an RTX 5080: bf16 class</text>
-<text x="28.0" y="60.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">Mapal with bf16 operands and f32 accumulation on the sums of products (fold: bf16 | f32). The other engines run bf16 (llama.cpp f16: f16).</text>
-<text x="28.0" y="78.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">Batch 1, greedy, 128 generated tokens, medians. Shorter bars are faster; the fastest engine in each panel is in bold.</text>
-<text x="28.0" y="128.0" font-size="14" font-weight="600" fill="#f0efec" text-anchor="start">Time to first token, ms</text>
-<text x="216.0" y="150.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="start">prompt of 128 tokens</text>
-<text x="450.0" y="150.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="start">prompt of 512 tokens</text>
-<text x="684.0" y="150.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="start">prompt of 2048 tokens</text>
-<path d="M216.0,165.0 H318.3 A4,4 0 0 1 322.3,169.0 V173.0 A4,4 0 0 1 318.3,177.0 H216.0 Z" fill="#3987e5"/>
-<text x="328.3" y="175.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">6.95</text>
-<path d="M216.0,187.0 H287.1 A4,4 0 0 1 291.1,191.0 V195.0 A4,4 0 0 1 287.1,199.0 H216.0 Z" fill="#52514e"/>
-<text x="297.1" y="197.5" font-size="11.5" font-weight="700" fill="#f0efec" text-anchor="start" class="num">4.91</text>
-<path d="M216.0,209.0 H316.8 A4,4 0 0 1 320.8,213.0 V217.0 A4,4 0 0 1 316.8,221.0 H216.0 Z" fill="#52514e"/>
-<text x="326.8" y="219.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">6.85</text>
-<path d="M216.0,231.0 H368.0 A4,4 0 0 1 372.0,235.0 V239.0 A4,4 0 0 1 368.0,243.0 H216.0 Z" fill="#52514e"/>
-<text x="378.0" y="241.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">10.2</text>
-<path d="M216.0,253.0 H318.4 A4,4 0 0 1 322.4,257.0 V261.0 A4,4 0 0 1 318.4,265.0 H216.0 Z" fill="#52514e"/>
-<text x="328.4" y="263.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">6.96</text>
-<path d="M216.0,275.0 H302.4 A4,4 0 0 1 306.4,279.0 V283.0 A4,4 0 0 1 302.4,287.0 H216.0 Z" fill="#52514e"/>
-<text x="312.4" y="285.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">5.91</text>
-<path d="M216.0,297.0 H304.8 A4,4 0 0 1 308.8,301.0 V305.0 A4,4 0 0 1 304.8,309.0 H216.0 Z" fill="#52514e"/>
-<text x="314.8" y="307.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">6.07</text>
-<path d="M216.0,319.0 H312.5 A4,4 0 0 1 316.5,323.0 V327.0 A4,4 0 0 1 312.5,331.0 H216.0 Z" fill="#52514e"/>
-<text x="322.5" y="329.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">6.57</text>
-<path d="M216.0,341.0 H340.5 A4,4 0 0 1 344.5,345.0 V349.0 A4,4 0 0 1 340.5,353.0 H216.0 Z" fill="#52514e"/>
-<text x="350.5" y="351.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">8.40</text>
-<line x1="216.0" y1="160.0" x2="216.0" y2="358.0" stroke="#383835" stroke-width="1"/>
-<path d="M450.0,165.0 H602.0 A4,4 0 0 1 606.0,169.0 V173.0 A4,4 0 0 1 602.0,177.0 H450.0 Z" fill="#3987e5"/>
-<text x="612.0" y="175.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">18.1</text>
-<path d="M450.0,187.0 H565.5 A4,4 0 0 1 569.5,191.0 V195.0 A4,4 0 0 1 565.5,199.0 H450.0 Z" fill="#52514e"/>
-<text x="575.5" y="197.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">13.9</text>
-<path d="M450.0,209.0 H571.2 A4,4 0 0 1 575.2,213.0 V217.0 A4,4 0 0 1 571.2,221.0 H450.0 Z" fill="#52514e"/>
-<text x="581.2" y="219.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">14.5</text>
-<path d="M450.0,231.0 H569.8 A4,4 0 0 1 573.8,235.0 V239.0 A4,4 0 0 1 569.8,243.0 H450.0 Z" fill="#52514e"/>
-<text x="579.8" y="241.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">14.4</text>
-<path d="M450.0,253.0 H564.4 A4,4 0 0 1 568.4,257.0 V261.0 A4,4 0 0 1 564.4,265.0 H450.0 Z" fill="#52514e"/>
-<text x="574.4" y="263.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">13.8</text>
-<path d="M450.0,275.0 H566.6 A4,4 0 0 1 570.6,279.0 V283.0 A4,4 0 0 1 566.6,287.0 H450.0 Z" fill="#52514e"/>
-<text x="576.6" y="285.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">14.0</text>
-<path d="M450.0,297.0 H539.9 A4,4 0 0 1 543.9,301.0 V305.0 A4,4 0 0 1 539.9,309.0 H450.0 Z" fill="#52514e"/>
-<text x="549.9" y="307.5" font-size="11.5" font-weight="700" fill="#f0efec" text-anchor="start" class="num">10.9</text>
-<path d="M450.0,319.0 H569.0 A4,4 0 0 1 573.0,323.0 V327.0 A4,4 0 0 1 569.0,331.0 H450.0 Z" fill="#52514e"/>
-<text x="579.0" y="329.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">14.3</text>
-<path d="M450.0,341.0 H581.2 A4,4 0 0 1 585.2,345.0 V349.0 A4,4 0 0 1 581.2,353.0 H450.0 Z" fill="#52514e"/>
-<text x="591.2" y="351.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">15.7</text>
-<line x1="450.0" y1="160.0" x2="450.0" y2="358.0" stroke="#383835" stroke-width="1"/>
-<path d="M684.0,165.0 H836.0 A4,4 0 0 1 840.0,169.0 V173.0 A4,4 0 0 1 836.0,177.0 H684.0 Z" fill="#3987e5"/>
-<text x="846.0" y="175.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">74.1</text>
-<path d="M684.0,187.0 H789.5 A4,4 0 0 1 793.5,191.0 V195.0 A4,4 0 0 1 789.5,199.0 H684.0 Z" fill="#52514e"/>
-<text x="799.5" y="197.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">52.0</text>
-<path d="M684.0,209.0 H775.8 A4,4 0 0 1 779.8,213.0 V217.0 A4,4 0 0 1 775.8,221.0 H684.0 Z" fill="#52514e"/>
-<text x="785.8" y="219.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">45.5</text>
-<path d="M684.0,231.0 H776.4 A4,4 0 0 1 780.4,235.0 V239.0 A4,4 0 0 1 776.4,243.0 H684.0 Z" fill="#52514e"/>
-<text x="786.4" y="241.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">45.8</text>
-<path d="M684.0,253.0 H792.0 A4,4 0 0 1 796.0,257.0 V261.0 A4,4 0 0 1 792.0,265.0 H684.0 Z" fill="#52514e"/>
-<text x="802.0" y="263.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">53.2</text>
-<path d="M684.0,275.0 H784.8 A4,4 0 0 1 788.8,279.0 V283.0 A4,4 0 0 1 784.8,287.0 H684.0 Z" fill="#52514e"/>
-<text x="794.8" y="285.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">49.8</text>
-<path d="M684.0,297.0 H758.0 A4,4 0 0 1 762.0,301.0 V305.0 A4,4 0 0 1 758.0,309.0 H684.0 Z" fill="#52514e"/>
-<text x="768.0" y="307.5" font-size="11.5" font-weight="700" fill="#f0efec" text-anchor="start" class="num">37.0</text>
-<path d="M684.0,319.0 H781.1 A4,4 0 0 1 785.1,323.0 V327.0 A4,4 0 0 1 781.1,331.0 H684.0 Z" fill="#52514e"/>
-<text x="791.1" y="329.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">48.0</text>
-<path d="M684.0,341.0 H783.4 A4,4 0 0 1 787.4,345.0 V349.0 A4,4 0 0 1 783.4,353.0 H684.0 Z" fill="#52514e"/>
-<text x="793.4" y="351.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">49.1</text>
-<line x1="684.0" y1="160.0" x2="684.0" y2="358.0" stroke="#383835" stroke-width="1"/>
-<text x="28.0" y="175.5" font-size="12.5" font-weight="700" fill="#f0efec" text-anchor="start">Mapal</text>
-<text x="28.0" y="197.5" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">gpt-fast</text>
-<text x="28.0" y="219.5" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">SGLang</text>
-<text x="28.0" y="241.5" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">TensorRT-LLM</text>
-<text x="28.0" y="263.5" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">vLLM</text>
-<text x="28.0" y="285.5" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">llama.cpp bf16</text>
-<text x="28.0" y="307.5" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">llama.cpp f16</text>
-<text x="28.0" y="329.5" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">HF eager</text>
-<text x="28.0" y="351.5" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">HF static + compile</text>
-<text x="28.0" y="388.0" font-size="14" font-weight="600" fill="#f0efec" text-anchor="start">Decode, ms per generated token</text>
-<text x="216.0" y="410.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="start">prompt of 128 tokens</text>
-<text x="450.0" y="410.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="start">prompt of 512 tokens</text>
-<text x="684.0" y="410.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="start">prompt of 2048 tokens</text>
-<path d="M216.0,425.0 H336.3 A4,4 0 0 1 340.3,429.0 V433.0 A4,4 0 0 1 336.3,437.0 H216.0 Z" fill="#3987e5"/>
-<text x="346.3" y="435.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">3.53</text>
-<path d="M216.0,447.0 H316.5 A4,4 0 0 1 320.5,451.0 V455.0 A4,4 0 0 1 316.5,459.0 H216.0 Z" fill="#52514e"/>
-<text x="326.5" y="457.5" font-size="11.5" font-weight="700" fill="#f0efec" text-anchor="start" class="num">2.97</text>
-<path d="M216.0,469.0 H329.4 A4,4 0 0 1 333.4,473.0 V477.0 A4,4 0 0 1 329.4,481.0 H216.0 Z" fill="#52514e"/>
-<text x="339.4" y="479.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">3.33</text>
-<path d="M216.0,491.0 H319.4 A4,4 0 0 1 323.4,495.0 V499.0 A4,4 0 0 1 319.4,503.0 H216.0 Z" fill="#52514e"/>
-<text x="329.4" y="501.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">3.05</text>
-<path d="M216.0,513.0 H333.0 A4,4 0 0 1 337.0,517.0 V521.0 A4,4 0 0 1 333.0,525.0 H216.0 Z" fill="#52514e"/>
-<text x="343.0" y="523.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">3.43</text>
-<path d="M216.0,535.0 H324.2 A4,4 0 0 1 328.2,539.0 V543.0 A4,4 0 0 1 324.2,547.0 H216.0 Z" fill="#52514e"/>
-<text x="334.2" y="545.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">3.18</text>
-<path d="M216.0,557.0 H324.2 A4,4 0 0 1 328.2,561.0 V565.0 A4,4 0 0 1 324.2,569.0 H216.0 Z" fill="#52514e"/>
-<text x="334.2" y="567.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">3.18</text>
-<path d="M216.0,579.0 H368.0 A4,4 0 0 1 372.0,583.0 V587.0 A4,4 0 0 1 368.0,591.0 H216.0 Z" fill="#52514e"/>
-<text x="378.0" y="589.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">4.43</text>
-<path d="M216.0,601.0 H342.9 A4,4 0 0 1 346.9,605.0 V609.0 A4,4 0 0 1 342.9,613.0 H216.0 Z" fill="#52514e"/>
-<text x="352.9" y="611.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">3.71</text>
-<line x1="216.0" y1="420.0" x2="216.0" y2="618.0" stroke="#383835" stroke-width="1"/>
-<path d="M450.0,425.0 H573.9 A4,4 0 0 1 577.9,429.0 V433.0 A4,4 0 0 1 573.9,437.0 H450.0 Z" fill="#3987e5"/>
-<text x="583.9" y="435.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">3.67</text>
-<path d="M450.0,447.0 H549.7 A4,4 0 0 1 553.7,451.0 V455.0 A4,4 0 0 1 549.7,459.0 H450.0 Z" fill="#52514e"/>
-<text x="559.7" y="457.5" font-size="11.5" font-weight="700" fill="#f0efec" text-anchor="start" class="num">2.98</text>
-<path d="M450.0,469.0 H554.5 A4,4 0 0 1 558.5,473.0 V477.0 A4,4 0 0 1 554.5,481.0 H450.0 Z" fill="#52514e"/>
-<text x="564.5" y="479.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">3.12</text>
-<path d="M450.0,491.0 H553.0 A4,4 0 0 1 557.0,495.0 V499.0 A4,4 0 0 1 553.0,503.0 H450.0 Z" fill="#52514e"/>
-<text x="563.0" y="501.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">3.07</text>
-<path d="M450.0,513.0 H566.7 A4,4 0 0 1 570.7,517.0 V521.0 A4,4 0 0 1 566.7,525.0 H450.0 Z" fill="#52514e"/>
-<text x="576.7" y="523.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">3.47</text>
-<path d="M450.0,535.0 H557.9 A4,4 0 0 1 561.9,539.0 V543.0 A4,4 0 0 1 557.9,547.0 H450.0 Z" fill="#52514e"/>
-<text x="567.9" y="545.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">3.21</text>
-<path d="M450.0,557.0 H558.4 A4,4 0 0 1 562.4,561.0 V565.0 A4,4 0 0 1 558.4,569.0 H450.0 Z" fill="#52514e"/>
-<text x="568.4" y="567.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">3.23</text>
-<path d="M450.0,579.0 H602.0 A4,4 0 0 1 606.0,583.0 V587.0 A4,4 0 0 1 602.0,591.0 H450.0 Z" fill="#52514e"/>
-<text x="612.0" y="589.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">4.48</text>
-<path d="M450.0,601.0 H586.6 A4,4 0 0 1 590.6,605.0 V609.0 A4,4 0 0 1 586.6,613.0 H450.0 Z" fill="#52514e"/>
-<text x="596.6" y="611.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">4.04</text>
-<line x1="450.0" y1="420.0" x2="450.0" y2="618.0" stroke="#383835" stroke-width="1"/>
-<path d="M684.0,425.0 H796.9 A4,4 0 0 1 800.9,429.0 V433.0 A4,4 0 0 1 796.9,437.0 H684.0 Z" fill="#3987e5"/>
-<text x="806.9" y="435.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">4.01</text>
-<path d="M684.0,447.0 H777.5 A4,4 0 0 1 781.5,451.0 V455.0 A4,4 0 0 1 777.5,459.0 H684.0 Z" fill="#52514e"/>
-<text x="787.5" y="457.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">3.34</text>
-<path d="M684.0,469.0 H772.2 A4,4 0 0 1 776.2,473.0 V477.0 A4,4 0 0 1 772.2,481.0 H684.0 Z" fill="#52514e"/>
-<text x="782.2" y="479.5" font-size="11.5" font-weight="700" fill="#f0efec" text-anchor="start" class="num">3.16</text>
-<path d="M684.0,491.0 H773.3 A4,4 0 0 1 777.3,495.0 V499.0 A4,4 0 0 1 773.3,503.0 H684.0 Z" fill="#52514e"/>
-<text x="783.3" y="501.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">3.20</text>
-<path d="M684.0,513.0 H785.5 A4,4 0 0 1 789.5,517.0 V521.0 A4,4 0 0 1 785.5,525.0 H684.0 Z" fill="#52514e"/>
-<text x="795.5" y="523.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">3.62</text>
-<path d="M684.0,535.0 H774.9 A4,4 0 0 1 778.9,539.0 V543.0 A4,4 0 0 1 774.9,547.0 H684.0 Z" fill="#52514e"/>
-<text x="784.9" y="545.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">3.26</text>
-<path d="M684.0,557.0 H775.1 A4,4 0 0 1 779.1,561.0 V565.0 A4,4 0 0 1 775.1,569.0 H684.0 Z" fill="#52514e"/>
-<text x="785.1" y="567.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">3.26</text>
-<path d="M684.0,579.0 H810.6 A4,4 0 0 1 814.6,583.0 V587.0 A4,4 0 0 1 810.6,591.0 H684.0 Z" fill="#52514e"/>
-<text x="820.6" y="589.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">4.48</text>
-<path d="M684.0,601.0 H836.0 A4,4 0 0 1 840.0,605.0 V609.0 A4,4 0 0 1 836.0,613.0 H684.0 Z" fill="#52514e"/>
-<text x="846.0" y="611.5" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start" class="num">5.35</text>
-<line x1="684.0" y1="420.0" x2="684.0" y2="618.0" stroke="#383835" stroke-width="1"/>
-<text x="28.0" y="435.5" font-size="12.5" font-weight="700" fill="#f0efec" text-anchor="start">Mapal</text>
-<text x="28.0" y="457.5" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">gpt-fast</text>
-<text x="28.0" y="479.5" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">SGLang</text>
-<text x="28.0" y="501.5" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">TensorRT-LLM</text>
-<text x="28.0" y="523.5" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">vLLM</text>
-<text x="28.0" y="545.5" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">llama.cpp bf16</text>
-<text x="28.0" y="567.5" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">llama.cpp f16</text>
-<text x="28.0" y="589.5" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">HF eager</text>
-<text x="28.0" y="611.5" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">HF static + compile</text>
-<text x="28.0" y="644.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">RTX 5080, Mapal build 8bf54fb3, 2026-11-25. Data: benches/results/evidence/local-rtx-5080/full-model.md (benches/results/evidence/full-model.json).</text>
+<rect width="920" height="618" rx="10" fill="#1a1a19"/>
+<text x="28.0" y="38.0" font-size="17" font-weight="600" fill="#f0efec" text-anchor="start">Llama-3.2-1B, bf16 class: Mapal against the fastest bf16 engine</text>
+<text x="28.0" y="60.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">Mapal with bf16 operands and f32 accumulation on the sums of products and a bf16 KV cache, against the bf16 engines.</text>
+<text x="28.0" y="78.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">Mapal time ÷ the fastest engine's time, per GPU. Batch 1, greedy, 128 generated tokens, medians of 5. Below 1: Mapal faster.</text>
+<rect x="28.0" y="95.0" width="10.0" height="10.0" rx="2" fill="#3987e5"/>
+<text x="43.0" y="104.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="start">Mapal faster</text>
+<rect x="142.0" y="95.0" width="10.0" height="10.0" rx="2" fill="#898781"/>
+<text x="157.0" y="104.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="start">within 5%</text>
+<rect x="235.0" y="95.0" width="10.0" height="10.0" rx="2" fill="#e66767"/>
+<text x="250.0" y="104.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="start">Mapal slower</text>
+<text x="28.0" y="138.0" font-size="14" font-weight="600" fill="#f0efec" text-anchor="start">Time to first token, 512-token prompt</text>
+<text x="892.0" y="138.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">Mapal vs the fastest engine</text>
+<line x1="143.7" y1="148.0" x2="143.7" y2="298.0" stroke="#2c2c2a" stroke-width="1"/>
+<line x1="235.8" y1="148.0" x2="235.8" y2="298.0" stroke="#2c2c2a" stroke-width="1"/>
+<line x1="291.7" y1="148.0" x2="291.7" y2="298.0" stroke="#2c2c2a" stroke-width="1"/>
+<line x1="362.0" y1="148.0" x2="362.0" y2="298.0" stroke="#383835" stroke-width="1"/>
+<line x1="432.3" y1="148.0" x2="432.3" y2="298.0" stroke="#2c2c2a" stroke-width="1"/>
+<line x1="489.7" y1="148.0" x2="489.7" y2="298.0" stroke="#2c2c2a" stroke-width="1"/>
+<line x1="580.3" y1="148.0" x2="580.3" y2="298.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="28.0" y="168.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">RTX 5080</text>
+<path d="M362.0,156.0 H372.0 A4,4 0 0 1 376.0,160.0 V166.0 A4,4 0 0 1 372.0,170.0 H362.0 Z" fill="#898781"/>
+<text x="382.0" y="168.0" font-size="12" font-weight="600" fill="#f0efec" text-anchor="start" class="num">1.05</text>
+<text x="892.0" y="168.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end" class="num">14.1 vs 13.5 ms · llama.cpp bf16</text>
+<text x="28.0" y="198.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">RTX 3090</text>
+<path d="M362.0,186.0 H407.4 A4,4 0 0 1 411.4,190.0 V196.0 A4,4 0 0 1 407.4,200.0 H362.0 Z" fill="#e66767"/>
+<text x="417.4" y="198.0" font-size="12" font-weight="600" fill="#f0efec" text-anchor="start" class="num">1.17</text>
+<text x="892.0" y="198.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end" class="num">23.8 vs 20.4 ms · SGLang</text>
+<text x="28.0" y="228.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">A100</text>
+<path d="M362.0,216.0 H473.9 A4,4 0 0 1 477.9,220.0 V226.0 A4,4 0 0 1 473.9,230.0 H362.0 Z" fill="#e66767"/>
+<text x="483.9" y="228.0" font-size="12" font-weight="600" fill="#f0efec" text-anchor="start" class="num">1.44</text>
+<text x="892.0" y="228.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end" class="num">16.1 vs 11.1 ms · SGLang</text>
+<text x="28.0" y="258.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">RTX 4090</text>
+<path d="M362.0,246.0 H405.5 A4,4 0 0 1 409.5,250.0 V256.0 A4,4 0 0 1 405.5,260.0 H362.0 Z" fill="#e66767"/>
+<text x="415.5" y="258.0" font-size="12" font-weight="600" fill="#f0efec" text-anchor="start" class="num">1.16</text>
+<text x="892.0" y="258.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end" class="num">11.9 vs 10.3 ms · gpt-fast</text>
+<text x="28.0" y="288.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">H100</text>
+<path d="M362.0,276.0 H557.1 A4,4 0 0 1 561.1,280.0 V286.0 A4,4 0 0 1 557.1,290.0 H362.0 Z" fill="#e66767"/>
+<text x="567.1" y="288.0" font-size="12" font-weight="600" fill="#f0efec" text-anchor="start" class="num">1.88</text>
+<text x="892.0" y="288.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end" class="num">7.60 vs 4.04 ms · gpt-fast</text>
+<text x="143.7" y="314.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.5</text>
+<text x="235.8" y="314.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.67</text>
+<text x="291.7" y="314.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.8</text>
+<text x="362.0" y="314.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1</text>
+<text x="432.3" y="314.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1.25</text>
+<text x="489.7" y="314.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1.5</text>
+<text x="580.3" y="314.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">2</text>
+<text x="28.0" y="348.0" font-size="14" font-weight="600" fill="#f0efec" text-anchor="start">Decode, per generated token, 512-token prompt</text>
+<text x="892.0" y="348.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">Mapal vs the fastest engine</text>
+<line x1="143.7" y1="358.0" x2="143.7" y2="508.0" stroke="#2c2c2a" stroke-width="1"/>
+<line x1="235.8" y1="358.0" x2="235.8" y2="508.0" stroke="#2c2c2a" stroke-width="1"/>
+<line x1="291.7" y1="358.0" x2="291.7" y2="508.0" stroke="#2c2c2a" stroke-width="1"/>
+<line x1="362.0" y1="358.0" x2="362.0" y2="508.0" stroke="#383835" stroke-width="1"/>
+<line x1="432.3" y1="358.0" x2="432.3" y2="508.0" stroke="#2c2c2a" stroke-width="1"/>
+<line x1="489.7" y1="358.0" x2="489.7" y2="508.0" stroke="#2c2c2a" stroke-width="1"/>
+<line x1="580.3" y1="358.0" x2="580.3" y2="508.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="28.0" y="378.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">RTX 5080</text>
+<path d="M362.0,366.0 H389.1 A4,4 0 0 1 393.1,370.0 V376.0 A4,4 0 0 1 389.1,380.0 H362.0 Z" fill="#e66767"/>
+<text x="399.1" y="378.0" font-size="12" font-weight="600" fill="#f0efec" text-anchor="start" class="num">1.10</text>
+<text x="892.0" y="378.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end" class="num">3.29 vs 2.98 ms · gpt-fast</text>
+<text x="28.0" y="408.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">RTX 3090</text>
+<path d="M362.0,396.0 H422.2 A4,4 0 0 1 426.2,400.0 V406.0 A4,4 0 0 1 422.2,410.0 H362.0 Z" fill="#e66767"/>
+<text x="432.2" y="408.0" font-size="12" font-weight="600" fill="#f0efec" text-anchor="start" class="num">1.23</text>
+<text x="892.0" y="408.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end" class="num">4.01 vs 3.27 ms · gpt-fast</text>
+<text x="28.0" y="438.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">A100</text>
+<path d="M362.0,426.0 H495.5 A4,4 0 0 1 499.5,430.0 V436.0 A4,4 0 0 1 495.5,440.0 H362.0 Z" fill="#e66767"/>
+<text x="505.5" y="438.0" font-size="12" font-weight="600" fill="#f0efec" text-anchor="start" class="num">1.55</text>
+<text x="892.0" y="438.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end" class="num">3.69 vs 2.38 ms · gpt-fast</text>
+<text x="28.0" y="468.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">RTX 4090</text>
+<path d="M362.0,456.0 H411.5 A4,4 0 0 1 415.5,460.0 V466.0 A4,4 0 0 1 411.5,470.0 H362.0 Z" fill="#e66767"/>
+<text x="421.5" y="468.0" font-size="12" font-weight="600" fill="#f0efec" text-anchor="start" class="num">1.19</text>
+<text x="892.0" y="468.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end" class="num">3.47 vs 2.93 ms · gpt-fast</text>
+<text x="28.0" y="498.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">H100</text>
+<path d="M362.0,486.0 H497.4 A4,4 0 0 1 501.4,490.0 V496.0 A4,4 0 0 1 497.4,500.0 H362.0 Z" fill="#e66767"/>
+<text x="507.4" y="498.0" font-size="12" font-weight="600" fill="#f0efec" text-anchor="start" class="num">1.56</text>
+<text x="892.0" y="498.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end" class="num">2.06 vs 1.32 ms · gpt-fast</text>
+<text x="143.7" y="524.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.5</text>
+<text x="235.8" y="524.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.67</text>
+<text x="291.7" y="524.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.8</text>
+<text x="362.0" y="524.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1</text>
+<text x="432.3" y="524.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1.25</text>
+<text x="489.7" y="524.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1.5</text>
+<text x="580.3" y="524.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">2</text>
+<text x="132.0" y="542.0" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start">← Mapal faster</text>
+<text x="592.0" y="542.0" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="end">Mapal slower →</text>
+<text x="28.0" y="568.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">Engines of the class: gpt-fast, SGLang, TensorRT-LLM, vLLM, llama.cpp bf16, HF eager, HF static + compile.</text>
+<text x="28.0" y="584.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">Not compared: llama.cpp f16: f16 is another 16-bit format (recorded under other_types).</text>
+<text x="28.0" y="600.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">Builds b8429388 / 9be9886d. Data: benches/results/evidence/full-model.json (every engine, prompts 128 / 512 / 2048).</text>
 </svg>

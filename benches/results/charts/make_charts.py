@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Draw the README's result charts and its headline table from the evidence data.
+"""Draw the README's result charts and its headline tables from the evidence data.
 
 Inputs (written by the measurement steps; this script only reads them):
   benches/results/evidence/matrix.json       the cross-part suite matrix (benches/local/matrix.py)
-  benches/results/evidence/full-model.json   the full-model runs (from local-rtx-5080/full-model.md)
+  benches/results/evidence/full-model.json   the full model per GPU and precision class, every engine
+                                             (local-rtx-5080/full-model.md, cross-arch/README.md)
 
 Outputs:
   benches/results/charts/<chart>-light.svg and <chart>-dark.svg  (the README picks one per GitHub theme
@@ -12,8 +13,9 @@ Outputs:
 
 Run from anywhere:  python3 benches/results/charts/make_charts.py   (--no-readme: leave README.md alone)
 Standard library only. Colors follow the dataviz reference palette (validated: blue / red polarity pair in
-both modes); a type is only ever compared with its own type (the matrix's ratio rule, full-model.json's
-classes).
+both modes). Type to type: a precision class is only ever compared with engines of its own class
+(full-model.json's classes; llama.cpp f16 sits under other_types and is never drawn), each suite row only
+with competitors at its own precision (the matrix's ratio rule).
 """
 
 import argparse
@@ -275,88 +277,137 @@ def verdicts(rows):
     return out
 
 
-def mapal_engine(cls):
-    return next(e for e in cls["engines"] if e.get("mapal") and e.get("chart"))
+def mapal_engine(engines):
+    return next(e for e in engines if e.get("mapal"))
 
 
-def others(cls):
-    return [e for e in cls["engines"] if e.get("chart") and not e.get("mapal")]
+def competitors(engines):
+    return [e for e in engines if not e.get("mapal")]
+
+
+def class_meta(fm, cid):
+    return next(c for c in fm["classes"] if c["id"] == cid)
+
+
+def model_cell(part, cid, metric, j):
+    """Mapal ÷ the fastest engine of the class at prompt index j: (ratio, Mapal's value, best value, best name)."""
+    engines = part["classes"][cid]["engines"]
+    me = mapal_engine(engines)
+    best = min(competitors(engines), key=lambda e: e[metric][j])
+    return me[metric][j] / best[metric][j], me[metric][j], best[metric][j], best["name"]
+
+
+def model_domain(fm, j):
+    """One log domain, symmetric about 1, for both class charts (so their bars compare)."""
+    rs = [
+        model_cell(p, c["id"], m, j)[0]
+        for p in fm["parts"]
+        for c in fm["classes"]
+        for m in ("ttft_ms", "decode_ms")
+        if c["id"] in p["classes"]
+    ]
+    m = max(math.log(1.25), max(abs(math.log(r)) for r in rs) * 1.12)
+    return math.exp(-m), math.exp(m)
+
+
+def verdict(ratio, even):
+    return "even" if abs(ratio - 1) <= even else ("faster" if ratio < 1 else "slower")
 
 
 # --- charts --------------------------------------------------------------------------------------------------
 
 
-def llm_chart(fm, cls, theme):
-    meta = fm["meta"]
-    lengths = meta["prompt_lengths"]
-    engines = [mapal_engine(cls)] + others(cls)
-    W, pad, label_w, gap = 920, 28, 188, 26
-    panel_w = (W - 2 * pad - label_w - gap * (len(lengths) - 1)) / len(lengths)
-    row_h, bar_h = 22, 12
+def llm_chart(fm, cid, theme, domain, even):
+    """Per GPU, Mapal ÷ the fastest engine of one class at a 512-token prompt: TTFT, then decode."""
     t = theme
-    title = f"{meta['model']} on an {meta['gpu']}: {cls['label']}"
-    desc = (
-        f"Time to first token and decode time per token for {', '.join(e['name'] for e in engines)}, "
-        f"at prompt lengths {', '.join(map(str, lengths))}. {cls.get('chart_note', '')}"
+    meta = fm["meta"]
+    cls = class_meta(fm, cid)
+    j = meta["prompt_lengths"].index(512)
+    parts = [p for p in fm["parts"] if cid in p["classes"]]
+    lo, hi = domain
+    W, pad, label_w, right_w = 920, 28, 104, 300
+    x_lo, x_hi = pad + label_w, W - pad - right_w
+
+    def X(r):
+        return x_lo + (math.log(r) - math.log(lo)) / (math.log(hi) - math.log(lo)) * (x_hi - x_lo)
+
+    model = meta["model"].replace("-Instruct", "")
+    title = f"{model}, {cls['label']}: Mapal against the fastest {cid} engine"
+    engines = list(dict.fromkeys(e["name"] for p in parts for e in competitors(p["classes"][cid]["engines"])))
+    sections = (
+        ("ttft_ms", "Time to first token, 512-token prompt", "ms"),
+        ("decode_ms", "Decode, per generated token, 512-token prompt", "ms"),
+    )
+    desc = f"{cls['chart_note']} " + " ".join(
+        f"{heading}: "
+        + "; ".join(
+            "{} {:.2f} ({} vs {} {}, {})".format(part_name(p["part"]), r, sig(a), sig(b), unit, n)
+            for p in parts
+            for r, a, b, n in [model_cell(p, cid, metric, j)]
+        )
+        + "."
+        for metric, heading, unit in sections
     )
     svg = Svg(W, t, title, desc)
     y = 38
     svg.text(pad, y, title, 17, t["ink"], 600)
     y += 22
-    svg.text(pad, y, cls.get("chart_note", cls["compute"]), 12.5, t["ink2"])
+    svg.text(pad, y, cls["chart_note"], 12.5, t["ink2"])
     y += 18
     svg.text(
         pad,
         y,
-        f"Batch {meta['batch']}, greedy, {meta['generated_tokens']} generated tokens, medians. "
-        "Shorter bars are faster; the fastest engine in each panel is in bold.",
+        f"Mapal time ÷ the fastest engine's time, per GPU. Batch {meta['batch']}, greedy, "
+        f"{meta['generated_tokens']} generated tokens, medians of 5. Below 1: Mapal faster.",
         12.5,
         t["ink2"],
     )
-    y += 20
-    for metric, heading in (("ttft_ms", "Time to first token, ms"), ("decode_ms", "Decode, ms per generated token")):
-        y += 30
-        svg.text(pad, y, heading, 14, t["ink"], 600)
-        y += 22
-        top = y
-        for j, n in enumerate(lengths):
-            x0 = pad + label_w + j * (panel_w + gap)
-            svg.text(x0, y, f"prompt of {n} tokens", 12, t["ink2"])
-        y += 10
-        rows_top = y
-        for j, n in enumerate(lengths):
-            x0 = pad + label_w + j * (panel_w + gap)
-            vals = [e[metric][j] for e in engines]
-            best = min(vals)
-            scale = (panel_w - 52) / max(vals)
-            for i, e in enumerate(engines):
-                v = e[metric][j]
-                yy = rows_top + i * row_h + (row_h - bar_h) / 2
-                fill = t["mapal"] if e.get("mapal") else t["other"]
-                svg.bar(x0, x0 + v * scale, yy, bar_h, fill)
-                is_best = v == best
-                svg.text(
-                    x0 + v * scale + 6,
-                    yy + bar_h - 1.5,
-                    sig(v),
-                    11.5,
-                    t["ink"] if is_best else t["ink2"],
-                    700 if is_best else 400,
-                    num=True,
-                )
-            svg.line(x0, rows_top, x0, rows_top + len(engines) * row_h, t["base"])
-        for i, e in enumerate(engines):
-            yy = rows_top + i * row_h + row_h / 2 + 4.5
-            name = e["name"]
-            svg.text(pad, yy, name, 12.5, t["ink"] if e.get("mapal") else t["ink2"], 700 if e.get("mapal") else 400)
-        y = rows_top + len(engines) * row_h
-        del top
     y += 26
+    lx = pad
+    for key, label in (("faster", "Mapal faster"), ("even", f"within {even:.0%}"), ("slower", "Mapal slower")):
+        svg.rect(lx, y - 9, 10, 10, t[key], 2)
+        svg.text(lx + 15, y, label, 12, t["ink2"])
+        lx += 30 + 7 * len(label)
+    ticks = [r for r in (0.5, 0.67, 0.8, 1.0, 1.25, 1.5, 2.0) if lo <= r <= hi]
+    row_h, bar_h = 30, 14
+    for metric, heading, unit in sections:
+        y += 34
+        svg.text(pad, y, heading, 14, t["ink"], 600)
+        svg.text(W - pad, y, "Mapal vs the fastest engine", 12, t["ink2"], anchor="end")
+        y += 10
+        top = y
+        bottom = top + row_h * len(parts)
+        for r in ticks:
+            svg.line(X(r), top, X(r), bottom, t["base"] if r == 1.0 else t["grid"])
+        for i, p in enumerate(parts):
+            r, a, b, n = model_cell(p, cid, metric, j)
+            yy = top + i * row_h + (row_h - bar_h) / 2
+            cy = yy + bar_h - 2
+            svg.text(pad, cy, part_name(p["part"]), 13, t["ink"], 600)
+            svg.bar(X(1.0), X(r), yy, bar_h, t[verdict(r, even)])
+            if r < 1:
+                svg.text(X(r) - 6, cy, f"{r:.2f}", 12, t["ink"], 600, "end", num=True)
+            else:
+                svg.text(X(r) + 6, cy, f"{r:.2f}", 12, t["ink"], 600, num=True)
+            svg.text(W - pad, cy, f"{sig(a)} vs {sig(b)} {unit} · {n}", 12, t["ink2"], anchor="end", num=True)
+        y = bottom + 16
+        for r in ticks:
+            svg.text(X(r), y, f"{r:g}", 11, t["muted"], anchor="middle", num=True)
+    y += 18
+    svg.text(X(lo), y, "← Mapal faster", 11.5, t["ink2"])
+    svg.text(X(hi), y, "Mapal slower →", 11.5, t["ink2"], anchor="end")
+    y += 26
+    svg.text(pad, y, f"Engines of the class: {', '.join(engines)}.", 11, t["muted"])
+    notes = "; ".join(f"{x['name']}: {x['why']}" for x in cls.get("not_compared", []))
+    if notes:
+        y += 16
+        svg.text(pad, y, f"Not compared: {notes}.", 11, t["muted"])
+    y += 16
     svg.text(
         pad,
         y,
-        f"{meta['gpu']}, Mapal build {meta['mapal_build']}, {meta['date']}. Data: {meta['report']} "
-        "(benches/results/evidence/full-model.json).",
+        f"Builds b8429388 / 9be9886d. Data: benches/results/evidence/full-model.json (every engine, prompts "
+        f"{' / '.join(map(str, meta['prompt_lengths']))}).",
         11,
         t["muted"],
     )
@@ -370,7 +421,7 @@ def suite_gpu_chart(matrix, theme):
     data = []
     for p in parts:
         rows = [by[p][w] for w in common]
-        data.append((p, geomean([r["ratio"] for r in rows]), verdicts(rows)))
+        data.append((p, geomean([r["ratio"] for r in rows]), verdicts(by[p].values())))
     ratios = [g for _, g, _ in data if g]
     m = max(math.log(1.25), max(abs(math.log(g)) for g in ratios) * 1.15)
     lo, hi = math.exp(-m), math.exp(m)
@@ -391,8 +442,8 @@ def suite_gpu_chart(matrix, theme):
     svg.text(
         pad,
         y,
-        f"Geomean of Mapal time ÷ the fastest competitor's time over the {len(common)} programs timed on every GPU. "
-        "Below 1: Mapal faster.",
+        f"Geomean of Mapal time ÷ the fastest competitor's time over the {len(common)} programs timed on every GPU, "
+        "at the program boundary. Below 1: Mapal faster.",
         12.5,
         t["ink2"],
     )
@@ -448,7 +499,8 @@ def suite_gpu_chart(matrix, theme):
         pad,
         y,
         f"Data: benches/results/evidence/matrix.json ({matrix['meta'].get('generated', '')}); even = within "
-        f"{even:.0%} or the row's own noise.",
+        f"{even:.0%} or the row's own noise; counts over every row the GPU timed "
+        f"({' / '.join(str(len(by[p])) for p in parts)}).",
         11,
         t["muted"],
     )
@@ -548,51 +600,55 @@ def headline(fm, matrix):
     even = matrix["meta"].get("even_threshold", 0.05)
     meta = fm["meta"]
     lengths = meta["prompt_lengths"]
+    j512 = lengths.index(512)
 
-    def ratio_cell(rs, places=2):
-        return " / ".join(f"**{rnd(r, places)}**" if r < 1 - even else rnd(r, places) for r in rs)
+    def ratio(r, places=2):
+        shown = rnd(r, places)
+        return f"**{shown}**" if float(shown) < 1 - even else shown
 
-    lines = [
-        "| result | Mapal | fastest competitor, same precision | Mapal ÷ fastest |",
-        "| --- | ---: | ---: | ---: |",
-    ]
-    model = meta["model"].replace("-Instruct", "")
-    for cls in fm["classes"]:
-        me = mapal_engine(cls)
-        rest = others(cls)
-        for metric, what, unit in (("ttft_ms", "time to first token", "ms"), ("decode_ms", "decode", "ms / token")):
-            mine = me[metric]
-            best = [min(rest, key=lambda e: e[metric][j]) for j in range(len(lengths))]
-            bv = [b[metric][j] for j, b in enumerate(best)]
-            names = [b["name"] for b in best]
-            if len(set(names)) == 1:
-                theirs = " / ".join(sig(v) for v in bv) + f" {unit} ({names[0]})"
-            else:
-                theirs = " / ".join(f"{sig(v)} ({n})" for v, n in zip(bv, names)) + f" {unit}"
-            lines.append(
-                f"| {model}, {cls['label']}, {what}, prompt {' / '.join(map(str, lengths))} "
-                f"| {' / '.join(sig(v) for v in mine)} {unit} | {theirs} "
-                f"| {ratio_cell([a / b for a, b in zip(mine, bv)])} |"
-            )
     parts, by, common = suite_rows(matrix)
-    gs, wins, losses = [], [], []
+    lines = [
+        f"**Kernel and layer suite**: Mapal ÷ the fastest competitor at the program's own precision, geomean over the "
+        f"{len(common)} programs timed on every GPU, both sides timed at the program boundary.",
+        "",
+        "| GPU | Mapal ÷ fastest | programs faster / even / slower |",
+        "| --- | ---: | ---: |",
+    ]
     for p in parts:
-        rows = [by[p][w] for w in common]
-        gs.append(geomean([r["ratio"] for r in rows]))
-        v = verdicts(rows)
-        wins.append(str(v["win"]))
-        losses.append(str(v["loss"]))
-    names = " / ".join(part_name(p) for p in parts)
-    lines.append(
-        f"| kernel and layer suite, {len(common)} programs, geomean, {names} "
-        f"| faster on {' / '.join(wins)} | faster on {' / '.join(losses)} | {ratio_cell(gs, 3)} |"
-    )
-    lines.append("")
-    lines.append(
-        f"{meta['gpu']} for the model (batch {meta['batch']}, {meta['generated_tokens']} generated tokens, medians). "
-        f"Below 1: Mapal faster; bold: faster by more than {even:.0%}. "
-        "Each precision class is compared only with engines of its own class."
-    )
+        g = geomean([by[p][w]["ratio"] for w in common])
+        v = verdicts(by[p].values())
+        lines.append(f"| {part_name(p)} | {ratio(g, 3)} | {v['win']} / {v['even']} / {v['loss']} |")
+    model = meta["model"].replace("-Instruct", "")
+    lines += [
+        "",
+        f"**{model}, the full model**: Mapal ÷ the fastest engine of the same class, prompts "
+        f"{' / '.join(map(str, lengths))} (batch {meta['batch']}, {meta['generated_tokens']} generated tokens, "
+        "medians of 5).",
+        "",
+        "| GPU | class | time to first token | decode per token | at 512: Mapal vs the fastest engine |",
+        "| --- | --- | ---: | ---: | --- |",
+    ]
+    for p in fm["parts"]:
+        for c in fm["classes"]:
+            cid = c["id"]
+            if cid not in p["classes"]:
+                continue
+            cells = []
+            for metric in ("ttft_ms", "decode_ms"):
+                cells.append(" / ".join(ratio(model_cell(p, cid, metric, j)[0]) for j in range(len(lengths))))
+            _, a, b, n = model_cell(p, cid, "ttft_ms", j512)
+            _, da, db, dn = model_cell(p, cid, "decode_ms", j512)
+            at = f"{sig(a)} vs {sig(b)} ms ({n}); {sig(da)} vs {sig(db)} ms / token ({dn})"
+            lines.append(f"| {part_name(p['part'])} | {cid} | {cells[0]} | {cells[1]} | {at} |")
+    lines += [
+        "",
+        f"Below 1: Mapal faster; bold: faster by more than {even:.0%}. Type to type: the **f32 class** is the program "
+        "as written (f32 activations on the bf16 weights) against gpt-fast, vLLM, llama.cpp and Hugging Face "
+        "computing in f32 with TF32 off (SGLang has no f32 path and TensorRT-LLM's f32 output is wrong: neither is "
+        "compared); the **bf16 class** (`fold: bf16 | f32`, bf16 KV cache) against gpt-fast, vLLM, SGLang, "
+        "TensorRT-LLM, llama.cpp and Hugging Face in bf16. llama.cpp in f16 is another 16-bit format and is not "
+        "compared.",
+    ]
     return "\n".join(lines)
 
 
@@ -620,7 +676,9 @@ def main():
     for mode, base in THEMES.items():
         theme = dict(base)
         theme["_red_pole"] = red_pole(theme)
-        charts = {f"llm-{c['id']}": llm_chart(fm, c, theme) for c in fm["classes"]}
+        even = matrix["meta"].get("even_threshold", 0.05)
+        domain = model_domain(fm, fm["meta"]["prompt_lengths"].index(512))
+        charts = {f"llm-{c['id']}": llm_chart(fm, c["id"], theme, domain, even) for c in fm["classes"]}
         charts["suite-gpus"] = suite_gpu_chart(matrix, theme)
         charts["suite-groups"] = suite_groups_chart(matrix, theme)
         for name, body in charts.items():
