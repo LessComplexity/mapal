@@ -205,3 +205,115 @@ fn placement_on_generated_programs() {
         assert!(c.get(key).copied().unwrap_or(0) > 0, "{key}: {c:?}");
     }
 }
+
+/// The host lines of an emission's `; mapal.range once=` intent, by kind.
+fn once_ranges(em: &Emission) -> (u64, u64) {
+    let n = |k: &str| em.text.matches(&format!("; mapal.range once={k} ")).count() as u64;
+    (n("inplace"), n("whole"))
+}
+
+/// Calls moving `bytes` between host and device (either way) in the host text.
+fn crossings(em: &Emission, bytes: u64) -> usize {
+    em.text
+        .lines()
+        .filter(|l| {
+            (l.contains("@mapal_gpu_h2d(") || l.contains("@mapal_gpu_d2h("))
+                && l.trim_end().ends_with(&format!("i64 {bytes})"))
+        })
+        .count()
+}
+
+fn check_prefill(clang: &str, i: usize, g: &testgen::PrefillProg) -> Vec<(&'static str, u64)> {
+    let src = testgen::prefill_prog_src(g);
+    let ir = lower(&src);
+    let want = interp(&ir);
+    let mut c = vec![("programs", 1)];
+    let em = device_emission(&ir, &[]);
+    let dev = em.device.as_deref().unwrap_or("");
+    let (inplace, whole) = once_ranges(&em);
+    // Every prompt write runs once on the device: over its dead source's
+    // buffer, or (its source read again: the second cache's shared zero
+    // fill, a reread layer) whole into its own.
+    let writes = 2 * g.layers;
+    let read_again = u64::from(g.shared) + u64::from(g.reread && g.layers == 2);
+    assert_eq!(
+        inplace + whole,
+        writes,
+        "prompt writes on the device\n{src}"
+    );
+    assert_eq!(whole, read_again, "whole-extent writes\n{src}");
+    c.push(("inplace-writes", inplace));
+    if whole > 0 {
+        c.push(("whole-writes", whole));
+    }
+    // Movement: no cache crosses the boundary — the fills are zeroed on the
+    // device, the prompt's writes stay there, the decode loop takes their
+    // buffers.
+    let cache_bytes = g.layers * g.p * g.w * 4;
+    assert_eq!(crossings(&em, cache_bytes), 0, "a cache crosses\n{src}");
+    c.push(("no-cache-copy", 1));
+    if g.trips > 0 {
+        c.push(("decode-after-prompt", 1));
+    }
+    let ex = emu::build_emulated(clang, &em.text, dev);
+    for (mode, (got, _)) in MODES.iter().zip(ex.run_each(&MODES)) {
+        assert_eq!(got, want, "{mode:?}\n{src}");
+    }
+    if i % 2 == 0 {
+        // The OFF arm: no straight-line range cell at all.
+        let off = device_emission(&ir, &["once-range"]);
+        assert_eq!(once_ranges(&off), (0, 0), "once-range off\n{src}");
+        let got = emu::run_emulated(clang, &off.text, off.device.as_deref().unwrap_or(""));
+        assert_eq!(got, want, "once-range off\n{src}");
+        c.push(("off-arm-runs", 1));
+    } else {
+        let cpu = emu::run_emulated(
+            clang,
+            &emit_detailed(&ir, &EmitOpts::default()).unwrap().text,
+            "",
+        );
+        assert_eq!(cpu, want, "cpu\n{src}");
+        c.push(("cpu-runs", 1));
+    }
+    c
+}
+
+/// full-model `once-range` on generated prompt chunks
+/// (`testgen::prefill_strategy`): a range map outside every loop writes its
+/// rows over its source's device buffer when nothing reads the source after
+/// it, else the whole extent into its own; no cache crosses to the host,
+/// and the decode loop after the prompt takes the prompt's buffers. Values
+/// against the interpreter in every emulator mode, the CPU build and the OFF
+/// arm; every path is reached.
+#[test]
+fn once_range_on_generated_prompts() {
+    let Some(clang) = emu::clang() else {
+        return;
+    };
+    let mut runner = TestRunner::deterministic();
+    let progs: Vec<testgen::PrefillProg> = std::iter::repeat_with(|| {
+        testgen::prefill_strategy()
+            .new_tree(&mut runner)
+            .unwrap()
+            .current()
+    })
+    .take(24)
+    .collect();
+    let results = testgen::par_check(&progs, |i, g| check_prefill(&clang, i, g));
+    let mut c = std::collections::BTreeMap::<&str, u64>::new();
+    for r in results.into_iter().flatten() {
+        *c.entry(r.0).or_default() += r.1;
+    }
+    eprintln!("once-range generated: {c:?}");
+    for key in [
+        "programs",
+        "inplace-writes",
+        "whole-writes",
+        "no-cache-copy",
+        "decode-after-prompt",
+        "off-arm-runs",
+        "cpu-runs",
+    ] {
+        assert!(c.get(key).copied().unwrap_or(0) > 0, "{key}: {c:?}");
+    }
+}

@@ -1115,6 +1115,10 @@ pub struct GpuRungs {
     /// goes up, not the 4 MB down and back). Off: such a cell needs every
     /// operand on the device already.
     pub once_bytes: bool,
+    /// full-model `once-range`: a piecewise range map (`map_law` `Outside`)
+    /// outside every loop that no carry writes in place is a whole-extent
+    /// device cell, run once. Off: such a map is no cell (the host runs it).
+    pub once_range: bool,
     /// model-ready placement `range-chain`: a chain of in-place range maps
     /// over a carried state (a trip's appends to one cache) writes the
     /// carry's buffer link by link, each written array dead past its
@@ -1295,6 +1299,7 @@ impl GpuRungs {
         trip_cells: true,
         bytes_place: true,
         once_bytes: true,
+        once_range: true,
         range_chain: true,
         stride_lanes: true,
         carry_fwd: true,
@@ -1303,7 +1308,7 @@ impl GpuRungs {
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 156] = [
+    pub const NAMES: [&'static str; 157] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1456,6 +1461,7 @@ impl GpuRungs {
         "trip-cells",
         "bytes-place",
         "once-bytes",
+        "once-range",
         "range-chain",
         "stride-lanes",
         "carry-fwd",
@@ -1617,6 +1623,7 @@ impl GpuRungs {
             "trip-cells" => &mut self.trip_cells,
             "bytes-place" => &mut self.bytes_place,
             "once-bytes" => &mut self.once_bytes,
+            "once-range" => &mut self.once_range,
             "range-chain" => &mut self.range_chain,
             "stride-lanes" => &mut self.stride_lanes,
             "carry-fwd" => &mut self.carry_fwd,

@@ -66,9 +66,18 @@ fn shipped(ir: &CategoryIr, target: &'static str, on: bool) -> Emission {
 fn emulated(ir: &CategoryIr, on: bool) -> Emission {
     let mut gpu = GpuArms::default();
     // The placement the zero walk is studied on: `place` off, and (full-model)
-    // `once-bytes` off — with it, a straight-line generator runs on the device
-    // and every zero has a kernel before it (the `none` case left the set).
-    for r in ["place", "once-bytes", "async", "pdl", "streams", "pinned"] {
+    // `once-bytes` and `once-range` off — with them, a straight-line generator
+    // runs on the device and every zero has a kernel before it (the `none`
+    // case left the set).
+    for r in [
+        "place",
+        "once-bytes",
+        "once-range",
+        "async",
+        "pdl",
+        "streams",
+        "pinned",
+    ] {
         *gpu.off.rung(r).unwrap() = true;
     }
     *gpu.off.rung("zero-fold").unwrap() = !on;
