@@ -333,6 +333,50 @@ fn ws16_launches_alone() {
     );
 }
 
+/// A stage deeper than one 128-byte swizzle row (`bk` 256: the `a` box's
+/// digit columns, a k16 step's descriptor offset across them) — a 128 × 64 ×
+/// 1024 GEMM on the profile's 132 SMs, its placement priced (the copies'
+/// price deepens its small tile's stage) — on both `a` homes equals the warp
+/// tile byte for byte in every emulator mode.
+#[test]
+fn deep_stages_equal_the_warp_tile() {
+    let Some(clang) = emu::clang() else {
+        return;
+    };
+    let deep = PJ
+        .replace("65536 -> iota -> ia", "131072 -> iota -> ia")
+        .replace(
+            "ic -> map { t -> t / 256 -> i; t % 256 -> j;",
+            "ic -> map { t -> t / 64 -> i; t % 64 -> j;",
+        )
+        .replace("65536 -> iota -> ic", "8192 -> iota -> ic")
+        .replace("256 -> iota -> kr", "1024 -> iota -> kr")
+        .replace("b[k * 256 + j]", "b[k * 64 + j]")
+        .replace("a[i * 256 + k]", "a[i * 1024 + k]")
+        .replace("y[65535]", "y[8191]");
+    let kept = deep.replace(
+        "    y[0] -> println;",
+        "    a[3] -> println;\n    y[0] -> println;",
+    );
+    for (src, home) in [(deep.clone(), "smem"), (kept, "regs")] {
+        let ir = lower(&src);
+        let (host, dev) = placed(&ir, &[]);
+        let ws = ws16_lines(&dev);
+        assert_eq!(ws.len(), 1, "{}", plan_lines(&dev).join("\n"));
+        assert!(
+            num(ws[0], "bk") > 64 && field(ws[0], "a_home") == home,
+            "{}",
+            ws[0]
+        );
+        let (host_off, dev_off) = placed(&ir, &["wgmma16"]);
+        let on = emu::build_emulated(&clang, &host, &dev);
+        let off = emu::build_emulated(&clang, &host_off, &dev_off);
+        for mode in MODES {
+            assert_eq!(on.run(&mode).0, off.run(&mode).0, "{mode:?}\n{src}");
+        }
+    }
+}
+
 /// The two `a` homes on the emulated device equal the warp tile
 /// (`--gpu-off=wgmma16`) byte for byte in every mode.
 #[test]
