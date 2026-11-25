@@ -58,6 +58,10 @@ pub(crate) struct Stream {
     /// flash-attention F1: per member, its rows as a digit permutation of
     /// the group's (`unit_plan`'s [`mapal_ir::RowMap`]).
     pub rows_of: Vec<Option<mapal_ir::RowMap>>,
+    /// mask-frontend: the walk order of the group's rows
+    /// ([`mapal_ir::UnitGroup::order`]): a block's row `r` is group row
+    /// `order(i + r)`. `None`: `i + r`.
+    pub order: Option<mapal_ir::RowMap>,
     /// sweep-attention-2 `stream-mma`: the products on this warp matrix
     /// product's format (`m16n8k16`, the accumulator's fragment layout);
     /// `None`: FFMA.
@@ -158,10 +162,28 @@ impl Stream {
         let mut seen = 0u64;
         for blk in 0..blocks {
             let r = (blk * self.b, blk * self.b + self.b - 1);
+            // mask-frontend: a block walked in the group's order — its rows'
+            // sides as a set (an open side: every window).
+            let set = self.order.as_ref().map(|o| {
+                let rows: Vec<u64> = (r.0..=r.1).map(|p| o.group_row(p)).collect();
+                (
+                    gd.form.lhs.rows_range(&rows, &mapal_ir::NoValues),
+                    gd.form.rhs.rows_range(&rows, &mapal_ir::NoValues),
+                )
+            });
             let vis: Vec<u64> = (0..nb)
                 .filter(|&t| {
                     let l = (t * kb, (t * kb + kb).min(w) - 1);
-                    gd.form.classify(r, l) != mapal_ir::BoxClass::Masked
+                    let class = match &set {
+                        None => gd.form.classify(r, l),
+                        Some((Some(a), Some(b))) => {
+                            let (la, lb) = (gd.form.lhs.lanes_range(l), gd.form.rhs.lanes_range(l));
+                            gd.form
+                                .class_of((a.0 + la.0, a.1 + la.1), (b.0 + lb.0, b.1 + lb.1))
+                        }
+                        Some(_) => mapal_ir::BoxClass::Mixed,
+                    };
+                    class != mapal_ir::BoxClass::Masked
                 })
                 .collect();
             seen += match (vis.first(), vis.last()) {
@@ -369,14 +391,6 @@ impl Addr {
     }
 }
 
-/// sweep-attention `unit-uniform`: no number an epilogue site's body
-/// captures is read after its fold (`TilePost::after`: a loop counter only
-/// moves the fold's operands) — the epilogue, evaluated in the kernel
-/// without it, is the body's.
-fn post_numbers_ok(p: &mapal_ir::TilePost) -> bool {
-    p.after.is_empty()
-}
-
 /// A streamed unit's launch geometry.
 pub(crate) fn stream_geo(u: &Unit, st: &Stream) -> Geo {
     let n = u.members.len();
@@ -452,29 +466,48 @@ impl<'a> FnEmit<'a> {
                     // operands — a captured number moving one (`unit-uniform`:
                     // the launch moves its pointer) where the epilogue never
                     // reads that number; no narrow element yet.
-                    let ok = site
-                        .post
-                        .as_ref()
-                        .is_none_or(|p| post_numbers_ok(p) && p.reads.is_empty())
-                        && site.a.narrow.is_none()
+                    // mask-frontend: the epilogue's arrays memory (a mask's
+                    // per-row limit), its numbers launch arguments
+                    // (`stream-numbers`; off: none read after the fold, no
+                    // array read).
+                    if self.gpu_arms.off.stream_numbers
+                        && site
+                            .post
+                            .as_ref()
+                            .is_some_and(|p| !p.after.is_empty() || !p.reads.is_empty())
+                    {
+                        return Err("site");
+                    }
+                    let ok = site.a.narrow.is_none()
                         && site.b.narrow.is_none()
                         && site.a.ksplit.is_none()
                         && site.b.ksplit.is_none()
                         && site.elem == f32t;
-                    if !ok || !matches!(mb.srcs[..2], [USrc::Gmem(_), USrc::Gmem(_)]) {
+                    if !ok {
                         return Err("site");
+                    }
+                    if !mb.srcs.iter().all(|x| matches!(x, USrc::Gmem(_))) {
+                        return Err("site-src");
                     }
                 }
                 (StreamRole::Consume { .. }, UKind::Tile { site }) => {
                     // Its row operand the group's own rows: only its column
                     // operand may be moved.
-                    let ok = site.radix.as_ref().is_none_or(|r| r.ua.is_empty())
-                        && site.post.as_ref().is_none_or(post_numbers_ok)
-                        && site.b.narrow.is_none()
-                        && site.b.ksplit.is_none()
-                        && site.elem == f32t;
-                    if !ok || !matches!(mb.srcs[..2], [USrc::Member { .. }, USrc::Gmem(_)]) {
+                    if site.radix.as_ref().is_some_and(|r| !r.ua.is_empty()) {
+                        return Err("consume-ua");
+                    }
+                    if self.gpu_arms.off.stream_numbers
+                        && site.post.as_ref().is_some_and(|p| !p.after.is_empty())
+                    {
                         return Err("site");
+                    }
+                    let ok =
+                        site.b.narrow.is_none() && site.b.ksplit.is_none() && site.elem == f32t;
+                    if !ok {
+                        return Err("consume");
+                    }
+                    if !matches!(mb.srcs[..2], [USrc::Member { .. }, USrc::Gmem(_)]) {
+                        return Err("consume-src");
                     }
                 }
                 (StreamRole::Fold { .. }, UKind::Fold { site, colmajor }) => {
@@ -486,6 +519,30 @@ impl<'a> FnEmit<'a> {
                 _ => return Err("member"),
             }
         }
+        // mask-frontend: an open guard's per-launch numbers are the
+        // producer's launch arguments (`stream-numbers`: its epilogue's
+        // numbers) and its row loads the producer's memory operands — else
+        // no window is skipped.
+        let mut sg = sg.clone();
+        if let Some(gd) = sg.guard.as_mut()
+            && gd.skip
+        {
+            let post = match &members[gd.producer].kind {
+                UKind::Tile { site } => site.post.clone(),
+                _ => None,
+            };
+            let ok = post.is_some_and(|p| {
+                [&gd.form.lhs, &gd.form.rhs].iter().all(|sd| {
+                    sd.uniform.iter().all(|d| p.after.contains(&d.slot))
+                        && sd.load.as_ref().is_none_or(|l| p.reads.contains(&l.slot))
+                })
+            });
+            if !ok {
+                gd.skip = false;
+                gd.why = "open";
+            }
+        }
+        let sg = &sg;
         let cp = gpu.has_mma_sync() && !self.gpu_arms.off.cp_async;
         let forced = self.gpu_arms.stream_force;
         let axis = sg.axis;
@@ -577,6 +634,7 @@ impl<'a> FnEmit<'a> {
                                     ns: (0, 0),
                                     s: sp,
                                     rows_of: grp.members.iter().map(|m| m.row_of.clone()).collect(),
+                                    order: grp.order.clone(),
                                     mma: fmt,
                                 };
                                 let lay = st.layout(members);
@@ -1047,7 +1105,15 @@ impl UnitGen<'_> {
                 )
             }
         };
-        let grow: Vec<String> = rloc.iter().map(|r| self.op("add", "%i", r)).collect();
+        // mask-frontend: each of the thread's rows as the group numbers it
+        // (the walk order's).
+        let grow: Vec<String> = rloc
+            .iter()
+            .map(|r| {
+                let p = self.op("add", "%i", r);
+                self.walk_row(st, &p)
+            })
+            .collect();
         // Which folds a cell reads as a rescale's shift: their window
         // extreme is combined across the row group every window.
         let shift: Vec<bool> = (0..n)
@@ -1106,7 +1172,7 @@ impl UnitGen<'_> {
         // tlo + band)` (rotated; a block that sees none walks them all).
         let skip = st.skip();
         match &skip {
-            Some(gd) => self.visible_band(st, &gd.form),
+            Some(gd) => self.visible_band(st, gd),
             // R3: this block's slice of the windows.
             None if st.s > 1 => {
                 self.line(format!("%tlo = mul i64 %bz, {}", nb / st.s));
@@ -1840,9 +1906,14 @@ impl UnitGen<'_> {
     /// how many (through the last one they see; a block that sees none: all
     /// `nb` from 0) — each window's class from the mask's two sides' ranges
     /// over the block's rows and the window's lanes ([`mapal_ir::GuardBox`]).
-    fn visible_band(&mut self, st: &Stream, gb: &mapal_ir::GuardBox) {
+    fn visible_band(&mut self, st: &Stream, gd: &mapal_ir::StreamGuard) {
+        let gb = &gd.form;
         let (kb, nb, w) = (st.kb, st.nb(), st.group.axis);
         let r1 = self.op("add", "%i", st.b - 1);
+        // mask-frontend: an open side's terms — its captured numbers (the
+        // launch's arguments, `stream-numbers`) and its per-row load (the
+        // block's rows' least and greatest) — in signed arithmetic.
+        let open = !gb.closed();
         let side_rows = |g: &mut Self, sd: &mapal_ir::GuardSide| -> (String, String) {
             let mut lo = sd.base.to_string();
             let mut hi = sd.base.to_string();
@@ -1851,10 +1922,31 @@ impl UnitGen<'_> {
                 lo = g.op("add", &lo, &a);
                 hi = g.op("add", &hi, &b);
             }
+            for d in &sd.uniform {
+                let v = g.uniform_digit(gd.producer, d);
+                lo = g.op("add", &lo, &v);
+                hi = g.op("add", &hi, &v);
+            }
+            if let Some(l) = &sd.load {
+                let (a, b) = g.row_load_range(st, gd.producer, l);
+                lo = g.op("add", &lo, &a);
+                hi = g.op("add", &hi, &b);
+            }
             (lo, hi)
         };
-        let (al, ah) = side_rows(self, &gb.lhs);
-        let (bl, bh) = side_rows(self, &gb.rhs);
+        let (al, ah, bl, bh) = match &st.order {
+            None => {
+                let (al, ah) = side_rows(self, &gb.lhs);
+                let (bl, bh) = side_rows(self, &gb.rhs);
+                (al, ah, bl, bh)
+            }
+            // mask-frontend: a block walked in the group's order holds no
+            // range of rows — each side's row part over its `b` rows.
+            Some(_) => {
+                let [al, ah, bl, bh] = self.walked_rows(st, gd);
+                (al, ah, bl, bh)
+            }
+        };
         let pre = self.cur.clone();
         self.line("br label %GS");
         self.label("GS");
@@ -1884,11 +1976,27 @@ impl UnitGen<'_> {
             g.line(format!("{c} = icmp {p} i64 {x}, {y}"));
             c
         };
+        let pr = |p: &str| match open {
+            true => p.replacen('u', "s", 1),
+            false => p.to_string(),
+        };
         let (t, f) = match gb.cmp {
-            Operation::Le => (cmp(self, "ule", &a1, &b0), cmp(self, "ugt", &a0, &b1)),
-            Operation::Lt => (cmp(self, "ult", &a1, &b0), cmp(self, "uge", &a0, &b1)),
-            Operation::Ge => (cmp(self, "uge", &a0, &b1), cmp(self, "ult", &a1, &b0)),
-            Operation::Gt => (cmp(self, "ugt", &a0, &b1), cmp(self, "ule", &a1, &b0)),
+            Operation::Le => (
+                cmp(self, &pr("ule"), &a1, &b0),
+                cmp(self, &pr("ugt"), &a0, &b1),
+            ),
+            Operation::Lt => (
+                cmp(self, &pr("ult"), &a1, &b0),
+                cmp(self, &pr("uge"), &a0, &b1),
+            ),
+            Operation::Ge => (
+                cmp(self, &pr("uge"), &a0, &b1),
+                cmp(self, &pr("ult"), &a1, &b0),
+            ),
+            Operation::Gt => (
+                cmp(self, &pr("ugt"), &a0, &b1),
+                cmp(self, &pr("ule"), &a1, &b0),
+            ),
             // Equality decides no box here: every window mixed.
             _ => ("false".to_string(), "false".to_string()),
         };
@@ -1910,6 +2018,174 @@ impl UnitGen<'_> {
         self.line(format!("%tlo = select i1 {none}, i64 0, i64 %glon"));
         let span = self.op("sub", "%ghin", "%glon");
         self.line(format!("%band = select i1 {none}, i64 {nb}, i64 {span}"));
+    }
+
+    /// mask-frontend: both sides' row parts — base, row digits, per-row
+    /// load, per-launch digits — over a walked block's `b` rows (group rows
+    /// `order(i + r)`), each side's least and greatest (signed):
+    /// `[lhs lo, lhs hi, rhs lo, rhs hi]`.
+    fn walked_rows(&mut self, st: &Stream, gd: &mapal_ir::StreamGuard) -> [String; 4] {
+        let gb = &gd.form;
+        let tag = format!("GW{}", self.n);
+        self.n += 1;
+        let pre = self.cur.clone();
+        self.line(format!("br label %{tag}"));
+        self.label(&tag);
+        let r = format!("%{tag}r");
+        let rn = format!("%{tag}rn");
+        let names = ["al", "ah", "bl", "bh"].map(|x| format!("%{tag}{x}"));
+        let next = ["al", "ah", "bl", "bh"].map(|x| format!("%{tag}{x}n"));
+        self.line(format!("{r} = phi i64 [0, %{pre}], [{rn}, %{tag}e]"));
+        for (j, nm) in names.iter().enumerate() {
+            let init = if j % 2 == 0 { i64::MAX } else { i64::MIN };
+            self.line(format!(
+                "{nm} = phi i64 [{init}, %{pre}], [{}, %{tag}e]",
+                next[j]
+            ));
+        }
+        let p = self.op("add", "%i", &r);
+        let row = self.walk_row(st, &p);
+        let mut val = Vec::new();
+        for sd in [&gb.lhs, &gb.rhs] {
+            let mut v = sd.base.to_string();
+            for d in &sd.row {
+                let (x, _) = self.digit_range(d, &row, &row);
+                v = self.op("add", &v, &x);
+            }
+            if let Some(l) = &sd.load {
+                let x = self.row_load_at(gd.producer, l, &row);
+                v = self.op("add", &v, &x);
+            }
+            for d in &sd.uniform {
+                let x = self.uniform_digit(gd.producer, d);
+                v = self.op("add", &v, &x);
+            }
+            val.push(v);
+        }
+        self.line(format!("br label %{tag}e"));
+        self.label(&format!("{tag}e"));
+        for j in 0..4 {
+            let f = if j % 2 == 0 { "smin" } else { "smax" };
+            self.line(format!(
+                "{} = call i64 @llvm.{f}.i64(i64 {}, i64 {})",
+                next[j],
+                names[j],
+                val[j / 2]
+            ));
+        }
+        self.line(format!("{rn} = add i64 {r}, 1"));
+        let more = self.tmp();
+        self.line(format!("{more} = icmp ult i64 {rn}, {}", st.b));
+        self.line(format!("br i1 {more}, label %{tag}, label %{tag}x"));
+        self.label(&format!("{tag}x"));
+        next
+    }
+
+    /// mask-frontend: `coef·x[base + Σ digits(row)]` of a row load at group
+    /// row `row` (sign-extended), `x` the producer `k`'s epilogue array.
+    fn row_load_at(&mut self, k: usize, l: &mapal_ir::RowLoad, row: &str) -> String {
+        let mb = &self.u.members[k];
+        let UKind::Tile { site } = &mb.kind else {
+            unreachable!("a guarded producer is a tile")
+        };
+        let j = site
+            .post
+            .as_ref()
+            .and_then(|p| p.reads.iter().position(|&s| s == l.slot))
+            .expect("a row load is an epilogue read");
+        let USrc::Gmem(g) = mb.srcs[2 + j] else {
+            unreachable!("a row load reads memory")
+        };
+        let ty = self.gmem_ty[g].clone();
+        let mut at = l.base.to_string();
+        for d in &l.index {
+            let q = self.op("udiv", row, d.stride);
+            let q = match d.radix {
+                0 => q,
+                rx => self.op("urem", &q, rx),
+            };
+            let t = self.op("mul", &q, d.coef);
+            at = self.op("add", &at, &t);
+        }
+        let ptr = self.tmp();
+        self.line(format!("{ptr} = getelementptr {ty}, ptr %xg{g}, i64 {at}"));
+        let v = self.tmp();
+        self.line(format!("{v} = load {ty}, ptr {ptr}"));
+        let v = match ty.as_str() {
+            "i64" => v,
+            t => {
+                let x = self.tmp();
+                self.line(format!("{x} = sext {t} {v} to i64"));
+                x
+            }
+        };
+        self.op("mul", &v, l.coef)
+    }
+
+    /// mask-frontend: a guard side's per-launch digit `coef·((v ÷ stride) %
+    /// radix)` of the producer `k`'s captured number `v` (its launch
+    /// argument `%uv`, as i64).
+    fn uniform_digit(&mut self, k: usize, d: &mapal_ir::Digit) -> String {
+        let ty =
+            self.calls[k].as_ref().expect("an epilogue call").field_ty[d.slot as usize].clone();
+        let v = match ty.as_str() {
+            "i64" => format!("%uv{k}_{}", d.slot),
+            t => {
+                let x = self.tmp();
+                self.line(format!("{x} = sext {t} %uv{k}_{} to i64", d.slot));
+                x
+            }
+        };
+        let q = match d.stride {
+            1 => v,
+            s => self.op("udiv", &v, s),
+        };
+        let r = match d.radix {
+            0 => q,
+            r => self.op("urem", &q, r),
+        };
+        self.op("mul", &r, d.coef)
+    }
+
+    /// mask-frontend: a guard side's per-row load over the block's rows —
+    /// the least and greatest `coef·x[base + Σ digits(row)]` (signed), `x`
+    /// the producer `k`'s epilogue array (its memory operand), each of the
+    /// `b` rows read once.
+    fn row_load_range(&mut self, st: &Stream, k: usize, l: &mapal_ir::RowLoad) -> (String, String) {
+        let tag = format!("GL{}", self.n);
+        self.n += 1;
+        let pre = self.cur.clone();
+        self.line(format!("br label %{tag}"));
+        self.label(&tag);
+        let (r, lo, hi) = (format!("%{tag}r"), format!("%{tag}lo"), format!("%{tag}hi"));
+        let (rn, lon, hin) = (
+            format!("%{tag}rn"),
+            format!("%{tag}lon"),
+            format!("%{tag}hin"),
+        );
+        self.line(format!("{r} = phi i64 [0, %{pre}], [{rn}, %{tag}]"));
+        self.line(format!(
+            "{lo} = phi i64 [{}, %{pre}], [{lon}, %{tag}]",
+            i64::MAX
+        ));
+        self.line(format!(
+            "{hi} = phi i64 [{}, %{pre}], [{hin}, %{tag}]",
+            i64::MIN
+        ));
+        let row = self.op("add", "%i", &r);
+        let v = self.row_load_at(k, l, &row);
+        self.line(format!(
+            "{lon} = call i64 @llvm.smin.i64(i64 {lo}, i64 {v})"
+        ));
+        self.line(format!(
+            "{hin} = call i64 @llvm.smax.i64(i64 {hi}, i64 {v})"
+        ));
+        self.line(format!("{rn} = add i64 {r}, 1"));
+        let more = self.tmp();
+        self.line(format!("{more} = icmp ult i64 {rn}, {}", st.b));
+        self.line(format!("br i1 {more}, label %{tag}, label %{tag}e"));
+        self.label(&format!("{tag}e"));
+        (lon, hin)
     }
 
     /// `[lo, hi]` of digit `d` over `x ∈ [x0, x1]` (`radix 0`: the quotient).
@@ -2174,7 +2450,11 @@ impl UnitGen<'_> {
             (gi, vec),
             None,
             &mut |g, r, c| {
+                // mask-frontend: the block's row `r` as the producer numbers
+                // its rows (its tile order, [`mapal_ir::out_rows`]).
                 let i = g.op("add", "%i", r);
+                let i = g.walk_row(st, &i);
+                let i = g.member_row(st, k, &i);
                 g.addr_at(&a, &i, "0", c)
             },
         );
@@ -2196,7 +2476,8 @@ impl UnitGen<'_> {
         let j0 = j0.to_string();
         let tag = format!("{}{k}_{}", if produce { "K" } else { "V" }, self.n);
         // The block's first row as this member numbers it.
-        let i0 = self.member_row(st, k, "%i");
+        let first = self.walk_row(st, "%i");
+        let i0 = self.member_row(st, k, &first);
         if produce {
             // Key `j`'s row: `b(i, j, kk)`, `kk < d`.
             let (off, dp) = lay.k[k].expect("a producer's window");
@@ -2229,6 +2510,15 @@ impl UnitGen<'_> {
                     g.addr_at(&bb, &i0, c, &j)
                 },
             );
+        }
+    }
+
+    /// mask-frontend: the group row at walk position `p`
+    /// ([`Stream::order`]; else `p` itself).
+    fn walk_row(&mut self, st: &Stream, p: &str) -> String {
+        match &st.order {
+            Some(o) => self.digits(&o.to_group, p),
+            None => p.to_string(),
         }
     }
 
@@ -2408,6 +2698,11 @@ impl UnitGen<'_> {
                     },
                     // An array only the fold reads; a number only the
                     // fold's operands take (`unit-uniform`): unread.
+                    // mask-frontend `stream-numbers`: one read after the
+                    // fold is the launch's argument.
+                    None if post.after.contains(&s) => {
+                        (field_ty[s as usize].clone(), format!("%uv{k}_{s}"))
+                    }
                     None if post.uniform.contains(&s) => {
                         let ty = field_ty[s as usize].clone();
                         let v = match ty.as_str() {

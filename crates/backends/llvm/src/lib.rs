@@ -927,6 +927,19 @@ pub struct GpuRungs {
     /// masked window is skipped where F6 allows. Off (`--gpu-off=guard-box`,
     /// `--no-guard-box`): every window computed.
     pub guard_box: bool,
+    /// mask-frontend (a fact arm, `mapal_ir::FactArms::guard_terms`): a
+    /// mask's side through a captured array — its element law, else a
+    /// per-row load — or a per-launch number. Off (`--gpu-off=guard-terms`):
+    /// digit forms of the cell index alone.
+    pub guard_terms: bool,
+    /// mask-frontend (a fact arm, `mapal_ir::FactArms::walk_order`): a
+    /// stream group's blocks walk its rows in the seed's tile order. Off
+    /// (`--gpu-off=walk-order`): in the rows' own order.
+    pub walk_order: bool,
+    /// mask-frontend `stream-numbers`: a streamed unit's epilogue numbers
+    /// are launch arguments. Off (`--gpu-off=stream-numbers`): a unit whose
+    /// epilogue reads a number after its fold is no stream (as before).
+    pub stream_numbers: bool,
     /// flash-attention F7 (a fact arm, `mapal_ir::FactArms::finite`):
     /// `finite_plan` proves values finite. Off (`--gpu-off=finite`,
     /// `--no-finite`): nothing is, so no masked window is skipped.
@@ -1274,6 +1287,9 @@ impl GpuRungs {
         stream_mma: true,
         kmajor_b: true,
         guard_box: true,
+        guard_terms: true,
+        walk_order: true,
+        stream_numbers: true,
         finite: true,
         unit_uniform: true,
         mma_combine: true,
@@ -1308,7 +1324,7 @@ impl GpuRungs {
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 157] = [
+    pub const NAMES: [&'static str; 160] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1434,6 +1450,9 @@ impl GpuRungs {
         "stream-fact",
         "split-kv",
         "guard-box",
+        "guard-terms",
+        "walk-order",
+        "stream-numbers",
         "finite",
         "mma-combine",
         "split-tile",
@@ -1598,6 +1617,9 @@ impl GpuRungs {
             "stream-mma" => &mut self.stream_mma,
             "kmajor-b" => &mut self.kmajor_b,
             "guard-box" => &mut self.guard_box,
+            "guard-terms" => &mut self.guard_terms,
+            "walk-order" => &mut self.walk_order,
+            "stream-numbers" => &mut self.stream_numbers,
             "finite" => &mut self.finite,
             "unit-uniform" => &mut self.unit_uniform,
             "mma-combine" => &mut self.mma_combine,
@@ -1986,6 +2008,8 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
         stream: !opts.gpu.off.stream_fact,
         finite: !opts.gpu.off.finite,
         guard_box: !opts.gpu.off.guard_box,
+        guard_terms: !opts.gpu.off.guard_terms,
+        walk_order: !opts.gpu.off.walk_order,
         unit_uniform: !opts.gpu.off.unit_uniform,
     };
     if arms != ir.fact_arms() {

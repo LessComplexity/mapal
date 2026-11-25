@@ -56,10 +56,44 @@ pub struct BlockSig {
     /// The body fn's declared output (the body's tail value ty).
     pub body_out: Ty,
     /// ADR-0027: read captures `(name, ty)` in first-use order — the leading
-    /// hidden components of `body_in` (`captures.len()` of them).
+    /// hidden components of `body_in` (`captures.len()` of them). A struct
+    /// capture is its leaf fields (mask-frontend: [`flatten_captures`]), each
+    /// named by its path `name.field…`.
     pub captures: Vec<(String, Ty)>,
+    /// mask-frontend: the struct captures `(name, ty)` the body rebuilds
+    /// from their fields' captures.
+    pub records: Vec<(String, Ty)>,
     /// `{owner}::{map|fold}@{i}` synthesized name.
     pub name: String,
+}
+
+/// mask-frontend: **a struct capture narrowed to its fields** — each
+/// struct-typed capture as its leaf fields (nested structs flattened), named
+/// `name.field…` (`.` is never in an identifier), so a body's captures are
+/// arrays and numbers — what a device site reads (`cell_plan`, the tile
+/// plans) — and the body rebuilds the struct from them: a field read is then
+/// a projection of a pack, which the rewriter forwards to the field's own
+/// capture. Returns the flattened captures and the struct ones.
+pub fn flatten_captures(caps: &[(String, Ty)]) -> (Vec<(String, Ty)>, Vec<(String, Ty)>) {
+    fn go(name: String, t: &Ty, out: &mut Vec<(String, Ty)>) {
+        match t {
+            Ty::Struct { fields, .. } => {
+                for (f, ft) in fields {
+                    go(format!("{name}.{f}"), ft, out);
+                }
+            }
+            _ => out.push((name, t.clone())),
+        }
+    }
+    let mut flat = Vec::new();
+    let mut records = Vec::new();
+    for (name, t) in caps {
+        if matches!(t, Ty::Struct { .. }) {
+            records.push((name.clone(), t.clone()));
+        }
+        go(name.clone(), t, &mut flat);
+    }
+    (flat, records)
 }
 
 impl TypeInfo {
@@ -154,6 +188,7 @@ struct PendingBlock {
     body_in: (WTy, Ty),
     body_out: (WTy, Ty),
     captures: Vec<((String, Ty), WTy)>,
+    records: Vec<(String, Ty)>,
     name: String,
 }
 
@@ -558,6 +593,7 @@ impl Walk<'_> {
                     body_in,
                     body_out,
                     captures,
+                    records: b.records,
                     name: b.name,
                 },
             );
@@ -1127,6 +1163,33 @@ impl Walk<'_> {
             (None, CollOp::Fold) if self.wty_to_ty(&seed_w).is_some() => seed_w.clone(),
             (None, _) => WTy::Known(out_fallback.clone()),
         };
+        // mask-frontend: a struct capture as its fields' captures (the body
+        // scope above still types the struct by its name).
+        let (cap_tys, cap_ws, records) =
+            match cap_tys.iter().any(|(_, t)| matches!(t, Ty::Struct { .. })) {
+                false => (cap_tys, cap_ws, Vec::new()),
+                true => {
+                    let mut tys = Vec::new();
+                    let mut ws = Vec::new();
+                    for (c, w) in cap_tys.iter().zip(&cap_ws) {
+                        match &c.1 {
+                            Ty::Struct { .. } => {
+                                let (flat, _) = flatten_captures(std::slice::from_ref(c));
+                                for f in flat {
+                                    ws.push(WTy::Known(f.1.clone()));
+                                    tys.push(f);
+                                }
+                            }
+                            _ => {
+                                tys.push(c.clone());
+                                ws.push(w.clone());
+                            }
+                        }
+                    }
+                    let (_, records) = flatten_captures(&cap_tys);
+                    (tys, ws, records)
+                }
+            };
         let caps: Vec<(WTy, Ty)> = cap_tys
             .iter()
             .zip(&cap_ws)
@@ -1152,6 +1215,7 @@ impl Walk<'_> {
             body_in: (WTy::Known(body_in.clone()), body_in),
             body_out: (body_out_w.clone(), out_fallback),
             captures: cap_tys.into_iter().zip(cap_ws).collect(),
+            records,
             name,
         });
         match op {

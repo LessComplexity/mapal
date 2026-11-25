@@ -213,8 +213,7 @@ fn write_rows<tokens>(cache: [f32; cache_size], rows: [f32; tokens * key_value_s
 fn attend<tokens>(
     query: [f32; tokens * query_size],
     positions: [i32; tokens],
-    keys: [f32; cache_size],
-    values: [f32; cache_size],
+    cache: KeyValueCache,
     layer: i32,
 ) -> [f32; tokens * query_size] {
     head_size -> iota -> dimensions;
@@ -230,7 +229,7 @@ fn attend<tokens>(
             -true-> {
                 (layer * context_length + past) * key_value_heads + key_value_head -> key_row;
                 (0.0, dimensions) -> fold {
-                    sum, d -> sum + query[token_head * head_size + d] * keys[key_row * head_size + d]
+                    sum, d -> sum + query[token_head * head_size + d] * cache.keys[key_row * head_size + d]
                 } -> dot;
                 dot / scale_root
             }
@@ -259,7 +258,7 @@ fn attend<tokens>(
         (0.0, past_positions) -> fold {
             sum, past ->
             (layer * context_length + past) * key_value_heads + key_value_head -> value_row;
-            sum + exponentials[token_head * context_length + past] * values[value_row * head_size + d]
+            sum + exponentials[token_head * context_length + past] * cache.values[value_row * head_size + d]
         } -> weighted;
         weighted / row_total[token_head]
     } -> ret;
@@ -297,16 +296,16 @@ fn decoder_layer<tokens>(
     (key, positions) -> rotate -> rotated_key;
     (cache.keys, rotated_key, layer, positions[0]) -> write_rows -> keys;
     (cache.values, value, layer, positions[0]) -> write_rows -> values;
-    (rotated_query, positions, keys, values, layer) -> attend -> attended;
+    KeyValueCache {
+        keys: keys,
+        values: values,
+    } -> updated_cache;
+    (rotated_query, positions, updated_cache, layer) -> attend -> attended;
     (weights.output, attended) -> project -> attention_output: [f32; tokens * hidden_size];
     (hidden, attention_output) -> add -> after_attention;
     (after_attention, weights.feed_forward_norm) -> rms_norm -> normed_again;
     (normed_again, weights) -> feed_forward -> feed_forward_output;
     (after_attention, feed_forward_output) -> add -> ret.0;
-    KeyValueCache {
-        keys: keys,
-        values: values,
-    } -> updated_cache;
     updated_cache -> ret.1;
 }
 

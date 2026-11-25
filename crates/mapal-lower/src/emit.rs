@@ -103,6 +103,11 @@ struct Emitter<'a> {
     /// a rebind of the shared capture (D2b — a rebind after a read is already
     /// the typing walk's teaching L1108).
     captures: std::collections::BTreeSet<String>,
+    /// mask-frontend: each struct this emitter packed and its components in
+    /// field order — a nested body's field capture through one takes the
+    /// component itself, not a projection of the pack (a guard arm's
+    /// projection is not forwarded before the arm resolves).
+    packed: BTreeMap<ObjectId, Vec<ObjectId>>,
     /// ADR-0041 D2: the precisions this scope's products admit (the innermost
     /// `: compute` around it; `{f32}` without one).
     prec: mapal_ir::Precision,
@@ -337,6 +342,7 @@ pub fn lower_program(
             enclosing_token_loop: false,
             outer_carried: std::collections::BTreeSet::new(),
             captures: std::collections::BTreeSet::new(),
+            packed: BTreeMap::new(),
             prec,
             mono,
             sizes: env,
@@ -491,6 +497,7 @@ fn build_bodies(
             enclosing_token_loop: false,
             outer_carried: std::collections::BTreeSet::new(),
             captures: std::collections::BTreeSet::new(),
+            packed: BTreeMap::new(),
             prec,
             mono,
             sizes,
@@ -503,6 +510,7 @@ fn build_bodies(
             &body_in_ty,
             &body_out_ty,
             &sig.captures,
+            &sig.records,
             fb,
         )?;
     }
@@ -932,6 +940,7 @@ impl Emitter<'_> {
         body_in: &Ty,
         body_out: &Ty,
         caps: &[(String, Ty)],
+        records: &[(String, Ty)],
         mut fb: FnBuilder,
     ) -> ER<()> {
         let input = fb.input();
@@ -939,14 +948,28 @@ impl Emitter<'_> {
         // ADR-0027: bind each capture to its leading input projection (the
         // broadcast edge), then the visible params after them.
         let k = caps.len() as u32;
-        self.captures = caps.iter().map(|(c, _)| c.clone()).collect();
+        self.captures = caps
+            .iter()
+            .map(|(c, _)| c.split('.').next().unwrap_or(c).to_string())
+            .collect();
         self.record(input, body_in.clone());
+        // mask-frontend: a struct capture's fields, by path, rebuilt below.
+        let mut fields: BTreeMap<String, ObjectId> = BTreeMap::new();
         for (i, (cap, ty)) in caps.iter().enumerate() {
             let obj = fb
                 .proj(input, i as u32, Dest::Fresh(None), ir_loc(span))
                 .map_err(|e| ir_err(e, span))?;
             self.record(obj, ty.clone());
-            self.bind_new(&cap.clone(), obj, ty.clone(), false);
+            match cap.contains('.') {
+                true => {
+                    fields.insert(cap.clone(), obj);
+                }
+                false => self.bind_new(&cap.clone(), obj, ty.clone(), false),
+            }
+        }
+        for (name, ty) in records {
+            let obj = self.rebuild_record(&mut fb, name, ty, &fields, span)?;
+            self.bind_new(name, obj, ty.clone(), false);
         }
         match op {
             CollOp::Map => {
@@ -1148,6 +1171,30 @@ impl Emitter<'_> {
         // Non-Unit, pure: the tail value returns via the lookahead `Dest::Ret`.
         self.emit_chain(fb, tail, ChainCtx::FnBodyReturn { effectful: false })?;
         Ok(())
+    }
+
+    /// mask-frontend: struct capture `path` of type `ty` packed from its
+    /// fields' captures ([`crate::typing::flatten_captures`]).
+    fn rebuild_record(
+        &mut self,
+        fb: &mut FnBuilder,
+        path: &str,
+        ty: &Ty,
+        fields: &BTreeMap<String, ObjectId>,
+        sp: syn::SourceLoc,
+    ) -> ER<ObjectId> {
+        let Ty::Struct { fields: decl, .. } = ty else {
+            return fields
+                .get(path)
+                .copied()
+                .ok_or_else(|| internal(sp, "a struct capture's field is captured"));
+        };
+        let mut comps = Vec::with_capacity(decl.len());
+        for (f, ft) in decl {
+            comps.push(self.rebuild_record(fb, &format!("{path}.{f}"), ft, fields, sp)?);
+        }
+        self.pack_struct(fb, ty.clone(), &comps, Dest::Fresh(None), sp)
+            .map_err(|e| ir_err(e, sp))
     }
 
     fn emit_body_tail(&mut self, fb: &mut FnBuilder, tail: &Chain, out_ty: Ty) -> ER<()> {
@@ -2981,17 +3028,37 @@ impl Emitter<'_> {
         let caps: Vec<(String, Ty)> = sig.as_ref().map(|s| s.captures.clone()).unwrap_or_default();
         let mut cap_objs: Vec<ObjectId> = Vec::with_capacity(caps.len());
         for (cap, _) in &caps {
+            // mask-frontend: a struct capture's field `name.f…`: the struct's
+            // projections along the path.
+            let mut path = cap.split('.');
+            let root = path.next().unwrap_or(cap);
             // The poison bit travels with the capture: a loop-carried name
             // read after its loop is L1107 here exactly as on the direct-read
             // path (`ExprKind::Var`) — resolving through `.map(|(b, _)| …)`
             // would discard it and let the read reach the interpreter.
-            match self.scope.resolve(cap) {
-                Some((b, false)) => cap_objs.push(b.obj),
+            match self.scope.resolve(root) {
+                Some((b, false)) => {
+                    let mut obj = b.obj;
+                    for f in path {
+                        let Ty::Struct { fields, .. } = self.ty_of(fb, obj) else {
+                            return Err(internal(sp, "a field capture of a non-struct"));
+                        };
+                        let idx = fields
+                            .iter()
+                            .position(|(n, _)| n == f)
+                            .ok_or_else(|| internal(sp, "a field capture's field"))?;
+                        obj = match self.packed.get(&obj) {
+                            Some(c) => c[idx],
+                            None => self.proj(fb, obj, idx as u32, Dest::Fresh(None), sp)?,
+                        };
+                    }
+                    cap_objs.push(obj)
+                }
                 Some((_, true)) => {
                     return Err(diag(
                         LCode::ReadAfterLoop,
                         sp,
-                        format!("`{cap}` read after its loop; bind the exit value instead"),
+                        format!("`{root}` read after its loop; bind the exit value instead"),
                     ));
                 }
                 None => return Err(internal(sp, "capture unbound in the enclosing scope")),
@@ -4587,6 +4654,7 @@ impl Emitter<'_> {
         sp: syn::SourceLoc,
     ) -> Result<ObjectId, IrError> {
         let o = fb.pack_struct(ty.clone(), comps, dest, ir_loc(sp))?;
+        self.packed.insert(o, comps.to_vec());
         Ok(self.record(o, ty))
     }
 

@@ -125,6 +125,14 @@ pub struct FactArms {
     /// Off (`--gpu-off=guard-box`, `--no-guard-box`): no mask form, every
     /// window computed.
     pub guard_box: bool,
+    /// mask-frontend: a guard side through a captured integer array (its
+    /// element law, else a per-row load) and a captured number's per-launch
+    /// digit. Off (`--gpu-off=guard-terms`): digit forms of the cell index
+    /// alone.
+    pub guard_terms: bool,
+    /// mask-frontend: [`crate::UnitGroup::order`] — blocks walk an extended
+    /// group in its seed's tile order. Off (`--gpu-off=walk-order`): `None`.
+    pub walk_order: bool,
     /// sweep-attention `unit-uniform`: `unit_plan`'s extended pass takes a
     /// mixed-radix tile whose operand address a captured number moves
     /// ([`crate::RadixTile::ua`] / `ub`: a loop counter slicing a KV head
@@ -148,6 +156,8 @@ impl Default for FactArms {
             stream: true,
             finite: true,
             guard_box: true,
+            guard_terms: true,
+            walk_order: true,
             unit_uniform: true,
         }
     }

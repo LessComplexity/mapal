@@ -6471,6 +6471,14 @@ pub struct FlashProg {
     /// admit the `bf16` member (`fold: bf16 | f32`), and more outputs are
     /// printed (a spread of `P·V`'s cells, each within the member's bound).
     pub half: bool,
+    /// mask-frontend: the model-scale form written token-major
+    /// ([`flash_tm_src`]: the scores' rows `token·H + head`, a readable
+    /// model's layout) with its causal mask `r ≤ …` against `0`: none; `1`
+    /// the token `i`; `2` `pos[i]`, `pos = map(iota) (x → first + x)` with
+    /// `first` a literal (the law through the capture); `3` the same `pos`
+    /// with `first` known only at run time (a per-row load); `4` `first + i`
+    /// with that run-time `first` (a per-launch number).
+    pub tm: u8,
 }
 
 pub fn flash_strategy() -> impl Strategy<Value = FlashProg> {
@@ -6494,6 +6502,7 @@ pub fn flash_strategy() -> impl Strategy<Value = FlashProg> {
             any::<bool>(),
             0u8..2,
             any::<bool>(),
+            prop::sample::select(vec![0u8, 0, 0, 1, 2, 3, 4]),
         ),
     )
         .prop_map(
@@ -6501,7 +6510,7 @@ pub fn flash_strategy() -> impl Strategy<Value = FlashProg> {
                 (n, w, d, c),
                 (scale, seed, down, den_one),
                 (form, stored),
-                (heads, group, causal, mask, lp),
+                (heads, group, causal, mask, lp, tm),
             )| FlashProg {
                 // The model-scale form at sizes its sites run on the device.
                 n: if heads > 0 { n.clamp(16, 64) } else { n },
@@ -6518,8 +6527,9 @@ pub fn flash_strategy() -> impl Strategy<Value = FlashProg> {
                 group: group.min(heads.max(1)),
                 causal,
                 mask,
-                lp: lp && heads > 0,
+                lp: lp && heads > 0 && tm == 0,
                 half: false,
+                tm: if heads > 0 { tm } else { 0 },
             },
         )
 }
@@ -6558,6 +6568,7 @@ pub fn flash_half_strategy() -> impl Strategy<Value = FlashProg> {
             mask,
             lp,
             half: true,
+            tm: 0,
         })
 }
 
@@ -6716,6 +6727,97 @@ pub fn flash_mh_src(p: &FlashProg) -> String {
     s + "}\n"
 }
 
+/// mask-frontend: [`FlashProg`]'s model-scale form token-major (`tm > 0`,
+/// a readable model's `attend`): `T = n` tokens, the scores
+/// `[token·H + head][key]`, their row max, `exp` of the shifted score, its
+/// row sum and `P·V ÷ den` token-major (`[token·H + head][u]`) — the
+/// scores' tile rows (KV head most significant) a digit permutation of its
+/// output rows. The causal mask is [`FlashProg::tm`]'s form; every form
+/// is `r ≤ i` at run time (`first` is `0`). Where `scale == 1` (unused by
+/// the model-scale forms) the keys and values are read through a captured
+/// struct (`cache.keys[…]`: a readable model's cache).
+pub fn flash_tm_src(p: &FlashProg) -> String {
+    let (t, h, g, d) = (p.n, p.heads, p.group, p.d);
+    let kvh = h / g;
+    let data = |name: &str, len: u64, a: u64, b: u64, m: u64| {
+        format!(
+            "    {len} -> iota -> i_{name};\n    i_{name} -> map {{\n        t -> (t * {a} + {b}) % {m} - {} -> widen_f32 -> v;\n        v / 4.0\n    }} -> {name};\n",
+            m / 2
+        )
+    };
+    let via = p.scale == 1;
+    let mut s = match via {
+        true => format!(
+            "type Cache {{\n    keys: [f32; {n}],\n    values: [f32; {n}],\n}}\n\nfn main() {{\n",
+            n = t * kvh * d
+        ),
+        false => String::from("fn main() {\n"),
+    };
+    s += &data("q", t * h * d, 7, 13, 11);
+    s += &data("kr", t * kvh * d, 5, 3, 9);
+    s += &data("vv", t * kvh * d, 3, 1, 13);
+    if via {
+        s += "    Cache {\n        keys: kr,\n        values: vv,\n    } -> cache;\n";
+    }
+    let (keys, values) = match via {
+        true => ("cache.keys", "cache.values"),
+        false => ("kr", "vv"),
+    };
+    s += &format!(
+        "    {d} -> iota -> rdh;\n    {t} -> iota -> rT;\n    {} -> iota -> rTH;\n    {} -> iota -> rTHT;\n    {} -> iota -> rRD;\n",
+        t * h,
+        t * h * t,
+        t * h * d
+    );
+    // `first`: a literal, or a value only the run knows (`0` there).
+    match p.tm {
+        2 => s += "    0 -> first;\n",
+        3 | 4 => {
+            s += "    () -> time -> clock;\n    (clock < 0.0) -> {\n        -true-> 1;\n        -false-> 0;\n    } -> first;\n"
+        }
+        _ => {}
+    }
+    if matches!(p.tm, 2 | 3) {
+        s += "    rT -> map {\n        x -> first + x\n    } -> pos;\n";
+    }
+    let limit = match p.tm {
+        1 => "i",
+        2 | 3 => "pos[i]",
+        _ => "first + i",
+    };
+    let fold = format!(
+        "(0.0, rdh) -> fold{} {{\n                    acc, u -> acc + q[i * {} + hh * {d} + u] * {keys}[r * {} + (hh / {g}) * {d} + u]\n                }}",
+        flash_member(p),
+        h * d,
+        kvh * d
+    );
+    let mask = ["-1000000000.0", "-8.0"][p.mask as usize];
+    s += &format!(
+        "    rTHT -> map {{\n        e -> e / {t} -> th;\n        e % {t} -> r;\n        th / {h} -> i;\n        th % {h} -> hh;\n        (r <= {limit}) -> {{\n            -true-> {{\n                {fold} -> dt;\n                dt / 2.0\n            }}\n            -false-> {mask};\n        }}\n    }} -> s;\n"
+    );
+    s += &format!(
+        "    rTH -> map {{\n        hi -> (-1000000000.0, rT) -> fold {{\n            acc, r -> s[hi * {t} + r] -> se;\n            (se > acc) -> {{\n                -true-> se;\n                -false-> acc;\n            }}\n        }}\n    }} -> mx;\n"
+    );
+    s += &format!("    rTHT -> map {{\n        e -> s[e] - mx[e / {t}] -> exp\n    }} -> pe;\n");
+    s += &format!(
+        "    rTH -> map {{\n        hi -> (0.0, rT) -> fold {{\n            acc, r -> acc + pe[hi * {t} + r]\n        }}\n    }} -> den;\n"
+    );
+    s += &format!(
+        "    rRD -> map {{\n        e -> e / {d} -> th;\n        e % {d} -> u;\n        th % {h} -> hh;\n        (0.0, rT) -> fold{} {{\n            acc, r -> acc + pe[th * {t} + r] * {values}[r * {} + (hh / {g}) * {d} + u]\n        }} -> av;\n        av / den[th]\n    }} -> attf;\n",
+        flash_member(p),
+        kvh * d
+    );
+    s += &format!(
+        "    attf[0] -> println;\n    attf[{}] -> println;\n    attf[{}] -> println;\n    0.0 -> zero: f32;\n    (zero, attf) -> fold {{\n        acc, v -> acc + v\n    }} -> so;\n    so -> println;\n",
+        t * h * d - 1,
+        (t * h * d) / 2 + d + 1
+    );
+    if p.stored {
+        s += &format!("    den[{}] -> println;\n", h * t - 1);
+    }
+    s + "}\n"
+}
+
 /// [`FlashProg`]'s head-group loop form (`lp`, the long prefill's shape):
 /// a loop over the `H ÷ G` KV heads, each trip the scores of KV head `g`'s
 /// `G` query heads `[G][T][T]` (`q` read at head `g·G + hh`, the keys and
@@ -6796,6 +6898,9 @@ pub fn flash_loop_src(p: &FlashProg) -> String {
 /// [`FlashProg`]'s source text. Data are small integers over 4, the scores
 /// a few units wide, so `exp` stays well inside `f32`.
 pub fn flash_src(p: &FlashProg) -> String {
+    if p.tm > 0 && p.heads > 0 {
+        return flash_tm_src(p);
+    }
     if p.lp {
         return flash_loop_src(p);
     }

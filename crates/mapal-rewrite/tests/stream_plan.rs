@@ -193,16 +193,33 @@ fn finite_ranges_hold_and_refuse() {
     assert!(!fp.finite(named(&ir, "e")));
 }
 
+/// mask-frontend: the run's values of a generated program's open guard
+/// sides (`testgen::flash_tm_src`: `first` is `0`, `pos[i] = i`).
+pub struct RunEnv;
+
+impl mapal_ir::GuardEnv for RunEnv {
+    fn number(&self, _: u32) -> Option<u64> {
+        Some(0)
+    }
+    fn element(&self, _: u32, index: u64) -> Option<i64> {
+        Some(index as i64)
+    }
+}
+
 /// F1–F7 over generated attention programs (`testgen::flash_strategy`, the
 /// model-scale form): every proven-finite array's printed values inside its
 /// range; every digit permutation a bijection whose inverse inverts it; the
-/// mask's classes against every cell.
+/// mask's classes against every cell. mask-frontend: the token-major forms
+/// (`tm`) — the mask through a positions array whose law is `first + x`
+/// with `first` a literal is the closed `r ≤ i`, with a run-time `first` a
+/// per-row load, `first + i` a per-launch number; the scores' tile order a
+/// walk order of the group whose blocks share a KV head's panel.
 #[test]
 fn stream_facts_on_generated_attention() {
     use proptest::strategy::{Strategy, ValueTree};
     let mut runner = proptest::test_runner::TestRunner::deterministic();
     let mut c = std::collections::BTreeMap::<&str, u64>::new();
-    for _ in 0..48 {
+    for _ in 0..96 {
         let p = testgen::flash_strategy()
             .new_tree(&mut runner)
             .unwrap()
@@ -231,21 +248,70 @@ fn stream_facts_on_generated_attention() {
                 }
                 *c.entry("permutations").or_default() += 1;
             }
+            if let Some(o) = &unit.order {
+                // A bijection of the rows whose blocks of `panel` positions
+                // share every tile member's column panel.
+                let mut seen = vec![false; unit.rows as usize];
+                for q in 0..unit.rows {
+                    let gr = o.group_row(q);
+                    assert!(!seen[gr as usize], "{src}");
+                    seen[gr as usize] = true;
+                }
+                assert!(unit.panel > 1, "{src}");
+                *c.entry("walk orders").or_default() += 1;
+            }
             if let Some(gd) = &g.guard {
+                let env = RunEnv;
                 for r in 0..unit.rows {
                     for l in 0..g.axis {
-                        let v = gd.form.visible(r, l);
-                        let cls = gd.form.classify((r, r), (l, l));
+                        let v = gd.form.visible_with(r, l, &env).expect("the run's values");
+                        // The run's mask: `r ≤ i` at the cell's token.
+                        let token = r / p.heads.max(1);
+                        if p.tm > 0 {
+                            assert_eq!(v, l <= token, "{src}");
+                        }
+                        let cls = gd.form.classify_with((r, r), (l, l), &env);
                         assert_eq!(cls == mapal_ir::BoxClass::Visible, v);
                         assert_eq!(cls == mapal_ir::BoxClass::Masked, !v);
+                        if gd.form.closed() {
+                            assert_eq!(gd.form.visible(r, l), v);
+                        } else {
+                            assert_eq!(gd.form.classify((r, r), (l, l)), mapal_ir::BoxClass::Mixed);
+                        }
                     }
                 }
                 *c.entry("masks").or_default() += 1;
+                let side = &gd.form.rhs;
+                match p.tm {
+                    1 | 2 => {
+                        assert!(gd.form.closed(), "{:?}\n{src}", gd.form);
+                        *c.entry(["", "tm digit masks", "tm law masks"][p.tm as usize])
+                            .or_default() += 1;
+                    }
+                    3 => {
+                        assert!(side.load.is_some(), "{:?}\n{src}", gd.form);
+                        *c.entry("tm load masks").or_default() += 1;
+                    }
+                    4 => {
+                        assert!(!side.uniform.is_empty(), "{:?}\n{src}", gd.form);
+                        *c.entry("tm uniform masks").or_default() += 1;
+                    }
+                    _ => {}
+                }
             }
         }
     }
     eprintln!("stream facts generated: {c:?}");
-    for k in ["programs", "permutations", "masks"] {
+    for k in [
+        "programs",
+        "permutations",
+        "masks",
+        "walk orders",
+        "tm digit masks",
+        "tm law masks",
+        "tm load masks",
+        "tm uniform masks",
+    ] {
         assert!(c.get(k).copied().unwrap_or(0) > 0, "{k}: {c:?}");
     }
 }
