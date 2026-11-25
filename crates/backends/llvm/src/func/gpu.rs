@@ -2206,6 +2206,14 @@ fn resized(
     {
         return full;
     }
+    // bf16 tensor-tile `mma-walk`: the walk [`mma_combine`] took runs its
+    // whole warp tile.
+    if let Combine::StreamK { .. } = combine
+        && let Some((c, walk)) = mma_walk(&l, site, profile, arms, Order::Free)
+        && c == combine
+    {
+        return walk;
+    }
     let rule = match l.rungs.fill_wave && s > 1 {
         true => Some(launch_split(site, profile, contract, arms, s, false))
             .filter(whole)
@@ -2596,6 +2604,9 @@ fn launch_key(l: &Launch) -> String {
         // sweep-runtime-2: `streamk-epi` decides an epilogue group's
         // combine (keyed through its ticket kernel's id).
         .replace(", streamk_epi: false", "")
+        // bf16 tensor-tile: `mma-walk` decides a tensor site's combine
+        // (keyed through its stream-K kernel's id).
+        .replace(", mma_walk: false", "")
         // model-ready placement: host-only rungs (where cells run, which
         // range cells write in place, a cell's lanes — keyed by the cell).
         .replace(", trip_cells: false", "")
@@ -2682,8 +2693,13 @@ pub(crate) fn ticket_bytes(site: &TileSite, l: &Launch) -> u64 {
     let Combine::StreamK { ctas, .. } = l.combine else {
         unreachable!("a stream-K launch")
     };
-    let g = l.tiled.expect("stream-K walks the FMA tile");
-    let sums = ctas * g.bm() * g.bn() * elem_bytes_of(&site.elem);
+    // bf16 tensor-tile `mma-walk`: or the tensor tile.
+    let (bm, bn) = match (l.tiled, l.mma) {
+        (Some(g), _) => (g.bm(), g.bn()),
+        (None, Some(m)) => (m.bm(), m.bn()),
+        _ => unreachable!("stream-K walks the FMA or the tensor tile"),
+    };
+    let sums = ctas * bm * bn * elem_bytes_of(&site.elem);
     sums.div_ceil(GPU_VEC_BYTES) * GPU_VEC_BYTES + 4 * ctas
 }
 
@@ -2876,6 +2892,9 @@ fn mma_combine(
     let Some(gpu) = profile.gpu() else {
         return Combine::None;
     };
+    if let Some((c, _)) = mma_walk(l, site, profile, arms, order) {
+        return c;
+    }
     let rungs = l.rungs;
     if !rungs.mma_combine
         || order != Order::Free
@@ -3078,6 +3097,213 @@ impl MmaCut {
             }
         };
         run + fixed
+    }
+}
+
+/// bf16 tensor-tile `mma-walk`: the price must save this much of the
+/// ordered grid's (or its `k` cut's), per mille — [`MMA_CUT_PM`]'s margin.
+pub(crate) const MMA_WALK_PM: u64 = 950;
+
+/// **bf16 tensor-tile `mma-walk`: a 16-bit tensor tile's grid walked by
+/// stream-K over every resident slot**, and the launch that runs it — `None`
+/// where the price ([`MmaWalk`]) keeps the rules' grid `l`.
+///
+/// A tensor tile is bound by its SM's matrix pipe, which the SM's resident
+/// blocks share: a grid of `tiles` tiles costs `⌈tiles / sms⌉` tiles of
+/// products on its busiest SM, whatever the blocks an SM. Measured (RTX 5080,
+/// bf16 `fold: bf16 | f32`, CUPTI; `bf16-tensor-tile.md`): 512 × 2048 × 8192
+/// on 128 tiles of 64 × 128 (2 an SM, 216 µs = two tiles at the pipe's
+/// rate, 44 SMs idle half the time), 512 × 8192 × 2048 and 2048 × 2048 × 2048
+/// on 256 tiles of 128 × 128 (4 on the busiest SMs where 3.05 would do:
+/// 192.7 / 193.1 µs, four tiles at 48.3), 2048 × 8192 × 2048 on 1024 (13
+/// where 12.19 would do: 628.0 µs). The walk keeps the whole warp tile (the
+/// `fill` rung's halving and the grid's warp halving are for a grid that
+/// must fill the part by its tiles: [`TargetProfile::gpu_mma16_walk_tile`])
+/// and spreads the `tiles × panels` products evenly over `sms ×` its blocks
+/// an SM; its costs are the pieces' partials added by `red` into the zeroed
+/// output (the pieces of shared tiles, [`MmaWalk::ns`]) and that zero pass
+/// — on an epilogue group the tiles' workspace and tickets
+/// ([`Kernel::ticket`]), priced at the larger of the two. Free order only (the
+/// partials add in no fixed order); no split form (its bound counts a fixed
+/// number of combines), radix or window site, forced cut, or bulk-staged
+/// tile.
+pub(crate) fn mma_walk(
+    l: &Launch,
+    site: &TileSite,
+    profile: &TargetProfile,
+    arms: crate::GpuArms,
+    order: Order,
+) -> Option<(Combine, Launch)> {
+    let m = l.mma?;
+    let gpu = profile.gpu()?;
+    let r = l.rungs;
+    let window = site.a.ksplit.is_some() || site.b.ksplit.is_some();
+    if !r.mma_walk
+        || !r.mma_combine
+        || order != Order::Free
+        || m.fmt == MmaFmt::Tf32
+        || m.split.is_some()
+        || site.radix.is_some()
+        || window
+        || l.wgmma.is_some()
+        || site.elem != Ty::f32()
+        || arms.off.get("streamk")
+        || arms.splitk > 0
+        || gpu.geom.split > 0
+        || bulk_stage(site, &m, gpu, &r)
+    {
+        return None;
+    }
+    let e = elem_bytes_of(&site.elem);
+    let rows = row_group(site);
+    let w = profile.gpu_mma16_walk_tile(
+        rows,
+        site.c,
+        site.k,
+        r.wide,
+        (m.fmt, m.ea, m.eb, m.bt),
+        Depth::of(&r, e),
+    )?;
+    let (bm, bn) = (w.bm(), w.bn());
+    if !site.rows.is_multiple_of(bm) || !site.c.is_multiple_of(bn) || !site.k.is_multiple_of(w.bk) {
+        return None;
+    }
+    let rate = gpu
+        .caps
+        .matrix_op(m.fmt, Home::Regs)
+        .map_or(0, |op| gpu.matrix_flops_per_ns(&op));
+    let tiles = (site.rows / bm) * (site.c / bn);
+    let panels = site.k / w.bk;
+    let slots = gpu.sms * w.blocks_per_sm.max(1);
+    if rate == 0 || panels < 2 || tiles * panels <= slots {
+        return None;
+    }
+    let iters = (tiles * panels).div_ceil(slots);
+    let ctas = (tiles * panels).div_ceil(iters);
+    let price = MmaWalk {
+        ordered: (l.gx * l.gy, 2 * m.bm() * m.bn() * site.k),
+        cut: mma_pieces(l, &m, site, gpu),
+        tiles,
+        panels,
+        panel_flops: 2 * bm * bn * w.bk,
+        blocks_per_sm: w.blocks_per_sm.max(1),
+        ctas,
+        iters,
+        tile_cells: bm * bn,
+        cells: site.rows * site.c,
+        bytes: site.rows * site.k * m.ea + site.k * site.c * m.eb + site.rows * site.c * 4,
+    };
+    // `--gpu-on=mma-walk` walks every admitted site (the measurement and
+    // emulator arm, as `streamk-epi`'s).
+    if !arms.on.get("mma-walk") && !price.pays(gpu, rate) {
+        return None;
+    }
+    let c = Combine::StreamK { ctas, iters };
+    let walk = Launch {
+        mma: Some(w),
+        gx: site.c / bn,
+        gy: site.rows / bm,
+        block: w.threads(gpu.warp),
+        smem: w.smem_bytes(),
+        raster: 1,
+        combine: c,
+        ..*l
+    };
+    Some((c, walk))
+}
+
+/// bf16 tensor-tile `mma-walk`: **a tensor tile grid's time on the SMs'
+/// matrix pipes, ordered and walked** ([`mma_walk`]). `ordered`: the rules'
+/// grid (`tiles`, each tile's flops), `cut` the `k` cut [`mma_pieces`] gives
+/// it; the walk: `tiles × panels` of `panel_flops` over `ctas` blocks of
+/// `iters` panels, `blocks_per_sm` sharing an SM; `tile_cells` a tile's
+/// outputs, `cells` the site's, `bytes` its operands and output.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct MmaWalk {
+    pub ordered: (u64, u64),
+    pub cut: u64,
+    pub tiles: u64,
+    pub panels: u64,
+    pub panel_flops: u64,
+    pub blocks_per_sm: u64,
+    pub ctas: u64,
+    pub iters: u64,
+    pub tile_cells: u64,
+    pub cells: u64,
+    pub bytes: u64,
+}
+
+impl MmaWalk {
+    /// The pieces of shared tiles: a tile whose `panels` units span blocks
+    /// `c₀ … c₁` of the walk (`iters` units a block) has `c₁ − c₀ + 1` pieces
+    /// when it is shared, none (a whole store) otherwise.
+    pub fn shared_pieces(&self) -> u64 {
+        (0..self.tiles)
+            .map(|t| {
+                let c0 = t * self.panels / self.iters;
+                let c1 = ((t + 1) * self.panels - 1) / self.iters;
+                if c1 > c0 { c1 - c0 + 1 } else { 0 }
+            })
+            .sum()
+    }
+
+    /// **The three times, ns: `(ordered, cut, walk)`.** The busiest SM's
+    /// products at its matrix pipe's rate (`rate / sms` flops a ns): the
+    /// ordered grid `⌈tiles / sms⌉` tiles, the cut `⌈tiles·S / sms⌉` pieces
+    /// of `1/S` of a tile, the walk `blocks_per_sm · iters` panels plus a
+    /// pipeline refill (the part's loaded latency `lat_ns`) for each piece
+    /// its blocks start, shared by the SM's blocks. A cut or a walk adds
+    /// the output's zero pass (`zero_ns` and its bytes at the fill rate; the
+    /// walk at the larger of the output and its tiles' workspace, an
+    /// epilogue group's) and its partials at the part's `red` rate
+    /// (`atomic_ops_per_ns`: measured, the 512 × 2048 × 8192 bf16 cuts paid
+    /// 8 / 16 µs for their 4 M / 8 M adds, the rate's 10 / 20). None is
+    /// below the operands' bytes at the DRAM rate.
+    pub fn ns(&self, gpu: &Gpu, rate: u64) -> (f64, f64, f64) {
+        let sms = gpu.sms.max(1);
+        let per_sm = rate as f64 / sms as f64;
+        let d = gpu.plan_cost();
+        let fill = match (d.fill_bytes_per_ns, d.l2_bytes_per_ns) {
+            (0, l2) => l2.max(1),
+            (f, _) => f,
+        } as f64;
+        let dram = gpu
+            .cost
+            .map_or(0, |c| c.dram_bytes_per_ns)
+            .max(gpu.dram_peak_bytes_per_ns())
+            .max(1) as f64;
+        let floor = self.bytes as f64 / dram;
+        let adds = |n: u64| match d.atomic_ops_per_ns {
+            0 => 0.0,
+            a => n as f64 / a as f64,
+        };
+        let zero = |bytes: u64| d.zero_ns as f64 + bytes as f64 / fill;
+        let (tiles, flops) = self.ordered;
+        let ordered = (tiles.div_ceil(sms) * flops) as f64 / per_sm;
+        let s = self.cut.max(1);
+        let cut = match s {
+            1 => ordered,
+            s => {
+                (tiles * s).div_ceil(sms) as f64 * flops as f64 / s as f64 / per_sm
+                    + zero(self.cells * 4)
+                    + adds(s * self.cells)
+            }
+        };
+        let pieces = self.ctas + self.tiles;
+        let refill = pieces.div_ceil(sms) as f64 * d.lat_ns as f64 / self.blocks_per_sm as f64;
+        let ws = self.ctas * self.tile_cells * 4;
+        let walk = (self.blocks_per_sm * self.iters * self.panel_flops) as f64 / per_sm
+            + refill
+            + zero(ws.max(self.cells * 4))
+            + adds(self.shared_pieces() * self.tile_cells);
+        (ordered.max(floor), cut.max(floor), walk.max(floor))
+    }
+
+    /// The walk saves [`MMA_WALK_PM`] of the better of the ordered grid
+    /// and its cut.
+    pub fn pays(&self, gpu: &Gpu, rate: u64) -> bool {
+        let (ordered, cut, walk) = self.ns(gpu, rate);
+        walk * 1000.0 <= MMA_WALK_PM as f64 * ordered.min(cut)
     }
 }
 
@@ -5343,6 +5569,8 @@ fn kernel_text(
             || (!col && (epi.is_none() || matches!(combine, Combine::StreamK { .. })))
     );
     let walk = match combine {
+        // bf16 tensor-tile `mma-walk`: the tensor tile's priced walk.
+        Combine::StreamK { .. } if l.mma.is_some() => Some("mma"),
         Combine::StreamK { .. } if l.rungs.streamk => Some("class"),
         Combine::StreamK { .. } => Some(
             match k_fill(
@@ -9119,7 +9347,22 @@ impl Kernel<'_> {
         let ety = |e: u64| if e == 2 { "i16" } else { "float" };
 
         let tid = self.sreg("tid.x");
-        let (bx, by) = self.block_ids();
+        let accs = mt * nt * 4;
+        // bf16 tensor-tile `mma-walk`: a stream-K kernel's accumulators live
+        // in the entry block (where they promote to registers) across its
+        // pieces; each piece re-seeds them and runs the pipeline over its
+        // panels `[p0, p1)` of its tile ([`Kernel::segment`]).
+        let walk_acc = self.streamk.map(|_| {
+            assert!(g.split.is_none(), "a split form's tile is not walked");
+            let a = self.tmp();
+            self.line(format!("{a} = alloca [{accs} x float], align 16"));
+            a
+        });
+        let seg = self.streamk.map(|iters| self.segment(iters, s.k / bk, bk));
+        let (bx, by) = match &seg {
+            Some(sg) => (sg.bx.clone(), sg.by.clone()),
+            None => self.block_ids(),
+        };
         let warp_id = self.op("udiv", &tid, warp);
         let lane = self.op("urem", &tid, warp);
         let wr = self.op("udiv", &warp_id, g.warps_x);
@@ -9129,9 +9372,14 @@ impl Kernel<'_> {
         let row0 = self.op("mul", &by, bm);
         let col0 = self.op("mul", &bx, bn);
 
-        let accs = mt * nt * 4;
-        let acc = self.tmp();
-        self.line(format!("{acc} = alloca [{accs} x float], align 16"));
+        let acc = match walk_acc {
+            Some(a) => a,
+            None => {
+                let a = self.tmp();
+                self.line(format!("{a} = alloca [{accs} x float], align 16"));
+                a
+            }
+        };
         let acc_slot = |k: &mut Self, idx: usize| {
             let p = k.tmp();
             k.line(format!(
@@ -9226,13 +9474,39 @@ impl Kernel<'_> {
                 ));
             }
         };
-        for st in 0..(g.stages - 1).min(nk) {
-            issue(self, &st.to_string(), &st.to_string());
-            self.line("call void @llvm.nvvm.cp.async.commit.group()");
-        }
-        for _ in nk..g.stages - 1 {
-            self.line("call void @llvm.nvvm.cp.async.commit.group()");
-        }
+        // `mma-walk`: the piece's first `stages − 1` panels, each where the
+        // piece has it (a piece may hold fewer panels than the ring), after
+        // every warp has read the previous piece's last stage.
+        let (pre, p0, p1) = match &seg {
+            Some(sg) => {
+                self.line("call void @llvm.nvvm.barrier0()");
+                let mut pre = "seg".to_string();
+                for st in 0..g.stages - 1 {
+                    let pan = self.op("add", &sg.p0, st);
+                    let has = self.tmp();
+                    self.line(format!("{has} = icmp ult i64 {pan}, {}", sg.p1));
+                    self.line(format!("br i1 {has}, label %pro{st}, label %pro{st}j"));
+                    self.out.push_str(&format!("pro{st}:\n"));
+                    let stage = self.op("urem", &pan, g.stages);
+                    issue(self, &pan, &stage);
+                    self.line(format!("br label %pro{st}j"));
+                    self.out.push_str(&format!("pro{st}j:\n"));
+                    self.line("call void @llvm.nvvm.cp.async.commit.group()");
+                    pre = format!("pro{st}j");
+                }
+                (pre, sg.p0.clone(), sg.p1.clone())
+            }
+            None => {
+                for st in 0..(g.stages - 1).min(nk) {
+                    issue(self, &st.to_string(), &st.to_string());
+                    self.line("call void @llvm.nvvm.cp.async.commit.group()");
+                }
+                for _ in nk..g.stages - 1 {
+                    self.line("call void @llvm.nvvm.cp.async.commit.group()");
+                }
+                ("entry".to_string(), "0".to_string(), nk.to_string())
+            }
+        };
         // Per-thread fragment origins inside a stage, in bytes. `ldmatrix`:
         // lane `l` gives row `l % 8` of matrix `l / 8`.
         let q = self.op("udiv", &lane, 8);
@@ -9297,7 +9571,7 @@ impl Kernel<'_> {
 
         self.out.push_str("kt:\n");
         let (it, itn) = (self.tmp(), self.tmp());
-        self.line(format!("{it} = phi i64 [0, %entry], [{itn}, %issued]"));
+        self.line(format!("{it} = phi i64 [{p0}, %{pre}], [{itn}, %issued]"));
         self.line(format!(
             "call void @llvm.nvvm.cp.async.wait.group(i32 {})",
             g.stages - 2
@@ -9305,7 +9579,7 @@ impl Kernel<'_> {
         self.line("call void @llvm.nvvm.barrier0()");
         let nxt = self.op("add", &it, g.stages - 1);
         let more = self.tmp();
-        self.line(format!("{more} = icmp ult i64 {nxt}, {nk}"));
+        self.line(format!("{more} = icmp ult i64 {nxt}, {p1}"));
         self.line(format!("br i1 {more}, label %issue, label %issued"));
         self.out.push_str("issue:\n");
         let nst = self.op("urem", &nxt, g.stages);
@@ -9528,11 +9802,21 @@ impl Kernel<'_> {
         }
         self.line(format!("{itn} = add i64 {it}, 1"));
         let fin = self.tmp();
-        self.line(format!("{fin} = icmp eq i64 {itn}, {nk}"));
+        self.line(format!("{fin} = icmp eq i64 {itn}, {p1}"));
         self.line(format!("br i1 {fin}, label %done, label %kt"));
 
         // C fragments: (g, 2t..2t+1) and (g+8, 2t..2t+1) of every m16n8 tile.
         self.out.push_str("done:\n");
+        if let Some(sg) = &seg {
+            self.mma_walk_store(
+                sg,
+                &g,
+                (&row0, &col0, &tid),
+                (&wrow, &wcol, &grp, &t4),
+                &acc_slot,
+            );
+            return;
+        }
         let orow = self.op("add", &wrow, &row0);
         let orow = self.op("add", &orow, &grp);
         let ocol = self.op("add", &wcol, &col0);
@@ -9586,6 +9870,119 @@ impl Kernel<'_> {
             }
         }
         self.out.push_str("  ret void\n}\n");
+    }
+
+    /// bf16 tensor-tile `mma-walk`: **a walked piece's store** — the C
+    /// fragments of every `m16n8` tile at the piece's tile `(row0, col0)`
+    /// (tile-local row `wrow + g (+ 8)`, column `wcol + 2t`). A piece that is
+    /// its tile's every panel (`st_whole`) stores as the ordered kernel does
+    /// (the group's members on an epilogue group). A piece of a shared tile
+    /// (`st_part`) adds its partial sums: into the zeroed output (`red`), or —
+    /// an epilogue group — into its tile's workspace slot, then takes the
+    /// tile's ticket ([`Kernel::ticket_split`], [`Kernel::ticket`]): the last
+    /// piece's block evaluates the members on the whole sums. Then the next
+    /// piece ([`Kernel::finish`]).
+    fn mma_walk_store(
+        &mut self,
+        sg: &Segment,
+        g: &GpuMmaTile,
+        (row0, col0, tid): (&str, &str, &str),
+        (wrow, wcol, grp, t4): (&str, &str, &str, &str),
+        acc_slot: &impl Fn(&mut Self, usize) -> String,
+    ) {
+        let s = self.site;
+        let (bm, bn) = (g.bm(), g.bn());
+        let (mt, nt) = (g.mt as usize, g.nt as usize);
+        let threads = g.threads(self.profile_gpu.warp);
+        let panels = s.k / g.bk;
+        let lrow = self.op("add", wrow, grp);
+        let t2 = self.op("mul", t4, 2);
+        let lcol = self.op("add", wcol, &t2);
+        let split = match self.ticket {
+            true => Some(self.ticket_split(sg, panels, (bm, bn))),
+            false => {
+                let first = self.tmp();
+                self.line(format!("{first} = icmp eq i64 {}, 0", sg.p0));
+                let last = self.tmp();
+                self.line(format!("{last} = icmp eq i64 {}, {panels}", sg.p1));
+                let whole = self.tmp();
+                self.line(format!("{whole} = and i1 {first}, {last}"));
+                self.line(format!("br i1 {whole}, label %st_whole, label %st_part"));
+                None
+            }
+        };
+        for part in [false, true] {
+            self.out
+                .push_str(if part { "st_part:\n" } else { "st_whole:\n" });
+            self.part = part;
+            for mi in 0..mt {
+                for half in 0..2u64 {
+                    let lr = self.op("add", &lrow, mi as u64 * MMA_M + half * 8);
+                    let r = self.op("add", row0, &lr);
+                    let rr = self.op("mul", &r, s.c);
+                    for ni in 0..nt {
+                        let base = (mi * nt + ni) * 4 + half as usize * 2;
+                        let mut xs = Vec::new();
+                        for j in 0..2 {
+                            let p = acc_slot(self, base + j);
+                            let x = self.tmp();
+                            self.line(format!("{x} = load float, ptr {p}, align 4"));
+                            xs.push(x);
+                        }
+                        let lc = self.op("add", &lcol, ni as u64 * MMA_N);
+                        if part && let Some(sp) = &split {
+                            // The slot's adds as `red` (no value returned):
+                            // `atomicrmw` ahead of the ticket's release fence
+                            // is kept a returning `ATOMG` by ptxas — each
+                            // thread then waits on its 128 adds in turn (the
+                            // 2048 × 2048 × 8192 group: 800 µs against the
+                            // `REDG` walk's 622); the fence orders the `red`s
+                            // it follows.
+                            let w = self.op("mul", &lr, bn);
+                            let w = self.op("add", &w, &lc);
+                            let wi = self.op("add", &sp.base, &w);
+                            for (j, x) in xs.iter().enumerate() {
+                                let i = self.plus(wi.clone(), j as u64);
+                                let p = self.gep(1, "%w", &i);
+                                self.line(format!(
+                                    "call void asm sideeffect \"red.relaxed.gpu.global.add.f32 [$0], $1;\", \"l,f,~{{memory}}\"(ptr addrspace(1) {p}, float {x})"
+                                ));
+                            }
+                            continue;
+                        }
+                        let c = self.op("add", col0, &lc);
+                        let oi = self.op("add", &rr, &c);
+                        if part {
+                            self.store_o(&xs, &oi);
+                            continue;
+                        }
+                        if self.epi.is_some() {
+                            self.store_cells(&xs, &oi);
+                            continue;
+                        }
+                        let mut vec = "poison".to_string();
+                        for (j, x) in xs.iter().enumerate() {
+                            let nv = self.tmp();
+                            self.line(format!(
+                                "{nv} = insertelement <2 x float> {vec}, float {x}, i64 {j}"
+                            ));
+                            vec = nv;
+                        }
+                        let op = self.gep_ty(1, "float", "%o", &oi);
+                        self.line(format!(
+                            "store <2 x float> {vec}, ptr addrspace(1) {op}, align 8"
+                        ));
+                    }
+                }
+            }
+            if part && let Some(sp) = &split {
+                self.ticket(sp, (bm, bn, threads), (row0, col0, tid));
+            }
+            self.line("br label %st_join");
+        }
+        self.part = false;
+        self.out.push_str("st_join:\n");
+        self.finish(Some(sg));
     }
 
     /// The tiled kernel: block `(bx, by)` owns the `bm × bn` output tile at
@@ -10490,7 +10887,7 @@ impl Kernel<'_> {
         let kend = self.op("mul", &p1, bk);
         let base = self.op("mul", &tile, panels);
         let next = self.op("add", &base, &p1);
-        self.p0 = Some(p0);
+        self.p0 = Some(p0.clone());
         self.head = "seg";
         Segment {
             tile,
@@ -10500,6 +10897,8 @@ impl Kernel<'_> {
             kend,
             next,
             end,
+            p0,
+            p1,
         }
     }
 
@@ -10703,6 +11102,10 @@ struct Segment {
     /// The first unit after the piece, and the block's end.
     next: String,
     end: String,
+    /// The piece's panels `[p0, p1)` of its tile (bf16 tensor-tile
+    /// `mma-walk`: the tensor tile's pipeline runs over them).
+    p0: String,
+    p1: String,
 }
 
 impl<'a> FnEmit<'a> {
@@ -12511,6 +12914,105 @@ mod tests {
             let off = at(off(&["mma-combine"]));
             assert_eq!(off, Combine::None, "{m}x{n}x{k}");
         }
+    }
+
+    /// bf16 tensor-tile `mma-walk`: **every measured walk, replayed**
+    /// (`bf16-tensor-tile.md`: the RTX 5080, bf16 `fold: bf16 | f32`, the
+    /// model's projections, CUPTI medians of the ordered kernel against the
+    /// walk — `--gpu-on=mma-walk` where the price refuses it). The price
+    /// ([`MmaWalk::pays`]) must walk where the walk won and keep the ordered
+    /// grid where it lost. Open: 512 × 2048 × 2048 and 2048 × 512 × 2048
+    /// (the ordered 64 × 128 tile of 32 × 32 warp tiles runs at 85 % of the
+    /// 128 × 128 tile's pipe rate, which the price reads as equal; the walk
+    /// won 0.876 / 0.854 where the price, at the pipe for both, sees 1.02):
+    /// the warp tile's realized efficiency is the missing property.
+    #[test]
+    fn mma_walk_replay() {
+        use crate::profile::RTX_5080;
+        let gpu = RTX_5080.gpu().expect("a GPU");
+        let rate = gpu
+            .caps
+            .matrix_op(MmaFmt::Bf16, Home::Regs)
+            .map(|op| gpu.matrix_flops_per_ns(&op))
+            .expect("a bf16 product");
+        // m, n, k, the ordered tile (bm, bn), the walk's tile (bm, bn, bk,
+        // blocks an SM), ordered / walk µs.
+        let arms: [((u64, u64, u64), (u64, u64), [u64; 4], f64, f64); 8] = [
+            (
+                (512, 2048, 8192),
+                (64, 128),
+                [128, 128, 32, 2],
+                216.0,
+                164.2,
+            ),
+            (
+                (512, 8192, 2048),
+                (128, 128),
+                [128, 128, 32, 2],
+                192.7,
+                161.2,
+            ),
+            (
+                (2048, 2048, 8192),
+                (128, 128),
+                [128, 128, 32, 2],
+                754.1,
+                626.5,
+            ),
+            (
+                (2048, 2048, 2048),
+                (128, 128),
+                [128, 128, 32, 2],
+                193.1,
+                161.9,
+            ),
+            (
+                (2048, 8192, 2048),
+                (128, 128),
+                [128, 128, 32, 2],
+                628.4,
+                685.1,
+            ),
+            ((512, 512, 2048), (32, 64), [128, 128, 32, 2], 18.8, 19.3),
+            ((512, 2048, 2048), (64, 128), [128, 128, 32, 2], 56.6, 49.6),
+            ((2048, 512, 2048), (64, 128), [128, 128, 32, 2], 57.0, 48.7),
+        ];
+        const OPEN: [(u64, u64, u64); 2] = [(512, 2048, 2048), (2048, 512, 2048)];
+        let mut open = Vec::new();
+        for ((m, n, k), (om, on), [bm, bn, bk, bps], ord, walk) in arms {
+            let tiles = (m / bm) * (n / bn);
+            let panels = k / bk;
+            let iters = (tiles * panels).div_ceil(gpu.sms * bps);
+            let price = MmaWalk {
+                ordered: ((m / om) * (n / on), 2 * om * on * k),
+                cut: 1,
+                tiles,
+                panels,
+                panel_flops: 2 * bm * bn * bk,
+                blocks_per_sm: bps,
+                ctas: (tiles * panels).div_ceil(iters),
+                iters,
+                tile_cells: bm * bn,
+                cells: m * n,
+                bytes: m * k * 2 + k * n * 2 + m * n * 4,
+            };
+            let (o, _, w) = price.ns(gpu, rate);
+            eprintln!(
+                "walk {m}x{n}x{k}: priced {:.1} / {:.1} us ({:.3}), measured {ord} / {walk} ({:.3})",
+                o / 1000.0,
+                w / 1000.0,
+                w / o,
+                walk / ord
+            );
+            if price.pays(gpu, rate) != (walk < MMA_WALK_PM as f64 / 1000.0 * ord) {
+                open.push((m, n, k));
+            }
+        }
+        assert_eq!(
+            open,
+            OPEN.to_vec(),
+            "measured walks the price does not pick"
+        );
     }
 
     /// bugs-properties `cut-price`: **every measured `mma-combine` arm of

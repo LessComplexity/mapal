@@ -3986,6 +3986,63 @@ impl TargetProfile {
         depth: Depth,
         parts: Option<(u64, u64)>,
     ) -> Option<GpuMmaTile> {
+        self.gpu_mma_geom_walk(
+            rows,
+            c,
+            k,
+            (wide, fill, false),
+            (fmt, ea, eb, bt),
+            depth,
+            parts,
+        )
+    }
+
+    /// bf16 tensor-tile `mma-walk`: **the tile a stream-K walk runs** — the
+    /// 16-bit tile of [`Self::gpu_mma16_tile`] at its whole warp tile and
+    /// warps (neither the `fill` rung's warp-tile halving nor the halving of
+    /// a block's warps until the grid has a tile an SM: the walk gives every
+    /// SM its blocks whatever the tile count). `None` as there.
+    #[allow(clippy::too_many_arguments)]
+    pub fn gpu_mma16_walk_tile(
+        &self,
+        rows: u64,
+        c: u64,
+        k: u64,
+        wide: bool,
+        (fmt, ea, eb, bt): (MmaFmt, u64, u64, bool),
+        depth: Depth,
+    ) -> Option<GpuMmaTile> {
+        let g = self.gpu()?;
+        let op = g.caps.matrix_op(fmt, Home::Regs)?;
+        if !(g.caps.ldmatrix && g.caps.cp_async && op.shape.m == MMA_M && op.shape.n == MMA_N)
+            || op.shape.k != 32 / fmt.bytes()
+        {
+            return None;
+        }
+        self.gpu_mma_geom_walk(
+            rows,
+            c,
+            k,
+            (wide, false, true),
+            (fmt, ea, eb, bt),
+            depth,
+            None,
+        )
+    }
+
+    /// [`Self::gpu_mma_geom_parts`] with `walk`: the block keeps its warps
+    /// however few tiles its grid has ([`Self::gpu_mma16_walk_tile`]).
+    #[allow(clippy::too_many_arguments)]
+    fn gpu_mma_geom_walk(
+        &self,
+        rows: u64,
+        c: u64,
+        k: u64,
+        (wide, fill, walk): (bool, bool, bool),
+        (fmt, ea, eb, bt): (MmaFmt, u64, u64, bool),
+        depth: Depth,
+        parts: Option<(u64, u64)>,
+    ) -> Option<GpuMmaTile> {
         let g = self.gpu()?;
         let acc_per_tile = MMA_M * MMA_N / g.warp; // 4
         let split = parts.is_some();
@@ -4052,7 +4109,10 @@ impl TargetProfile {
             .unwrap_or(1);
         let mut warps_x = warps / warps_y;
         let mut halve_x = true;
-        while (rows / (warps_y * wm)) * (c / (warps_x * wn)) < g.sms && warps_x * warps_y > 1 {
+        while !walk
+            && (rows / (warps_y * wm)) * (c / (warps_x * wn)) < g.sms
+            && warps_x * warps_y > 1
+        {
             if halve_x && warps_x > 1 {
                 warps_x /= 2;
             } else if warps_y > 1 {

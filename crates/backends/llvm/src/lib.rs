@@ -1032,6 +1032,17 @@ pub struct GpuRungs {
     /// (`--gpu-off=streamk-epi`): the group's ordered kernel, as before (a
     /// measurement flag; the stream-K rule decides where it applies).
     pub streamk_epi: bool,
+    /// bf16 tensor-tile `mma-walk`: a 16-bit tensor tile (no split form)
+    /// whose grid rounds over the SMs' matrix pipes (`⌈tiles / sms⌉` tiles
+    /// on the busiest SM) cost more than the same products spread evenly is
+    /// walked by stream-K over every resident slot at its whole warp tile
+    /// (`func::gpu::mma_walk`, priced by `func::gpu::MmaWalk`); the shared
+    /// tiles' partials add into the zeroed output, or an epilogue group's
+    /// workspace and ticket (`streamk-epi`). Off (`--gpu-off=mma-walk`): the
+    /// ordered tile or its `k` cut, as before (a measurement flag; the price
+    /// decides where it applies). `--gpu-on=mma-walk` walks every site the
+    /// walk admits, priced or not (the measurement and emulator arm).
+    pub mma_walk: bool,
     /// hopper-launch `tma-warm`: a module carrying a kernel that reads
     /// tensor maps (the `<kernel>_tmap` recipes the runtime finds in its
     /// text at load) has the runtime launch its own one-box TMA kernel once
@@ -1302,6 +1313,7 @@ impl GpuRungs {
         warm_zero: true,
         streamk_price: true,
         streamk_epi: true,
+        mma_walk: true,
         tma_warm: true,
         ws_persist: true,
         load_dispatch: true,
@@ -1324,7 +1336,7 @@ impl GpuRungs {
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 160] = [
+    pub const NAMES: [&'static str; 161] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1485,6 +1497,7 @@ impl GpuRungs {
         "stride-lanes",
         "carry-fwd",
         "lanes-unroll",
+        "mma-walk",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -1632,6 +1645,7 @@ impl GpuRungs {
             "warm-zero" => &mut self.warm_zero,
             "streamk-price" => &mut self.streamk_price,
             "streamk-epi" => &mut self.streamk_epi,
+            "mma-walk" => &mut self.mma_walk,
             "tma-warm" => &mut self.tma_warm,
             "ws-persist" => &mut self.ws_persist,
             "load-dispatch" => &mut self.load_dispatch,
