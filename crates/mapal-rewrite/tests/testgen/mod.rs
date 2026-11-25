@@ -4848,14 +4848,26 @@ pub fn gemm_dims(p: &GemmProg) -> (u64, u64, u64) {
 /// five cells printed (the first, the last, the last row's first, a middle
 /// one, the second row's last).
 pub fn gemm_src_at(p: &GemmProg, m: u64, n: u64, k: u64) -> String {
-    let (a1, a2) = (
-        3 + 2 * u64::from(p.law[0] % 7),
-        5 + 2 * u64::from(p.law[1] % 5),
-    );
     let bi = match p.bt {
         true => format!("b[j * {k} + k]"),
         false => format!("b[k * {n} + j]"),
     };
+    gemm_src_reading(p, m, n, k, &bi, k * n)
+}
+
+/// gap-fixes merge (`stream-ld`): a [`GemmProg`] whose `b` is a window —
+/// `b[j + k]`, `n + k - 1` elements, each read by up to `k` cells (the FIR's
+/// signal: the lane and fold axes overlap) — at `(m, n, k)`.
+pub fn gemm_window_src_at(p: &GemmProg, m: u64, n: u64, k: u64) -> String {
+    gemm_src_reading(p, m, n, k, "b[j + k]", n + k - 1)
+}
+
+/// [`gemm_src_at`] with `b` read as `bi` from `kn` elements.
+fn gemm_src_reading(p: &GemmProg, m: u64, n: u64, k: u64, bi: &str, kn: u64) -> String {
+    let (a1, a2) = (
+        3 + 2 * u64::from(p.law[0] % 7),
+        5 + 2 * u64::from(p.law[1] % 5),
+    );
     let mut s = format!(
         "fn main() {{
     {mk} -> iota -> ia;
@@ -4878,7 +4890,6 @@ pub fn gemm_src_at(p: &GemmProg, m: u64, n: u64, k: u64) -> String {
     }} -> y;
 ",
         mk = m * k,
-        kn = k * n,
         mn = m * n
     );
     let last = m * n - 1;

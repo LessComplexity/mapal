@@ -1027,7 +1027,7 @@ pub(crate) fn launch_split(
                     ea,
                     eb,
                     bt,
-                    Depth::of(&rungs),
+                    Depth::of(&rungs, e),
                     None,
                 )
             })
@@ -1151,7 +1151,7 @@ pub(crate) fn launch_split(
                 site.k,
                 rungs.wide,
                 rungs.fill,
-                Depth::of(&rungs),
+                Depth::of(&rungs, e),
             );
             if let Some(m) = mma {
                 return Launch {
@@ -1202,7 +1202,7 @@ pub(crate) fn launch_split(
                     site.k,
                     rungs.wide,
                     rungs.fill,
-                    Depth::of(&rungs),
+                    Depth::of(&rungs, e),
                 ),
                 _ => profile.gpu_mma16_tile(
                     grows,
@@ -1214,7 +1214,7 @@ pub(crate) fn launch_split(
                     ea,
                     eb,
                     bt,
-                    Depth::of(&rungs),
+                    Depth::of(&rungs, e),
                     Some(split_parts(kind, ea, eb)),
                 ),
             })
@@ -6429,9 +6429,20 @@ impl Kernel<'_> {
             true => rx.and_then(|x| x.b.as_ref()).is_some(),
             false => rx.and_then(|x| x.a.as_ref()).is_some(),
         };
+        // Read once means each point's element is its own: the operand is a
+        // dense tensor over the site's axes (`tensor_form`) whose distinct
+        // elements are its `cells`. A window's signal (`s[t + k]`: the
+        // lane and fold axes overlap, every element read by `k` cells — the
+        // FIR) or a broadcast axis is re-read from the L2, and `cells`
+        // overstates its bytes (gap-fixes merge: `fir_4194304_16`'s 16 MiB
+        // signal priced as 256 MiB streamed evict-first, 0.965).
+        let distinct = r
+            .tensor_form(s.rows, s.c, s.k)
+            .and_then(|t| t.dims.iter().try_fold(1u64, |n, d| n.checked_mul(d.extent)));
         self.rungs.stream_ld
             && !radix
             && reuse == 1
+            && distinct == Some(cells)
             && crate::rules::stream_ld_pays(g, cells.saturating_mul(r.elem_bytes(&s.elem)))
     }
 

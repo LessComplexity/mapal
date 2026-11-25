@@ -445,11 +445,17 @@ INTENT = {
     # kernel-merging `zero-fold` (func/zero.rs): an atomic site's zero pass is the grid-stride tail of an earlier kernel
     # the dependency fact orders after the output's last earlier access; the site launches flagged ZEROED.
     'zero-fold': dict(host=True, applies='host.zero.folded > 0', on=[
-        ('every folded site flagged (a table) or launched without its zero (direct)',
-         'host.zero.flagged + host.zero.direct == host.zero.folded'),
+        ('every folded or hoisted site flagged (a table) or launched without its zero (direct)',
+         'host.zero.flagged + host.zero.direct == host.zero.folded + host.zero.hoisted'),
         ('one tail call a folding kernel', 'host.zero.tails == host.zero.kernels'),
         ('folded + kept = the atomic sites', 'host.zero.folded + host.zero.gated + host.zero.stopped + host.zero.none <= host.zero.sites')],
         applies_off='host.calls.launchv > 0', off=[('no tail', 'host.zero.tails == 0')]),
+    # gaps-disasm C1 `zero-hoist` (func/zero.rs): an atomic site's zero that no kernel folds is issued right after the
+    # last step touching its bytes (`; mapal.zero.host hoisted=`), each by one `mapal_gpu_zero_for` call (skipped at
+    # run time where the site's decided pick adds nothing); OFF: no such call.
+    'zero-hoist': dict(host=True, applies='host.zero.hoisted > 0', on=[
+        ('one zero_for call a hoisted zero', 'host.zero.zero_for == host.zero.hoisted')],
+        applies_off='host.zero.sites > 0', off=[('no hoisted zero', 'host.zero.zero_for == 0')]),
     # kernel-merging `horizontal` (func/horizontal.rs): independent launches the dependency fact leaves unordered run
     # as one grid; each merged kernel dispatches on its block index to its members' bodies (device functions).
     'horizontal': dict(host=True, applies='host.hz.groups > 0', on=[

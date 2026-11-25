@@ -121,7 +121,7 @@ const STREAM_KEEP_SHARE: u64 = 4;
 /// Whether a kernel's operand (`a`, `b`) qualifies at L2 keep `keep`: read
 /// once, its f32 bytes past the keep and within [`STREAM_KEEP_SHARE`] times it
 /// (`rules::stream_ld_pays`).
-fn qualifies(l: &str, keep: u64) -> [bool; 2] {
+fn qualifies(l: &str, keep: u64, window: bool) -> [bool; 2] {
     let (rows, c, k) = (
         field(l, "rows").unwrap_or(0),
         field(l, "c").unwrap_or(0),
@@ -129,7 +129,9 @@ fn qualifies(l: &str, keep: u64) -> [bool; 2] {
     );
     let share = |b: u64| b > keep && b <= STREAM_KEEP_SHARE * keep;
     let [ra, rb] = read_once(l);
-    [ra && share(rows * k * 4), rb && share(k * c * 4)]
+    // A window `b` (`b[j + k]`) is no dense tensor: its elements are re-read
+    // by up to `k` cells, never streamed whatever its dense view's bytes.
+    [ra && share(rows * k * 4), rb && !window && share(k * c * 4)]
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -140,6 +142,7 @@ struct Cover {
     reread_refused: u64,
     keep_refused: u64,
     share_refused: u64,
+    window_refused: u64,
 }
 
 impl std::ops::AddAssign for Cover {
@@ -150,6 +153,7 @@ impl std::ops::AddAssign for Cover {
         self.reread_refused += o.reread_refused;
         self.keep_refused += o.keep_refused;
         self.share_refused += o.share_refused;
+        self.window_refused += o.window_refused;
     }
 }
 
@@ -159,7 +163,7 @@ const MODES: [[(&str, &str); 2]; 3] = [
     [("MAPAL_EMU_REVERSE", "1"), ("MAPAL_EMU_GRID", "1")],
 ];
 
-fn check(clang: &str, src: &str, b_bytes: u64) -> Cover {
+fn check(clang: &str, src: &str, b_bytes: u64, window: bool) -> Cover {
     let ir = lower(src);
     let rr = run(&ir, 2_000_000_000);
     assert!(matches!(rr.outcome, Outcome::Done(_)), "{src}");
@@ -184,7 +188,7 @@ fn check(clang: &str, src: &str, b_bytes: u64) -> Cover {
     for (l, s) in &fks {
         assert_eq!(
             *s,
-            qualifies(l, (b_bytes / 8).max(1)).contains(&true),
+            qualifies(l, (b_bytes / 8).max(1), window).contains(&true),
             "{l}\n{src}"
         );
     }
@@ -204,11 +208,13 @@ fn check(clang: &str, src: &str, b_bytes: u64) -> Cover {
             if off.is_empty() {
                 // Sound and complete: an f32 FMA kernel streams exactly the
                 // operands read once whose bytes the rule admits.
-                let q = qualifies(l, keep).contains(&true);
+                let q = qualifies(l, keep, window).contains(&true);
                 assert_eq!(*s, q, "streamed {s}, qualifies {q}: {l}\n{src}");
                 c.naive_stream += u64::from(*s && l.contains(" kind=naive "));
                 c.tile_stream += u64::from(*s && l.contains(" kind=tile "));
                 c.reread_refused += u64::from(!s && !read_once(l)[1]);
+                // The dense view's bytes would stream; the window does not.
+                c.window_refused += u64::from(window && !s && qualifies(l, keep, false)[1]);
             }
         }
         let built = emu::build_emulated(clang, &e.text, &dev);
@@ -220,17 +226,19 @@ fn check(clang: &str, src: &str, b_bytes: u64) -> Cover {
     c
 }
 
-/// 40 generated products (one-row GEMVs to 70-row tiles, both `b` layouts):
+/// 40 generated products (one-row GEMVs to 70-row tiles, both `b` layouts)
+/// and 12 whose `b` is a window (`b[j + k]`, the FIR's signal — gap-fixes
+/// merge: its dense view's bytes overstated the operand and streamed it):
 /// streaming loads exactly on the operands their grid reads once, past the
-/// keep; the interpreter's bytes on both arms in every emulator mode; every
-/// coverage counter non-zero.
+/// keep, never on a window; the interpreter's bytes on both arms in every
+/// emulator mode; every coverage counter non-zero.
 #[test]
 fn stream_ld_on_generated_programs() {
     let Some(clang) = emu::clang() else {
         return;
     };
     let mut runner = TestRunner::deterministic();
-    let progs: Vec<(String, u64)> = (0..40u8)
+    let progs: Vec<(String, u64, bool)> = (0..52u8)
         .map(|i| {
             let p = testgen::gemm_prog_strategy()
                 .new_tree(&mut runner)
@@ -240,10 +248,13 @@ fn stream_ld_on_generated_programs() {
             let m = pick(p.dims[0] ^ i, &[1, 1, 2, 5, 8, 16, 16, 40, 70]);
             let n = pick(p.dims[1], &[64, 96, 256, 1024, 2048]);
             let k = pick(p.dims[2], &[16, 64, 100, 128]);
-            (testgen::gemm_src_at(&p, m, n, k), k * n * 4)
+            match i < 40 {
+                true => (testgen::gemm_src_at(&p, m, n, k), k * n * 4, false),
+                false => (testgen::gemm_window_src_at(&p, m, n, k), k * n * 4, true),
+            }
         })
         .collect();
-    let covers = testgen::par_check(&progs, |_, (s, b)| check(&clang, s, *b));
+    let covers = testgen::par_check(&progs, |_, (s, b, w)| check(&clang, s, *b, *w));
     let mut c = Cover::default();
     for k in covers {
         c += k;
@@ -256,6 +267,7 @@ fn stream_ld_on_generated_programs() {
         c.reread_refused,
         c.keep_refused,
         c.share_refused,
+        c.window_refused,
     ];
     assert!(all.iter().all(|&x| x > 0), "{c:?}");
 }

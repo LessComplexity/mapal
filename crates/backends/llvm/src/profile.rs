@@ -3821,19 +3821,20 @@ impl TargetProfile {
         // gapfix tensor-tile (C3) `mma-fly`: a DRAM-bound site's ring keeps
         // the part's in-flight bytes past its wait ([`Self::gpu_mma_fly`]),
         // over the residencies the panel rule offers (the same tile).
-        match depth == Depth::Fly && !split {
-            true => Some(
+        match (depth, split) {
+            (Depth::Fly { walk }, false) => Some(
                 self.gpu_mma_fly(
                     (rows, c, k),
                     (mt, nt, warps_x, warps_y),
                     (floor, resident),
                     threads,
                     (fmt, ea, eb, bt),
+                    walk,
                     &panel,
                 )
                 .unwrap_or(panel),
             ),
-            false => Some(panel),
+            _ => Some(panel),
         }
     }
 
@@ -3849,8 +3850,11 @@ impl TargetProfile {
     ///    it streams from DRAM on every call), and
     /// 3. the S52 panel's load is exposed but the SM is not DRAM-bound: its
     ///    blocks' DRAM bytes a panel (`blocks_per_sm · bk ·` the streamed
-    ///    widths, over the blocks of a row-major wave that read the panel
-    ///    together) at the SM's share of the DRAM rate take `T` ≤ the panel's
+    ///    widths, over the blocks of a wave that read the panel together —
+    ///    under the walk the site takes, `walk`: row-major, or grouped by
+    ///    [`Gpu::raster`]'s `h` block-rows, each `b` panel read by the `h`
+    ///    blocks of its column and each `a` panel by the `wave / h` of its
+    ///    row) at the SM's share of the DRAM rate take `T` ≤ the panel's
     ///    products at the SM's matrix rate, `t`, and `t` < `T` + the loaded
     ///    latency (`lat_ns`) — the next panel, issued as this one's products
     ///    start, has not landed when they end (`wait_group 0`).
@@ -3866,7 +3870,13 @@ impl TargetProfile {
     /// under the 573 ns latency) lost it (+4.8 %); the RTX 4090's 128 × 28672
     /// (`T` 2139 > `t` 1626: DRAM-bound) lost it (+5.8 %), the A100's (2378 >
     /// 1470) was null; every TF32 ring lost (+4–6 % on the 5080, the 4090,
-    /// the A100).
+    /// the A100). The walk (gap-fixes merge): the 5080's 2048 × 28672 × 4096
+    /// bf16 projection, grouped by C11's gate (`h` 16) but priced row-major
+    /// (`T` 1442 ≤ `t` 1672 < `T` + 573), took the ring and lost it — the
+    /// S52 `bk` 32 × 2 3.99 ms, the ring `bk` 16 × 4 4.52 —: its grouped wave
+    /// reads each `b` / `a` panel with 16 / 10 blocks (`T` 233 ns), no load
+    /// exposed.
+    #[allow(clippy::too_many_arguments)]
     fn gpu_mma_fly(
         &self,
         (rows, c, k): (u64, u64, u64),
@@ -3874,6 +3884,7 @@ impl TargetProfile {
         (floor, resident): (u64, u64),
         threads: u64,
         (fmt, ea, eb, bt): (MmaFmt, u64, u64, bool),
+        walk: Option<(bool, u64)>,
         base: &GpuMmaTile,
     ) -> Option<GpuMmaTile> {
         let g = self.gpu()?;
@@ -3892,12 +3903,23 @@ impl TargetProfile {
         let d = g.plan_cost();
         let bps = base.blocks_per_sm.max(1);
         // A streamed panel is read from DRAM once for the blocks of a wave
-        // that read it together (row-major): a `b` panel by the wave's rows
+        // that read it together. Row-major: a `b` panel by the wave's rows
         // of the grid (`min(tiles, wave) / gx`, at least one), an `a` panel by its row's
-        // blocks in the wave (`min(gx, wave)`) — bytes ·1000 a block-panel.
+        // blocks in the wave (`min(gx, wave)`). The grouped walk the site
+        // takes (`walk`: `l2-gate` and the site's element bytes, decided by
+        // [`Gpu::raster`] from this tile's block and residency): `b` by its
+        // `h` block-rows, `a` by the wave's `wave / h` columns — bytes ·1000
+        // a block-panel.
         let (gx, tiles, wave) = (c / bn, (rows / bm) * (c / bn), g.sms * bps);
-        let b_part = u64::from(b_dram) * bn * eb * 1000 * gx / tiles.min(wave).max(gx).max(1);
-        let a_part = u64::from(a_dram) * bm * ea * 1000 / gx.min(wave).max(1);
+        let h = walk.map_or(1, |(gate, e)| {
+            g.raster(bm, bn, wave, rows, c, k, e, gate, eb, rate)
+        });
+        let (b_num, b_den, a_den) = match h > 1 {
+            true => (1, h, (wave / h).min(gx)),
+            false => (gx, tiles.min(wave).max(gx), gx.min(wave)),
+        };
+        let b_part = u64::from(b_dram) * bn * eb * 1000 * b_num / b_den.max(1);
+        let a_part = u64::from(a_dram) * bm * ea * 1000 / a_den.max(1);
         // ns · 1000 in integers: the panel's products at the SM's rate, its
         // DRAM bytes at the SM's share.
         let t = bps * 2 * bm * bn * base.bk * g.sms * 1000 / rate.max(1);
@@ -5870,16 +5892,24 @@ pub fn mma_depth_pick(cands: &[GpuMmaTile]) -> Option<&GpuMmaTile> {
 pub enum Depth {
     Panel,
     InFlight,
-    Fly,
+    /// `mma-fly`; `walk`: the raster rule the site's walk takes — `None`
+    /// row-major (`--gpu-off=raster`), `Some((gate, elem))` [`Gpu::raster`]
+    /// under `l2-gate` `gate` at the site's element bytes.
+    Fly {
+        walk: Option<(bool, u64)>,
+    },
 }
 
 impl Depth {
     /// The rule a site's rungs name: `mma-depth` (a measurement arm) over
-    /// `mma-fly` over the S52 panel.
-    pub fn of(rungs: &crate::GpuRungs) -> Self {
+    /// `mma-fly` over the S52 panel; `elem`: the site's element bytes (its
+    /// walk's raster gate).
+    pub fn of(rungs: &crate::GpuRungs, elem: u64) -> Self {
         match (rungs.mma_depth, rungs.mma_fly) {
             (true, _) => Depth::InFlight,
-            (false, true) => Depth::Fly,
+            (false, true) => Depth::Fly {
+                walk: rungs.raster.then_some((rungs.l2_gate, elem)),
+            },
             (false, false) => Depth::Panel,
         }
     }
@@ -7982,6 +8012,62 @@ mod tests {
             r.raster(128, 128, 168, 2048, 6144, 4096, 4, true, 2, half),
             1
         );
+    }
+
+    /// gap-fixes merge: **the `mma-fly` ring prices its panels under the
+    /// walk the site takes.** The RTX 5080's 128 × 28672 × 4096 bf16
+    /// projection (one block-row: row-major whatever the gate) keeps its ring
+    /// (`bk` 16 × 4, measured 0.400 → 0.344 ms); its 2048-row twin, grouped
+    /// by C11's gate, reads each panel with its group's blocks and keeps the
+    /// S52 panel (`bk` 32 × 2: 3.99 ms against the ring's 4.52) — priced
+    /// row-major (`--gpu-off=raster`) it would take the ring.
+    #[test]
+    fn mma_fly_prices_the_grouped_walk() {
+        let tile = |rows: u64, walk: Option<(bool, u64)>| {
+            RTX_5080
+                .gpu_mma16_tile(
+                    rows,
+                    28672,
+                    4096,
+                    true,
+                    true,
+                    MmaFmt::Bf16,
+                    2,
+                    2,
+                    false,
+                    Depth::Fly { walk },
+                    None,
+                )
+                .map(|t| (t.bk, t.stages))
+                .expect("a tensor tile")
+        };
+        let panel = |rows: u64| {
+            RTX_5080
+                .gpu_mma16_tile(
+                    rows,
+                    28672,
+                    4096,
+                    true,
+                    true,
+                    MmaFmt::Bf16,
+                    2,
+                    2,
+                    false,
+                    Depth::Panel,
+                    None,
+                )
+                .map(|t| (t.bk, t.stages))
+                .expect("a tensor tile")
+        };
+        let walk = Some((true, 4));
+        assert_eq!(tile(128, walk), (16, 4), "the 128-row ring");
+        assert_eq!(
+            tile(2048, walk),
+            panel(2048),
+            "the grouped walk: the S52 panel"
+        );
+        assert_eq!(panel(2048), (32, 2));
+        assert_ne!(tile(2048, None), panel(2048), "row-major: the ring");
     }
 
     /// S54 R5: the delta upload and the strided one-row site ship on every
