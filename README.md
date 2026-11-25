@@ -10,436 +10,516 @@
 ![Badge Language]
 [![Badge Pull Requests]][Pull Requests]
 [![Badge Issues]][Issues]
-![Badge Determinism]<br>
+![Badge Numerics]<br>
 
 <br>
 
 </div>
-<!-- markdownlint-enable MD033 -->
 
 <!--toc:start-->
 
-- [The idea](#the-idea)
-  - [What the compiler works out for you](#what-the-compiler-works-out-for-you)
-- [Results](#results)
-  - [Matrix multiply, f32 - M4 Pro, threaded](#matrix-multiply-f32--m4-pro-threaded)
-  - [Other shapes - M4 Pro, threaded](#other-shapes--m4-pro-threaded)
-  - [The same shapes on an i9-14900F, threaded](#the-same-shapes-on-an-i9-14900f-threaded)
-  - [matmul vs OpenBLAS on an i9-14900F, 1024² f32](#matmul-vs-openblas-on-an-i9-14900f-1024-f32)
-  - [Three builds](#three-builds)
+- [Philosophy](#philosophy)
+- [Example: Llama-3.2-1B](#example-llama-32-1b)
+- [Syntax](#syntax)
+- [Current results](#current-results)
+  - [The full model](#the-full-model)
+  - [The kernel and layer suite](#the-kernel-and-layer-suite)
+- [Roadmap](#roadmap)
 - [Status](#status)
-- [Scope](#scope)
 - [Trying it](#trying-it)
   - [Formatting](#formatting)
   - [Editor support](#editor-support)
-- [What is next](#what-is-next)
 - [How the project works](#how-the-project-works)
 - [License](#license)
 
 <!--toc:end-->
 
-**A programming language that parallelizes your code for you.**
+**A dataflow programming language.** You write what the data is and how it flows; the compiler works out how
+it runs: on the CPU, on the GPU, and across both. No threads, streams, kernels, tile sizes or intrinsics appear
+in the source.
 
-You write what you want computed. Mapal works out what can run at the same time, how to split it
-across cores, how to use the vector and matrix hardware, and which bounds checks it can safely
-drop. No threads, no locks, no intrinsics, no tuning pragmas - none of it appears in the source.
+---
 
-The same source runs on CPU and GPU, with FPGA planned.
+## Philosophy
+
+- **The language is the flow.** A program states data and how it flows, `data -> transform -> result;`, not the
+  control that moves it. A `map` says every cell is independent, a `fold` says how values combine, a binding says
+  who reads what.
+- **Data is category-theoretic.** Values are objects, transforms are morphisms, a program is their composition.
+  The compiler's IR is that graph, and its rewrites are the category's laws
+  ([`docs/spec/category-ir.md`](docs/spec/category-ir.md)).
+- **Expressing the flow beats expressing control.** Because the source states only what depends on what, the
+  compiler derives what runs in parallel, what merges into one kernel, what stays in registers, shared memory or
+  cache, and what moves between devices, from facts on the graph (independence, reuse, death points, footprints)
+  against the hardware's properties. Control written by hand fixes each of those decisions for one machine.
+
+What follows from it:
+
+- **Hardware is physical properties, never names.** The rules read SM counts, register and shared-memory sizes,
+  cache capacities, bandwidths, latencies and matrix-instruction shapes, queried from the device or measured by
+  calibration. A new chip is a new property set, not a new code path.
+- **No runtime graph recording.** Which work merges into one kernel, vertically along a chain and horizontally
+  across independent branches, is decided at compile time from the dataflow. Nothing is traced or captured while
+  the program runs.
+- **Correct numerics: the flow and the bound, not bit-identity.** Every result is within an error bound stated before
+  the program runs, at full precision ([ADR-0040](docs/decisions/ADR-0040-default-float-face.md)). The compiler orders
+  and combines operations freely for speed and placement, so parallel sums may differ in the last bits between runs —
+  correctness is a correct flow of operations, not a repeated bit pattern
+  ([ADR-0049](docs/decisions/ADR-0049-correctness-is-the-flow-and-the-bound.md)). Bit-reproducible runs exist as a
+  development mode for testing and debugging. Reduced precision is opt-in, per product.
+- **Readable, idiomatic source.** Programs read like the math they compute. If natural code compiles worse than a
+  hand-shaped version, the compiler is fixed, not the program.
+- **A language AI agents can write and verify.** Deterministic semantics, precise diagnostics with stable codes, one
+  formatter (`mapal fmt`), and the interpreter as an exact reference that any compiled run is checked against.
+
+---
+
+## Example: Llama-3.2-1B
+
+[`examples/llama.mapal`](examples/llama.mapal) is Llama-3.2-1B-Instruct in 403 lines, written to be read: the
+checkpoint's weights are one `read`, and one `forward` runs the whole prompt and then each generated token through
+the 16 layers. Excerpts, unedited.
+
+RMSNorm, for any number of tokens:
 
 ```flow
-fn main() {
-    1048576 -> iota -> ts;
-    ts -> map { t -> t * 2 } -> doubled;
-    doubled[1048575] -> println;
+// RMSNorm of each vector: x / sqrt(mean(x^2) + epsilon), times a learned gain per feature.
+fn rms_norm<tokens>(x: [f32; tokens * hidden_size], gain: [bf16; hidden_size]) -> [f32; tokens * hidden_size] {
+    hidden_size -> iota -> features;
+    hidden_size -> widen_f32 -> width;
+    tokens -> iota -> map {
+        t -> (0.0, features) -> fold {
+            sum, i -> sum + x[t * hidden_size + i] * x[t * hidden_size + i]
+        }
+    } -> sum_of_squares;
+    tokens * hidden_size -> iota -> map {
+        cell ->
+        sum_of_squares[cell / hidden_size] / width + rms_epsilon -> sqrt -> root;
+        gain[cell % hidden_size] -> widen_f32 -> g;
+        x[cell] * (1.0 / root) * g
+    } -> ret;
 }
 ```
 
-That runs across every core of the machine. Nothing in the source says so.
+One decoder layer, as a flow from the hidden state to the next hidden state and the updated key/value cache:
+
+```flow
+// One decoder layer over the chunk: attention with a residual connection, then the feed-forward block with
+// a residual connection. The chunk's keys and values enter the cache before its queries attend.
+fn decoder_layer<tokens>(
+    hidden: [f32; tokens * hidden_size],
+    weights: DecoderLayerWeights,
+    layer: i32,
+    cache: KeyValueCache,
+    positions: [i32; tokens],
+) -> ([f32; tokens * hidden_size], KeyValueCache) {
+    (hidden, weights.attention_norm) -> rms_norm -> normed;
+    (weights.query, normed) -> project -> query: [f32; tokens * query_size];
+    (weights.key, normed) -> project -> key: [f32; tokens * key_value_size];
+    (weights.value, normed) -> project -> value: [f32; tokens * key_value_size];
+    (query, positions) -> rotate -> rotated_query;
+    (key, positions) -> rotate -> rotated_key;
+    (cache.keys, rotated_key, layer, positions[0]) -> write_rows -> keys;
+    (cache.values, value, layer, positions[0]) -> write_rows -> values;
+    KeyValueCache {
+        keys: keys,
+        values: values,
+    } -> updated_cache;
+    (rotated_query, positions, updated_cache, layer) -> attend -> attended;
+    (weights.output, attended) -> project -> attention_output: [f32; tokens * hidden_size];
+    (hidden, attention_output) -> add -> after_attention;
+    (after_attention, weights.feed_forward_norm) -> rms_norm -> normed_again;
+    (normed_again, weights) -> feed_forward -> feed_forward_output;
+    (after_attention, feed_forward_output) -> add -> ret.0;
+    updated_cache -> ret.1;
+}
+```
+
+<details>
+<summary>Attention (<code>attend</code>): grouped-query, causal, softmax as three maps and two folds</summary>
+
+```flow
+// Causal grouped-query attention over layer `layer`'s cached keys and values: each token's query head h reads
+// key/value head h / 4 of every cached position up to its own, scores are scaled by 1 / sqrt(head_size),
+// softmax over each head's scores, and the result is the weighted sum of the cached values.
+fn attend<tokens>(
+    query: [f32; tokens * query_size],
+    positions: [i32; tokens],
+    cache: KeyValueCache,
+    layer: i32,
+) -> [f32; tokens * query_size] {
+    head_size -> iota -> dimensions;
+    context_length -> iota -> past_positions;
+    head_size -> widen_f32 -> sqrt -> scale_root;
+    tokens * query_heads * context_length -> iota -> map {
+        cell ->
+        cell / context_length -> token_head;
+        cell % context_length -> past;
+        token_head / query_heads -> t;
+        token_head % query_heads / heads_per_key_value_head -> key_value_head;
+        (past <= positions[t]) -> {
+            -true-> {
+                (layer * context_length + past) * key_value_heads + key_value_head -> key_row;
+                (0.0, dimensions) -> fold {
+                    sum, d -> sum + query[token_head * head_size + d] * cache.keys[key_row * head_size + d]
+                } -> dot;
+                dot / scale_root
+            }
+            -false-> -1000000000.0;
+        }
+    } -> scores;
+    tokens * query_heads -> iota -> token_heads;
+    token_heads -> map {
+        token_head -> (-1000000000.0, past_positions) -> fold {
+            best, past -> (best, scores[token_head * context_length + past]) -> larger
+        }
+    } -> row_maximum;
+    tokens * query_heads * context_length -> iota -> map {
+        cell -> scores[cell] - row_maximum[cell / context_length] -> exp
+    } -> exponentials;
+    token_heads -> map {
+        token_head -> (0.0, past_positions) -> fold {
+            sum, past -> sum + exponentials[token_head * context_length + past]
+        }
+    } -> row_total;
+    tokens * query_size -> iota -> map {
+        cell ->
+        cell / head_size -> token_head;
+        cell % head_size -> d;
+        token_head % query_heads / heads_per_key_value_head -> key_value_head;
+        (0.0, past_positions) -> fold {
+            sum, past ->
+            (layer * context_length + past) * key_value_heads + key_value_head -> value_row;
+            sum + exponentials[token_head * context_length + past] * cache.values[value_row * head_size + d]
+        } -> weighted;
+        weighted / row_total[token_head]
+    } -> ret;
+}
+```
+
+</details>
+
+Greedy decoding, inside `main`: each step feeds the last token back through the same `forward`:
+
+```flow
+    // Each later token: feed the previous one at the next position.
+    mut token: i32 <- first_token;
+    mut cache: KeyValueCache <- prefilled.1;
+    mut position: i32 <- prompt_length;
+    loop {
+        (position < prompt_length + generated_tokens - 1) -> {
+            -true-> {
+                [token] -> ids;
+                (ids, position, model, cache) -> forward -> stepped;
+                stepped.0 -> most_likely_token -> token;
+                stepped.1 -> cache;
+                () -> time -> now;
+                token -> print;
+                " " -> print;
+                stepped.0[token] -> print;
+                " " -> print;
+                now - submitted -> println;
+                position + 1 -> position;
+                -> loop;
+            }
+            -false-> position -> last_position;
+        }
+    }
+```
+
+The compiler turns the folds in `project` into tiled matrix products, streams the attention, keeps the cache on
+the GPU and writes each step's new rows in place, and merges what it can into kernels. None of it is in the source.
 
 ---
 
-## The idea
+## Syntax
 
-Fast code is usually fast because a human wrote machine details into it: tile sizes, thread
-counts, vector widths, memory layouts. Those details are what stop it moving to other hardware.
+The core forms in one whole program. It reads 12 `bf16` values from `weights.bin` (the directory comes from
+`MAPAL_DATA_DIR`) and prints one number.
 
-Mapal keeps them out of your source. The program says what depends on what; the machine details are
-**read off the machine you are compiling on** - cache sizes, line sizes, vector widths, whether
-there is a matrix unit. Change the machine, keep the source.
+```flow
+// Top-level values: immutable (there is no `const`), computed before the program runs.
+3 -> rows;
+4 -> columns;
 
-### What the compiler works out for you
+// `_` is a type's default interpretation: a Matrix is its array wherever an array fits.
+type Matrix<r, c> {
+    _: [bf16; r * c]
+}
 
-- What can run at the same time, and how to spread it across cores
-- Which loops are matrix-shaped, and how to tile them for the cache and the vector registers
-- Which data is read repeatedly, so it gets laid out once instead of re-fetched
-- When an access pattern will fight the cache, and how to reorder it - from the machine's own
-  cache geometry, which it detects
-- Which bounds checks are provably unnecessary - and only those
+// Size-generic: `r` and `c` are inferred from the arguments at each call.
+fn project<r, c>(weight: Matrix<r, c>, x: [f32; c]) -> [f32; r] {
+    c -> iota -> along;
+    r -> iota -> map {
+        row -> (0.0, along) -> fold {
+            sum, column ->
+            weight[row * c + column] -> widen_f32 -> w;
+            sum + w * x[column]
+        }
+    } -> ret;
+}
 
-How it does that: [`docs/architecture/`](docs/architecture/).
+// A guard: one arm runs, chosen by the condition.
+fn relu(v: f32) -> f32 {
+    (v > 0.0) -> {
+        -true-> v;
+        -false-> 0.0;
+    } -> ret;
+}
+
+// A loop: `mut` state, and a guard that either goes round again or leaves.
+fn total<n>(values: [f32; n]) -> f32 {
+    mut step: i32 <- 0;
+    mut sum: f32 <- 0.0;
+    loop {
+        (step < n) -> {
+            -true-> {
+                sum + values[step] -> sum;
+                step + 1 -> step;
+                -> loop;
+            }
+            -false-> sum -> ret;
+        }
+    }
+}
+
+fn main() {
+    "weights.bin" -> read -> weight: Matrix<rows, columns>;
+    columns -> iota -> map {
+        i -> i -> widen_f32 -> sqrt
+    } -> x;
+    (weight, x) -> project -> y;
+    y -> map {
+        v -> v -> relu
+    } -> activated;
+    activated -> total -> println;
+}
+```
+
+| form | what it says | decision |
+| --- | --- | --- |
+| `x -> f -> y;` | a pipeline: `x` flows through `f`, the result is bound as `y` | [ADR-0005](docs/decisions/ADR-0005-flow-is-a-statement.md) |
+| `2048 -> hidden_size;` | a top-level binding: immutable (no `const`; only `mut` values change), computed before the program runs when its dataflow reads no input | [ADR-0048](docs/decisions/ADR-0048-top-level-bindings-compile-time-evaluation.md) |
+| `type Matrix<rows, columns> { _: [bf16; rows * columns] }` | `_` is the type's default interpretation: with no other field the type is an alias, with others it reads as `_` wherever only that fits | [ADR-0048](docs/decisions/ADR-0048-top-level-bindings-compile-time-evaluation.md) |
+| `fn project<rows, columns>(…)` | size-generic: the sizes are inferred at each call, one fixed-size function per size tuple | [ADR-0047](docs/decisions/ADR-0047-size-generic-functions.md) |
+| `x -> exp`, `-> sqrt`, `-> sin`, `-> cos` | math builtins in pipeline position (no call syntax), bit-defined on the exact faces | [ADR-0042](docs/decisions/ADR-0042-exp-builtin.md), [ADR-0046](docs/decisions/ADR-0046-math-builtins-and-target-realizations.md) |
+| `"file" -> read -> w: [bf16; n];` | load a value's raw bytes from a file: an array, or a whole struct of arrays | [ADR-0045](docs/decisions/ADR-0045-read-builtin.md) |
+| `bf16`, `f16` | narrow storage: one rounding in (`to_bf16`), exact widening out (`widen_f32`), f32 compute | [ADR-0043](docs/decisions/ADR-0043-narrow-float-storage.md) |
+| `n -> iota -> map { i -> … }` | a value per cell, every cell independent | |
+| `(seed, xs) -> fold { acc, x -> … }` | combine values; on the default face the order is the compiler's | [ADR-0040](docs/decisions/ADR-0040-default-float-face.md) |
+| `(c) -> { -true-> a; -false-> b; }` | a guard: exactly one arm runs | |
+| `mut s: T <- init; loop { … -> loop; }` | a loop: `mut` state, an arm that goes round again or leaves | |
+
+Every decision record, with the alternatives it rejected: [`docs/decisions/`](docs/decisions/README.md).
 
 ---
 
-## Results
+## Current results
 
-Method, machine specs, raw logs: [`docs/performance/`](docs/performance/).
+Five GPUs, 2026-11-26: an RTX 5080 at home and an RTX 3090, A100, RTX 4090 and H100 rented. The full model on all
+five and the kernel suite on the rented four ran this round's final build (`b8429388`, re-timed on `9be9886d`'s
+runtime); the RTX 5080's suite column is the gapfix integration's (`d945c641`). Type against type: the f32 program
+against engines computing in f32, the bf16 program against bf16 engines, each suite row against competitors at its
+own precision. No gain is claimed across precisions.
 
-### Matrix multiply, f32 - M4 Pro, threaded
+**Correctness.** Every timed program passes its value gate on every GPU before it is timed: within the stated error
+bound on the default face, in any order of operations, and bit for bit with the interpreter in the development modes
+([ADR-0049](docs/decisions/ADR-0049-correctness-is-the-flow-and-the-bound.md)). One bf16 program
+(`px_llm_blkdec_b2_l16_bf16`) first read as outside its bound on the rented GPUs: the compiled result was right — bit
+for bit the program with the bf16 stores its `: bf16 | f32` permits — and the gate's bound was the unsound part, so
+the gate now checks a bound composed through every operation of the program
+([ADR-0041](docs/decisions/ADR-0041-compute-precision-permission-candidate.md)). The model's generated tokens are
+checked against the Hugging Face reference of the same class, run on the same box.
 
-|    N |       Mapal |   NumPy |                 |
-| ---: | ----------: | ------: | --------------- |
-| 1024 |     0.72 ms | 0.67 ms | NumPy 1.07×     |
-| 2048 | **5.03 ms** | 5.33 ms | **Mapal 1.06×** |
-| 4096 | **38.7 ms** | 44.1 ms | **Mapal 1.14×** |
+<!-- results-headline:start -->
 
-3,556 GFLOP/s vs 3,115 at 4096, disjoint. Naive threaded C++: 33,439 ms.
-Single-threaded NumPy is ~2× ahead
-([why](docs/performance/cpu/memory/operand-residency-and-thermal-effects.md)).
+**Kernel and layer suite**: Mapal ÷ the fastest competitor at the program's own precision, geomean over the 119 programs timed on every GPU, both sides timed at the program boundary.
 
-### Other shapes - M4 Pro, threaded
-
-| workload               | Mapal FMA off | Mapal FMA on | C++ naive-mt | NumPy 1t |
-| ---------------------- | ------------: | -----------: | -----------: | -------: |
-| FIR filter, 1M         |      0.305 ms | **0.289 ms** |         1.50 |     6.35 |
-| conv2d 3×3, 1024²      |      0.084 ms | **0.083 ms** |         0.16 |     1.72 |
-| saxpy, 1M              |      0.070 ms | **0.067 ms** |         0.12 |     0.18 |
-| sum reduction, 1M      |  **0.560 ms** |     0.562 ms |         0.92 | **0.11** |
-| transpose, 1024²       |      0.137 ms | **0.124 ms** |         0.26 |     0.86 |
-| gather `x[idx[i]]`, 1M |      0.139 ms | **0.137 ms** |         0.16 |     2.19 |
-
-Every row above moved this session, 1.00–1.31×, from scheduling alone — the kernels
-are unchanged ([what changed](docs/performance/cpu/scheduling/roofline-dispatch-threshold.md)).
-
-### The same shapes on an i9-14900F, threaded
-
-| workload               | Mapal FMA off | Mapal FMA on | C++ naive-mt | NumPy 1t |
-| ---------------------- | ------------: | -----------: | -----------: | -------: |
-| FIR filter, 1M         |      0.225 ms | **0.187 ms** |         1.24 |     5.44 |
-| conv2d 3×3, 1024²      |      0.118 ms | **0.084 ms** |         0.41 |     2.85 |
-| saxpy, 1M              |      0.137 ms | **0.130 ms** |         0.42 |     0.47 |
-| sum reduction, 1M      |  **0.394 ms** |     0.391 ms |         7.32 | **0.14** |
-| transpose, 1024²       |      0.200 ms | **0.176 ms** |         0.47 |     2.22 |
-| gather `x[idx[i]]`, 1M |      0.236 ms | **0.203 ms** |         0.48 |     1.33 |
-
-Transpose single-threaded on this box: 2.42 → 1.09 ms, −55%, disjoint
-([what changed](docs/performance/cpu/memory/l1-panel-conflicts.md)).
-
-### matmul vs OpenBLAS on an i9-14900F, 1024² f32
-
-|                     |    Mapal |    NumPy |         |
-| ------------------- | -------: | -------: | ------- |
-| single-threaded     | 14.88 ms | 12.21 ms | 1.22×   |
-| threaded, 8 P-cores |  2.09 ms |  1.74 ms | 1.20×   |
-| threaded, whole box |  1.52 ms |  1.50 ms | **tie** |
-
-The whole-box tie is heterogeneity tolerance, not a better kernel - same box,
-8 threads per row ([detail](docs/performance/matmul/history/timing-boundary-and-openblas-comparison.md)):
-
-| 8 threads on…       |   Mapal | NumPy |               |
-| ------------------- | ------: | ----: | ------------- |
-| 8 E-cores (uniform) | 5.89 ms |  5.59 | NumPy 5%      |
-| 8 P-cores (uniform) | 2.44 ms |  1.72 | **NumPy 41%** |
-| 4 P + 4 E (mixed)   | 3.38 ms |  5.57 | **Mapal 65%** |
-
-### Linear neural networks - M4 Pro, threaded
-
-Forward pass only, square (batch = width = `d`), every layer `d×d`. Values are
-bit-identical to NumPy's on every cell. NumPy is the better of its 1-thread and
-multi-thread legs. One run, 41 interleaved cycles
-([full table + noise spreads](docs/performance/cpu/scheduling/roofline-dispatch-threshold.md)).
-
-| d | 4-layer net | NumPy | | 2 nets at once | NumPy | |
-| ---: | ---: | ---: | --- | ---: | ---: | --- |
-| 128 | 0.081 ms | **0.023** | NumPy 3.5× | 0.076 ms | **0.023** | NumPy 3.3× |
-| 256 | 0.261 ms | **0.092** | NumPy 2.8× | 0.192 ms | **0.091** | NumPy 2.1× |
-| 512 | **0.633 ms** | 0.645 | tie | **0.473 ms** | 0.644 | **Mapal 1.36×** |
-| 1024 | **2.930 ms** | 3.764 | **Mapal 1.28×** | **2.771 ms** | 4.064 | **Mapal 1.47×** |
-| 2048 | **20.36 ms** | 24.97 | **Mapal 1.23×** | **19.68 ms** | 25.65 | **Mapal 1.30×** |
-
-Two independent nets are the same total work as one 4-layer net. Nothing in the
-source says "run these in parallel"
-([why that is free](docs/performance/cpu/scheduling/independent-networks-and-dependency-cycles.md)).
-
-| d | one 4-layer net | two 2-layer nets | gain from the graph alone |
-| ---: | ---: | ---: | ---: |
-| 256 | 0.261 ms | 0.192 ms | **1.36×** |
-| 512 | 0.633 ms | 0.473 ms | **1.34×** |
-| 1024 | 2.930 ms | 2.771 ms | 1.06× |
-
-Small sizes are now a single-thread kernel gap, not a scheduling one
-([breakdown](docs/performance/cpu/scheduling/dispatch-threshold.md)).
-
-### GPU workloads - 4 GPUs, October 2026
-
-Current: the cross-part matrix against every competitor leg ([matrix](benches/results/evidence/matrix.md)); since
-2026-11-23 the best competitor is the fastest real-world implementation — torch.compile with CUDA graphs, SDPA
-(efficient / cuDNN), hand-written Triton, Liger, FlashAttention-2/3, FlashInfer
-([competitors](benches/results/evidence/local-rtx-5080/competitors.md); TensorRT-LLM does not install on torch 2.11;
-the rented parts on the final code: [cross-arch 3a8e654f](benches/results/evidence/cross-arch/README.md#3a8e654f-final-code-all-competitors);
-every part re-timed on `5fcb401b`: [cross-arch 5fcb401b](benches/results/evidence/cross-arch/README.md#5fcb401b-confirmation-all-competitors);
-on the integrated fixes `f1d3a04f`: [cross-arch f1d3a04f](benches/results/evidence/cross-arch/README.md#f1d3a04f-confirmation-all-competitors)).
-
-| geomean Mapal / best, every leg (win / even / loss) | 86 rows, 5fcb401b | 86 rows, f1d3a04f | 34 bf16-storage rows, 5fcb401b → f1d3a04f | all 120 rows, 5fcb401b → f1d3a04f |
-| --- | ---: | ---: | ---: | ---: |
-| RTX 5080 (local) | 0.945 (23 / 28 / 35) | ≈ 0.945 ‡ | 1.068 → ≈ 1.068 ‡ | 0.979 → **0.978** (30 / 39 / 51) ‡ |
-| RTX 3090 (250 → 270 W box) | 0.952 (35 / 12 / 39) | **0.943** (34 / 12 / 40) | 1.171 → **1.147** (8 / 6 / 20) | 1.009 → **0.997** (42 / 18 / 60) |
-| A100 SXM4 40 GB (400 W, another box) | 1.188 (18 / 4 / 63; 85) | **1.089** (36 / 2 / 47; 85) | 1.388 → 1.463 (5 / 4 / 25) | 1.242 → **1.185** (41 / 6 / 72; 119) |
-| RTX 4090 (450 W; this box clock-locked at 1.2 GHz) | 0.946 (22 / 21 / 43) | **0.935** (29 / 18 / 39) | 0.952 → 1.003 (13 / 8 / 13) | 0.948 → 0.954 (42 / 26 / 52) |
-| H100 SXM (700 → 500 W box) | 1.181 (15 / 2 / 69) | **1.075** (18 / 7 / 61) | 1.740 → **1.605** (7 / 0 / 27) | 1.318 → **1.204** (25 / 7 / 88) |
-
-‡ RTX 5080 after the review of the confirmation-fixes merge: the 104 rows whose emitted text equals 5fcb401b's keep that timing (null by construction); the 14 changed rows move 1.288 → 1.280. The pre-review 0.965 / 0.934 / 1.048 were run-to-run noise on unchanged programs.
-
-The integrated fixes on the hardware (competitor legs first on each box, then the Mapal legs on `f1d3a04f`; no Mapal
-value failure on any part): the 4090's fp8 rows load and pass (PTX 8.1 for sm_89); tf32x3 split tiles 1.44–1.70× the
-FFMA tile on the A100's GEMM-heavy rows (A100 f32 1.104 → 0.953, MLP 1.537 → 1.263, fan / loops 1.494 → 1.019, 20
-losses closed); the bf16-weight prefills 1.95–2.42× faster on the A100; the H100's warp-specialized TF32 kernels lose
-nowhere (4 wins / 8 null, TF32 class 2.625 → 1.688: a call's time outside its kernel 120–270 → 2–15 µs); the streamed
-attention wins at long rows on the HBM parts too (prefill T8192 against Liger: A100 3.15 → 1.59, H100 3.35 → 1.28).
-New losers: `streamk-epi` on the H100 (`epi_4096` / `loop_4096` 0.82 / 0.835: a 3.9-wave grid's 3 % tail against the
-walk's cost), the A100's split tile just under one wave (`pj_m128_n6144_k4096` 0.74); the A100 box ran the same kernels
-1.25–1.45× slower by process (its TF32 / bf16 columns), the 4090 box ran at 39 % of its clock. Every losing row (up to
-40 a part) has its leader's kernels captured next to Mapal's (nsys, both sides' SASS; `ncu` refused on vast).
-
-The confirmation round (every leg re-timed on each box; 7 fp8-weight decode rows added, no fp8 leg exists): the B1
-decode's split launches (H100 0.326 → 0.110 ms a step, 0.57× torch-compile-cg), the bf16 KV cache now beats the f32
-cache on the HBM parts too (A100 / H100 1.40 / 1.56 → 0.82 / 0.85 of its twin's time), `vec-spread`, `kmajor-b`,
-`stream-mma`, `round-store` and `warm-zero` win where their rules take them, and peak memory is below torch on all 22
-layer rows of every rented part (the prefills 0.33–0.41×). Refuted on the hardware: tf32x3 split tiles on the A100
-(0.56–0.79× the FFMA tile: register-staged panels), the H100's warp-specialized TF32 kernels (faster per kernel, but
-120–270 µs a call outside it), the streamed attention at long rows on the A100 / H100 (0.43–0.75× its split form);
-the fp8 rows do not load on the 4090 (PTX ISA 7.8 for an sm_89 instruction that needs 8.1).
-
-Fixed since, on one branch ([confirmation-fixes merge](benches/results/evidence/local-rtx-5080/integration.md#confirmation-fixes-merge);
-single-session A/Bs on rented boxes, the rented columns move at the next round): the PTX ISA as a capability (the 4090's
-55 fp8 modules assemble), tf32x3 tiles at their issue (A100 1.43–1.54× the FFMA tile on tensor-cores-2's kernels, 11 /
-12 programs; the merge runs 13 A100 programs' 2048-row tiles whole, timed whole only for 2048³), bf16 weights on the bf16 warp
-product (A100 / H100 PCIe prefills 1.69–2.67×), the TMA kernel's first launch off the clock (H100 `wgmma-ws` 11 / 12
-wins), the A100's streamed attention (0.94 → 0.30 ms at 2048 × 128; timing only, no evidence pass). RTX 5080 at the
-merge, all 120 rows: **0.978** (30 / 39 / 51) — the 104 rows whose text equals 5fcb401b's held at that timing (null
-by construction); the merge's 14 changed rows 1.288 → 1.280.
-
-The RTX 5080's losses against the leaders' own kernels ([gaps-disasm](benches/results/evidence/local-rtx-5080/gaps-disasm.md):
-51 rows, 14 causes) and three fix steps on one branch ([gap-fixes merge](benches/results/evidence/local-rtx-5080/integration.md#gap-fixes-merge)):
-the host path out of the timed call (zero kernel, picks resolved at load), priced atomic splits, the raster gate on
-`b` re-reads, the in-flight ring, evict-first read-once operands, shuffle trees, iota laws, swizzled k-major copies —
-and every competitor leg now timed as a Mapal program times itself (host clock around the call and its synchronize;
-chain_bench's legs and the GEMM cells' reader joined in review).
-RTX 5080, all 120 rows: 0.978 (30 / 39 / 51) → 0.880 (47 / 42 / 31) → **0.878 (46 / 44 / 30)** after review; Mapal
-alone against the old event-bracket legs 0.928. The rented columns above still carry event-bracket legs.
-
-On the final code the lsm rows split on every rented part (9.9–13.8× → 0.96–1.69× torch-compile-cg) and the 4090 /
-3090 decode chains form (0.41 / 0.75× the hand-written KV-cache decode); a GEMV epilogue site left unsplit makes B1
-decode 1.2–4.3× slower on the 3090 / A100 / H100 (without those six rows the 86-row geomeans are 0.996 / 1.145 /
-1.074 / 1.179). The bf16 rows trail torch bf16 most on the A100 / H100 (`mma.sync` tiles, no `wgmma`). Since: the
-epilogue site's planned split launches on every part, the bf16 cache's scores kernel issues 16-byte loads (RTX 5080
-bf16 decode 1.05–1.29× faster), `vec-cells` reads the part's DRAM share an SM against its grid's spread — replayed
-against that round's arms, rented parts not re-timed ([regressions](benches/results/evidence/local-rtx-5080/regressions.md)). Integrated
-with f32 tensor cores, Hopper wgmma / TMA and fp8 storage, the RTX 5080 column is 1.065 over the 120 rows (was 1.076;
-[integration](benches/results/evidence/local-rtx-5080/integration.md)). With the sweeps (attention inside the KV-head-group loop streamed:
-8192-token prefill 89.5 → 47.9 ms, 0.90× Liger, peak memory 0.41× torch; f32 activations read only by bf16 products
-stored rounded: bf16 projections 1.02–1.22× faster, m128 × 28672 1.04× slower) it is 1.021 (28 / 31 / 61), the same session's legs
-([integration, sweep merge](benches/results/evidence/local-rtx-5080/integration.md#sweep-merge)). With the second sweeps
-(the streamed attention kernel on `mma.sync`: bf16 prefill 3.77 → 2.64 ms; the decode keys copied along their rows:
-B32 × 8192 bf16 decode 2.43 → 1.66 ms a step; the driver's memset path warmed before the clock: m1 / m16 GEMVs
-0.81–0.84×; an under-filled site's stream-K priced by the part's rates; epilogue groups keep stream-K through a
-ticket: 2048 MLP / fan rows 0.90–0.95×) it is **0.973** (30 / 38 / 52)
-([integration, second sweep merge](benches/results/evidence/local-rtx-5080/integration.md#second-sweep-merge)).
-
-Mapal time / the best of cuBLAS, cuBLASLt, CUTLASS, PyTorch eager and `torch.compile` (`_tf32` rows: torch with TF32 on);
-below 1 = Mapal faster. Values pass on every program and arch. 61 of 132 cells at or below 1.0. † = carried from an
-earlier sweep (emission identical); – = not timed on that part (no library leg, or a new program whose emission is
-unchanged there) ([end check, gaps and causes](docs/performance/evidence/site-geometry.md);
-[earlier](docs/performance/evidence/recurrence-precision.md)).
-
-| workload | RTX 4090 | RTX 5090 | H100 PCIe | RTX 3090 |
-| --- | ---: | ---: | ---: | ---: |
-| decode_1024_256 | 1.01 | **0.82** | 1.51 | **1.00** |
-| convmc_8_64_56_3_tf32 | 1.91 | 1.44 | 2.62 | 1.53 |
-| indep_512 | 2.18 | 2.18 | – | – |
-| mlp_512 | 2.10 | 1.58 | – | – |
-| pj_m16_n18432_k7168 | 1.08 | – | 1.86 | – |
-| pj_m1_n18432_k7168 | 1.01 | **0.93** | 1.21 | – |
-| pj_m1_n2048_k7168 | **0.42** | **0.77** | 1.40 | – |
-| attn_1024_64 | 2.09 | **0.82** | 2.00 † | 1.77 † |
-| mlp2_2048_tf32 † | 1.16 | 1.15 | 1.87 | 1.17 |
-| mlp_2048_tf32 † | 1.06 | 1.16 | 1.75 | 1.40 |
-| convmc_8_64_56_3 | 1.38 | **0.89** | 1.18 | 1.43 |
-| loopmm_1024_8 † | 1.31 | 1.25 | 1.12 | 1.62 |
-| pj_m16_n2048_k7168 | **0.69** | 1.30 | 1.58 | 1.56 † |
-| rt_mlp2_1024 † | 1.14 | 1.20 | 1.45 | **0.99** |
-| mlp2_2048 † | 1.01 | 1.12 | 1.39 | 1.03 |
-| indep_2048 † | **0.99** | 1.08 | 1.35 | 1.09 |
-| diamond_2048 † | **0.98** | 1.11 | 1.30 | 1.01 |
-| smlp_4096_256_1024 † | 1.09 | 1.17 | 1.19 | 1.29 |
-| fanout_2048 † | **0.97** | 1.08 | 1.23 | 1.02 |
-| mlp_2048 † | **0.97** | 1.09 | 1.22 | 1.04 |
-| rowsum_2048 † | **0.93** | 1.08 | 1.21 | 1.11 |
-| twin_2048 † | **0.95** | 1.05 | 1.21 | 1.01 |
-| rt_mlp2_2048 † | **0.75** | **1.00** | 1.17 | **0.88** |
-| softmax_rows_4096 † | 1.03 | 1.09 | **0.97** | **0.96** |
-| rowsum_4096 † | **0.99** | 1.07 | **0.96** | **0.96** |
-| epi_4096 † | **1.00** | 1.06 | **0.97** | **0.88** |
-| ew_4096 † | **0.46** | **0.45** | 1.01 | **0.61** |
-| loop_4096 † | **0.95** | **0.97** | **0.97** | **0.96** |
-| firew_rowsum_2048x2048_16 † | **0.66** | **0.55** | **0.57** | **0.72** |
-| conv_2048_5 † | **0.63** | **0.45** | **0.50** | **0.68** |
-| fir_4194304_16 † | **0.61** | **0.51** | **0.56** | **0.63** |
-| causal_1024_256 | **0.18** | **0.26** | **0.25** | **0.14** |
-| prefill_1024_512_256 | **0.18** | **0.22** | **0.26** | **0.15** |
-| ewconvew_2048_5 † | **0.53** | **0.51** | **0.51** | **0.53** |
-| gen_1024_512_256 | **0.17** | **0.24** | **0.25** | **0.15** |
-
-### Cost-model plans (plan-cost), November 2026 — measured, shipped OFF
-
-Mapal / best other, rules → cost model, on the November boxes; the cost model ships OFF on both parts until it
-stops losing elsewhere ([end check](docs/performance/evidence/plan-cost.md)).
-
-| chain | RTX 4090 512 | RTX 5090 512 | RTX 5090 2048 |
-| --- | ---: | ---: | ---: |
-| indep | 1.24 → 1.07 | 1.75 → 1.29 | 1.10 → 1.18 |
-| twin | 1.26 → **0.97** | 1.71 → 1.19 | 1.07 → 1.25 |
-| mlp | 1.17 → 1.07 | 1.33 → 1.15 | 1.09 → 1.20 |
-| mlp2 | 1.37 → 1.24 | 1.86 → 1.77 | 1.10 → 1.20 |
-| fanout | 1.17 → 1.07 | 1.38 → 1.23 | 1.16 → 1.26 |
-| diamond | 1.25 → 1.03 | 1.52 → 1.21 | 1.09 → 1.20 |
-
-| other changed programs, ON / rules | RTX 4090 | RTX 5090 |
+| GPU | Mapal ÷ fastest | programs faster / even / slower |
 | --- | ---: | ---: |
-| geomean (45 / 77 programs) | 1.026 | 1.033 |
-| mm_1x1024x4096 | 2.74 | 3.37 |
-| decode_1024_256 | 1.94 | 1.32 |
+| RTX 5080 | **0.876** | 46 / 44 / 30 |
+| RTX 3090 | **0.920** | 39 / 30 / 51 |
+| A100 | 1.006 | 57 / 11 / 51 |
+| RTX 4090 | **0.911** | 49 / 25 / 46 |
+| H100 | 1.101 | 30 / 8 / 82 |
 
-| plan-cost v2, ON / shipped | RTX 4090 | RTX 5090 |
-| --- | ---: | ---: |
-| box list: geomean (programs), W / L / null | 0.945 (25), 17 / 5 / 3 | 1.033 (47), 9 / 13 / 25 |
-| blind set: geomean (programs), W / L / null | 0.960 (8), 2 / 2 / 4 | **0.788** (19), 10 / 6 / 3 |
-| hold-out picks, 6 folds: terms (no terms) | 74.1 % (71.2 %) | **78.6 %** (58.4 %) |
-| `lat_ns` calibrated: DRAM (L2) | 380 (240) ns | 510 (290) ns |
+**Llama-3.2-1B, the full model**: Mapal ÷ the fastest engine of the same class, prompts 128 / 512 / 2048 (batch 1, 128 generated tokens, medians of 5).
 
-| tile kernel, Mapal / best library (TFLOP/s ratio) | RTX 4090 | RTX 5090 |
-| --- | ---: | ---: |
-| 512³ | 0.88 | 1.00 |
-| 1024³ | 0.79 | 0.79 |
-| 2048³ | **1.06** | 0.89 |
-| 128×1024×1024 | 0.92 | 0.57 |
-| 128×2048×7168 | 0.93 | 0.54 |
-| 16×1024×4096 | 0.92 | 0.62 |
-| 16×18432×7168 | 0.91 | 0.81 |
+| GPU | class | time to first token | decode per token | at 512: Mapal vs the fastest engine |
+| --- | --- | ---: | ---: | --- |
+| RTX 5080 | f32 | **0.62** / **0.62** / **0.53** | **0.55** / **0.58** / **0.58** | 25.4 vs 41.0 ms (vLLM f32); 3.29 vs 5.72 ms / token (gpt-fast f32) |
+| RTX 5080 | bf16 | 1.13 / 1.05 / 1.15 | 1.10 / 1.10 / 1.06 | 14.1 vs 13.5 ms (llama.cpp bf16); 3.29 vs 2.98 ms / token (gpt-fast) |
+| RTX 3090 | f32 | 1.04 / 0.95 / **0.82** | **0.65** / **0.66** / **0.67** | 56.0 vs 58.8 ms (llama.cpp f32); 4.04 vs 6.15 ms / token (gpt-fast f32) |
+| RTX 3090 | bf16 | 1.55 / 1.17 / 1.30 | 1.23 / 1.23 / 1.25 | 23.8 vs 20.4 ms (SGLang); 4.01 vs 3.27 ms / token (gpt-fast) |
+| A100 | f32 | **0.73** / **0.52** / **0.43** | **0.86** / **0.91** / **0.89** | 40.0 vs 76.8 ms (vLLM f32); 3.82 vs 4.21 ms / token (gpt-fast f32) |
+| A100 | bf16 | 1.87 / 1.44 / 2.12 | 1.56 / 1.55 / 1.57 | 16.1 vs 11.1 ms (SGLang); 3.69 vs 2.38 ms / token (gpt-fast) |
+| RTX 4090 | f32 | **0.72** / **0.64** / **0.53** | **0.62** / **0.63** / **0.63** | 20.1 vs 31.6 ms (vLLM f32); 3.47 vs 5.54 ms / token (gpt-fast f32) |
+| RTX 4090 | bf16 | 1.44 / 1.16 / 1.24 | 1.18 / 1.19 / 1.19 | 11.9 vs 10.3 ms (gpt-fast); 3.47 vs 2.93 ms / token (gpt-fast) |
+| H100 | f32 | 1.04 / **0.74** / **0.50** | **0.93** / 0.95 / 0.95 | 21.8 vs 29.6 ms (HF eager f32); 2.06 vs 2.16 ms / token (gpt-fast f32) |
+| H100 | bf16 | 1.30 / 1.88 / 2.37 | 1.49 / 1.56 / 1.51 | 7.60 vs 4.04 ms (gpt-fast); 2.06 vs 1.32 ms / token (gpt-fast) |
 
-### Tile efficiency, November 2026
+Below 1: Mapal faster; bold: faster by more than 5%. Type to type: the **f32 class** is the program as written (f32 activations on the bf16 weights) against gpt-fast, vLLM, llama.cpp and Hugging Face computing in f32 with TF32 off (SGLang has no f32 path and TensorRT-LLM's f32 output is wrong: neither is compared); the **bf16 class** (`fold: bf16 | f32`, bf16 KV cache) against gpt-fast, vLLM, SGLang, TensorRT-LLM, llama.cpp and Hugging Face in bf16. llama.cpp in f16 is another 16-bit format and is not compared.
 
-Mapal / cuBLAS, time, plan-cost emitter → tile-efficiency sweep (`881cb0b`); the k-major A panel ships only where the
-panel streams by `cp.async` ([end check](docs/performance/evidence/tile-efficiency.md)).
+<!-- results-headline:end -->
 
-| shape | RTX 4090 | RTX 5090 | RTX 3090 | H100 PCIe |
-| --- | ---: | ---: | ---: | ---: |
-| 512³ | 1.10 → **0.86** | 1.00 → 1.00 | 2.43 → 2.43 | 1.23 → 1.27 |
-| 1024³ | 1.28 → 1.06 | 1.29 → 1.43 | 1.56 → 3.13 | 1.03 → 1.19 |
-| 2048³ | 0.98 → 1.22 | 1.11 → 1.14 | 1.16 → 1.52 | 1.37 → 1.62 |
-| 128×1024×1024 | 1.11 → **0.64** | 1.87 → 1.87 | 2.07 → 2.07 | 1.58 → 1.52 |
-| 128×2048×7168 | 1.07 → **0.76** | 1.80 → 2.18 | 1.49 → 1.49 | 2.20 → 2.46 |
-| 16×1024×4096 | 1.09 → 1.09 | 1.59 → 1.59 | 2.51 → 1.70 | 1.39 → 1.11 |
-| 16×18432×7168 | 1.10 → 1.09 | 1.25 → 1.25 | 0.99 → 1.02 | 1.38 → 1.43 |
+### The full model
 
-| `kmajor-a`, shipped / OFF (W / L) | RTX 4090 | RTX 5090 | RTX 3090 | H100 PCIe |
-| --- | ---: | ---: | ---: | ---: |
-| cells | **0.82** (5 / 2) | 1.08 (0 / 1) | 0.99 (2 / 2) | 1.02 (3 / 4) |
-| programs | **0.96** (24 / 4) | 1.03 (4 / 28) | 1.14 (2 / 41) | 1.16 (3 / 50) |
-| ships | streamed panels | OFF | OFF | OFF |
+The readable [`examples/llama.mapal`](examples/llama.mapal) on all five GPUs against gpt-fast, vLLM, SGLang,
+TensorRT-LLM, llama.cpp and Hugging Face (eager, and static cache + `torch.compile`), in each precision class. Each
+bar is Mapal's time over the fastest engine of its class on that GPU; the leader is named on the right.
 
-### Three builds
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="benches/results/charts/llm-f32-dark.svg">
+  <img alt="Llama-3.2-1B, f32 class, five GPUs: Mapal's time over the fastest f32 engine's, time to first token and decode at a 512-token prompt" src="benches/results/charts/llm-f32-light.svg">
+</picture>
 
-| build                                        | what you get                                                     |
-| -------------------------------------------- | ---------------------------------------------------------------- |
-| **FMA off** (default)                        | bit-identical to the interpreter, always                         |
-| **FMA on** (`--contract`)                    | lets the hardware fuse multiply and add - faster, last bit moves |
-| **SME** (`--contract --target=apple-m4-sme`) | same as FMA on, plus the matrix unit; needs an Apple M4 or newer |
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="benches/results/charts/llm-bf16-dark.svg">
+  <img alt="Llama-3.2-1B, bf16 class, five GPUs: Mapal's time over the fastest bf16 engine's, time to first token and decode at a 512-token prompt" src="benches/results/charts/llm-bf16-light.svg">
+</picture>
+
+- **f32 class** (the program as written: f32 activations on the bf16 weights): ahead of every f32 engine on decode
+  on all five GPUs (0.55–0.95×) and on time to first token from a 512-token prompt up (0.43–0.95×); at 128 tokens
+  4 % behind on the RTX 3090 and H100. Its generated tokens equal the Hugging Face f32 reference's, 128 of 128, at
+  every prompt length on every GPU. Peak GPU memory 2.7–3.5 GB, against 5.1 GB and more for every f32 engine.
+- **bf16 class** (`fold: bf16 | f32`, bf16 KV cache): behind the fastest bf16 engine on every GPU, closest on the
+  RTX 5080 (1.05–1.15× to the first token, 1.06–1.10× decode) and furthest on the A100 and H100 (up to 2.12× and
+  2.37× to the first token at 2048, 1.49–1.57× decode), where gpt-fast's CUDA-graph decode and the TensorRT-LLM /
+  SGLang prefill are strongest. Its tokens leave the bf16 reference after a near tie, as the bf16 engines' do among
+  themselves (on the RTX 5080, 7 to 89 equal tokens at 512); on the RTX 5080 and A100 they can vary from run to run,
+  because the tensor tile adds partial sums in arrival order. Peak memory 2.7–3.3 GB, level with llama.cpp and HF
+  eager, against 8.8–47 GB for the pooled servers (vLLM, SGLang, TensorRT-LLM).
+- llama.cpp in f16 is another 16-bit format: recorded, compared with neither class. SGLang has no f32 path, and
+  TensorRT-LLM's f32 build gives wrong tokens: neither is in the f32 class.
+
+Every engine at every prompt length, the tokens and the peaks:
+[`full-model.json`](benches/results/evidence/full-model.json); the RTX 5080 with where each side's time goes and
+what is next: [`full-model.md`](benches/results/evidence/local-rtx-5080/full-model.md); the rented GPUs:
+[`cross-arch`](benches/results/evidence/cross-arch/README.md#b8429388--9be9886d-five-gpu-round-bf16-integration-every-competitor-leg-at-the-program-boundary-the-full-model).
+
+### The kernel and layer suite
+
+GEMMs and projections, MLP chains, attention and softmax, LLM layers, convolution and FIR, fan-in / fan-out and
+loops, on every GPU of the round, each program against the fastest of cuBLAS, cuBLASLt, CUTLASS, PyTorch eager and
+`torch.compile` (with and without CUDA graphs), SDPA, FlashAttention-2/3, FlashInfer, hand-written Triton, Liger
+and hand-written CUDA.
+
+Both sides are timed at the program boundary: the device idle, then the host clock around the call, its dispatch
+and launches inside. Against the kernel-event bracket of earlier rounds this moves every GPU 5–11 % in Mapal's
+favour (launch-bound torch legs); on that old bracket the rented GPUs read 1.011 / 1.134 / 0.964 / 1.233 (RTX 3090 /
+A100 / RTX 4090 / H100) against the previous round's 0.997 / 1.185 / 0.954 / 1.204 (`f1d3a04f`). Attention,
+softmax, convolution and elementwise chains lead on every GPU. GEMM cells and projections are the weak family:
+behind on the RTX 3090, A100 and H100 (1.05 / 1.16 / 1.37), and the TF32 rows (mostly GEMMs, against cuBLAS) and
+the bf16-weight rows (LLM layers, against `torch.compile`) trail on every GPU (1.15–1.72).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="benches/results/charts/suite-gpus-dark.svg">
+  <img alt="Geomean of Mapal time over the fastest same-precision competitor's time, per GPU" src="benches/results/charts/suite-gpus-light.svg">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="benches/results/charts/suite-groups-dark.svg">
+  <img alt="The same geomean by workload family and by precision class, per GPU" src="benches/results/charts/suite-groups-light.svg">
+</picture>
+
+Every row, its legs and its leader: [`matrix.md`](benches/results/evidence/matrix.md). The rented GPUs, their
+boxes and rounds: [`cross-arch`](benches/results/evidence/cross-arch/README.md). Earlier results (CPU against
+NumPy and OpenBLAS, the October four-GPU table, plan-cost, tile efficiency):
+[`docs/performance/earlier-readme-results.md`](docs/performance/earlier-readme-results.md). Method and history:
+[`docs/performance/`](docs/performance/).
+
+The charts and the table above are generated. To refresh them after a run, update
+[`matrix.json`](benches/results/evidence/matrix.json) (`benches/local/matrix.py`) and
+[`full-model.json`](benches/results/evidence/full-model.json), then run
+`python3 benches/results/charts/make_charts.py`.
+
+---
+
+## Roadmap
+
+1. **An AMD backend.** The same graph and facts on a second GPU vendor; its compute units, wavefront width, LDS
+   and matrix instructions are one more property set.
+2. **A PyTorch importer**, to bring existing models into Mapal.
+3. **Then the ecosystem around the language:** development → deployment → verification → synthesis.
+
+Done so far, and how each step turned out, including what was tried and did not work:
+[`docs/sessions/`](docs/sessions/).
 
 ---
 
 ## Status
 
-|                        |                                                                                                                               |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Language core          | working - functions, pipelines, parallel fanout, guards, loops, `map`/`fold`/`zip`/`enumerate`, tuples, fixed arrays, `print` |
-| Interpreter            | working - _defines_ the language; every backend is tested against it                                                          |
-| CPU backend (LLVM)     | working - automatic threading, vectorization, cache blocking                                                                  |
-| GPU backend (CUDA)     | working - value gates pass on RTX 4090, RTX 5090, H100 PCIe and RTX 3090, October 2026. No `time` builtin                     |
-| FPGA backend (Verilog) | not started                                                                                                                   |
-| Command-line tool      | **not built** - `mapal` prints "not yet implemented" and exits 1                                                              |
-| Tests                  | 1,047; 161 are CUDA's and skip without `nvcc`. Green                                                                          |
-| CI                     | `cargo fmt` + full suite on Linux and macOS, per push. Cannot pass vacuously - a skipped LLVM differential fails the run      |
+|                     |                                                                                                                                                                 |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Language core       | working: pipelines, top-level bindings, size-generic functions and types, guards, loops, `map` / `fold` / `zip` / `enumerate`, tuples, structs, fixed arrays |
+| Numbers             | `i32`, `i64`, `u8`, `f32`, `f64`; `bf16` / `f16` storage; `exp`, `sqrt`, `sin`, `cos`; reduced-precision products opt-in (`: tf32 \| f32`, `: bf16 \| f32`)   |
+| Effects             | `print` / `println`, `time`, `read`                                                                                                                             |
+| Interpreter         | working: _defines_ the language; every backend is tested against it                                                                                            |
+| CPU backend (LLVM)  | working: threading, vectorization, cache blocking                                                                                                               |
+| GPU backend (CUDA)  | working: value gates pass on the RTX 5080, RTX 3090, A100, RTX 4090 and H100 ([Current results](#current-results)); tensor cores, `wgmma` / TMA where the part has them |
+| FPGA backend        | not started                                                                                                                                                     |
+| Command-line tool   | `mapal build`, `run`, `test`, `dump-ir`, `fmt`                                                                                                                  |
+| Tests               | about 1,700 across the workspace; the GPU tests skip without a CUDA toolchain                                                                                   |
+| CI                  | `cargo fmt` + the full suite on Linux and macOS, per push; a skipped LLVM differential fails the run                                                            |
 
-**"Byte-identical" means:** every compiled program is checked to print exactly what the
-interpreter prints - 10 examples plus 320 generated programs, at two optimization levels, 1,280
-comparisons on every run. Changing the thread count does not change the answer.
+**Checked against the interpreter.** On the default face, compiled values are checked against the interpreter within
+the stated bound, in whatever order the compiler chose. In the development modes (the exact faces,
+[ADR-0049](docs/decisions/ADR-0049-correctness-is-the-flow-and-the-bound.md)) every compiled program is checked to
+print exactly what the interpreter prints, for the examples and for programs from the random generator, at any
+thread count and on any device: the mode for testing and debugging.
 
-Per-component state and test counts: [`docs/STATUS.md`](docs/STATUS.md).
+**Not in the language yet:** recursion, sum types, pattern matching, strings beyond printing and file paths,
+closures, dynamic arrays, type-generic functions, modules.
 
-Research compiler. No packaged release.
-
----
-
-## Scope
-
-Kernels are the proving ground: byte-identical output is easiest to check against code everyone
-already has a fast version of.
-
-**Not in the language yet:** recursion, sum types, pattern matching, strings beyond printing,
-closures, dynamic arrays, modules. Exactly two effects. General-purpose in shape, not yet in
-surface.
-
-**Where it is going:** one program whose parts run on several processors at once - CPU and GPU
-together - with the data movement between them handled by the compiler rather than by hand. Same
-answer, byte for byte, however the work gets split.
+Per-component state: [`docs/STATUS.md`](docs/STATUS.md). Research compiler; no packaged release.
 
 ---
 
 ## Trying it
 
-Needs a recent Rust toolchain and `clang`.
+Needs a recent Rust toolchain and `clang`; the GPU backend needs an NVIDIA GPU and CUDA.
 
 ```sh
 # the test suite = the correctness argument
 cargo test --workspace --release
 
-# run a program on the interpreter
-cargo run --release -p mapal-interp --example run -- examples/pipeline.mapal
+# the CLI and the runtime it links against
+cargo build --release -p mapal-cli -p mapal-rt
+target/release/mapal run --interp examples/pipeline.mapal   # the interpreter, the reference
+target/release/mapal run examples/fir.mapal                 # compiled for this machine
+target/release/mapal test examples/fir.mapal                # compiled vs the interpreter, byte for byte
 
-# compile a program to a native binary
-cargo build --release -p mapal-rt          # the runtime it links against
-cargo run --release -p mapal-backend-llvm --example emit -- \
-    examples/fir.mapal - --rewrite > fir.ll
-clang -O2 fir.ll target/release/libmapal_rt.a -o fir && ./fir
+# the Llama example on a CUDA GPU (weights exported outside the repository)
+python3 benches/model/export_weights.py
+MAPAL_DATA_DIR=~/.cache/mapal/models/llama-3.2-1b-instruct/mapal \
+    target/release/mapal run --target=native-gpu examples/llama.mapal
 ```
 
-Start in [`examples/`](examples/) - `pipeline.mapal` for syntax, `sepia.mapal` for most of the
-language, `fir.mapal` for a loop.
+Start in [`examples/`](examples/): `pipeline.mapal` for syntax, `sepia.mapal` for most of the language,
+`fir.mapal` for a loop, `llama.mapal` for a whole model.
 
 ### Formatting
 
 ```sh
-cargo build -p mapal-cli
-target/debug/mapal fmt path/to/program.mapal           # format in place
-target/debug/mapal fmt --check path/to/program.mapal   # check without writing
-target/debug/mapal fmt --stdout path/to/program.mapal  # preview without writing
+target/release/mapal fmt path/to/program.mapal           # format in place
+target/release/mapal fmt --check path/to/program.mapal   # check without writing
+target/release/mapal fmt --stdout path/to/program.mapal  # preview without writing
 ```
 
-The formatter uses four spaces and expands brace bodies onto multiple lines,
-preserving comments and literal spelling. `mapal fmt -` reads stdin and writes
-stdout, so editors and generators share the same style. Invalid syntax is reported
-without replacing the source. LLVM and GPU tools are not needed for formatting.
+The formatter uses four spaces and expands brace bodies onto multiple lines, preserving comments and literal
+spelling. `mapal fmt -` reads stdin and writes stdout, so editors and generators share the same style. Invalid
+syntax is reported without replacing the source. LLVM and GPU tools are not needed for formatting.
 
 ### Editor support
 
-Both editors get highlighting, formatting through `mapal fmt`, and a file icon. Neither is published to a registry, so both load
-from disk.
+Both editors get highlighting, formatting through `mapal fmt`, and a file icon. Neither is published to a
+registry, so both load from disk.
 
 |                 | Neovim                                     | VS Code                                      |
 | --------------- | ------------------------------------------ | -------------------------------------------- |
 | Highlighting    | Vimscript syntax file                      | TextMate grammar                             |
 | File icon       | font glyph                                 | the real SVG logo                            |
-| Formatting      | `:MapalFormat` or `gggqG`                   | **Format Document**                          |
+| Formatting      | `:MapalFormat` or `gggqG`                  | **Format Document**                          |
 | Binding vs call | resolved by scanning for `fn` declarations | lexical only - `-> name;` reads as a binding |
 | Details         | [`editors/nvim/`](editors/nvim/)           | [`editors/vscode/`](editors/vscode/)         |
 
@@ -464,42 +544,26 @@ code --install-extension editors/vscode/mapal-lang-0.2.0.vsix   # or `cursor`
 ```
 
 Then restart. A `.mapal` file should show **Mapal** in the status bar. Copying the folder into
-`~/.vscode/extensions` does _not_ work: VS Code reads `extensions.json` as its registry and
-ignores unregistered directories silently.
+`~/.vscode/extensions` does _not_ work: VS Code reads `extensions.json` as its registry and ignores unregistered
+directories silently.
 
-For formatting, install the CLI with `cargo install --path crates/mapal-cli --locked`,
-or point the plugins at your built `target/debug/mapal`: set `vim.g.mapal_executable`
-in Neovim or `mapal.executablePath` in VS Code. Formatting uses unsaved buffer text
-and supports format-on-save through the editor's configuration; see the plugin
-READMEs for setup.
+For formatting, install the CLI with `cargo install --path crates/mapal-cli --locked`, or point the plugins at
+your built `target/release/mapal`: set `vim.g.mapal_executable` in Neovim or `mapal.executablePath` in VS Code.
+Formatting uses unsaved buffer text and supports format-on-save through the editor's configuration; see the
+plugin READMEs for setup.
 
-**The logo as a terminal glyph.** The Rust and C++ marks in a file tree are font glyphs, not
-images - Nerd Fonts ships those brand logos as characters. So Mapal's mark ships as a
-single-glyph font, [`assets/font/MapalIcons.ttf`](assets/font/): install it and add it as a
-terminal _fallback_ font, rather than us patching and redistributing someone else's Nerd Font.
-Then:
+**The logo as a terminal glyph.** The Rust and C++ marks in a file tree are font glyphs, not images - Nerd Fonts
+ships those brand logos as characters. So Mapal's mark ships as a single-glyph font,
+[`assets/font/MapalIcons.ttf`](assets/font/): install it and add it as a terminal _fallback_ font, rather than us
+patching and redistributing someone else's Nerd Font. Then:
 
 ```lua
 local icon = require("mapal.icon")
 icon.setup({ glyph = icon.logo })     -- the real mark at U+F8F0
 ```
 
-Without it, the closest glyph the Nerd Font already has is used. Neither editor has an LSP yet,
-so neither resolves names the way the compiler does (ADR-0008).
-
----
-
-## What is next
-
-1. **Close the single-threaded gap**, where NumPy is still ~2× ahead. Threaded is solved; this is a
-   different bottleneck ([what we measured](docs/performance/cpu/memory/operand-residency-and-thermal-effects.md)).
-2. **Pick the thread count from the program** instead of defaulting to every core
-   ([plan](docs/components/backend-llvm/plans/plan-s32-deduced-scheduling.md)).
-3. **Intel AMX**, so matrix units are not an Apple-only story.
-4. **GPUs in earnest**, then running one program across several processors at once.
-
-Done so far, and how each turned out, is in
-[`docs/sessions/`](docs/sessions/) - including the things that were tried and did not work.
+Without it, the closest glyph the Nerd Font already has is used. Neither editor has an LSP yet, so neither
+resolves names the way the compiler does (ADR-0008).
 
 ---
 
@@ -508,25 +572,26 @@ Done so far, and how each turned out, is in
 Everything is written down, including what turned out wrong:
 
 - [`docs/STATUS.md`](docs/STATUS.md) - what is built, with test counts
-- [`docs/decisions/`](docs/decisions/README.md) - every significant decision and the
-  alternatives it rejected, indexed (ADR = Architecture Decision Record)
-- [`docs/performance/`](docs/performance/) - every benchmark: machine, method, failures
+- [`docs/decisions/`](docs/decisions/README.md) - every significant decision and the alternatives it rejected,
+  indexed (ADR = Architecture Decision Record)
+- [`docs/architecture/`](docs/architecture/) - how the compiler derives what it does
+- [`docs/performance/`](docs/performance/) and [`benches/results/`](benches/results/README.md) - every benchmark:
+  machine, method, evidence, failures
 - [`docs/sessions/`](docs/sessions/) - dated log of every work session, mistakes included
 
-**Contributing:** [`CONTRIBUTING.md`](CONTRIBUTING.md) - the model-first workflow, the
-measurement rules, and the [open ADRs](docs/decisions/README.md) anyone can pick up (dynamic
-arrays, generics, sum types, an external-backend SDK, co-execution, `scan`). Recursion, modules
-and closures are not in the language yet and have no decision record - writing one is the
-contribution that unblocks the code. Forks welcome. One house rule: a change arrives with the evidence of what it
-did, and names the published numbers it moves.
+**Contributing:** [`CONTRIBUTING.md`](CONTRIBUTING.md) - the model-first workflow, the measurement rules, and the
+[open ADRs](docs/decisions/README.md) anyone can pick up (dynamic arrays, type generics, sum types, an
+external-backend SDK, co-execution, `scan`). Recursion, modules and closures are not in the language yet and have
+no decision record - writing one is the contribution that unblocks the code. Forks welcome. One house rule: a
+change arrives with the evidence of what it did, and names the published numbers it moves.
 
 ---
 
 ## License
 
-[Apache License 2.0 with the LLVM exception](LICENSE) - the license LLVM and Swift use, for the
-same reason. Apache-2.0 carries an explicit patent grant; the exception keeps the runtime Mapal
-links into your binaries from imposing attribution requirements on _your_ program's output.
+[Apache License 2.0 with the LLVM exception](LICENSE) - the license LLVM and Swift use, for the same reason.
+Apache-2.0 carries an explicit patent grant; the exception keeps the runtime Mapal links into your binaries from
+imposing attribution requirements on _your_ program's output.
 
 <!----------------------------------{ Badges }---------------------------------->
 
@@ -539,7 +604,7 @@ links into your binaries from imposing attribution requirements on _your_ progra
 [Badge Language]: https://img.shields.io/github/languages/top/LessComplexity/mapal
 [Badge Pull Requests]: https://img.shields.io/github/issues-pr/LessComplexity/mapal
 [Badge Issues]: https://img.shields.io/github/issues/LessComplexity/mapal
-[Badge Determinism]: https://img.shields.io/badge/output-byte--identical-14b8a6
+[Badge Numerics]: https://img.shields.io/badge/numerics-bounded-14b8a6
 
 <!-----------------------------------{ Links }----------------------------------->
 
