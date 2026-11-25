@@ -778,3 +778,111 @@ lock, the merge's protocol).
   largest GEMV / TF32 losses; with the zero back in the clock the C1 GEMV gain is the host path's alone.
 - Rented columns: every row moved by the three steps and these fixes re-times at the next round, with the H harness.
 - No tailored fixes (`docs/tailored-fixes.md` unchanged).
+
+## Model-ready merge
+
+Branch `local-rtx-5080`: `3a586696` (gap-fixes merge) + `--no-ff` merges of `model/language` (`26730a86`, merge
+`de12816c`), `model/structure` (`1f682344`, `fa147d70`) and `model/placement` (`760be05c`, `d9244769`), then the three
+branches' interactions (`99d0e1f4`), `lanes-unroll` (`72f85f8d`), the launch-key fix (`7aa1be7f`) and this evidence. The steps
+make the readable Llama-3.2-1B a Mapal program the compiler takes as written; their evidence: `model-ready-language.md`
+(ADR-0045–0048, `static_plan`), `model-ready-structure.md`, `model-ready-placement.md`. Local only, $0. Raw:
+`.claude/raw-evidence/local-rtx-5080/model-ready-integrate/` (`tests.log`, `testlogs/`, `counters.log`, `changed/`
+(suite bundle, `results/`), `emit2/` + `emitcmp2.tsv`, `gpu/` (the model programs, `abba-*.txt`, SASS),
+`trial-*` (the same merges first made on `d945c641` while the gap-fixes step finished), `scripts/emitcmp.py`).
+
+| merge | conflicts | resolution |
+| --- | --- | --- |
+| language | `evidence.py`, the RTX 5080 calibration line, `GpuRungs::NAMES`, `DeviceCost::NAMES` | unions (149 rungs, 50 cost names; `split_cell_ps` beside the math rates) |
+| structure | `algo.rs` (`path_plan`), `emit.rs` (call head), `typing.rs`, `lib.rs` (module decls), `drive.rs` (fn epilogue) | structure's host-value cone at its new place with ADR-0045's read kept a task; a generic callee's instance with the `() -> f` Unit witness; structure's `pending_blocks` subsume language's `pending_maps` (`top_chain` kept); both decls; both epilogue lines |
+| placement | `lib.rs` (rungs), `replay.rs`, `testgen/mod.rs` | unions: 154 rungs; ADR-0048's embedded values beside the flattened loop state; both generators appended |
+
+### Interactions (fixed)
+
+- **A file read after a print was no task** (`99d0e1f4`). Structure's host-value cone takes every morphism reading a
+  host value into the spine; a read takes the token a print wrote, so ADR-0045's read task disappeared
+  (`path_plan_makes_the_read_a_task` failed; 3 of 16 generated read chains with a print before a read hung natively:
+  the host and the worker each waiting). The cone now skips a read and its array's `Proj` (their readers depend on the
+  task by dataflow edges); a `Proj` of a token alone needs no host-read wait (no bytes; the next checkpoint waits). The
+  generated read chains (16 programs, 43 reads) pass natively and on the emulator.
+- **The scout's local fixes, carried by placement (`b23750db`), dropped**: the pre-loop wait (structure's host-read
+  waits order the entry state's host-built edges) and the inline-a-Return-writing-Call branch (dead behind ADR-0047's
+  `Call` arm); the fused-`Map` branch stays. `read::encode` names structure's `Value::Unit` unreadable.
+- **gapfix `iota-law` × placement `stride-lanes`: the decode step 1.46× slower** (`72f85f8d`). The merge's readable
+  Llama decoded in 215 ms (31 steps) against placement's 147 ms. `--gpu-off=iota-law` gave 144 ms; per kernel
+  (`MAPAL_GPU_TRACE`) the 16 layers' 8192 × 2048 bf16 projections took 0.155 / 0.111 ms against 0.094 / 0.064. SASS
+  (`ptxas -O3`, sm_120): with the index loaded `ptxas` unrolled the lane's loop 16 trips (48 LDG, 16 FFMA); with the
+  index computed (`trunc` of the induction variable) it left it rolled (4 LDG, 2 FFMA): one weight load in flight a
+  warp. LLVM left the loop rolled in both. The stream rules price a thread at `NAIVE_UNROLL` loads in flight; the lane
+  loop now carries that count (`llvm.loop.unroll.count`, a loop id each from `device_module`) where a lane walks at
+  least `NAIVE_UNROLL` steps — 26 lane kernels, the projections' at 32 LDG / 16 FFMA (`gpu/timed.sass`; off: 4 / 2).
+  Unroll 4 / 8 / 16 measured 118 / 114 / 113.5 ms (PTX swapped into one binary). Off: `--gpu-off=lanes-unroll`.
+- **Launch keys** (`--gpu-off` field names in a tile launch's key): ADR-0046's `math-hw` and `lanes-unroll` are no
+  tile kernel's text; both are keyed out, so every tile candidate keeps 3a586696's id (tuned picks and wisdom).
+
+### Merged emission (the 35 suite programs, RTX 5080, against `3a586696`)
+
+Host and device IR less `; mapal.` lines (`emitcmp.py`): **31 byte-identical**; `ew_4096` one host launch id
+(structure's cell-kernel ids carry their law slots); `causal_1024_256`, `prefill_1024_512_256`, `gen_1024_512_256`
+their two lane loops' `lanes-unroll` metadata — nothing else. The three branches change no suite program's code: the
+language's compile-time evaluation embeds nothing past 1 KiB, structure's out-pointer / arena paths are named
+functions', placement's rungs reach no suite program. The runtime moved (`RT_PATHS`: the read seam and the frame
+arena, additions only, called by no suite program), so `suite_diff` times every row.
+
+### The readable Llama (RTX 5080, synthetic weights, prompt 512, 31 decode steps)
+
+| program | before (each branch alone) | merge |
+| --- | --- | --- |
+| structure's `llama_tiny_readable.mapal` (per-layer structs, `() -> f`, layer calls) | GPU tokens = interpreter = PyTorch | same tokens `236 236 236 236 49 49 49 133`; native `mapal test --exact` PASS |
+| language's `llama_tiny_tops.mapal` (top-level sizes) | native build segfaulted (host ordering) | native `mapal test --exact` PASS |
+| the scout's real-size text (`llama_timed.mapal`), ABBA × 3, CPUs 0–7 | placement: decode 146.4–146.8 ms (4.73 ms / token), prefill 156.3–159.3 ms | **decode 112.4–113.0 ms (3.63 ms / token)**, prefill 147.2–151.9 ms; tokens identical |
+| same, OFF arms | — | `lanes-unroll` off 214.6–215.1; `iota-law` off 122.0–122.3 |
+| language's real-size top-level text (`llama_real_tops.mapal`) | 22.0 GB to the device, 2160 launches, 22.6–24.5 s wall | 1.20 GB, 9120 launches (traced), 3.6 s wall; the 32 tokens identical |
+
+Against the competitors' RTX 5080 smoke (decode 3.00–4.50 ms / token at prompt 512): 3.63 ms is inside the range,
+not below its best.
+
+### Tests
+
+- **Workspace** (`test_par.py --bins 4`, `RUST_TEST_THREADS=16 MAPAL_PAR=4 MAPAL_TESTGEN_JOBS=4`, CPUs 16–31 / 48–63):
+  151 binaries, **1686 passed, 0 failed** (wall 1651 s). The trial merge's run (before the interaction fixes) failed
+  `read` (generated chains hung) and `mapal-rewrite read` (the read task).
+- **Counters** (`counters.log`): placement 24 generated decode programs — device carries 24, trip uploads 0 in 24,
+  range chains 13, lane cells 24, **unrolled lane loops 6** (hidden 256 added to the generator: 8 steps a lane), OFF arms
+  8 (lanes-unroll among them: no unroll metadata, values equal); structure 12 programs, out-pointers 24, element views
+  24, exit-arm prints 8; read chains 16 programs, 43 reads, 15 with device sites. Every counter > 0.
+- After the launch-key fix: backend lib, `site_choice`, `site_geometry`, `tile_sites_pin`, `epilogue`, `devmap`,
+  `boundary`, `gpu_host`, `golden_ll`, `large_gemm`, `hardware_properties`, `plan_cost`, `resident`, `placement`,
+  `structure`, `math` — 16 binaries, 259 passed, 0 failed.
+
+### Time (the suite bundle, `gpu_changed.sh --base 3a586696` + the safety net, bench lock, CPUs 0–7)
+
+Every suite program and both cells timed (the runtime moved); the on-base arm built where the text differs (3
+programs). `LADDER=1`, `PROBE_REPS=5`, competitor legs off (`TORCH=0 COMP=0`: no leg changes with this merge). Value
+gates: 35 / 35 pass. Noise floor |null / on − 1| = 0.039.
+
+| program | on (merge) ms | on-base ms | on-base / on | SASS |
+| --- | ---: | ---: | ---: | --- |
+| causal_1024_256 | 12.723 | 13.478 | **1.059** | the two lane loops unrolled 8 |
+| gen_1024_512_256 | 6.458 | 6.801 | **1.053** | same |
+| prefill_1024_512_256 | 6.472 | 6.789 | **1.049** | same |
+
+The 32 programs with equal text are null by construction. Safety net: every program ran, value-gated, on the merged
+runtime; against the base's own last full run (gap-fixes `resS`, same box, 09:31, before `9abeb446` / `3a586696`)
+the geomean is 1.019; past 5 % only `causal` / `gen` (0.946 / 0.941, lanes-unroll) and three host-bound programs
+whose text is 3a586696's byte for byte (`indep_512` 0.038 → 0.045 ms, `pj_m16_n2048_k7168` 0.033 → 0.037,
+`pj_m1_n2048_k7168` 0.022 → 0.028): their base side was not re-timed after `resS` (`9abeb446` put the GEMV's hoisted
+zero back behind the clock) — open, the next full run's at both heads. Cells:
+16x2048x7168 0.0817 ms (0.98 of the best library leg), 4096³ 3.829 ms (1.04), text unchanged.
+
+### Open
+
+- **lanes-unroll's count is `NAIVE_UNROLL` on every part** (the depth the stream rules already price). A count from
+  properties — `stream_fly_per_sm` over the resident warps × the DRAM bytes a lane trip streams (`residence_plan`) —
+  is the generic form; the 5080's 4 / 8 / 16 plateau (118 / 114 / 113.5 ms) does not separate them. The device row
+  fold (`rowfold_kernel_text`'s lanes) still relies on `ptxas`'s unroll: not audited.
+- The steps' open items stand: RMSNorm's sum of squares and the argmax on the host (33 syncs a step), 261 launches a
+  decode step, K / V projections at ~130 GB/s, the prefill's tuple exit (44 MB up a layer), nested loops (L1504: the
+  real text keeps one decode line a layer), struct captures, an effectful fn's `ret.k` exit packing in the loop,
+  `path_plan` task cycles (sequential fallback), the GPU arena's earlier wrong result (root cause not isolated),
+  embedding past 1 KiB, fold-seed / array-literal widths, the real-size readable (struct) form not run.
+- No tailored fixes (`docs/tailored-fixes.md` unchanged).
