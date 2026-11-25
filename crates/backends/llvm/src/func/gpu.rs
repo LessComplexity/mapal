@@ -2661,6 +2661,7 @@ fn launch_key(l: &Launch) -> String {
         .replace(", trip_cells: false", "")
         .replace(", bytes_place: false", "")
         .replace(", once_bytes: false", "")
+        .replace(", cand_made: false", "")
         .replace(", once_range: false", "")
         .replace(", range_chain: false", "")
         .replace(", stride_lanes: false", "")

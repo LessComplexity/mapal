@@ -2311,6 +2311,43 @@ impl<'a> FnEmit<'a> {
                     cells.insert(m, c);
                 }
             }
+            // `cand-made`: S62's "an operand device-produced" over the
+            // candidates themselves — a map an operand of which a candidate
+            // cell or device site makes is a candidate too (the fixed point
+            // below drops it where its operands or readers do not support
+            // it), so a chain the roofline prices only cell by cell (a
+            // prompt's gather, its norm's row fold and scale) is decided
+            // whole, not by its first member alone.
+            if gpu::host_rungs(self.profile, self.contract, self.gpu_arms).cand_made {
+                let made = |o: ObjectId, cells: &SecondaryMap<MorphismId, Cell>| {
+                    self.ir
+                        .in_edges(o)
+                        .first()
+                        .is_some_and(|&p| cells.contains_key(p) || sites_mut.contains_key(p))
+                };
+                loop {
+                    let mut add = Vec::new();
+                    for (m, site) in self.ir.cell_plan(self.f).iter().chain(traps.iter()) {
+                        if cells.contains_key(m)
+                            || sites_mut.contains_key(m)
+                            || self.member_src(m, 0).is_some()
+                        {
+                            continue;
+                        }
+                        if let Some(c) = self.cell_of(m, site)
+                            && c.operands().iter().any(|&(o, _)| made(o, &cells))
+                        {
+                            add.push((m, c));
+                        }
+                    }
+                    if add.is_empty() {
+                        break;
+                    }
+                    for (m, c) in add {
+                        cells.insert(m, c);
+                    }
+                }
+            }
         }
         loop {
             let (drop, unfed, carries) = self.cell_round(sites_mut, folds, &cells, devgen);

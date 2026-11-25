@@ -906,3 +906,142 @@ fn round_post_on_generated_chains() {
     eprintln!("round-post generated: programs, rounded, epi ÷ + · none: {c:?}");
     assert!(c.iter().all(|&x| x > 0), "{c:?}");
 }
+
+/// [`round_post_src`]'s chain with the first site's cell split into its
+/// row and column first (`cell / c1 -> i; cell % c1 -> j`, the generator's
+/// GEMM form): an affine epilogue site, not a mixed-radix one — the form
+/// `mma-walk` takes.
+fn walk_post_src(t: u64, k1: u64, c1: u64, c2: u64, epi: u8) -> String {
+    let src = round_post_src(t, k1, c1, c2, epi);
+    let old = format!(
+        "        cell -> (0.0, rk1) -> fold: bf16 | f32 {{\n            acc, k -> acc + a[cell / {c1} * {k1} + k] * w1[k * {c1} + cell % {c1}]\n        }} -> dot;\n"
+    );
+    let new = format!(
+        "        cell ->\n        cell / {c1} -> i;\n        cell % {c1} -> j;\n        (0.0, rk1) -> fold: bf16 | f32 {{\n            acc, k -> acc + a[i * {k1} + k] * w1[k * {c1} + j]\n        }} -> dot;\n"
+    );
+    assert!(src.contains(&old), "{src}");
+    src.replace(&old, &new)
+}
+
+/// `round-post` under the walk (bf16 tensor-tile `mma-walk` × bf16-class
+/// `round-post`, the integration's check): [`walk_post_src`]'s chains at
+/// walkable extents (`t` 512, `c1` 6144, `k1` 64: two panels a tile, more
+/// units than the 5080's resident slots), the walk forced
+/// (`--gpu-on=mma-walk`, the measurement arm). An epilogue in the site's
+/// own body (`TilePost`, here ending in the stored rounding) keeps the
+/// ordered tile — the walk takes no post site, so its `red` partials never
+/// meet a bf16 store — and the same chain with the epilogue as its own map
+/// (`y0` the site's f32 output, `y` the map over it, stored rounded) walks
+/// the site. Both against the weakest member's interpreter in the emulator
+/// (coverage non-zero).
+#[test]
+fn round_post_under_the_walk() {
+    let Some(clang) = emu::clang() else {
+        return;
+    };
+    let progs: Vec<(u8, bool)> = (0..4)
+        .map(|e| (e, false))
+        .chain((0..3).map(|e| (e, true)))
+        .collect();
+    let covers = testgen::par_check(&progs, |_, &(epi, split)| {
+        let (t, k1, c1, c2) = (512, 64, 6144, 16);
+        let mut src = walk_post_src(t, k1, c1, c2, epi);
+        if split {
+            let at = src.find("        } -> dot;\n").expect("the fold");
+            let end = src[at..].find("    } -> y;\n").expect("the map") + at;
+            let tail = src[at + "        } -> dot;\n".len()..end].to_string();
+            src.replace_range(
+                at..end + "    } -> y;\n".len(),
+                &format!(
+                    "        }}\n    }} -> y0;\n    {} -> iota -> map {{\n        cell -> y0[cell] -> dot;\n{tail}    }} -> y;\n",
+                    t * c1
+                ),
+            );
+        }
+        let ir = lower(&src);
+        let want = floats(&run_weakest(&ir, 20_000_000_000, &[]).output);
+        let rounded = ir.narrow_stored().map_or(0, |g| {
+            g.funcs()
+                .flat_map(|(f, _)| {
+                    let post = g.tile_plan_post(f).sites;
+                    let radix = g.tile_plan_radix(f);
+                    let narrow = g.tile_plan_narrow(f).sites;
+                    post.into_iter()
+                        .chain(radix)
+                        .chain(narrow)
+                        .map(|(_, s)| s)
+                        .collect::<Vec<_>>()
+                })
+                .filter(|s| {
+                    s.post
+                        .as_ref()
+                        .is_some_and(|p| p.round == Some(NarrowFloat::Bf16))
+                })
+                .count()
+        });
+        let mut gpu = GpuArms {
+            site_cands: 1,
+            ..GpuArms::default()
+        };
+        for r in ["pdl", "streams", "pinned", "horizontal", "calls"] {
+            *gpu.off.rung(r).expect("rung") = true;
+        }
+        *gpu.on.rung("mma-walk").expect("rung") = true;
+        let opts = EmitOpts {
+            host: "generic",
+            target: "rtx-5080",
+            gpu,
+            ..EmitOpts::default()
+        };
+        let em = emit_detailed(&ir, &opts).expect("emits");
+        let dev = em.device.as_deref().unwrap_or("");
+        let first = format!(" rows={t} c={c1} k={k1} ");
+        let plan = dev
+            .lines()
+            .find(|l| {
+                l.starts_with("; mapal.plan ") && l.contains(" kind=mma ") && l.contains(&first)
+            })
+            .unwrap_or_else(|| panic!("epi {epi}: the first site's tensor tile\n{src}"));
+        let walked = plan.contains(" combine=streamk ");
+        let mut cover = [0usize; 3];
+        match split {
+            false => {
+                assert!(plan.contains(" post=1"), "epi {epi}: {plan}\n{src}");
+                assert!(!walked, "epi {epi}: a post site walked\n{src}");
+                assert!(
+                    rounded >= 1,
+                    "epi {epi}: the site rounds as it stores\n{src}"
+                );
+                cover[0] += 1;
+            }
+            true => {
+                assert!(walked, "epi {epi}: the forced walk of the f32 site\n{src}");
+                cover[1] += 1;
+            }
+        }
+        let built = emu::build_emulated(&clang, &em.text, dev);
+        let modes: &[[(&str, &str); 2]] = if split { &MODES[..2] } else { &MODES };
+        for mode in modes {
+            let (got, _) = built.run(mode);
+            let got = floats(&got);
+            assert_eq!(got.len(), want.len(), "epi {epi} {mode:?}\n{src}");
+            for (x, w) in got.iter().zip(&want) {
+                let tol = 2f64.powi(-6) * w.abs().max(1.0);
+                assert!(
+                    (x - w).abs() <= tol,
+                    "epi {epi} {mode:?}: {x} vs {w}\n{src}"
+                );
+            }
+            cover[2] += 1;
+        }
+        cover
+    });
+    let sum = |i: usize| covers.iter().map(|c| c[i]).sum::<usize>();
+    eprintln!(
+        "round-post under the walk: {} rounding post sites kept ordered, {} split epilogues walked, {} emulated runs",
+        sum(0),
+        sum(1),
+        sum(2)
+    );
+    assert!(sum(0) >= 4 && sum(1) >= 3 && sum(2) >= 22, "{covers:?}");
+}

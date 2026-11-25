@@ -1159,6 +1159,14 @@ pub struct GpuRungs {
     /// goes up, not the 4 MB down and back). Off: such a cell needs every
     /// operand on the device already.
     pub once_bytes: bool,
+    /// bf16-integrate `cand-made`: a map an operand of which a candidate
+    /// device cell or site makes is a placement candidate too (S62's
+    /// "operand device-produced" over the candidates, the fixed point
+    /// deciding it), not only where its own roofline pays — a prompt's gather,
+    /// its norm's row fold and the norm's scale are decided as one chain. Off
+    /// (`--gpu-off=cand-made`): the roofline or a tile site's output alone
+    /// makes a candidate (as before).
+    pub cand_made: bool,
     /// full-model `once-range`: a piecewise range map (`map_law` `Outside`)
     /// outside every loop that no carry writes in place is a whole-extent
     /// device cell, run once. Off: such a map is no cell (the host runs it).
@@ -1357,6 +1365,7 @@ impl GpuRungs {
         trip_cells: true,
         bytes_place: true,
         once_bytes: true,
+        cand_made: true,
         once_range: true,
         range_chain: true,
         stride_lanes: true,
@@ -1367,7 +1376,7 @@ impl GpuRungs {
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 165] = [
+    pub const NAMES: [&'static str; 166] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1533,6 +1542,7 @@ impl GpuRungs {
         "lanes-unroll",
         "mma-walk",
         "fly-unroll",
+        "cand-made",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -1697,6 +1707,7 @@ impl GpuRungs {
             "trip-cells" => &mut self.trip_cells,
             "bytes-place" => &mut self.bytes_place,
             "once-bytes" => &mut self.once_bytes,
+            "cand-made" => &mut self.cand_made,
             "once-range" => &mut self.once_range,
             "range-chain" => &mut self.range_chain,
             "stride-lanes" => &mut self.stride_lanes,
