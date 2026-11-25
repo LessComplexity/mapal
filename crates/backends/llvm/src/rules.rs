@@ -198,16 +198,29 @@ pub fn pdl_pays(g: &Gpu, repeats: bool) -> bool {
 /// 1.81 (θ ≤ 1.47) lost or tied all three (0.83, 0.87, 1.00), issue 1.40
 /// (θ ≤ 1.91) is mixed (1.06, 1.11 and the uncut under-filled 128 × 6144
 /// 0.81: open). 1.3 before (the TF32 tile's efficiency deficit) took the
-/// 1.81 losers. The rtx-5080's tf32x3 loser (θ ≤ 0.33) and narrow1 winner
-/// (2.0) stand on either side.
+/// 1.81 losers. The A100 measured no FFMA tile rate: its side is the FFMA
+/// peak, which its tile reaches (0.92) — the placement stands. On the
+/// rtx-5080 the side is the tile's achieved 32200 flops a ns (precision
+/// `split-rate`): its tf32x3 loser (0.55 against θ) and narrow1 winner (3.3)
+/// stand on either side, and bf16x2n (1.64) clears it — measured 1.12–1.48
+/// over the FFMA tile on all seven prompt projections of the readable Llama.
 pub const SPLIT_RATE_PM: u64 = 1600;
 
 /// **f32-tensor-cores R-F, the part's side: a split form of `products`
 /// passes on `op` pays against the FFMA tile** — the matrix rate the split
 /// tile realizes, `matrix_flops_per_ns(op)` over its issue ratio
-/// ([`split_issue_pm`], at least 1), `≥ θ · P · ffma_flops_per_ns`
-/// ([`SPLIT_RATE_PM`]). Physical properties: the SM's matrix and FFMA rates a
-/// clock (`calib.cu matrix`, `ffma`) and its schedulers' issue.
+/// ([`split_issue_pm`], at least 1), `≥ θ · P` times the rate the FFMA tile
+/// it replaces realizes ([`Gpu::ffma_tile_flops_per_ns`]: its measured rate,
+/// the FFMA peak where none is measured; [`SPLIT_RATE_PM`]). Physical
+/// properties: the SM's matrix rate a clock (`calib.cu matrix`), its
+/// schedulers' issue, the FFMA tile's measured rate (`calib.cu ffma`).
+///
+/// precision `split-rate`: before, the FFMA side was the silicon's peak — on
+/// a part whose FFMA tile is issue-bound (one warp FFMA a clock a
+/// scheduler) that priced the FFMA tile 1.6× fast, and the rtx-5080's
+/// bf16x2n tiles (matrix-bound: 11.3 SASS slots an `HMMA` against its 32
+/// clocks a scheduler, `issue_pm` 375) were refused while they ran the
+/// prompt's projections 1.12–1.48× faster (`--gpu-on=split-tile`).
 pub fn split_rate_pays(
     g: &Gpu,
     op: &crate::profile::MatrixOp,
@@ -215,7 +228,7 @@ pub fn split_rate_pays(
     issue_pm: u64,
 ) -> bool {
     g.matrix_flops_per_ns(op) * 1_000_000 / issue_pm.max(1000)
-        >= SPLIT_RATE_PM * products * g.ffma_flops_per_ns()
+        >= SPLIT_RATE_PM * products * g.ffma_tile_flops_per_ns()
 }
 
 /// tensor-cores-2 `split-issue`: issue slots a split tile spends a k-step
@@ -488,7 +501,7 @@ mod tests {
     /// `local-rtx-5080/hardware-properties.md`. The replay must find exactly
     /// these: a rule change that fixes one moves it out, one that breaks a
     /// measurement fails here.
-    const OPEN: [(&str, &str, &str, &str); 23] = [
+    const OPEN: [(&str, &str, &str, &str); 22] = [
         // The launch does not read whether its operands are in L2 (flushed
         // L2 wins, warm L2 and the composed MLP lose): `residence_plan`.
         ("asyncstage", "h100-pcie", "on", "l2-flushed"),
@@ -565,12 +578,11 @@ mod tests {
         // sites itself (the `l2-gate h100 on` line); this line keeps the old
         // gate's arms, so it stays open as their record.
         ("l2-gate", "h100", "off", "-"),
-        // tensor-cores-2: the GeForce bf16x2n tile is pipe-bound (issue
-        // 0.38) and realizes ~90 % of its bf16 pipe, beating the FFMA tile
-        // the rule keeps (2 x 256 against 1.6 x 256); the A100's issue-bound
-        // tiles realize ~39 % at issue 1.0. The tensor tile's realized
-        // fraction at its issue is the missing fact, not one margin.
-        ("split-tile", "rtx-5080", "on", "split=bf16x2n,issue=375"),
+        // tensor-cores-2's GeForce bf16x2n line (pipe-bound at issue 0.38,
+        // ~90 % of its bf16 pipe) left here: precision `split-rate` weighs
+        // the split against the FFMA tile's achieved rate
+        // (`Gpu::ffma_tile_flops_per_ns`, the rtx-5080's 32200 flops a ns:
+        // 0.61 of its peak), not the FFMA peak — 512 / 2 against 1.6 x 156.
     ];
 
     /// **hardware-properties: every cited measurement, replayed.** For each
@@ -776,7 +788,28 @@ mod tests {
         }
         assert_eq!(open, OPEN.to_vec(), "measurements the rules do not pick");
         // The counts the evidence file reports.
-        assert_eq!((picked, null, mixed, open.len()), (169, 82, 16, 23));
+        assert_eq!((picked, null, mixed, open.len()), (172, 82, 16, 22));
+    }
+
+    /// precision `split-rate`: the split is weighed against the FFMA tile's
+    /// achieved rate — the rtx-5080's measured 32200 flops a ns admits
+    /// bf16x2n (256 against 1.6 × 156 flops an SM a clock) and still refuses
+    /// tf32x3; the same part without a measured rate (the FFMA peak, the rule
+    /// before) refuses bf16x2n; a part with none measured (the A100) keeps
+    /// its peak.
+    #[test]
+    fn split_rate_weighs_the_ffma_tiles_achieved_rate() {
+        let g = *crate::profile::RTX_5080.gpu().expect("gpu");
+        assert_eq!(g.ffma_tile_flops_per_ns(), 32200);
+        let bf = g.caps.matrix_op(MmaFmt::Bf16, Home::Regs).expect("bf16");
+        let tf = g.caps.matrix_op(MmaFmt::Tf32, Home::Regs).expect("tf32");
+        assert!(split_rate_pays(&g, &bf, 2, 375));
+        assert!(!split_rate_pays(&g, &tf, 3, 160));
+        let peak = Gpu { cost: None, ..g };
+        assert_eq!(peak.ffma_tile_flops_per_ns(), peak.ffma_flops_per_ns());
+        assert!(!split_rate_pays(&peak, &bf, 2, 375));
+        let a = *crate::profile::A100.gpu().expect("gpu");
+        assert_eq!(a.ffma_tile_flops_per_ns(), a.ffma_flops_per_ns());
     }
 
     /// hopper-launch `ws-persist`, hand-worked on the H100 SXM: the 2048 ×
