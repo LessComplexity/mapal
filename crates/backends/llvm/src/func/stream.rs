@@ -105,8 +105,8 @@ pub(crate) fn mma_fmt(
         if !whole
             || f != MmaFmt::Bf16
             || site.elem != f32t
-            || site.a.narrow.is_some()
-            || site.b.narrow.is_some()
+            || site.a.narrow.is_some_and(|n| MmaFmt::of_narrow(n) != f)
+            || site.b.narrow.is_some_and(|n| MmaFmt::of_narrow(n) != f)
             || op.shape != MMA_SYNC_16
             || !op.acc_meets(-23)
             || gpu.matrix_flops_per_clk(&op) == 0
@@ -117,6 +117,15 @@ pub(crate) fn mma_fmt(
         fmt = Some(f);
     }
     fmt
+}
+
+/// bf16-class `narrow-window`: a tile member's column operand bytes an
+/// element — its storage format's (a bf16 KV cache: 2), else f32's.
+pub(crate) fn win_bytes(site: &mapal_ir::TileSite) -> u64 {
+    match site.b.narrow {
+        Some(_) => 2,
+        None => 4,
+    }
 }
 
 /// A streamed unit's shared memory: per member `(offset, row stride)` in
@@ -214,9 +223,9 @@ impl Stream {
             ..Layout::default()
         };
         let mut off = 0u64;
-        let mut take = |elems: u64| {
+        let mut take = |bytes: u64| {
             let o = off.next_multiple_of(16);
-            off = o + elems * 4;
+            off = o + bytes;
             o
         };
         for (k, mb) in members.iter().enumerate() {
@@ -226,14 +235,14 @@ impl Stream {
             match (&self.group.roles[k], self.mma.is_some()) {
                 (StreamRole::Produce, false) => {
                     let dp = site.k.next_multiple_of(4) + 4;
-                    lay.q[k] = Some((take(self.b * dp), dp));
-                    lay.k[k] = Some((take(self.kb * dp), dp));
+                    lay.q[k] = Some((take(self.b * dp * 4), dp));
+                    lay.k[k] = Some((take(self.kb * dp * 4), dp));
                 }
                 (StreamRole::Consume { .. }, false) => {
                     let cp = site.c.next_multiple_of(4);
-                    lay.v[k] = Some((take(self.kb * cp), cp));
+                    lay.v[k] = Some((take(self.kb * cp * 4), cp));
                     let ap = self.kb + 4;
-                    lay.a[k] = Some((take(self.b * ap), ap));
+                    lay.a[k] = Some((take(self.b * ap * 4), ap));
                 }
                 // `stream-mma`: the row operand's fragments live in registers
                 // (no panel, no row window). A window row `≡ 8 (mod 16)`
@@ -241,19 +250,27 @@ impl Stream {
                 // `l%32÷4`, words `2·(l%4)`) on distinct banks; the
                 // consumer's rows `≡ 4 (mod 8)` apart: its 4-byte loads (rows
                 // `2·(l%4)`, column `l%32÷4`) likewise.
+                //
+                // bf16-class `narrow-window`: a bf16 window's rows `≡ 4 (mod
+                // 8)` words apart either way (`k + 8` / `c + 8` elements):
+                // the producer's 4-byte pair loads (rows `l%32÷4`, words
+                // `l%4`) and the consumer's 2-byte loads (rows `2·(l%4)`, a
+                // column pair a word) on distinct banks.
                 (StreamRole::Produce, true) => {
+                    let eb = win_bytes(site);
                     let dp = site.k + 8;
-                    lay.k[k] = Some((take(self.kb * dp), dp));
+                    lay.k[k] = Some((take(self.kb * dp * eb), dp));
                 }
                 (StreamRole::Consume { .. }, true) => {
-                    let cp = site.c + 4;
-                    lay.v[k] = Some((take(self.kb * cp), cp));
+                    let eb = win_bytes(site);
+                    let cp = site.c + if eb == 2 { 8 } else { 4 };
+                    lay.v[k] = Some((take(self.kb * cp * eb), cp));
                 }
                 _ => {}
             }
         }
-        lay.dump = take(4);
-        lay.flag = take(4);
+        lay.dump = take(16);
+        lay.flag = take(16);
         lay.total = off;
         lay
     }
@@ -362,7 +379,13 @@ impl Addr {
     /// Consecutive elements along `ax` over `n` of it, and every other term
     /// a multiple of 4: 16-byte chunks at every row.
     pub fn vec(&self, ax: Ax, n: u64) -> bool {
-        if !n.is_multiple_of(4) {
+        self.vec_by(ax, n, 4)
+    }
+
+    /// [`Self::vec`] for elements `per` a 16-byte chunk (8 of a 2-byte
+    /// format): every term a multiple of `per`.
+    pub fn vec_by(&self, ax: Ax, n: u64, per: u64) -> bool {
+        if !n.is_multiple_of(per) {
             return false;
         }
         match self {
@@ -372,9 +395,9 @@ impl Addr {
                     Ax::K => (r.ck, r.clane),
                 };
                 unit == 1
-                    && other.is_multiple_of(4)
-                    && r.ci.is_multiple_of(4)
-                    && r.base.is_multiple_of(4)
+                    && other.is_multiple_of(per)
+                    && r.ci.is_multiple_of(per)
+                    && r.base.is_multiple_of(per)
                     && r.ksplit.is_none()
             }
             Addr::Radix(r) => {
@@ -383,10 +406,10 @@ impl Addr {
                     Ax::K => (&r.k, &r.lane),
                 };
                 let unit = matches!(along[..], [d] if d.stride == 1 && d.coef == 1 && d.radix >= n);
-                unit && r.base.is_multiple_of(4)
-                    && other.iter().chain(&r.i).all(|d| d.coef.is_multiple_of(4))
+                unit && r.base.is_multiple_of(per)
+                    && other.iter().chain(&r.i).all(|d| d.coef.is_multiple_of(per))
             }
-            Addr::Out(c) => ax == Ax::Lane && c.is_multiple_of(4),
+            Addr::Out(c) => ax == Ax::Lane && c.is_multiple_of(per),
         }
     }
 }
@@ -478,8 +501,17 @@ impl<'a> FnEmit<'a> {
                     {
                         return Err("site");
                     }
-                    let ok = site.a.narrow.is_none()
-                        && site.b.narrow.is_none()
+                    // bf16-class `narrow-window`: a bf16 operand (a bf16
+                    // KV cache, a query stored bf16) where the pass folds on
+                    // the matrix product (checked below).
+                    let ok = site
+                        .a
+                        .narrow
+                        .is_none_or(|n| n == mapal_ir::NarrowFloat::Bf16)
+                        && site
+                            .b
+                            .narrow
+                            .is_none_or(|n| n == mapal_ir::NarrowFloat::Bf16)
                         && site.a.ksplit.is_none()
                         && site.b.ksplit.is_none()
                         && site.elem == f32t;
@@ -501,8 +533,12 @@ impl<'a> FnEmit<'a> {
                     {
                         return Err("site");
                     }
-                    let ok =
-                        site.b.narrow.is_none() && site.b.ksplit.is_none() && site.elem == f32t;
+                    let ok = site
+                        .b
+                        .narrow
+                        .is_none_or(|n| n == mapal_ir::NarrowFloat::Bf16)
+                        && site.b.ksplit.is_none()
+                        && site.elem == f32t;
                     if !ok {
                         return Err("consume");
                     }
@@ -542,6 +578,16 @@ impl<'a> FnEmit<'a> {
                 gd.why = "open";
             }
         }
+        // bf16-class `finite-check` off: a column operand finite only at run
+        // time skips no window (as before).
+        if let Some(gd) = sg.guard.as_mut()
+            && gd.skip
+            && !gd.check.is_empty()
+            && self.gpu_arms.off.finite_check
+        {
+            gd.skip = false;
+            gd.why = "finite";
+        }
         let sg = &sg;
         let cp = gpu.has_mma_sync() && !self.gpu_arms.off.cp_async;
         let forced = self.gpu_arms.stream_force;
@@ -552,6 +598,14 @@ impl<'a> FnEmit<'a> {
             true => mma_fmt(members, &sg.roles, gpu),
             false => None,
         };
+        // bf16-class `narrow-window`: a narrow column operand's windows hold
+        // its own bytes, which only the matrix product's fragments take.
+        let narrow = members.iter().any(|mb| {
+            matches!(&mb.kind, UKind::Tile { site } if site.a.narrow.is_some() || site.b.narrow.is_some())
+        });
+        if narrow && (mma.is_none() || self.gpu_arms.off.narrow_window) {
+            return Err("narrow");
+        }
         let mut best: Option<(Stream, f64)> = None;
         // A forced geometry takes the matrix product where it admits one
         // (the measurement arm of the instruction; `stream-mma` off: FFMA).
@@ -618,8 +672,11 @@ impl<'a> FnEmit<'a> {
                                 && g == 4
                                 && b.is_multiple_of(MMA_M)
                                 && kb.is_multiple_of(MMA_K);
+                            let both = [mma, None];
                             let fmts: &[Option<crate::profile::MmaFmt>] = match (mma, frag) {
-                                (Some(f), true) => &[Some(f), None][..],
+                                (Some(_), true) if narrow => &both[..1],
+                                (Some(_), true) => &both[..],
+                                _ if narrow => &[][..],
                                 _ => &[None][..],
                             };
                             for &fmt in fmts {
@@ -726,11 +783,12 @@ impl<'a> FnEmit<'a> {
             match (&st.group.roles[k], &mb.kind) {
                 (StreamRole::Produce, UKind::Tile { site }) => {
                     fma += site.k;
-                    win_bytes += st.b * site.k * 4 + nb * st.kb * site.k * 4;
+                    let ea = if site.a.narrow.is_some() { 2 } else { 4 };
+                    win_bytes += st.b * site.k * ea + nb * st.kb * site.k * self::win_bytes(site);
                 }
                 (StreamRole::Consume { .. }, UKind::Tile { site }) => {
                     fma += site.c;
-                    win_bytes += nb * st.kb * site.c * 4;
+                    win_bytes += nb * st.kb * site.c * self::win_bytes(site);
                 }
                 (StreamRole::Cell { .. }, _) => cells += 1,
                 _ => {}
@@ -2279,6 +2337,12 @@ impl UnitGen<'_> {
                 }
             }
         }
+        // bf16-class `finite-check`: a consumer's column operand not proven
+        // finite — the elements the skipped windows hold, read here.
+        for &k in &gd.check {
+            let c = self.skipped_finite(st, k);
+            ok = self.and(&ok, &c);
+        }
         // The block's vote: one shared word, cleared by any row that fails.
         let f = self.smem(lay.flag, "i32", "0");
         self.barrier();
@@ -2300,6 +2364,112 @@ impl UnitGen<'_> {
         self.line(format!("{pass} = icmp ne i32 {v}, 0"));
         let _ = x;
         pass
+    }
+
+    /// bf16-class `finite-check`: is every element of consumer `k`'s
+    /// column operand that the block's skipped windows hold finite? The
+    /// windows past the visible band (`[tlo + band, tlo + nb)` mod `nb`),
+    /// each key's row of the operand (`b(i, c, j)`, `c < site.c`, the
+    /// block's rows' address as the windows' staging takes it), read in
+    /// 16-byte chunks where the row is contiguous, strided over the block's
+    /// threads; a key past the axis reads the axis's last (a superset: a
+    /// non-finite element there only runs the windows). Exponent bits not
+    /// all ones, on the bits (no float compare a fast-math flag may fold).
+    fn skipped_finite(&mut self, st: &Stream, k: usize) -> String {
+        let mb = &self.u.members[k];
+        let UKind::Tile { site } = &mb.kind else {
+            unreachable!("a consumer is a tile")
+        };
+        let USrc::Gmem(gi) = mb.srcs[1] else {
+            unreachable!("a tile's column operand is memory")
+        };
+        let site = site.clone();
+        let bb = Addr::of(&site, Operand::B);
+        let (w, kb, nb, threads) = (st.group.axis, st.kb, st.nb(), st.threads);
+        let eb = win_bytes(&site);
+        let per16 = 16 / eb;
+        let v = if bb.vec_by(Ax::Lane, site.c, per16) {
+            per16
+        } else {
+            1
+        };
+        // The format's exponent field: all ones is `∞` or NaN.
+        let (ety, ity, ex) = match eb {
+            2 => ("i16", "i16", 32640u32),
+            _ => ("float", "i32", 2139095040u32),
+        };
+        let per_row = site.c / v;
+        let per = kb * per_row;
+        let first = self.walk_row(st, "%i");
+        let i0 = self.member_row(st, k, &first);
+        let rest = self.tmp();
+        self.line(format!("{rest} = sub i64 {nb}, %band"));
+        let total = self.op("mul", &rest, per);
+        let skip0 = self.op("add", "%tlo", "%band");
+        let tag = format!("Fc{k}_{}", self.n);
+        self.n += 1;
+        let pre = self.cur.clone();
+        let (lp, end) = (tag.clone(), format!("{tag}e"));
+        let c0 = self.tmp();
+        self.line(format!("{c0} = icmp ult i64 %l, {total}"));
+        self.line(format!("br i1 {c0}, label %{lp}, label %{end}"));
+        self.label(&lp);
+        let e = format!("%{tag}x");
+        let acc = format!("%{tag}a");
+        self.line(format!("{e} = phi i64 [%l, %{pre}], [{e}n, %{lp}]"));
+        self.line(format!("{acc} = phi i1 [true, %{pre}], [{acc}n, %{lp}]"));
+        let wi = self.op("udiv", &e, per);
+        let rem = self.op("urem", &e, per);
+        let r = self.op("udiv", &rem, per_row);
+        let cq = self.op("urem", &rem, per_row);
+        let cc = self.op("mul", &cq, v);
+        let wa = self.op("add", &skip0, &wi);
+        let win = self.op("urem", &wa, nb);
+        let j0 = self.op("mul", &win, kb);
+        let j = self.op("add", &j0, &r);
+        let inside = self.tmp();
+        self.line(format!("{inside} = icmp ult i64 {j}, {w}"));
+        let jj = self.tmp();
+        self.line(format!("{jj} = select i1 {inside}, i64 {j}, i64 {}", w - 1));
+        let at = self.addr_at(&bb, &i0, &cc, &jj);
+        let src = self.tmp();
+        self.line(format!(
+            "{src} = getelementptr inbounds {ety}, ptr addrspace(1) %x{gi}, i64 {at}"
+        ));
+        let fin = if v > 1 {
+            let vt = format!("<{v} x {ity}>");
+            let splat = vec![format!("{ity} {ex}"); v as usize].join(", ");
+            let x = self.tmp();
+            self.line(format!("{x} = load {vt}, ptr addrspace(1) {src}, align 16"));
+            let m = self.tmp();
+            self.line(format!("{m} = and {vt} {x}, <{splat}>"));
+            let c = self.tmp();
+            self.line(format!("{c} = icmp ne {vt} {m}, <{splat}>"));
+            let b = self.tmp();
+            self.line(format!("{b} = bitcast <{v} x i1> {c} to i{v}"));
+            let all = self.tmp();
+            self.line(format!("{all} = icmp eq i{v} {b}, -1"));
+            all
+        } else {
+            let x = self.tmp();
+            self.line(format!(
+                "{x} = load {ity}, ptr addrspace(1) {src}, align {eb}"
+            ));
+            let m = self.tmp();
+            self.line(format!("{m} = and {ity} {x}, {ex}"));
+            let c = self.tmp();
+            self.line(format!("{c} = icmp ne {ity} {m}, {ex}"));
+            c
+        };
+        self.line(format!("{acc}n = and i1 {acc}, {fin}"));
+        self.line(format!("{e}n = add i64 {e}, {threads}"));
+        let more = self.tmp();
+        self.line(format!("{more} = icmp ult i64 {e}n, {total}"));
+        self.line(format!("br i1 {more}, label %{lp}, label %{end}"));
+        self.label(&end);
+        let r = self.tmp();
+        self.line(format!("{r} = phi i1 [true, %{pre}], [{acc}n, %{lp}]"));
+        r
     }
 
     fn and(&mut self, a: &str, b: &str) -> String {
@@ -2447,7 +2617,7 @@ impl UnitGen<'_> {
             st,
             (off, dp),
             (st.b, d),
-            (gi, vec),
+            (gi, vec, 4),
             None,
             &mut |g, r, c| {
                 // mask-frontend: the block's row `r` as the producer numbers
@@ -2472,6 +2642,7 @@ impl UnitGen<'_> {
             unreachable!("a tile's column operand is memory")
         };
         let bb = Addr::of(site, Operand::B);
+        let eb = win_bytes(site);
         let w = st.group.axis;
         let j0 = j0.to_string();
         let tag = format!("{}{k}_{}", if produce { "K" } else { "V" }, self.n);
@@ -2481,13 +2652,13 @@ impl UnitGen<'_> {
         if produce {
             // Key `j`'s row: `b(i, j, kk)`, `kk < d`.
             let (off, dp) = lay.k[k].expect("a producer's window");
-            let vec = bb.vec(Ax::K, site.k);
+            let vec = bb.vec_by(Ax::K, site.k, 16 / eb);
             self.stage(
                 &tag,
                 st,
                 (off, dp),
                 (st.kb, site.k),
-                (gi, vec),
+                (gi, vec, eb),
                 Some((j0.clone(), w)),
                 &mut |g, r, c| {
                     let j = g.op("add", &j0, r);
@@ -2497,13 +2668,13 @@ impl UnitGen<'_> {
         } else {
             // Key `j`'s row of the consumer: `b(i, c, j)`.
             let (off, cpd) = lay.v[k].expect("a consumer's window");
-            let vec = bb.vec(Ax::Lane, site.c);
+            let vec = bb.vec_by(Ax::Lane, site.c, 16 / eb);
             self.stage(
                 &tag,
                 st,
                 (off, cpd),
                 (st.kb, site.c),
-                (gi, vec),
+                (gi, vec, eb),
                 Some((j0.clone(), w)),
                 &mut |g, r, c| {
                     let j = g.op("add", &j0, r);
@@ -2573,11 +2744,13 @@ impl UnitGen<'_> {
         }
     }
 
-    /// Copy `rows × cols` elements into shared memory at `off` (row stride
-    /// `stride` elements): element `(r, c)` from `at(r, c)` of operand `gi`;
-    /// 16-byte chunks where `vec` (each chunk's four consecutive). Rows past
-    /// `limit` (counted from `base`) are zero: their copies land in the dump
-    /// slot from a row inside, and a zero is stored in their place.
+    /// Copy `rows × cols` elements of `eb` bytes into shared memory at `off`
+    /// (row stride `stride` elements): element `(r, c)` from `at(r, c)` of
+    /// operand `gi`; 16-byte chunks where `vec` (each chunk's `16 ÷ eb`
+    /// consecutive). Rows past `limit` (counted from `base`) are zero: their
+    /// copies land in the dump slot from a row inside, and a zero is stored
+    /// in their place. A 2-byte element alone is copied by the thread (no
+    /// `cp.async` of 2 bytes).
     #[allow(clippy::too_many_arguments)]
     fn stage(
         &mut self,
@@ -2585,12 +2758,13 @@ impl UnitGen<'_> {
         st: &Stream,
         (off, stride): (u64, u64),
         (rows, cols): (u64, u64),
-        (gi, vec): (usize, bool),
+        (gi, vec, eb): (usize, bool, u64),
         limit: Option<(String, u64)>,
         at: &mut dyn FnMut(&mut Self, &str, &str) -> String,
     ) {
         let cp = st.cp;
-        let v = if vec { 4 } else { 1 };
+        let ety = if eb == 2 { "i16" } else { "float" };
+        let v = if vec { 16 / eb } else { 1 };
         let per = cols / v;
         let total = rows * per;
         let threads = st.threads;
@@ -2616,12 +2790,12 @@ impl UnitGen<'_> {
             let src_i = at(g, &rr, &cc);
             let src = g.tmp();
             g.line(format!(
-                "{src} = getelementptr inbounds float, ptr addrspace(1) %x{gi}, i64 {src_i}"
+                "{src} = getelementptr inbounds {ety}, ptr addrspace(1) %x{gi}, i64 {src_i}"
             ));
             let rs = g.op("mul", &r, stride);
             let di = g.op("add", &rs, &cc);
-            let dst = g.smem(off, "float", &di);
-            let dumpp = g.smem(dump, "float", "0");
+            let dst = g.smem(off, ety, &di);
+            let dumpp = g.smem(dump, ety, "0");
             let (into, zero_at) = match &ok {
                 Some(ok) => {
                     let a = g.tmp();
@@ -2636,16 +2810,21 @@ impl UnitGen<'_> {
                 }
                 None => (dst.clone(), None),
             };
-            let vt = if vec { "<4 x float>" } else { "float" };
-            let zero = if vec { "zeroinitializer" } else { "0.0" };
+            // A 16-byte chunk moves as four words whatever its elements.
+            let vt = if vec { "<4 x float>" } else { ety };
+            let zero = match (vec, eb) {
+                (true, _) => "zeroinitializer",
+                (false, 2) => "0",
+                _ => "0.0",
+            };
             match (cp, vec) {
                 (true, true) => g.line(format!(
                     "call void @llvm.nvvm.cp.async.cg.shared.global.16(ptr addrspace(3) {into}, ptr addrspace(1) {src})"
                 )),
-                (true, false) => g.line(format!(
+                (true, false) if eb == 4 => g.line(format!(
                     "call void @llvm.nvvm.cp.async.ca.shared.global.4(ptr addrspace(3) {into}, ptr addrspace(1) {src})"
                 )),
-                (false, _) => {
+                _ => {
                     let x = g.tmp();
                     g.line(format!("{x} = load {vt}, ptr addrspace(1) {src}"));
                     g.line(format!("store {vt} {x}, ptr addrspace(3) {into}"));
@@ -2776,6 +2955,7 @@ impl UnitGen<'_> {
         let site = site.clone();
         let fmt = st.mma.expect("stream-mma");
         let a = Addr::of(&site, Operand::A);
+        let narrow = site.a.narrow.is_some();
         let x2 = self.op("mul", x, 2);
         // prefill-integrate: each row as the producer numbers its rows (its
         // tile order, [`mapal_ir::out_rows`]) — `stage_panel`'s mapping;
@@ -2786,16 +2966,33 @@ impl UnitGen<'_> {
             let mut q: Vec<String> = Vec::new();
             for (yy, kc) in [(0usize, 0u64), (1, 0), (0, 8), (1, 8)] {
                 let mut v: Vec<String> = Vec::new();
+                let ety = if narrow { "i16" } else { "float" };
                 for e in 0..2 {
                     let kk = self.op("add", &x2, s * MMA_K + kc + e);
                     let i = self.addr_at(&a, &rows[yy], "0", &kk);
                     let ptr = self.tmp();
                     self.line(format!(
-                        "{ptr} = getelementptr inbounds float, ptr addrspace(1) %x{gi}, i64 {i}"
+                        "{ptr} = getelementptr inbounds {ety}, ptr addrspace(1) %x{gi}, i64 {i}"
                     ));
                     let l = self.tmp();
-                    self.line(format!("{l} = load float, ptr addrspace(1) {ptr}, align 4"));
+                    let al = if narrow { 2 } else { 4 };
+                    self.line(format!(
+                        "{l} = load {ety}, ptr addrspace(1) {ptr}, align {al}"
+                    ));
                     v.push(l);
+                }
+                if narrow {
+                    // bf16-class `narrow-window`: the stored bf16 pair, the
+                    // lower `k` in the low half.
+                    let (lo, hi) = (self.tmp(), self.tmp());
+                    self.line(format!("{lo} = zext i16 {} to i32", v[0]));
+                    self.line(format!("{hi} = zext i16 {} to i32", v[1]));
+                    let sh = self.tmp();
+                    self.line(format!("{sh} = shl i32 {hi}, 16"));
+                    let r = self.tmp();
+                    self.line(format!("{r} = or i32 {sh}, {lo}"));
+                    q.push(r);
+                    continue;
                 }
                 q.push(self.mma_pack(fmt, &v[0], &v[1]));
             }
@@ -2824,6 +3021,7 @@ impl UnitGen<'_> {
         let site = site.clone();
         let fmt = st.mma.expect("stream-mma");
         let (koff, dp) = lay.k[k].expect("window");
+        let narrow = win_bytes(&site) == 2;
         let seed = const_literal(&site.seed);
         let nt = (st.kb / MMA_N) as usize;
         let x2 = self.op("mul", x, 2);
@@ -2835,6 +3033,16 @@ impl UnitGen<'_> {
                 let mut b: Vec<String> = Vec::new();
                 for kc in [0u64, 8] {
                     let i = self.op("add", &base, t as u64 * MMA_N * dp + s as u64 * MMA_K + kc);
+                    if narrow {
+                        // bf16-class `narrow-window`: the pair `k`, `k + 1`
+                        // stored bf16 is the fragment register (the lower `k`
+                        // in the low half).
+                        let p = self.smem(koff, "i16", &i);
+                        let v = self.tmp();
+                        self.line(format!("{v} = load i32, ptr addrspace(3) {p}, align 4"));
+                        b.push(v);
+                        continue;
+                    }
                     let p = self.smem(koff, "float", &i);
                     let v = self.tmp();
                     self.line(format!(
@@ -2877,6 +3085,7 @@ impl UnitGen<'_> {
     ) {
         let fmt = st.mma.expect("stream-mma");
         let (voff, cpd) = lay.v[k].expect("window");
+        let narrow = win_bytes(site) == 2;
         let (oc, _) = st.oc(site.c);
         let ct = st.ct() as usize;
         let x2 = self.op("mul", x, 2);
@@ -2897,12 +3106,30 @@ impl UnitGen<'_> {
                     for e in 0..2 {
                         let off = (s as u64 * MMA_K + kc + e) * cpd + t * MMA_N;
                         let i = self.op("add", &base, off);
-                        let p = self.smem(voff, "float", &i);
                         let l = self.tmp();
-                        self.line(format!("{l} = load float, ptr addrspace(3) {p}, align 4"));
+                        if narrow {
+                            let p = self.smem(voff, "i16", &i);
+                            self.line(format!("{l} = load i16, ptr addrspace(3) {p}, align 2"));
+                        } else {
+                            let p = self.smem(voff, "float", &i);
+                            self.line(format!("{l} = load float, ptr addrspace(3) {p}, align 4"));
+                        }
                         v.push(l);
                     }
-                    b.push(self.mma_pack(fmt, &v[0], &v[1]));
+                    if narrow {
+                        // bf16-class `narrow-window`: the two keys' stored
+                        // bf16 elements, the lower key in the low half.
+                        let (lo, hi) = (self.tmp(), self.tmp());
+                        self.line(format!("{lo} = zext i16 {} to i32", v[0]));
+                        self.line(format!("{hi} = zext i16 {} to i32", v[1]));
+                        let sh = self.tmp();
+                        self.line(format!("{sh} = shl i32 {hi}, 16"));
+                        let r = self.tmp();
+                        self.line(format!("{r} = or i32 {sh}, {lo}"));
+                        b.push(r);
+                    } else {
+                        b.push(self.mma_pack(fmt, &v[0], &v[1]));
+                    }
                 }
                 let slots = [2 * t, 2 * t + 1, oc + 2 * t, oc + 2 * t + 1];
                 let cur: [String; 4] = std::array::from_fn(|q| {

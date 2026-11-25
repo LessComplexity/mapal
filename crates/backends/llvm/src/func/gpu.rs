@@ -2586,6 +2586,10 @@ fn launch_key(l: &Launch) -> String {
         .replace(", guard_terms: false", "")
         .replace(", walk_order: false", "")
         .replace(", stream_numbers: false", "")
+        // bf16-class: `finite-check` decides a stream unit's skip (no tile
+        // site's text).
+        .replace(", finite_check: false", "")
+        .replace(", narrow_window: false", "")
         // sweep-attention-2: `stream-mma` decides a stream unit's kernel (no
         // tile site's text); `kmajor-b` changes how a candidate copies `b`,
         // not which candidate it is: its id is the arms' one (as candidate

@@ -940,6 +940,18 @@ pub struct GpuRungs {
     /// are launch arguments. Off (`--gpu-off=stream-numbers`): a unit whose
     /// epilogue reads a number after its fold is no stream (as before).
     pub stream_numbers: bool,
+    /// bf16-class `finite-check`: a stream group's masked windows are
+    /// skipped where a consumer's column operand is finite only at run time
+    /// (`mapal_ir::StreamGuard::check`) — the kernel reads the skipped
+    /// windows' column elements and runs those windows where one is not
+    /// finite. Off (`--gpu-off=finite-check`): such a group skips none.
+    pub finite_check: bool,
+    /// bf16-class `narrow-window`: a stream group whose column operand is
+    /// stored bf16 (a bf16 KV cache) streams on the matrix product, its
+    /// windows holding the operand's own bytes (half an f32 window's) and
+    /// its fragments taking them as they stand. Off
+    /// (`--gpu-off=narrow-window`): such a group is no stream.
+    pub narrow_window: bool,
     /// flash-attention F7 (a fact arm, `mapal_ir::FactArms::finite`):
     /// `finite_plan` proves values finite. Off (`--gpu-off=finite`,
     /// `--no-finite`): nothing is, so no masked window is skipped.
@@ -1290,6 +1302,8 @@ impl GpuRungs {
         guard_terms: true,
         walk_order: true,
         stream_numbers: true,
+        finite_check: true,
+        narrow_window: true,
         finite: true,
         unit_uniform: true,
         mma_combine: true,
@@ -1324,7 +1338,7 @@ impl GpuRungs {
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 160] = [
+    pub const NAMES: [&'static str; 162] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1453,6 +1467,8 @@ impl GpuRungs {
         "guard-terms",
         "walk-order",
         "stream-numbers",
+        "finite-check",
+        "narrow-window",
         "finite",
         "mma-combine",
         "split-tile",
@@ -1620,6 +1636,8 @@ impl GpuRungs {
             "guard-terms" => &mut self.guard_terms,
             "walk-order" => &mut self.walk_order,
             "stream-numbers" => &mut self.stream_numbers,
+            "finite-check" => &mut self.finite_check,
+            "narrow-window" => &mut self.narrow_window,
             "finite" => &mut self.finite,
             "unit-uniform" => &mut self.unit_uniform,
             "mma-combine" => &mut self.mma_combine,
