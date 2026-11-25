@@ -5,7 +5,9 @@ Branch `prefill/precision` from `16d668c6` (the full-model merge). RTX 5080 (sm_
 from other agents' jobs during every timed run** (logged per run in the raw `time_all.log`); every comparison below is
 same-session ABBA, the absolute times carry that load. Raw (never in git):
 `.claude/raw-evidence/local-rtx-5080/prefill-precision/build/` — the programs, builds, `r1_*_n*.json`
-(`run_mapal.py`, warmup 2 + 5 reps), `r1_tr*_*.log` (`MAPAL_GPU_TRACE`, 4 processes a build), cubins, SASS.
+(`run_mapal.py`, warmup 2 + 5 reps), `r1_tr*_*.log` (`MAPAL_GPU_TRACE`, 4 processes a build), cubins, SASS,
+`q_*.json` (the same builds re-timed beside the competitors); `prefill-precision/competitors-f32/` (the f32-compute
+competitor sweep).
 
 ## 1. The `fold: bf16 | f32` build's wrong tokens (token 84707 repeated) — fixed
 
@@ -123,6 +125,45 @@ host — 32 uploads, 671 MB (268 MB at 128, 2.28 GB at 2048), and 33 downloads (
 step's); then the attention, f32 FFMA in both classes (scores + softmax + P·V ≈ 0.34 ms a layer at 512, 1.95 ms at
 2048: 31 of the 102 ms of kernels; the permission is only on `project`).
 
+## Same-class competitors (each class against tools computing at its own precision)
+
+No gain is claimed across classes: the f32 class is compared only with f32-compute tools, and the bf16 class only
+with bf16 tools.
+
+**f32 class.** Mapal as written (f32 activations × the bf16 weights). The competitors take the bf16 checkpoint widened
+to f32, with f32 activations and KV cache, and TF32 off (`allow_tf32 = False`, `float32_matmul_precision("highest")`).
+Command: `compare.py --tools hf-eager,gpt-fast,hf-static-compile --batches 1 --runner-arg=--dtype
+--runner-arg=f32`, with runner copies that add a `--dtype` flag (the shared harness is unchanged; the patch is raw
+`competitors-f32/runners-f32.patch`). The competitors ran 16:59–17:05 at load 5–18 under the bench lock. The Mapal
+builds above were re-timed right after (17:05–17:08, load 4–6, one `run_mapal.py` process each, `q_*.json`). Every
+row gives **128 / 128 of the HF f32 reference's tokens** at all three prompts.
+
+| tool, f32 compute | TTFT 128 ms | 512 | 2048 | decode 128 ms/token | 512 | 2048 | peak MB (512) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Mapal, bf16x2n split (after) | 25.9 | 82.4 | 297.9 | **3.63** | **3.72** | **3.60** | 4 886 |
+| Mapal, FFMA (before) | 29.8 | 86.7 | 343.6 | 3.66 | 3.85 | 3.69 | 5 392 |
+| gpt-fast f32 (max-autotune, CUDA graphs) | **13.8** | 48.0 | **213.9** | 5.73 | 5.74 | 5.92 | 6 628 |
+| HF eager f32 | 14.4 | **41.8** | 241.9 | 7.16 | 7.48 | 8.16 | 5 204 |
+| HF static cache + compile f32 | 17.1 | 44.4 | 245.5 | 6.77 | 7.55 | 10.49 | 5 372 |
+
+- **Decode:** Mapal is 1.54–1.64× faster than gpt-fast f32 and 1.97–2.27× faster than HF eager f32. Mapal reads the
+  bf16 weight bytes and widens them in registers, which gives the same values with half the bytes. The f32 tools
+  store the widened weights: 4.9 GB a step, about 5.1 ms at ~960 GB/s, and that bound sets their floor. Mapal's
+  decode lead comes from that bound, not from a precision difference.
+- **TTFT:** Mapal is 1.88 / 1.97 / 1.39× behind the best f32 tool. Its prompt kernels alone (10.6 / 30.0 / 133.8 ms,
+  traced above) are below every f32 tool's whole TTFT. Most of the gap is outside the projections: the cache chain
+  through the host and the attention's f32 FFMA.
+- **Precision of the split:** Mapal's split is bf16x2n: `a` = hi + lo bf16 parts with exact bf16 weights, accurate
+  within D2's admitted bound, not full f32 products. The competitors' f32 GEMMs are SGEMM (FFMA).
+- **Decode noise:** Mapal's decode was 3.48–4.19 ms rep to rep in this hour (shared host), against 3.34–3.55 on the
+  quiet full-model run. This step does not change the decode step.
+
+**bf16 class.** `fold: bf16 | f32` on `project` only: attention, norms and the cache stay f32 in this program. The
+competitors are fully bf16. Their numbers come from full-model.md (the same harness, this afternoon, load 0.6–3).
+Mapal (`q_bf_*.json`) gives TTFT 22.5 / 71.2 / 271.5 ms against the best bf16 tool's 4.5 (gpt-fast) / 13.4 (vLLM)
+/ 44.9 (SGLang): **5.0 / 5.3 / 6.0× behind**. Mapal's prompt kernels alone (7.5 / 20.4 / 101.8 ms) are 1.5–2.3×
+those whole TTFTs. Decode is 3.69–3.91 ms in this hour (3.63–3.81 in the ABBA above) against gpt-fast's 2.95–3.05.
+
 ## Open
 
 1. **C4, the tensor tile's grid on the SMs** (2b's remaining 7–19 % to cuBLAS): a block geometry that puts the
@@ -140,7 +181,10 @@ step's); then the attention, f32 FFMA in both classes (scores + softmax + P·V �
 5. Two commits on this branch are not this step's agent's: `f56d59a7` (zero-hoist) and `0d9686a6` (a second
    shared-body bug: a body's `cell-law` and epilogue-member device variants shared the name `<body>_cell`; test
    `tests/shared_bodies.rs`). They were made in this worktree by another session while this step ran; the measured
-   builds' CLI was built with those edits in the tree (16:08). The tokens agree in every build.
+   builds' CLI was built with those edits in the tree (16:08). The tokens agree in every build. Rebuilt with the
+   CLI at `0d9686a6` (both commits in, a clean tree), all nine measured builds (three classes × three prompts) are
+   byte-identical to the measured ones: host `.ll`, device `.ll` and `mapal_gpu.c`. So the numbers here measure the
+   committed code.
 
 ## Tests
 
