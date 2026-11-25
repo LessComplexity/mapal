@@ -13,6 +13,7 @@ Start with [current GPU results](gpu/current-results.md). Reports are organized 
 | Compiler cost | [Compiler](compiler/README.md) | Compilation time and guard-gating equivalence |
 | Early GEMM measurements | [Matmul history](matmul/README.md) | Earlier CPU/GPU comparisons, preserved with descriptive filenames |
 | Measurement conventions | [Methodology](methodology/README.md) | Algorithm families, precision and measurement boundaries |
+| README results before 2026-11-25 | [Earlier README results](earlier-readme-results.md) | CPU vs NumPy / OpenBLAS, the October four-GPU table and the GPU round narratives, plan-cost, tile efficiency, the three builds, the old status and plans |
 
 Use descriptive topic and experiment names for new reports and evidence. Session numbers belong only in historical provenance and immutable handoff logs, never in new result titles or storage folders. Separate ordinary timings, correctness, profiling and operational receipts. Every comparison must state the machine, shape, precision, measured region and admission limits.
 
