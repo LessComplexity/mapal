@@ -3,7 +3,9 @@
 // device before the clock as Mapal's are.
 //
 // Legs (pure FP32: CUBLAS_DEFAULT_MATH / CUBLAS_COMPUTE_32F; `--tf32`: their TF32 twins only,
-// CUBLAS_TF32_TENSOR_OP_MATH / CUBLAS_COMPUTE_32F_FAST_TF32):
+// CUBLAS_TF32_TENSOR_OP_MATH / CUBLAS_COMPUTE_32F_FAST_TF32; `--bf16`, wgmma-16bit: the bf16 GEMM type to type with
+// the `_bf16` programs — A and B rounded to bf16 once (RNE) before the clock, as an activation stored bf16 is, C f32,
+// CUBLAS_COMPUTE_32F: cublasGemmEx and cuBLASLt's heuristic algorithms):
 //   cublas   cublasSgemm (the column-major transpose trick: Cᵀ = Bᵀ·Aᵀ).
 //   lt       cublasLtMatmul: up to 8 heuristic algorithms (32 MB workspace), each timed over 5 runs, the fastest
 //            kept — the best cuBLASLt offers for the shape.
@@ -15,10 +17,11 @@
 // Values: c[0] and c[M·N − 1] against Mapal's printed values when given:
 // |leg − mapal| ≤ tol · max(|mapal|, rms(leg output)), tol 1e-3 (f32) / 1e-2 (TF32).
 //
-// usage: gemm_lib <stem> <M> <N> <K> <reps> [--tf32] [mapal c[0] c[last]]
+// usage: gemm_lib <stem> <M> <N> <K> <reps> [--tf32 | --bf16] [mapal c[0] c[last]]
 // prints `gemm prog=<stem> leg=<leg> algo=<i>/<n> min_ms= med_ms= max_ms= within=yes|no|no-mapal maxdev= values=`.
 #include <cublasLt.h>
 #include <cublas_v2.h>
+#include <cuda_bf16.h>
 #include <cuda_runtime.h>
 
 #include <algorithm>
@@ -52,6 +55,11 @@ __global__ void law(float *o, long long n, long long mul, long long add, long lo
     o[t] = (float)((t * mul + add) % mod - off) / div;
 }
 
+__global__ void to_bf16(__nv_bfloat16 *o, const float *x, long long n) {
+  for (long long t = blockIdx.x * (long long)blockDim.x + threadIdx.x; t < n; t += (long long)gridDim.x * blockDim.x)
+    o[t] = __float2bfloat16_rn(x[t]);
+}
+
 int main(int argc, char **argv) {
   if (argc < 6) {
     fprintf(stderr, "usage: gemm_lib <stem> M N K reps [--tf32] [mapal c0 clast]\n");
@@ -62,9 +70,11 @@ int main(int argc, char **argv) {
   int ai = 6;
   const bool tf32 = argc > ai && !strcmp(argv[ai], "--tf32");
   if (tf32) ++ai;
+  const bool bf16 = argc > ai && !strcmp(argv[ai], "--bf16");
+  if (bf16) ++ai;
   std::vector<double> want;
   for (; ai < argc; ++ai) want.push_back(atof(argv[ai]));
-  const double tol = tf32 ? 1e-2 : 1e-3;
+  const double tol = bf16 ? 2e-2 : tf32 ? 1e-2 : 1e-3;
 
   float *A, *B, *C, *flush;
   void *ws;
@@ -76,7 +86,16 @@ int main(int argc, char **argv) {
   CK(cudaMalloc(&ws, WS));
   law<<<1024, 256>>>(A, (long long)M * K, 7, 13, 101, 50, 7.0f);
   law<<<1024, 256>>>(B, (long long)K * N, 11, 57, 103, 51, 9.0f);
+  __nv_bfloat16 *A16 = nullptr, *B16 = nullptr;
+  if (bf16) {
+    CK(cudaMalloc(&A16, sizeof(__nv_bfloat16) * M * K));
+    CK(cudaMalloc(&B16, sizeof(__nv_bfloat16) * K * (size_t)N));
+    to_bf16<<<1024, 256>>>(A16, A, (long long)M * K);
+    to_bf16<<<1024, 256>>>(B16, B, (long long)K * N);
+  }
   CK(cudaDeviceSynchronize());
+  const cudaDataType_t ab_t = bf16 ? CUDA_R_16BF : CUDA_R_32F;
+  const void *Ap = bf16 ? (const void *)A16 : (const void *)A, *Bp = bf16 ? (const void *)B16 : (const void *)B;
 
   cublasHandle_t h;
   cublasLtHandle_t lt;
@@ -89,8 +108,8 @@ int main(int argc, char **argv) {
   cublasLtMatmulDesc_t op;
   cublasLtMatrixLayout_t la, lb, lc;
   BLAS(cublasLtMatmulDescCreate(&op, tf32 ? CUBLAS_COMPUTE_32F_FAST_TF32 : CUBLAS_COMPUTE_32F, CUDA_R_32F));
-  BLAS(cublasLtMatrixLayoutCreate(&la, CUDA_R_32F, N, K, N));
-  BLAS(cublasLtMatrixLayoutCreate(&lb, CUDA_R_32F, K, M, K));
+  BLAS(cublasLtMatrixLayoutCreate(&la, ab_t, N, K, N));
+  BLAS(cublasLtMatrixLayoutCreate(&lb, ab_t, K, M, K));
   BLAS(cublasLtMatrixLayoutCreate(&lc, CUDA_R_32F, N, M, N));
   cublasLtMatmulPreference_t pref;
   BLAS(cublasLtMatmulPreferenceCreate(&pref));
@@ -99,9 +118,15 @@ int main(int argc, char **argv) {
   int nres = 0;
   BLAS(cublasLtMatmulAlgoGetHeuristic(lt, op, la, lb, lc, lc, pref, 8, res, &nres));
   auto run_lt = [&](int i) {
-    BLAS(cublasLtMatmul(lt, op, &one, B, la, A, lb, &zero, C, lc, C, lc, &res[i].algo, ws, WS, 0));
+    BLAS(cublasLtMatmul(lt, op, &one, Bp, la, Ap, lb, &zero, C, lc, C, lc, &res[i].algo, ws, WS, 0));
   };
-  auto run_cublas = [&]() { BLAS(cublasSgemm(h, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &one, B, N, A, K, &zero, C, N)); };
+  auto run_cublas = [&]() {
+    if (bf16)
+      BLAS(cublasGemmEx(h, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &one, B16, CUDA_R_16BF, N, A16, CUDA_R_16BF, K, &zero, C,
+                        CUDA_R_32F, N, CUBLAS_COMPUTE_32F, CUBLAS_GEMM_DEFAULT));
+    else
+      BLAS(cublasSgemm(h, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &one, B, N, A, K, &zero, C, N));
+  };
   cudaEvent_t e0, e1;
   CK(cudaEventCreate(&e0));
   CK(cudaEventCreate(&e1));
@@ -117,6 +142,10 @@ int main(int argc, char **argv) {
     if (!cold) {  // fresh: the operands written last, B then A, as the program's laws are
       law<<<1024, 256>>>(B, (long long)K * N, 11, 57, 103, 51, 9.0f);
       law<<<1024, 256>>>(A, (long long)M * K, 7, 13, 101, 50, 7.0f);
+      if (bf16) {
+        to_bf16<<<1024, 256>>>(B16, B, (long long)K * N);
+        to_bf16<<<1024, 256>>>(A16, A, (long long)M * K);
+      }
     }
   };
   auto time_once = [&](auto &&f, bool cold = true) {
@@ -155,7 +184,8 @@ int main(int argc, char **argv) {
     std::vector<float> vals;
     double dev = NAN, rms = 0;
   };
-  std::vector<Leg> legs = {{tf32 ? "cublas-tf32" : "cublas"}, {tf32 ? "lt-tf32" : "lt"}};
+  std::vector<Leg> legs = {{bf16 ? "cublas-bf16" : tf32 ? "cublas-tf32" : "cublas"},
+                           {bf16 ? "lt-bf16" : tf32 ? "lt-tf32" : "lt"}};
   if (nres == 0) legs.pop_back();
   auto run_leg = [&](size_t l) {
     if (l == 0)
@@ -184,7 +214,8 @@ int main(int argc, char **argv) {
   const size_t nl = legs.size();
   for (size_t l = 0; l < nl; ++l) {
     Leg w = legs[l];
-    w.name = l == 0 ? (tf32 ? "cublas-tf32-fresh" : "cublas-fresh") : (tf32 ? "lt-tf32-fresh" : "lt-fresh");
+    w.name = l == 0 ? (bf16 ? "cublas-bf16-fresh" : tf32 ? "cublas-tf32-fresh" : "cublas-fresh")
+                    : (bf16 ? "lt-bf16-fresh" : tf32 ? "lt-tf32-fresh" : "lt-fresh");
     legs.push_back(w);
   }
   std::vector<std::vector<float>> devs(legs.size());

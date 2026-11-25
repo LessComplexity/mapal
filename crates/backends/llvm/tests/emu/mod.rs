@@ -208,8 +208,12 @@ pub fn host_device(dev: &str) -> String {
             l = l.replace(&wid, &format!("@emu_cvt_f16x2_{f}x2("));
         }
         for (f, e) in [("bf16", "bf16x2"), ("f16", "f16x2")] {
-            let asm = format!("asm \"cvt.rn.{f}x2.f32 $0, $1, $2;\", \"=r,f,f\"(");
-            l = l.replace(&asm, &format!("@emu_cvt_{e}("));
+            // wgmma-16bit: the register `a` fragments' rounding is pinned
+            // (`sideeffect`) before the `wgmma.fence`.
+            for pre in ["asm sideeffect", "asm"] {
+                let asm = format!("{pre} \"cvt.rn.{f}x2.f32 $0, $1, $2;\", \"=r,f,f\"(");
+                l = l.replace(&asm, &format!("@emu_cvt_{e}("));
+            }
         }
         if let Some(i) = l.find("asm sideeffect \"ldmatrix.sync.aligned.m8n8.x")
             && let Some((lhs, _)) = l.split_once(" = call ")
@@ -294,7 +298,8 @@ pub fn host_device(dev: &str) -> String {
             && let Some((lhs, _)) = l.split_once(" = call ")
             && let Some((_, args)) = l.rsplit_once("\"(")
         {
-            let n: usize = l[i + "asm sideeffect \"wgmma.mma_async.sync.aligned.m64n".len()..]
+            let shape = &l[i + "asm sideeffect \"wgmma.mma_async.sync.aligned.m64n".len()..];
+            let n: usize = shape
                 .split('k')
                 .next()
                 .and_then(|x| x.parse().ok())
@@ -303,13 +308,40 @@ pub fn host_device(dev: &str) -> String {
             let lhs = lhs.trim();
             let ty = format!("{{ {} }}", vec!["float"; n / 2].join(", "));
             let mut text = String::new();
-            for (q, v) in args[5..].iter().enumerate() {
+            // wgmma-16bit: `m64nNk16.f32.<bf16|f16>` — `a` four registers or
+            // a descriptor, `b` a descriptor, the transpose bit last.
+            let half = shape.contains(".f32.bf16.bf16") || shape.contains(".f32.f16.f16");
+            let first = if !half || !args[0].starts_with("i64") {
+                5
+            } else {
+                2
+            };
+            for (q, v) in args[first..].iter().enumerate() {
                 text += &format!("  call void @emu_acc_set(i32 {q}, {v})\n");
             }
-            text += &format!(
-                "  call void @emu_wgmma(i32 {n}, {})\n",
-                args[..5].join(", ")
-            );
+            if half {
+                let f16 = i32::from(shape.contains(".f32.f16.f16"));
+                let tb: String = shape
+                    .split(';')
+                    .next()
+                    .and_then(|t| t.rsplit(", ").next())
+                    .expect("the transpose bit")
+                    .to_string();
+                let call = match first {
+                    5 => format!("i32 0, {}, i64 0, {}", args[..4].join(", "), args[4]),
+                    _ => format!(
+                        "i32 1, i32 0, i32 0, i32 0, i32 0, {}, {}",
+                        args[0], args[1]
+                    ),
+                };
+                text +=
+                    &format!("  call void @emu_wgmma16(i32 {n}, i32 {f16}, {call}, i32 {tb})\n");
+            } else {
+                text += &format!(
+                    "  call void @emu_wgmma(i32 {n}, {})\n",
+                    args[..5].join(", ")
+                );
+            }
             let mut prev = "poison".to_string();
             for q in 0..n / 2 {
                 let (x, s) = (format!("{lhs}_x{q}"), format!("{lhs}_s{q}"));
@@ -462,6 +494,7 @@ pub fn host_device(dev: &str) -> String {
            declare void @emu_bulk(ptr, ptr, i32, ptr, i32)\ndeclare i32 @emu_mbar_try(ptr, i32)\n\
            declare i32 @emu_cvt_rn_tf32f(float)\ndeclare void @emu_acc_set(i32, float)\n\
            declare void @emu_wgmma(i32, i32, i32, i32, i32, i64)\ndeclare void @emu_wg_commit()\n\
+           declare void @emu_wgmma16(i32, i32, i32, i32, i32, i32, i32, i64, i64, i32)\n\
            declare void @emu_wg_wait(i32)\ndeclare void @emu_mbar_arrive(ptr)\n\
            declare void @emu_bulk_tensor(ptr, i64, i32, i32, i32, i32, i32, ptr)\n"
 }

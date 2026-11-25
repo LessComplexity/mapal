@@ -728,6 +728,87 @@ void emu_wgmma(int32_t n, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, ui
   }
   emu_barrier_k(12 + wgi, 128);
 }
+/* wgmma-16bit: `wgmma.mma_async.sync.aligned.m64nNk16.f32.<bf16|f16>` —
+ * `a` from registers (`amode` 0: the m64k16 fragments, warp w's rows 16w..,
+ * the `mma.m16n8k16` layout of each 16 rows) or a K-major descriptor
+ * (`amode` 1), `b` from a descriptor K-major (`tb` 0) or MN-major (`tb` 1,
+ * the transpose bit). A descriptor element's byte is its canonical 128-byte
+ * swizzled layout's (PTX ISA, "Shared Memory Matrix Layout"): K-major
+ * `start + (mn/8)·SBO + (mn%8)·128 + 2k`; MN-major `start + (mn/64)·LBO +
+ * (k/8)·SBO + (k%8)·128 + 2·(mn%64)` — the swizzle applied to the address
+ * (so a wrong LBO / SBO / transpose bit is a wrong value). Each product
+ * exact, each k16 step summed as `mma_sum` models the accumulator (the warp
+ * `mma.m16n8k16`'s, `emu_mma16`); the smem elements an instruction read are
+ * recorded for `emu_wg_wait` as `emu_wgmma`'s. */
+static uint64_t wg_ad[1024];
+static const unsigned char *wg16_at(uint64_t desc, int mn, int k, int mn_major) {
+  uint64_t start = (desc & 0x3fff) << 4, lbo = ((desc >> 16) & 0x3fff) << 4, sbo = ((desc >> 32) & 0x3fff) << 4;
+  uint32_t mode = (uint32_t)(desc >> 62) & 3;
+  if (mode != 1) {
+    fprintf(stderr, "emu: wgmma16 descriptor mode %u (the kernel writes 128-byte swizzled boxes)\n", mode);
+    exit(110);
+  }
+  uint64_t o = mn_major ? start + (uint64_t)(mn / 64) * lbo + (uint64_t)(k / 8) * sbo + (uint64_t)(k % 8) * 128 +
+                              (uint64_t)(mn % 64) * 2
+                        : start + (uint64_t)(mn / 8) * sbo + (uint64_t)(mn % 8) * 128 + (uint64_t)k * 2;
+  o = emu_swz(o, 128);
+  if (o + 2 > sizeof emu_smem) {
+    fprintf(stderr, "emu: wgmma16 descriptor reads past shared memory\n");
+    exit(110);
+  }
+  return emu_smem + o;
+}
+static void wg16_rec(int wgi, const unsigned char *e) {
+  const uint32_t *p = (const uint32_t *)((uintptr_t)e & ~(uintptr_t)3);
+  if (wg_nrec[wgi] == WG_REC_MAX) {
+    fprintf(stderr, "emu: wgmma record full\n");
+    exit(110);
+  }
+  wg_rec[wgi][wg_nrec[wgi]].p = p;
+  wg_rec[wgi][wg_nrec[wgi]].v = *p;
+  wg_rec[wgi][wg_nrec[wgi]++].g = wg_group[wgi];
+}
+void emu_wgmma16(int32_t n, int32_t f16, int32_t amode, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3,
+                 uint64_t adesc, uint64_t bdesc, int32_t tb) {
+  int wgi = tid_x / 128, base = wgi * 128, me = tid_x - base;
+  wg_a[tid_x][0] = a0, wg_a[tid_x][1] = a1, wg_a[tid_x][2] = a2, wg_a[tid_x][3] = a3;
+  memcpy(wg_c[tid_x], t_acc, (size_t)(n / 2) * sizeof(float));
+  wg_ad[tid_x] = adesc;
+  wg_d[tid_x] = bdesc;
+  emu_barrier_k(12 + wgi, 128);
+  int w = me / 32, lane = me % 32, g = lane / 4, t = lane % 4;
+  for (int j = 0; j < n / 8; j++)
+    for (int h = 0; h < 2; h++)
+      for (int e = 0; e < 2; e++) {
+        int q = 4 * j + 2 * h + e, row = 16 * w + g + 8 * h, col = 8 * j + 2 * t + e;
+        double pr[16];
+        for (int k = 0; k < 16; k++) {
+          uint32_t av, bv;
+          if (amode == 0) {
+            int src = base + 32 * (row / 16) + 4 * (row % 8) + (k % 8) / 2;
+            av = (wg_a[src][(row % 16) / 8 + 2 * (k / 8)] >> (16 * (k % 2))) & 0xffff;
+          } else {
+            uint16_t x;
+            memcpy(&x, wg16_at(wg_ad[base], row, k, 0), 2);
+            av = x;
+          }
+          uint16_t y;
+          memcpy(&y, wg16_at(wg_d[base], col, k, tb), 2);
+          bv = y;
+          pr[k] = (double)b16f(av, f16) * (double)b16f(bv, f16);
+        }
+        float d = mma_sum(wg_c[tid_x][q], pr, 16);
+        memcpy(&t_frag[q], &d, 4);
+      }
+  if (me == 0) {
+    for (int k = 0; k < 16; k++) {
+      for (int col = 0; col < n; col++) wg16_rec(wgi, wg16_at(wg_d[base], col, k, tb));
+      if (amode)
+        for (int row = 0; row < 64; row++) wg16_rec(wgi, wg16_at(wg_ad[base], row, k, 0));
+    }
+  }
+  emu_barrier_k(12 + wgi, 128);
+}
 void emu_wg_commit(void) {
   if (tid_x % 128 == 0) wg_group[tid_x / 128]++;
 }
