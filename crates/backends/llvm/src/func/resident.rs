@@ -2463,9 +2463,20 @@ impl<'a> FnEmit<'a> {
                     // for the output (the data stays where its readers are).
                     let moved = || {
                         let bytes = |o: ObjectId| self.array_bytes(&self.obj_ty(o));
+                        // residency `shared-upload`: an operand another
+                        // device reader loads is uploaded for it anyway (the
+                        // residual stream beside a norm): this cell adds no
+                        // bytes by reading it there too.
+                        let shared = |o: ObjectId| {
+                            self.uses(sites, cells, o, &[])
+                                .iter()
+                                .filter(|u| matches!(u, Use::Dev))
+                                .count()
+                                > 1
+                        };
                         let up: u64 = ops
                             .iter()
-                            .filter(|&&(o, _)| !(there(o) || walked(o)))
+                            .filter(|&&(o, _)| !(there(o) || walked(o) || shared(o)))
                             .map(|&(o, _)| bytes(o))
                             .sum();
                         let down: u64 = ops
@@ -2622,9 +2633,7 @@ impl<'a> FnEmit<'a> {
         // state — the entry takes its buffer, no host reader is left, so it
         // is kept (no copy out). Its only use is the init product's pair.
         let take = gpu::host_rungs(self.profile, self.contract, self.gpu_arms).carry_take;
-        // Each taken init with its edges into the init product (the carry's
-        // way in).
-        let taken: Vec<(ObjectId, Vec<MorphismId>)> = plan
+        let taken: Vec<(ObjectId, ObjectId)> = plan
             .carries
             .iter()
             .filter(|_| take)
@@ -2648,29 +2657,33 @@ impl<'a> FnEmit<'a> {
                         && !self.lup.escapes(a)
                         && self.lup.death(a).is_some_and(|d| d <= enter))
                         || self.bytes_enter(&plan, a, lp.init, enter)))
-                .then(|| {
-                    let into = self
-                        .ir
-                        .out_edges(a)
-                        .iter()
-                        .copied()
-                        .filter(|&e| self.ir.morphism(e).is_some_and(|x| x.target == lp.init))
-                        .collect();
-                    (a, into)
-                })
+                .then_some((a, lp.init))
             })
             .collect();
         for c in outs {
             device.push(c);
             let uses = if plan.is_carry_next(c) {
                 vec![] // checked device-only when the carry was admitted
-            } else if let Some((_, into)) = taken.iter().find(|(a, _)| *a == c) {
-                // prefill-integrate: a taken init's other readers — at or
-                // before the loop's entry (`bytes_enter`) — read it before
-                // the carry takes its buffer: a host one needs its copy out
-                // (a host fold over it). The way into the carry is the
-                // carry's (`last_use_plan` counts it as an escape).
-                self.edge_uses(&sites, &cells, c, into)
+            } else if taken.iter().any(|&(a, _)| a == c) {
+                // The taking loop's init pair is the carry's way in (its
+                // buffer); any other reader — a host fold or element before
+                // the entry (`bytes_enter` admits one), another loop entered
+                // with it earlier — still needs the bytes out. The state's
+                // way out (`last_use_plan` counts it as the array's escape)
+                // is the carry's: the array's out-edges alone.
+                let into: Vec<MorphismId> = self
+                    .ir
+                    .out_edges(c)
+                    .iter()
+                    .copied()
+                    .filter(|&e| {
+                        self.ir.morphism(e).is_some_and(|x| {
+                            matches!(x.op, Operation::Pair { .. })
+                                && taken.iter().any(|&(a, init)| a == c && init == x.target)
+                        })
+                    })
+                    .collect();
+                self.edge_uses(&sites, &cells, c, &into)
             } else {
                 self.uses(&sites, &cells, c, &[])
             };
@@ -3981,13 +3994,24 @@ impl<'a> FnEmit<'a> {
                 } else {
                     name
                 };
-                // bf16-class `device-trap`: the body's checking variant.
+                // bf16-class `device-trap`: the body's checking variant (one
+                // lane: no fold split, so no `fly-unroll` depth either).
+                // residency `fly-unroll`: the lane loop's depth from the
+                // grid's warps an SM against the part's stream bytes in flight.
                 let (name, text) = match c.trap {
                     true => (
                         gpu::trap_variant(&name),
                         self.body_text_trap(c.body, vals.clone()),
                     ),
-                    false => (name, self.body_text_with(c.body, vals.clone(), lanes)),
+                    false => {
+                        let trips = self.fly_trips(m, c);
+                        let name = match trips {
+                            crate::profile::NAIVE_UNROLL => name,
+                            t => format!("{name}_u{t}"),
+                        };
+                        let text = self.body_text_lanes(c.body, vals.clone(), lanes, trips);
+                        (name, text)
+                    }
                 };
                 let mut fns = vec![(name, text)];
                 let caps: Vec<gpu::CapArg> = (0..c.caps.len() as u32)
@@ -4185,6 +4209,53 @@ impl<'a> FnEmit<'a> {
         vals: Vec<(u32, String)>,
         lanes: Option<(ObjectId, mapal_ir::RowFoldOp, u64)>,
     ) -> String {
+        self.body_text_lanes(f, vals, lanes, crate::profile::NAIVE_UNROLL)
+    }
+
+    /// residency `fly-unroll`: the trips a warp-a-cell fold of cell `c`
+    /// unrolls. A grid of `n · lanes` threads holds `w` warps an SM; each
+    /// unrolled trip a warp loads `lanes` elements of the narrowest array its
+    /// nested fold walks (the streamed operand). Little's law at the part's
+    /// stream bytes in flight (`Gpu::stream_fly_per_sm`) asks `fly / (w ·
+    /// lanes · e)` trips in flight — the next power of two, never under
+    /// [`crate::profile::NAIVE_UNROLL`], capped at 32 (the registers a lane
+    /// holds them in).
+    fn fly_trips(&self, m: MorphismId, c: &Cell) -> u64 {
+        let naive = crate::profile::NAIVE_UNROLL;
+        let Some(g) = self.profile.gpu() else {
+            return naive;
+        };
+        if c.lanes <= 1 || !gpu::host_rungs(self.profile, self.contract, self.gpu_arms).fly_unroll {
+            return naive;
+        }
+        let fly = g.stream_fly_per_sm();
+        let plan = self.ir.cell_plan(self.f);
+        let Some(site) = plan.get(m) else {
+            return naive;
+        };
+        let e = site
+            .nested
+            .iter()
+            .filter_map(|&s| c.caps.get(s as usize))
+            .map(|&o| crate::profile::elem_bytes(array_elem(&self.obj_ty(o))))
+            .min()
+            .unwrap_or(0);
+        if fly == 0 || e == 0 {
+            return naive;
+        }
+        let warps = (c.n * c.lanes).div_ceil(g.warp).div_ceil(g.sms).max(1);
+        fly.div_ceil(warps * c.lanes * e)
+            .next_power_of_two()
+            .clamp(naive, 32)
+    }
+
+    fn body_text_lanes(
+        &self,
+        f: FuncId,
+        vals: Vec<(u32, String)>,
+        lanes: Option<(ObjectId, mapal_ir::RowFoldOp, u64)>,
+        trips: u64,
+    ) -> String {
         let mut fe = FnEmit::new(
             self.ir,
             f,
@@ -4202,6 +4273,7 @@ impl<'a> FnEmit<'a> {
         fe.set_gpu_arms(self.gpu_arms);
         fe.cell_vals = vals;
         fe.lanes = lanes;
+        fe.lane_trips = trips;
         fe.emit()
     }
 

@@ -237,10 +237,11 @@ impl<'a> FnEmit<'a> {
         } else {
             gpu::cell_variant(&fname)
         };
-        let fname = if self.lanes.is_some() {
-            gpu::lanes_variant(&fname)
-        } else {
-            fname
+        let fname = match (self.lanes.is_some(), self.lane_trips) {
+            (false, _) => fname,
+            (true, crate::profile::NAIVE_UNROLL) => gpu::lanes_variant(&fname),
+            // residency `fly-unroll`: its own depth, its own name.
+            (true, t) => format!("{}_u{t}", gpu::lanes_variant(&fname)),
         };
         let fname = if self.device_trap {
             gpu::trap_variant(&fname)

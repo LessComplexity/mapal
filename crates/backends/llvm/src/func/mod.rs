@@ -410,6 +410,11 @@ pub(crate) struct FnEmit<'a> {
     /// whose target is the first field walks every `lanes`-th step from the
     /// lane and combines the lanes' partials by `step` (a warp shuffle tree).
     lanes: Option<(ObjectId, mapal_ir::RowFoldOp, u64)>,
+    /// residency `fly-unroll`: the trips a `lanes` fold loop unrolls — the
+    /// loads a lane keeps in flight ([`crate::profile::NAIVE_UNROLL`] unless
+    /// the cell's grid holds too few warps an SM to keep the part's stream
+    /// bytes in flight at that depth).
+    lane_trips: u64,
     /// device-geometry `tile-post`: this body is a tile site's epilogue
     /// variant (`<name>_post`) — its fold's value arrives as `%fv` after
     /// `%arg` (the site's accumulator) instead of being folded here.

@@ -1186,6 +1186,13 @@ pub struct GpuRungs {
     /// index left it rolled, one weight load in flight a warp). Off
     /// (`--gpu-off=lanes-unroll`): no loop metadata.
     pub lanes_unroll: bool,
+    /// residency `fly-unroll`: a warp-a-cell fold whose grid holds too few
+    /// warps an SM to keep the part's stream bytes in flight
+    /// (`Gpu::stream_fly_per_sm`) at `NAIVE_UNROLL` loads a lane unrolls
+    /// deeper — the power of two that keeps them, at most the lane's trips
+    /// (a 512-row one-row projection: 6 warps an SM). Off
+    /// (`--gpu-off=fly-unroll`): every lane loop `NAIVE_UNROLL`.
+    pub fly_unroll: bool,
 }
 
 impl GpuRungs {
@@ -1355,11 +1362,12 @@ impl GpuRungs {
         stride_lanes: true,
         carry_fwd: true,
         lanes_unroll: true,
+        fly_unroll: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 164] = [
+    pub const NAMES: [&'static str; 165] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1524,6 +1532,7 @@ impl GpuRungs {
         "carry-fwd",
         "lanes-unroll",
         "mma-walk",
+        "fly-unroll",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -1693,6 +1702,7 @@ impl GpuRungs {
             "stride-lanes" => &mut self.stride_lanes,
             "carry-fwd" => &mut self.carry_fwd,
             "lanes-unroll" => &mut self.lanes_unroll,
+            "fly-unroll" => &mut self.fly_unroll,
             _ => return None,
         })
     }
@@ -2204,8 +2214,16 @@ fn host_line(
             }
         }
     }
+    // residency `calib-supply`: where a `native-gpu` build's measured costs
+    // came from (`file`, `committed`), or `none`.
+    let calib = match (profile.name, profile::native_gpu_calib()) {
+        (profile::NATIVE_GPU, Some(profile::CalibSource::File(_))) => " calib=file",
+        (profile::NATIVE_GPU, Some(profile::CalibSource::Committed)) => " calib=committed",
+        (profile::NATIVE_GPU, _) => " calib=none",
+        _ => "",
+    };
     em.text.push_str(&format!(
-        "; mapal.host profile={} fma={} order={:?} device_sites={dev} host_sites={host}\n",
+        "; mapal.host profile={} fma={} order={:?} device_sites={dev} host_sites={host}{calib}\n",
         em.profile,
         u8::from(opts.contract),
         opts.order
