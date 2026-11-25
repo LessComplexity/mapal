@@ -61,9 +61,12 @@ What follows from it:
 - **No runtime graph recording.** Which work merges into one kernel, vertically along a chain and horizontally
   across independent branches, is decided at compile time from the dataflow. Nothing is traced or captured while
   the program runs.
-- **Guaranteed numerics.** On the exact faces every backend prints the interpreter's bits. On the default face
-  (full precision, order free) every result is within an error bound stated before the program runs
-  ([ADR-0040](docs/decisions/ADR-0040-default-float-face.md)). Reduced precision is opt-in, per product.
+- **Correct numerics: the flow and the bound, not bit-identity.** Every result is within an error bound stated before
+  the program runs, at full precision ([ADR-0040](docs/decisions/ADR-0040-default-float-face.md)). The compiler orders
+  and combines operations freely for speed and placement, so parallel sums may differ in the last bits between runs —
+  correctness is a correct flow of operations, not a repeated bit pattern
+  ([ADR-0049](docs/decisions/ADR-0049-correctness-is-the-flow-and-the-bound.md)). Bit-reproducible runs exist as a
+  development mode for testing and debugging. Reduced precision is opt-in, per product.
 - **Readable, idiomatic source.** Programs read like the math they compute. If natural code compiles worse than a
   hand-shaped version, the compiler is fixed, not the program.
 - **A language AI agents can write and verify.** Deterministic semantics, precise diagnostics with stable codes, one
@@ -548,7 +551,7 @@ imposing attribution requirements on _your_ program's output.
 [Badge Language]: https://img.shields.io/github/languages/top/LessComplexity/mapal
 [Badge Pull Requests]: https://img.shields.io/github/issues-pr/LessComplexity/mapal
 [Badge Issues]: https://img.shields.io/github/issues/LessComplexity/mapal
-[Badge Numerics]: https://img.shields.io/badge/numerics-exact_or_bounded-14b8a6
+[Badge Numerics]: https://img.shields.io/badge/numerics-bounded-14b8a6
 
 <!-----------------------------------{ Links }----------------------------------->
 
