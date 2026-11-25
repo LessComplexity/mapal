@@ -1,19 +1,206 @@
-# local-rtx-5080 — the full model: readable Llama-3.2-1B-Instruct in Mapal against six inference stacks (2026-11-25)
+# local-rtx-5080 — the full model after the prefill integration: readable Llama-3.2-1B-Instruct in Mapal against six inference stacks, both precision classes (2026-11-25, evening)
 
-The real checkpoint, written the way a person writes it (`examples/llama.mapal`: 404 lines, 56 of them comments, 19 functions and types),
-read from one file, run end to end on the RTX 5080 (sm_120, 84 SMs, 16 GB, ~960 GB/s; driver 620.73.04, CUDA 13.5) and
-timed with the competitors' own harness definitions. Machine: Threadripper 9970X, shared; Mapal and competitor runs
-held the bench lock, timed processes on CPUs 16-23 (`nice 10`); load 0.6–3.0 and Tctl 34–44 C during every timed
-run (the final Mapal runs at load 2–3: another agent's work winding down; an earlier run of the same programs at load
-0.6–1.2 gave 28.9 / 85.0 / 332.1 ms and 3.322 / 3.369 / 3.531 ms — within 1 %). Raw output (never in git): `.claude/raw-evidence/local-rtx-5080/model-ready-full-model/` (`competitors/` the
-sweep, `mapal/` the programs, builds and `mapal_n*_b1.json`, `hf/` the references, `changed/` the suite emission
-diff, `tests/`).
+`local-rtx-5080` (the builds measured here: `8bf54fb3`): the merges of prefill/precision, prefill/residency and prefill/mask-frontend, and
+three fixes the integration found. The program is the readable `examples/llama.mapal` (403 lines, 56 of them
+comments), unchanged except as mask-frontend wrote it (`attend` reads the cache through the struct). The f32 class
+decodes HF f32's 128 tokens at every length; the bf16 class agrees with the bf16 references as far as they agree
+with each other (below). Raw output (never in git):
+`.claude/raw-evidence/local-rtx-5080/prefill-integrate/` (`mapal/` programs and builds, `time/` the timed runs,
+`competitors/` the sweep, `trace/` CUPTI traces, `changed*/` the suite emission diff and timing, `tools/`, logs).
+
+## Method
+
+- **RTX 5080** (sm_120, 84 SMs, 16 GB, ~960 GB/s), Threadripper 9970X (shared; boost capped at 4.5 GHz), driver
+  620.73.04, CUDA 13.5. Every timed process held the bench lock and ran on CPUs 16-23,48-55 (`nice 10`); the
+  workspace test suite ran at the same time on CPUs 24-31,56-63 (moved there for the timing).
+- **Definitions** (the harness's `common.py`): TTFT = submit → first token on the host; decode = (t₁₂₈ − t₂) / 126;
+  e2e = t₁₂₈; peak = the process's GPU memory (nvidia-smi). Greedy, batch 1, 128 generated, warmup 2 + 5 reps,
+  medians [min, max] in `time/`.
+- **Mapal**: `benches/model/run_mapal.py` (one process per repetition; weights load and upload before `() -> time`;
+  `tools/time_mapal.sh` holds the lock per length).
+  Builds: `MAPAL_GPU_CALIB=benches/results/evidence/local-rtx-5080/calib/rtx-5080.calib mapal build
+  --target=native-gpu` (the native-gpu profile is the device query + this box's calibration line; this box has no
+  `~/.cache/mapal/gpu-calib`, so the same build without the variable is also reported, "no calib file").
+  Programs from `benches/model/variant.py` (`prompt_length=N`; `--compute bf16` for the bf16 class).
+- **Competitors**: `~/.cache/mapal/model-compare/compare.py --batches 1 --lens 128,512,2048` (all eight legs, their
+  own warmup + 5 reps), 18:06–18:13, load 323 → 36 at start / end (a burst at the start; most
+  rows within 10 % of the afternoon's quiet sweep, vLLM at 2048 17 % slower, llama.cpp's 128 / 2048 rows faster).
+  Mapal: the table is the pass beside the sweep (`time/final2`, 18:13–18:16, load 36 → 28); the pass before it
+  (`time/final`, 18:01–18:04, load 68 → 18) and a third after the test suite (`time/final3`, 18:43–18:47, load 11 → 8) read TTFT up to 22 % and decode up to 17 %
+  slower — the decode spread is the host (below), not the load average.
+  The f32-compute competitor legs are the precision step's (`compare.py --runner-arg=--dtype --runner-arg=f32`,
+  TF32 off; 16:59–17:05, load 5–18; raw `prefill-precision/competitors-f32/`).
+
+**Precision classes.** No gain is claimed across classes.
+- **f32 class** — the program as written (Mapal's default face): f32 activations × the bf16 weights,
+  f32-accurate within ADR-0040 D2's bound (the projections on the split tile `bf16x2n` where the calibrated rule
+  takes it, else the FFMA tile). Compared with the f32-compute legs.
+- **bf16 class** — the competitors' precision: `fold: bf16 | f32` on the three sums of products (`project`, the
+  scores, `P·V`; `variant.py --compute bf16`): operands rounded to bf16, f32 accumulation (ADR-0041). Norms,
+  softmax, RoPE and the cache stay f32. Compared with the bf16 legs.
+
+## Tokens (greedy, 128, batch 1; tokens equal before the first difference)
+
+| program | 128 | 512 | 2048 |
+|---|---|---|---|
+| Mapal f32 class (calibrated and no calib file) vs HF f32 (`hf_reference.py`, eager attention, TF32 off) | **128** | **128** | **128** |
+| Mapal bf16 class vs HF bf16 eager attention (`hf_reference.py`) | 128 | 67 | 61 |
+| Mapal bf16 class vs the harness's `hf-eager` (bf16, SDPA) | 49 | **128** | 57 |
+| the competitors vs the harness's `hf-eager` | gpt-fast 49, llama.cpp 49, SGLang 109, TRT-LLM 128, vLLM 128 | 32, 67 (bf16) / 32 (f16), 95, 95, 128 | 57 for every tool |
+
+HF's two bf16 runs agree with each other on 49 / 67 / 57 tokens and HF f32 with `hf-eager` on 49 / 32 / 57: past a
+near tie every bf16 run follows its own kernels. The bf16-class Mapal run sits inside that spread (first-step top
+logit 18.37 against HF f32's 18.40 at 512). The f32-compute legs give 128 / 128 of HF f32 at every length.
+
+## Time (RTX 5080, batch 1, 128 generated, medians)
+
+### f32 class
+
+| tool | TTFT 128 ms | TTFT 512 | TTFT 2048 | decode 128 ms/token | decode 512 | decode 2048 | e2e 512 ms | peak MB (128 / 512 / 2048) |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| **Mapal**, calibrated (projections on `bf16x2n`) | **10.40** | **28.91** | **125.3** | **3.760** | **3.594** | **3.997** | **482** | **2 716 / 2 984 / 4 074** |
+| Mapal, no calib file (FFMA tile) | 14.14 | 40.61 | 162.9 | 3.797 | 3.705 | 3.715 | 508 | 3 014 / 3 498 / 4 578 |
+| Mapal at 16d668c6 (no calib file; quiet machine) | 28.3 | 85.2 | 332.7 | 3.336 | 3.396 | 3.548 | — | 4 882 / 5 086 / 6 180 |
+| gpt-fast f32 (max-autotune, CUDA graphs) | 13.76 | 47.99 | 213.9 | 5.729 | 5.743 | 5.919 | 778 | 6 298 / 6 628 / 7 690 |
+| HF eager f32 | 14.41 | 41.75 | 241.9 | 7.163 | 7.478 | 8.160 | 991 | 5 104 / 5 204 / 6 494 |
+| HF static cache + compile f32 | 17.13 | 44.35 | 245.5 | 6.771 | 7.552 | 10.494 | 1 010 | 5 266 / 5 372 / 6 874 |
+
+**Mapal leads the f32 class everywhere**: TTFT 1.32 / 1.44 / 1.71× faster than the best f32 tool, decode 1.48–1.60×
+faster than gpt-fast f32, end to end 1.6× faster, at less than half its memory. The decode lead is the weights'
+bytes (Mapal reads the bf16 bytes and widens in registers; the f32 tools store the widened weights, 4.9 GB a step);
+the TTFT lead is the split tile (bf16x2n: two bf16 products of the f32 activation's parts against the exact bf16
+weights, within D2's bound, against SGEMM).
+
+### bf16 class
+
+| tool | TTFT 128 ms | TTFT 512 | TTFT 2048 | decode 128 ms/token | decode 512 | decode 2048 | e2e 512 ms | peak MB (128 / 512 / 2048) |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| **Mapal** (`fold: bf16 \| f32`) | 6.95 | 18.12 | 74.05 | 3.528 | 3.673 | 4.012 | 481 | 2 718 / 2 706 / 3 498 |
+| gpt-fast (max-autotune, CUDA graphs) | **4.91** | 13.88 | 51.96 | **2.965** | **2.979** | 3.344 | **393** | 3 410 / 3 532 / 4 074 |
+| SGLang 0.5.23 | 6.85 | 14.54 | 45.47 | 3.333 | 3.118 | **3.164** | 410 | 8 614 / 8 710 / 8 746 (reserved) |
+| TensorRT-LLM 1.3.0 | 10.20 | 14.38 | 45.76 | 3.048 | 3.074 | 3.203 | 405 | 8 666 / 8 670 / 8 744 (reserved) |
+| vLLM 0.33.0 | 6.96 | 13.75 | 53.16 | 3.433 | 3.466 | 3.621 | 454 | 9 236 (reserved) |
+| llama.cpp bf16 | 5.91 | 14.01 | 49.75 | 3.183 | 3.214 | 3.258 | 422 | 2 804 / 2 846 / 2 896 |
+| llama.cpp f16 | 6.07 | **10.91** | **37.04** | 3.183 | 3.230 | 3.262 | 422 | 2 804 / 2 848 / 2 898 |
+| HF eager | 6.57 | 14.29 | 47.98 | 4.427 | 4.481 | 4.480 | 584 | 2 726 / 2 780 / 2 962 |
+| HF static cache + compile | 8.40 | 15.70 | 49.07 | 3.714 | 4.038 | 5.353 | 529 | 2 822 / 2 872 / 3 090 |
+
+**bf16 class**: TTFT 1.42 / 1.66 / 2.00× behind the best tool (gpt-fast at 128, llama.cpp f16 at 512 and 2048); at
+128 Mapal is within 6 % of SGLang / vLLM / HF eager and ahead of TensorRT-LLM and HF static. Decode 1.19 / 1.23 /
+1.27× behind the best (gpt-fast, gpt-fast, SGLang), ahead of HF eager and HF static at every length. Peak memory is
+the lowest of every tool at 128 and 512 (one copy of the weights since CSE value scope; the f32 cache and
+activations put it above llama.cpp and HF at 2048). From 16d668c6 to here, the readable program's TTFT went 28.3 /
+85.2 / 332.7 → 10.4 / 28.9 / 125 ms as written and → 6.95 / 18.1 / 74.1 ms in the competitors' precision.
+
+**Decode is bound by the host's launches.** CUPTI shows the step at 3.36 ms of kernels (288 launches, 0.32 ms idle;
+without the calibration file 3.27 ms / 323 launches / 0.17 ms). Untraced, one bf16-class run at 512 steps in 3.8–5.4
+ms (median 3.98; GPU at P1, 2.75–2.90 GHz): 226 of the 288 kernels run under 4 µs, shorter than the host's issue
+cost (`issue_ns` 1 690 ns, ~0.49 ms of host time a step), so the GPU waits on the CPU and the step follows the
+cores' state — 3.53–4.30 ms across the three passes for the same build. gpt-fast replays one CUDA graph a step
+(2.951 quiet, 2.965 here). The fix is fewer launches (below), not a graph.
+
+## Where each side's time goes (CUPTI, `tools/ktgroup.py`; the prompt pass from the first launch after the weights to the logits copy)
+
+| prompt kernels, ms | 128 | 512 | 2048 |
+|---|---:|---:|---:|
+| Mapal f32 class, calibrated: kernels (span) | 9.62 (11.1) | 26.89 (29.9) | 122.6 |
+| Mapal f32 class, no calib file | — | 35.54 (38.4) | 165.5 |
+| Mapal bf16 class | 5.79 (6.9) | 15.56 (18.3) | 69.1 (71.7) |
+
+**bf16 class, 512** (15.56 ms of kernels, 274 launches): gate + up 6.19 ms (32 × 193 µs, 89 Tflop/s — 85 % of the
+calibrated bf16 pipe, `mma_half_per_clk` 512 × 84 SMs × 2.45 GHz = 105 Tflop/s), down 3.75 (73 Tflop/s), query +
+output 1.91 (69–75), key + value 0.62 (56), the streamed attention 1.47 (16 × 92 µs, `stream-mma`), 143 elementwise
+cells 0.99 (norms, RoPE, SiLU·up, residuals), the output head 0.61 (one row against the 525 MB embedding, 866 GB/s).
+The projections are within ~6 % of the precision step's cuBLAS bf16 per-layer times (779 vs 734 µs a layer).
+**The 2.5 ms between span and kernels is the host**: the embedding gather (`embedding[ids[t]·H + c]`) and layer 0's
+RMSNorm run on the host (0.95 ms + 1.51 ms gaps, then 4 MB + 2 MB uploads). **2048** (69.1 ms): gate + up 23.2
+(merged, 94 Tflop/s), attention 16.3 (1.02 ms a layer: the whole 2176-key context every row, no causal skip, 36
+Tflop/s), down 12.8, query + output 8.2, cells 5.0, key + value 3.0, head 0.6.
+
+**f32 class, 512** (26.89 ms): the projections on `bf16x2n` 23.0 ms (gate + up 11.4, down 7.0, query + output 3.6,
+key + value 1.0), attention 2.67 (the FFMA stream: f32 products), cells 0.48, head 0.59; at 2048 the attention is
+34.1 of 122.6 ms.
+
+**Decode step** (512, 3.36 ms of kernels, 288 launches): the merged horizontal GEMVs 1.34 ms (46 launches), the
+per-row cells and GEMV cells 1.42 ms (224 launches), the output head 0.58 ms. The 2.47 GB of weights at 960 GB/s are
+2.57 ms: the kernels run at 76 % of that roofline; gpt-fast's whole step is 2.97 ms (87 %).
+
+**The competitors**: bf16 activations end to end (half Mapal's activation and cache bytes), cuBLAS / CUTLASS /
+FlashAttention / FlashInfer kernels (llama.cpp its own; its f16 build the fastest prompt here), causal attention
+that skips the masked half, fused norms and SiLU, and CUDA graphs for the decode step (gpt-fast, vLLM, SGLang,
+TensorRT-LLM, HF static).
+
+## The integration
+
+- **Merges**: `4420f00c` prefill/precision, `06b708ed` prefill/residency (incl. its once-range commit `67f440c8`;
+  `zero.rs` conflict with `151953b5` resolved to `d4dedf0d`'s form — every touching step's launch, a superset;
+  both tests kept), `a29a219b` prefill/mask-frontend (rung names 157 / 159 → 160). The CLAUDE.md edits from the
+  three "For integration" sections are in the merge commits, plus `docs/components/lower/DESIGN.md` LD29.
+- **Found by the integration and fixed** (each with a generated-program test that fails without it):
+  1. `bf97ad67` **stream-mma**: the warp-matrix stream loaded its row operand at the group row, not the producer's
+     own row numbering (mask-frontend's `out_rows` permutation; the FFMA stream's `stage_panel` maps it). The bf16
+     class with attention admitted decoded 0 / 128 tokens (first logit 14.08); after, the table above.
+     `flash_half_strategy` now draws the token-major forms (`tm` 1–4): `stream_mma_on_generated_attention` counts
+     `mma token-major` 22 / 48, `mma run-time mask` 8.
+  2. `934ee80a` **carry-take**: a taken loop init read by a host fold before the loop lost its copy out
+     (`bulk.rs` "fold array ptr"): `generic_fusion` and `row_block` generated chains, `site_choice` calibrated
+     parts. A taken init's other readers now count (`edge_uses`).
+  3. `8bf54fb3` **stream_plan**: where the head width equals the key axis (`d = T`) the output projection after
+     `P·V` was taken as a second consumer of the pass (index out of bounds in the kernel) — reached once
+     `stream-numbers` streams a mask over a captured number (`placement::once_range_on_generated_prompts`). A
+     consumer's row is now a producer's or a cell's.
+
+## Tests
+
+- Full workspace (`cargo test --workspace --release --no-fail-fast`, `RUST_TEST_THREADS=16 MAPAL_PAR=4`,
+  `MAPAL_TESTGEN_JOBS=4`) on the merge commit `a29a219b` (`test-full.log`): 154 test binaries, **1700 passed, 7
+  failed, 10 ignored**. The 7 failures, in 5 targets, are the three integration faults above and one golden:
+  `generic_fusion` (2) and `plan_cost` (2) and `row_block` (1) — carry-take's "fold array ptr"; `placement`
+  `once_range_on_generated_prompts` — the `d = T` stream; `site_choice` `candidate_zero_is_the_pre_sprint_emission`
+  — 36 golden rows (px_mlp2_64_f64, pt_rq_mlp2_512, pt_smlp_4096_256_1024 × 4 parts × 3 faces) that differ from
+  16d668c6 only by precision's `_u<slots>` variant name (host and device text equal with the names, kernel ids and
+  metadata ids normalized: the 24 default / exact (part, face) pairs checked): regolded in `716bc739`.
+- Re-run at `8bf54fb3` (site_choice after the regold): those five targets (generic_fusion 12/12, placement 2/2, plan_cost 3/3, row_block 9/9,
+  site_choice 9/9), the fixes' neighbours (flash_attention 6/6 with the extended `stream_mma_on_generated_attention`,
+  zero_fold 5/5, caching_memory 11/11, epilogue 13/13) and `mapal-ir` + `mapal-rewrite` (395 passed); each fix's
+  test fails without it (`fix*-*.log`).
+- **Suite emission** (`gpu_changed.sh --base 16d668c6`): same = 37, differs = 8 (`pt_indep_512`, `pt_indep_2048`,
+  `pt_mlp2_2048`, `pt_mlp2_2048_tf32`, `pt_rt_mlp2_1024`, `pt_rt_mlp2_2048`, `pt_diamond_2048`,
+  `pt_smlp_4096_256_1024`); equal at `8bf54fb3` and at the merge. All eight differ only by precision's `_u<slots>`
+  variant name (`0d9686a6`): with symbol names and metadata ids normalized, host and device IR are identical — the
+  same kernels, null by construction. The ladder run (`LADDER=1 gpu_run.sh`, value gates pass on every arm) times
+  them at 0.95–1.12× the best library leg (`changed/results/gap.md`).
+
+## Where Mapal still loses, why, and what is next (generic)
+
+1. **The prompt's host chain** (bf16 class: 2.5 of 18.1 ms at 512, 1.1 of 6.9 at 128). The embedding gather's index
+   `ids[t]·H + c` is proven only at run time, so the map is no `cell_plan` cell (`body_is_classifiable`: every
+   `Index` proven) and runs on the host, serially; layer 0's RMSNorm follows it there by the byte rule (its operand
+   is a host value). Next: a device cell whose index is unproven needs a device trap — a flag the kernel sets and
+   the next sync reports as the host's trap would (a runtime fact and a placement rule, not a model rule). The norm's
+   half is the residency worktree's in-progress `shared-upload` (an operand another device reader uploads anyway
+   adds no bytes).
+2. **Attention at 2048** (16.3 of 69 ms, bf16 class; 34 of 123 ms f32 class): every row reads the whole context —
+   the causal skip needs the cache proven finite (mask-frontend's open item: a run-time finite check, one reduction
+   a launch) — and the `stream-mma` geometry (32-row blocks, 16-key windows, 64 threads) reaches 36 Tflop/s.
+3. **Decode**: 288 launches, 3.36 ms of kernels at 76 % of the weights' DRAM roofline; ~200 small per-row kernels
+   (residency step: `flow` refuses the decode groups as `phase`; `horizontal` does not price latency-bound GEMVs).
+   **Calibrated, the decode step moves layer 0's chain (norm, key / value projections, rotated key) to the host**:
+   `device_pays` prices a per-trip cell's device side at the isolated `launch_ns` (11.1 µs: launch + completion)
+   where a launch queued behind the trip's device work costs `gap_ns` (260 ns) — +0.08 ms busy and +0.17 ms idle a
+   step against the uncalibrated build. Next: price a cell queued behind device work at the stream's dependent-launch
+   cost (a `DeviceCost` property already measured), with the suite A/B it needs.
+4. **Activation bytes**: the bf16 class still keeps f32 activations between the sums of products (cells 1.0 ms at
+   512, 5.0 ms at 2048; `attended` f32 into the output projection) where the competitors keep bf16.
+5. **The bf16 class builds slowly** (150–210 s against 10–20 s for the f32 class) — not traced here.
+
+No tailored fixes (`docs/tailored-fixes.md` unchanged).
 
 ## The program
 
 `examples/llama.mapal` — top-level sizes (`2048 -> hidden_size;`, prompt length and generated tokens one line each),
 `type Matrix<rows, columns> { _: [bf16; rows * columns] }`, per-layer weight structs (`DecoderLayerWeights`) inside a
-`Model` read whole (`"model.bin" -> read -> model: Model;`), one key/value cache struct, size-generic blocks
+`Model` read whole (`"model.bin" -> read -> model: Model;`), one key/value cache struct (read inside `attend`'s maps as `cache.keys[…]` since mask-frontend), size-generic blocks
 (`rms_norm<tokens>`, one `project<tokens, rows, columns>`, `rotate<tokens, width>`, `attend<tokens>`,
 `feed_forward<tokens>`, `decoder_layer<tokens>`), and **one `forward<tokens>`** — a chunk of new tokens through a
 layer loop over `model.layers[layer]` — used for the whole prompt (`tokens` = prompt length) and for each generated
@@ -24,81 +211,7 @@ the checkpoint's tensors bit for bit as the `Model` value's bytes (2 471 628 800
 of the harness's 2048-token prompt; 128 and 512 are its prefixes). Run: `MAPAL_DATA_DIR=<export dir> mapal run
 examples/llama.mapal`; each line is `token logit ms-since-submit`.
 
-## Correctness (greedy, 128 tokens, batch 1)
-
-| prompt | vs HF transformers f32 math (bf16 weights) | vs HF bf16 eager | first-step top logit, Mapal − HF f32 | max over the 128 steps |
-|---|---|---|---:|---:|
-| 128 | **128 / 128** | 128 / 128 | 3.2e-5 | 3.6e-5 |
-| 512 | **128 / 128** | 32 / 128 | 1.9e-6 | 3.7e-5 |
-| 2048 | **128 / 128** | 61 / 128 | 1.5e-5 | 1.7e-4 |
-
-(`benches/model/hf_reference.py`: eager attention, TF32 off; logits ~18–26.) Mapal computes the f32 model, so it
-follows the f32 reference all the way; every bf16 tool leaves it where a near tie flips. For scale, the competitors
-against the harness's `hf-eager` (bf16, SDPA) — the same split points: gpt-fast 49 / 32 / 57, llama.cpp 49 / 67 /
-57, SGLang 109 / 95 / 57, TensorRT-LLM 128 / 95 / 57, vLLM 128 / 128 / 57; **HF f32 itself agrees with `hf-eager`
-49 / 32 / 57 — exactly Mapal's agreement with it**.
-
-## Time (RTX 5080, batch 1, 128 generated, warmup 2 + 5 reps, medians)
-
-Definitions (the harness's `common.py`): TTFT = submit → first token on the host; decode = (t₁₂₈ − t₂) / 126;
-peak = the process's GPU memory (NVML / nvidia-smi). Mapal: one process per repetition (`benches/model/run_mapal.py`:
-the weights load and upload before `() -> time`; the prompt is read after it), spreads ≤ 1.3 % (TTFT) and ≤ 0.2 %
-(decode). Competitors: `compare.py --batches 1 --lens 128,512,2048` the same afternoon, same lock and CPUs.
-
-| tool | TTFT 128 ms | TTFT 512 | TTFT 2048 | decode 128 ms/token | decode 512 | decode 2048 | peak MB (512) |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| **Mapal** (f32 activations) | 28.3 | 85.2 | 332.7 | 3.336 | 3.396 | 3.548 | 5 086 |
-| gpt-fast (max-autotune, CUDA graphs) | 4.5 | 13.8 | 51.6 | **2.951** | **2.967** | **3.045** | 3 532 |
-| SGLang 0.5.23 | 6.4 | 13.6 | **44.9** | 3.064 | 3.066 | 3.147 | 9 338 (reserved) |
-| TensorRT-LLM 1.3.0 | 9.6 | 14.2 | 45.5 | 3.032 | 3.061 | 3.176 | 9 198 (reserved) |
-| vLLM 0.33.0 | 6.4 | 13.4 | 45.2 | 3.159 | 3.164 | 3.233 | 9 236 (reserved) |
-| llama.cpp bf16 | 11.9 | 13.2 | 55.9 | 3.144 | 3.177 | 3.229 | 2 846 |
-| llama.cpp f16 | 5.7 | **10.2** | 45.9 | 3.145 | 3.172 | 3.236 | 2 848 |
-| HF eager | 6.4 | 14.2 | 47.8 | 4.460 | 4.466 | 4.458 | 2 780 |
-| HF static cache + compile | 8.2 | 15.2 | 48.8 | 3.680 | 3.998 | 5.316 | 2 872 |
-
-**Decode**: Mapal beats HF eager (1.26–1.34×) and HF static cache + compile (1.10 / 1.18 / 1.50×); it is 6–10 %
-behind llama.cpp and vLLM, 9–13 % behind SGLang and TensorRT-LLM, 13–17 % behind gpt-fast. **TTFT**: 2.4–8.4×
-behind every tool (6.3 / 8.4 / 7.4× the fastest at 128 / 512 / 2048). **Peak**: two device copies of the weights
-(below).
-
-### Precision classes (prompt 512)
-
-| program | products | TTFT ms | decode ms | tokens vs HF f32 / bf16 |
-|---|---|---:|---:|---|
-| as written (default face) | f32 activations × bf16 weights, f32-accurate | 85.2 | 3.396 | 128 / 32 |
-| `fold: bf16 \| f32` on `project`'s fold (one line; `mapal/llama_bf16p_n512.mapal`) | bf16 products admitted: the prompt's projections on `mma m16n8k16.bf16` (`HalfMma`), activations stored bf16 | **28.8** | 3.415 | **0 / 0 — wrong output** (token 84707 repeated; first-step top logit 9.46 against 18.5) |
-
-The bf16-permitted build is a **miscompilation found here, not fixed**: HF's bf16 run keeps the first 32 tokens of
-the f32 reference, so a correct bf16-product build would too. The build stores `normed` / `mixed` / `attended` bf16
-(`precision_plan.store`, `narrow=a:bf16`) and runs the prompt's projections as HalfMma tiles; the decode steps'
-one-row GEMV cells read the same arrays — the first suspect is a reader taking a narrow-stored array as f32. Open,
-first in line: it is also the competitors' precision and a 3× TTFT.
-
-### Where each side's time goes
-
-- **Mapal decode step (512)**: 291 launches, one sync (the logits, 513 KB, for the host's argmax), no upload.
-  `MAPAL_GPU_TRACE` (every launch synchronized, so small kernels read high): gate+up 1.28 ms (16 merged two-lane
-  kernels, ~800 GB/s), down 0.69 (~780 GB/s), output head 0.58 (875 GB/s), query/output 0.48 (~560 GB/s), key/value
-  0.28 (~230 GB/s), attention scores 0.21 + weighted sum 0.19 (the f32 cache over the whole 640-position context,
-  masked positions included), the RMSNorm sums of squares 0.20, the cache appends 0.16 (range cells, in place), and
-  ~100 single-row elementwise kernels (RoPE, residuals, SiLU·up, norm scales) at launch-latency each. The 2.47 GB of
-  weights at the DRAM rate is 2.57 ms; the rest is launches and the f32 cache (2× the bytes of a bf16 one: decode
-  grows 3.34 → 3.55 ms from 128 to 2048).
-- **Mapal prefill (512)**, traced on the real build (`mapal/trace_n512.trace.gz`): 38 ms of kernels in the 85 ms —
-  the projections on the FFMA tile ~32 ms (gate / up / down 7.6–8.7 ms each over 16 layers, query / output ~2.5,
-  key / value 1.8): the default face keeps f32 activations, and the 5080's bf16 split tile is refused by rule
-  (tensor-cores-2's open item; forced `--gpu-on=split-tile` takes 6 sites to bf16x2n: TTFT 85 → 77 ms, tokens
-  unchanged); the attention's scores already a guarded tile site (16 × 81 µs) and P·V a tile (16 × 170 µs). The rest
-  is the prompt's 32 cache writes run through the host: 34 uploads of the 21 MB cache (~28 ms at 25 GB/s) and the
-  rows down — the straight-line chain of range maps (open item 3).
-- **The competitors**: bf16 activations and bf16 tensor cores (cuBLAS / CUTLASS / FlashAttention / FlashInfer
-  kernels; llama.cpp's own), a bf16 KV cache read only up to the current position, CUDA graphs (gpt-fast, vLLM,
-  SGLang, TensorRT-LLM, HF static) or fused small kernels; gpt-fast's whole decode step is one captured graph
-  of torch.compile max-autotune kernels. Their prefill is ~1 Tflop on a ~120 Tflop/s bf16 pipe; Mapal's f32-accurate
-  prefill needs split forms of at least two bf16 products (bf16x2n) or the FFMA pipe (~60 Tflop/s peak).
-
-## What changed on the way (all generic; tests below)
+### The first step (16d668c6): what the readable program needed
 
 | problem the readable program hit | change | where |
 |---|---|---|
@@ -114,77 +227,3 @@ first in line: it is also the competitors' precision and a 3× TTFT.
 Diagnostic: `MAPAL_DEBUG_PLACE=1` prints each placement round's dropped cells with the reason (operands there / on
 the device, a host reader, the byte rule) — how the cache and RMSNorm causes above were found.
 
-## Tests
-
-- New: `mapal-rewrite/tests/unroll.rs` (a layer loop over records called per step unrolls and inlines; a plain
-  counted loop stays; **48 generated programs** — layer count 1–6, steps 1–3, width 1–9, record views read inside
-  the maps or stacked reads: values equal to the oracle, no call left where records are read; every counter > 0), `backends/llvm/tests/read.rs`
-  `a_record_read_whole_on_every_backend` (a struct of a bf16 matrix, per-layer structs with nested arrays and an f32
-  vector, read whole, a layer loop over `model.layers[layer]`: interpreter raw and rewritten, native exact and
-  default, the GPU build in every emulator mode; a short file fails), `mapal-lower` `size_generics`
-  `product_systems_solve_with_the_results_type` (the unique solution; the ambiguous call's error),
-  `structural` `a_clock_read_in_a_loop_body`, `read_builtin` (nested / tuple / struct records accepted, a padded
-  record L1617), `mapal-ir` `read` unit tests and the §5.1 typing table (a nested array read is well typed).
-- Changed expectations: the inline policy tests (`oversized_callee_stays_a_call` now two sites, `+
-  oversized_callee_with_one_site_inlines`); `zero_fold`'s generated study pins `once-bytes` off beside `place` (with
-  it a straight-line generator runs on the device and the "no kernel before the zero" case leaves the set).
-- `cargo test --release -p mapal-ir -p mapal-lower -p mapal-interp -p mapal-rewrite`: all pass; the backend, CLI and
-  runtime (`test_par.py --bins 4`, `RUST_TEST_THREADS=8 MAPAL_PAR=2 MAPAL_TESTGEN_JOBS=4`): **66 binaries, 568
-  passed, 0 failed** (1655 s; `tests/backend.log`).
-- **Suite**: `suite_diff.py --base HEAD` — 35 programs + 2 cells × 5 faces, **same = 45**: no suite program's host or
-  device text changes (the suite programs are single-function, loop-free-callee programs), so nothing to time.
-
-## Open (attempted or measured; why it did not close here)
-
-1. **Prefill on tensor cores** (TTFT): the f32-activation projections need a split form; the 5080's bf16x2n is
-   refused by `split_rate_pays` (bf16 pipe 2 × the FFMA rate, θ 1.6) though forced it wins (tensor-cores-2's open
-   item: the tile's realized fraction vs its issue is the missing property). Forced here: 85 → 77 ms. A program that
-   admits bf16 products (`fold: bf16 | f32`) would run the competitors' precision — not the default face.
-2. **The causal mask through `positions[t]`** (the user asked for it in this step, not deferred): measured first —
-   on the real build (640 positions) the prompt's scores are a guarded tile site with the mask as written (16 × 81 µs,
-   1.3 ms of the 38 ms), so the mask is not where the prompt's time goes; a streamed (flash) form would fold the
-   scores, softmax and P·V (≈ 4.5 ms) into one pass. Rewriting the mask as `past <= t` (a digit of the cell index)
-   gives the same plan here. The general fact the stream plan's `GuardBox` needs is a side "affine in the row index
-   plus a per-launch value": `positions[t]` read through a capture whose `elem_plan` law is `first + t` is that form
-   with `first` the launch's uniform (the `ua` / `ub` capture terms `tile_plan_radix` already carries for operand
-   addresses); a runtime position vector with no law is a per-row bound read once per row block. Neither is
-   implemented here (no time left after the cache chain's diagnosis); the uniform-term form is the general one —
-   it covers the closed-form arrays, top-level bindings and the decode step's runtime position alike.
-3. **The prompt's cache writes** go through the host (a straight-line chain of range maps over a host-made zero
-   fill: 34 × 21 MB up at 512 — ~28 ms of the 85 ms TTFT, the largest non-kernel cost). `range-chain` writes in
-   place only into a loop carry: a straight-line range cell is `homeless` (`cell_round`), and the fix is a
-   straight-line alias in `ResidentPlan` (the cell's output takes its dead source's device buffer; `alias()`, the
-   arena's coloring and the frees must see it as one object — the carry-take move, `store 0` into the source slot,
-   is the realization). Tried: a `+0.0` fill counted as made
-   on the device in the byte rule (zeroed, as a carry's init already is) — the first write's operand is the cache
-   struct's field view, not the fill, so nothing moved; the view → fill forward in straight-line code is the next step.
-4. **Two device copies of the weights** (peak 4.9–6.3 GB): the prompt's and the decode step's `model.layers[l]`
-   are two view objects — CSE keys feeders by object and the two constant indices `l` are two objects. Keying
-   constants by value merges them (tried: one upload), but merges across guard arms broke the generated
-   `property` programs (an alias to an arm's object) — needs the arm-scoped form.
-5. **Decode launches** (291 a step, ~100 one-row elementwise kernels at launch latency) and the K / V projections
-   (~230 GB/s, 512 rows on a warp each): the placement step's items 4–5; the attention reads the whole context's f32
-   cache including masked positions (`GuardBox` does not skip their bytes).
-6. **Struct captures** in map bodies (`cache.keys[...]` inside `attend`'s maps) are not `cell_plan` reads; the
-   readable program passes the arrays.
-7. Found: a struct literal written straight to `ret.1` in a callee inlined into an unrolled loop panics replay
-   (`reconstruct_temp`, an object with no writer); binding it first works — not reduced to a repro yet.
-8. **Rented boxes**: not run (this step is local). `~/.cache/mapal/model-compare/setup_box.sh` installs every
-   competitor; for Mapal copy the repo, `cargo build --release -p mapal-cli`, run `export_weights.py`, build the
-   three variants (`prompt_length` = 128 / 512 / 2048) with `MAPAL_CUDA=<cuda> mapal build --target=native-gpu`,
-   then `run_mapal.py --exe <build> --n <N>` beside `compare.py`.
-
-No tailored fixes (`docs/tailored-fixes.md` unchanged).
-
-## For integration
-
-CLAUDE.md facts table (edits to existing rows, not made here — CLAUDE.md is not this step's to change):
-
-- `elem_plan`, `map_law`: "… piecewise when every cell off a row / range / column / cell / row-every-`s`-rows … is a
-  capture's own" — add "or off a range of rows `t ÷ d` shifted by a captured affine term (`lo ≤ t ÷ d − X < hi`: a
-  chunk's rows written at a captured position)".
-- backend row: the rung `once-bytes` (full-model).
-
-Rewriter (DESIGN `docs/components/rewrite`): R-UN (`unroll.rs`) beside R-LF / R-LM; Move 1's policy — a single-site
-callee inlines whatever its size. ADRs: 0045 and 0047 carry
-amendments (records; products of unknowns).
