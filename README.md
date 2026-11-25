@@ -322,11 +322,13 @@ runtime); the RTX 5080's suite column is the gapfix integration's (`d945c641`). 
 against engines computing in f32, the bf16 program against bf16 engines, each suite row against competitors at its
 own precision. No gain is claimed across precisions.
 
-**Correctness.** Every timed program passes its value gate on every GPU before it is timed: bit-exact on the exact
-faces, within the stated error bound on the default face, in any order of operations
-([ADR-0049](docs/decisions/ADR-0049-correctness-is-the-flow-and-the-bound.md)). **One open bound miss:** the
-bf16-storage block-decode differential `px_llm_blkdec_b2_l16_bf16` is outside its a-priori bound on the four rented
-GPUs (relative error 2.30·10⁻² against a bound of 1.62·10⁻²); it is being fixed. The model's generated tokens are
+**Correctness.** Every timed program passes its value gate on every GPU before it is timed: within the stated error
+bound on the default face, in any order of operations, and bit for bit with the interpreter in the development modes
+([ADR-0049](docs/decisions/ADR-0049-correctness-is-the-flow-and-the-bound.md)). One bf16 program
+(`px_llm_blkdec_b2_l16_bf16`) first read as outside its bound on the rented GPUs: the compiled result was right — bit
+for bit the program with the bf16 stores its `: bf16 | f32` permits — and the gate's bound was the unsound part, so
+the gate now checks a bound composed through every operation of the program
+([ADR-0041](docs/decisions/ADR-0041-compute-precision-permission-candidate.md)). The model's generated tokens are
 checked against the Hugging Face reference of the same class, run on the same box.
 
 <!-- results-headline:start -->
@@ -454,7 +456,7 @@ Done so far, and how each step turned out, including what was tried and did not 
 | Effects             | `print` / `println`, `time`, `read`                                                                                                                             |
 | Interpreter         | working: _defines_ the language; every backend is tested against it                                                                                            |
 | CPU backend (LLVM)  | working: threading, vectorization, cache blocking                                                                                                               |
-| GPU backend (CUDA)  | working: value gates pass on the RTX 5080, RTX 3090, A100, RTX 4090 and H100, but for one open bound miss ([Current results](#current-results)); tensor cores, `wgmma` / TMA where the part has them |
+| GPU backend (CUDA)  | working: value gates pass on the RTX 5080, RTX 3090, A100, RTX 4090 and H100 ([Current results](#current-results)); tensor cores, `wgmma` / TMA where the part has them |
 | FPGA backend        | not started                                                                                                                                                     |
 | Command-line tool   | `mapal build`, `run`, `test`, `dump-ir`, `fmt`                                                                                                                  |
 | Tests               | about 1,700 across the workspace; the GPU tests skip without a CUDA toolchain                                                                                   |
