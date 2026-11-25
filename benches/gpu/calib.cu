@@ -567,11 +567,91 @@ template <int F> static void matrix_one(const char* name, double flops_instr) {
            per_clk, best, sus, sus / (per_clk * sms) * 1e6);
     CK(cudaFree(out)); CK(cudaFree(cyc));
 }
+// matrix, wgmma-16bit: the warpgroup products' issue rate (`Gpu::wgmma_half_per_clk`, `wgmma_tf32_per_clk`) — one
+// block an SM of two warpgroups, each issuing `m64n256k{16,8}` back to back from operands in shared memory (or `a` in
+// registers: `rs`) onto its 128 accumulators, a group of four in flight (`wait_group 1`), the operands zero; per SM
+// the products' flops over its clock64 span. Only an `sm_90a` build has the instruction (else the kind prints nothing).
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ == 900) && defined(__CUDA_ARCH_FEAT_SM90_ALL)
+#define CALIB_WGMMA 1
+#endif
+template <int F> __device__ __forceinline__ void wgmma_one(float (&d)[128], unsigned long long ad, unsigned long long bd,
+                                                           const unsigned (&a)[4]) {
+#ifdef CALIB_WGMMA
+    if (F == 0) {
+        asm volatile("{\n.reg .pred p;\nsetp.ne.b32 p, %130, 0;\nwgmma.mma_async.sync.aligned.m64n256k16.f32.bf16.bf16 {%0,%1,%2,%3,%4,%5,%6,%7,%8,%9,%10,%11,%12,%13,%14,%15,%16,%17,%18,%19,%20,%21,%22,%23,%24,%25,%26,%27,%28,%29,%30,%31,%32,%33,%34,%35,%36,%37,%38,%39,%40,%41,%42,%43,%44,%45,%46,%47,%48,%49,%50,%51,%52,%53,%54,%55,%56,%57,%58,%59,%60,%61,%62,%63,%64,%65,%66,%67,%68,%69,%70,%71,%72,%73,%74,%75,%76,%77,%78,%79,%80,%81,%82,%83,%84,%85,%86,%87,%88,%89,%90,%91,%92,%93,%94,%95,%96,%97,%98,%99,%100,%101,%102,%103,%104,%105,%106,%107,%108,%109,%110,%111,%112,%113,%114,%115,%116,%117,%118,%119,%120,%121,%122,%123,%124,%125,%126,%127}, %128, %129, p, 1, 1, 0, 1;\n}\n"
+                     : "+f"(d[0]), "+f"(d[1]), "+f"(d[2]), "+f"(d[3]), "+f"(d[4]), "+f"(d[5]), "+f"(d[6]), "+f"(d[7]), "+f"(d[8]), "+f"(d[9]), "+f"(d[10]), "+f"(d[11]), "+f"(d[12]), "+f"(d[13]), "+f"(d[14]), "+f"(d[15]), "+f"(d[16]), "+f"(d[17]), "+f"(d[18]), "+f"(d[19]), "+f"(d[20]), "+f"(d[21]), "+f"(d[22]), "+f"(d[23]), "+f"(d[24]), "+f"(d[25]), "+f"(d[26]), "+f"(d[27]), "+f"(d[28]), "+f"(d[29]), "+f"(d[30]), "+f"(d[31]), "+f"(d[32]), "+f"(d[33]), "+f"(d[34]), "+f"(d[35]), "+f"(d[36]), "+f"(d[37]), "+f"(d[38]), "+f"(d[39]), "+f"(d[40]), "+f"(d[41]), "+f"(d[42]), "+f"(d[43]), "+f"(d[44]), "+f"(d[45]), "+f"(d[46]), "+f"(d[47]), "+f"(d[48]), "+f"(d[49]), "+f"(d[50]), "+f"(d[51]), "+f"(d[52]), "+f"(d[53]), "+f"(d[54]), "+f"(d[55]), "+f"(d[56]), "+f"(d[57]), "+f"(d[58]), "+f"(d[59]), "+f"(d[60]), "+f"(d[61]), "+f"(d[62]), "+f"(d[63]), "+f"(d[64]), "+f"(d[65]), "+f"(d[66]), "+f"(d[67]), "+f"(d[68]), "+f"(d[69]), "+f"(d[70]), "+f"(d[71]), "+f"(d[72]), "+f"(d[73]), "+f"(d[74]), "+f"(d[75]), "+f"(d[76]), "+f"(d[77]), "+f"(d[78]), "+f"(d[79]), "+f"(d[80]), "+f"(d[81]), "+f"(d[82]), "+f"(d[83]), "+f"(d[84]), "+f"(d[85]), "+f"(d[86]), "+f"(d[87]), "+f"(d[88]), "+f"(d[89]), "+f"(d[90]), "+f"(d[91]), "+f"(d[92]), "+f"(d[93]), "+f"(d[94]), "+f"(d[95]), "+f"(d[96]), "+f"(d[97]), "+f"(d[98]), "+f"(d[99]), "+f"(d[100]), "+f"(d[101]), "+f"(d[102]), "+f"(d[103]), "+f"(d[104]), "+f"(d[105]), "+f"(d[106]), "+f"(d[107]), "+f"(d[108]), "+f"(d[109]), "+f"(d[110]), "+f"(d[111]), "+f"(d[112]), "+f"(d[113]), "+f"(d[114]), "+f"(d[115]), "+f"(d[116]), "+f"(d[117]), "+f"(d[118]), "+f"(d[119]), "+f"(d[120]), "+f"(d[121]), "+f"(d[122]), "+f"(d[123]), "+f"(d[124]), "+f"(d[125]), "+f"(d[126]), "+f"(d[127])
+                     : "l"(ad), "l"(bd), "r"(1));
+    } else if (F == 1) {
+        asm volatile("{\n.reg .pred p;\nsetp.ne.b32 p, %133, 0;\nwgmma.mma_async.sync.aligned.m64n256k16.f32.bf16.bf16 {%0,%1,%2,%3,%4,%5,%6,%7,%8,%9,%10,%11,%12,%13,%14,%15,%16,%17,%18,%19,%20,%21,%22,%23,%24,%25,%26,%27,%28,%29,%30,%31,%32,%33,%34,%35,%36,%37,%38,%39,%40,%41,%42,%43,%44,%45,%46,%47,%48,%49,%50,%51,%52,%53,%54,%55,%56,%57,%58,%59,%60,%61,%62,%63,%64,%65,%66,%67,%68,%69,%70,%71,%72,%73,%74,%75,%76,%77,%78,%79,%80,%81,%82,%83,%84,%85,%86,%87,%88,%89,%90,%91,%92,%93,%94,%95,%96,%97,%98,%99,%100,%101,%102,%103,%104,%105,%106,%107,%108,%109,%110,%111,%112,%113,%114,%115,%116,%117,%118,%119,%120,%121,%122,%123,%124,%125,%126,%127}, {%128,%129,%130,%131}, %132, p, 1, 1, 1;\n}\n"
+                     : "+f"(d[0]), "+f"(d[1]), "+f"(d[2]), "+f"(d[3]), "+f"(d[4]), "+f"(d[5]), "+f"(d[6]), "+f"(d[7]), "+f"(d[8]), "+f"(d[9]), "+f"(d[10]), "+f"(d[11]), "+f"(d[12]), "+f"(d[13]), "+f"(d[14]), "+f"(d[15]), "+f"(d[16]), "+f"(d[17]), "+f"(d[18]), "+f"(d[19]), "+f"(d[20]), "+f"(d[21]), "+f"(d[22]), "+f"(d[23]), "+f"(d[24]), "+f"(d[25]), "+f"(d[26]), "+f"(d[27]), "+f"(d[28]), "+f"(d[29]), "+f"(d[30]), "+f"(d[31]), "+f"(d[32]), "+f"(d[33]), "+f"(d[34]), "+f"(d[35]), "+f"(d[36]), "+f"(d[37]), "+f"(d[38]), "+f"(d[39]), "+f"(d[40]), "+f"(d[41]), "+f"(d[42]), "+f"(d[43]), "+f"(d[44]), "+f"(d[45]), "+f"(d[46]), "+f"(d[47]), "+f"(d[48]), "+f"(d[49]), "+f"(d[50]), "+f"(d[51]), "+f"(d[52]), "+f"(d[53]), "+f"(d[54]), "+f"(d[55]), "+f"(d[56]), "+f"(d[57]), "+f"(d[58]), "+f"(d[59]), "+f"(d[60]), "+f"(d[61]), "+f"(d[62]), "+f"(d[63]), "+f"(d[64]), "+f"(d[65]), "+f"(d[66]), "+f"(d[67]), "+f"(d[68]), "+f"(d[69]), "+f"(d[70]), "+f"(d[71]), "+f"(d[72]), "+f"(d[73]), "+f"(d[74]), "+f"(d[75]), "+f"(d[76]), "+f"(d[77]), "+f"(d[78]), "+f"(d[79]), "+f"(d[80]), "+f"(d[81]), "+f"(d[82]), "+f"(d[83]), "+f"(d[84]), "+f"(d[85]), "+f"(d[86]), "+f"(d[87]), "+f"(d[88]), "+f"(d[89]), "+f"(d[90]), "+f"(d[91]), "+f"(d[92]), "+f"(d[93]), "+f"(d[94]), "+f"(d[95]), "+f"(d[96]), "+f"(d[97]), "+f"(d[98]), "+f"(d[99]), "+f"(d[100]), "+f"(d[101]), "+f"(d[102]), "+f"(d[103]), "+f"(d[104]), "+f"(d[105]), "+f"(d[106]), "+f"(d[107]), "+f"(d[108]), "+f"(d[109]), "+f"(d[110]), "+f"(d[111]), "+f"(d[112]), "+f"(d[113]), "+f"(d[114]), "+f"(d[115]), "+f"(d[116]), "+f"(d[117]), "+f"(d[118]), "+f"(d[119]), "+f"(d[120]), "+f"(d[121]), "+f"(d[122]), "+f"(d[123]), "+f"(d[124]), "+f"(d[125]), "+f"(d[126]), "+f"(d[127])
+                     : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "l"(bd), "r"(1));
+    } else {
+        asm volatile("{\n.reg .pred p;\nsetp.ne.b32 p, %130, 0;\nwgmma.mma_async.sync.aligned.m64n256k8.f32.tf32.tf32 {%0,%1,%2,%3,%4,%5,%6,%7,%8,%9,%10,%11,%12,%13,%14,%15,%16,%17,%18,%19,%20,%21,%22,%23,%24,%25,%26,%27,%28,%29,%30,%31,%32,%33,%34,%35,%36,%37,%38,%39,%40,%41,%42,%43,%44,%45,%46,%47,%48,%49,%50,%51,%52,%53,%54,%55,%56,%57,%58,%59,%60,%61,%62,%63,%64,%65,%66,%67,%68,%69,%70,%71,%72,%73,%74,%75,%76,%77,%78,%79,%80,%81,%82,%83,%84,%85,%86,%87,%88,%89,%90,%91,%92,%93,%94,%95,%96,%97,%98,%99,%100,%101,%102,%103,%104,%105,%106,%107,%108,%109,%110,%111,%112,%113,%114,%115,%116,%117,%118,%119,%120,%121,%122,%123,%124,%125,%126,%127}, %128, %129, p, 1, 1;\n}\n"
+                     : "+f"(d[0]), "+f"(d[1]), "+f"(d[2]), "+f"(d[3]), "+f"(d[4]), "+f"(d[5]), "+f"(d[6]), "+f"(d[7]), "+f"(d[8]), "+f"(d[9]), "+f"(d[10]), "+f"(d[11]), "+f"(d[12]), "+f"(d[13]), "+f"(d[14]), "+f"(d[15]), "+f"(d[16]), "+f"(d[17]), "+f"(d[18]), "+f"(d[19]), "+f"(d[20]), "+f"(d[21]), "+f"(d[22]), "+f"(d[23]), "+f"(d[24]), "+f"(d[25]), "+f"(d[26]), "+f"(d[27]), "+f"(d[28]), "+f"(d[29]), "+f"(d[30]), "+f"(d[31]), "+f"(d[32]), "+f"(d[33]), "+f"(d[34]), "+f"(d[35]), "+f"(d[36]), "+f"(d[37]), "+f"(d[38]), "+f"(d[39]), "+f"(d[40]), "+f"(d[41]), "+f"(d[42]), "+f"(d[43]), "+f"(d[44]), "+f"(d[45]), "+f"(d[46]), "+f"(d[47]), "+f"(d[48]), "+f"(d[49]), "+f"(d[50]), "+f"(d[51]), "+f"(d[52]), "+f"(d[53]), "+f"(d[54]), "+f"(d[55]), "+f"(d[56]), "+f"(d[57]), "+f"(d[58]), "+f"(d[59]), "+f"(d[60]), "+f"(d[61]), "+f"(d[62]), "+f"(d[63]), "+f"(d[64]), "+f"(d[65]), "+f"(d[66]), "+f"(d[67]), "+f"(d[68]), "+f"(d[69]), "+f"(d[70]), "+f"(d[71]), "+f"(d[72]), "+f"(d[73]), "+f"(d[74]), "+f"(d[75]), "+f"(d[76]), "+f"(d[77]), "+f"(d[78]), "+f"(d[79]), "+f"(d[80]), "+f"(d[81]), "+f"(d[82]), "+f"(d[83]), "+f"(d[84]), "+f"(d[85]), "+f"(d[86]), "+f"(d[87]), "+f"(d[88]), "+f"(d[89]), "+f"(d[90]), "+f"(d[91]), "+f"(d[92]), "+f"(d[93]), "+f"(d[94]), "+f"(d[95]), "+f"(d[96]), "+f"(d[97]), "+f"(d[98]), "+f"(d[99]), "+f"(d[100]), "+f"(d[101]), "+f"(d[102]), "+f"(d[103]), "+f"(d[104]), "+f"(d[105]), "+f"(d[106]), "+f"(d[107]), "+f"(d[108]), "+f"(d[109]), "+f"(d[110]), "+f"(d[111]), "+f"(d[112]), "+f"(d[113]), "+f"(d[114]), "+f"(d[115]), "+f"(d[116]), "+f"(d[117]), "+f"(d[118]), "+f"(d[119]), "+f"(d[120]), "+f"(d[121]), "+f"(d[122]), "+f"(d[123]), "+f"(d[124]), "+f"(d[125]), "+f"(d[126]), "+f"(d[127])
+                     : "l"(ad), "l"(bd), "r"(1));
+    }
+#endif
+}
+// F: 0 bf16 a/b shared, 1 bf16 a registers, 2 tf32 a/b shared.
+template <int F> __global__ void __launch_bounds__(256, 1) wgmma_k(float* out, int iters, long long* cyc) {
+#ifdef CALIB_WGMMA
+    extern __shared__ __align__(1024) unsigned char wsm[];
+    for (int i = threadIdx.x; i < 49152 / 4; i += blockDim.x) ((unsigned*)wsm)[i] = 0u;
+    __syncthreads();
+    float d[128];
+    for (int q = 0; q < 128; q++) d[q] = 0.f;
+    const unsigned base = (unsigned)__cvta_generic_to_shared(wsm);
+    const unsigned long long f = (1ull << 16) | (64ull << 32) | (1ull << 62);
+    const unsigned long long ad = ((base >> 4) & 0x3fff) | f, bd = (((base + 16384) >> 4) & 0x3fff) | f;
+    const unsigned a[4] = {0u, 0u, 0u, 0u};
+    long long t0 = clock64();
+    for (int i = 0; i < iters; i++) {
+        asm volatile("wgmma.fence.sync.aligned;" ::: "memory");
+#pragma unroll
+        for (int j = 0; j < 4; j++) wgmma_one<F>(d, ad + 2 * j, bd + 2 * j, a);
+        asm volatile("wgmma.commit_group.sync.aligned;" ::: "memory");
+        asm volatile("wgmma.wait_group.sync.aligned 1;" ::: "memory");
+    }
+    asm volatile("wgmma.wait_group.sync.aligned 0;" ::: "memory");
+    __syncthreads();
+    long long t1 = clock64();
+    float acc = 0.f;
+    for (int q = 0; q < 128; q++) acc += d[q];
+    if (threadIdx.x == 0) cyc[blockIdx.x] = t1 - t0;
+    if (acc == 1234.5f) out[blockIdx.x * blockDim.x + threadIdx.x] = acc;
+#endif
+}
+template <int F> static void wgmma_rate(const char* name, double flops_instr) {
+    int major = 0; CK(cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, 0));
+    if (major != 9) return;
+    const int block = 256, grid = sms, iters = 1 << 13, smem = 49152;
+    float* out; long long* cyc;
+    CK(cudaMalloc(&out, (size_t)grid * block * sizeof(float))); CK(cudaMalloc(&cyc, (size_t)grid * 8));
+    CK(cudaFuncSetAttribute(wgmma_k<F>, cudaFuncAttributeMaxDynamicSharedMemorySize, smem));
+    wgmma_k<F><<<grid, block, smem>>>(out, iters / 16, cyc); CK(cudaDeviceSynchronize());
+    const double instr = 4.0 * iters * (block / 128);  // a block's products
+    double per_clk = 0, best = 0;
+    cudaEvent_t e0, e1; CK(cudaEventCreate(&e0)); CK(cudaEventCreate(&e1));
+    for (int rep = 0; rep < 5; rep++) {
+        CK(cudaEventRecord(e0)); wgmma_k<F><<<grid, block, smem>>>(out, iters, cyc); CK(cudaEventRecord(e1));
+        CK(cudaEventSynchronize(e1)); float ms; CK(cudaEventElapsedTime(&ms, e0, e1));
+        best = std::max(best, flops_instr * instr * grid / (ms * 1e6));
+        std::vector<long long> h(grid); CK(cudaMemcpy(h.data(), cyc, grid * 8, cudaMemcpyDeviceToHost));
+        std::sort(h.begin(), h.end());
+        if (h[h.size() / 2] > 0) per_clk = std::max(per_clk, flops_instr * instr / (double)h[h.size() / 2]);
+    }
+    printf("matrix op=%s sm_flops_per_clk=%.0f flops_per_ns=%.0f implied_clock_khz=%.0f\n", name, per_clk, best,
+           per_clk > 0 ? best / (per_clk * sms) * 1e6 : 0.0);
+    CK(cudaFree(out)); CK(cudaFree(cyc));
+}
 static void matrix_run() {
     matrix_one<0>("mma.m16n8k8.tf32", 2.0 * 16 * 8 * 8);
     matrix_one<1>("mma.m16n8k16.bf16", 2.0 * 16 * 8 * 16);
     matrix_one<2>("mma.m16n8k16.f16", 2.0 * 16 * 8 * 16);
     matrix_one<3>("split3.m16n8k8.tf32", 2.0 * 16 * 8 * 8);
+    wgmma_rate<0>("wgmma.m64n256k16.bf16", 2.0 * 64 * 256 * 16);
+    wgmma_rate<1>("wgmma.m64n256k16.bf16.rs", 2.0 * 64 * 256 * 16);
+    wgmma_rate<2>("wgmma.m64n256k8.tf32", 2.0 * 64 * 256 * 8);
 }
 // head: a tiny kernel, then n kernels of sms x 256 threads, right after a synchronize; host wall to the next synchronize
 __global__ void tiny_k(float* o) { if (threadIdx.x == 0) o[blockIdx.x] += 1.f; }

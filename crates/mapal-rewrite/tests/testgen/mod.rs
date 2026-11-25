@@ -7305,6 +7305,151 @@ pub fn wgmma_src(p: &WgmmaProg) -> (String, (u64, u64, u64)) {
     (src, (m, n, k))
 }
 
+// --- wgmma-16bit: 16-bit GEMMs and epilogues at warpgroup-tile extents ------
+
+/// A GEMM `y = a · b` under `: bf16 | f32` or `: f16 | f32` at extents a
+/// warpgroup tile divides or misses: `m` 16–256, `n` 8–256, `k` 64–1024 (one
+/// stage to sixteen: the ring turns over), at most 2²⁴ products. `fa` / `fb`: each
+/// operand stored f32 (0), `bf16` (1) or `f16` (2) — under `: f16 | f32` an
+/// f32 operand is refused (no value-range fact), half of those programs store
+/// both `f16`. `once`: the magnitudes read their own operand copies, so an
+/// f32 `a` read by the product alone is stored rounded by its producer
+/// (`PrecisionPlan::store`: the descriptor home); else it keeps an f32
+/// reader (the register home). `bt`: `b` read `n × k` (k-major). `post`: an
+/// epilogue on the cell — 1 a residual `u·0.5 + r`, 2 a gate `u·σ(u)·r`
+/// (SiLU × up, `σ` through `exp`), `r` a row-closed read of another array.
+#[derive(Clone, Debug)]
+pub struct Wgmma16Prog {
+    pub dims: [u8; 3],
+    pub fa: u8,
+    pub fb: u8,
+    pub f16: bool,
+    pub once: bool,
+    pub bt: bool,
+    pub post: u8,
+    pub law: [u8; 2],
+}
+
+pub fn wgmma16_prog_strategy() -> impl Strategy<Value = Wgmma16Prog> {
+    (
+        (any::<u8>(), any::<u8>(), any::<u8>()),
+        prop::sample::select(vec![0u8, 0, 1, 1, 2]),
+        prop::sample::select(vec![1u8, 1, 1, 1, 0]),
+        prop::bool::weighted(0.25),
+        any::<bool>(),
+        prop::bool::weighted(0.3),
+        prop::sample::select(vec![0u8, 0, 1, 2]),
+        (any::<u8>(), any::<u8>()),
+    )
+        .prop_map(|(d, fa, fb, f16, once, bt, post, (l0, l1))| {
+            let both = f16 && l0 % 2 == 0;
+            Wgmma16Prog {
+                dims: [d.0, d.1, d.2],
+                fa: if both { 2 } else { fa.min(1 + u8::from(f16)) },
+                fb: if both { 2 } else { fb },
+                f16,
+                once,
+                bt,
+                post,
+                law: [l0, l1],
+            }
+        })
+}
+
+/// [`Wgmma16Prog`]'s source and `(pairs, k)`: three cells of `y`, each
+/// beside its `M = Σ|a·b|` (scaled as the epilogue scales `u`: `0.5` for the
+/// residual, `|σ(u)·r| ≤ |r|·…` — the gate's pairs print `M·|r|·1.1`, a bound
+/// of `|σ(u) + u·σ'(u)|·|r|` over every `u`).
+pub fn wgmma16_src(p: &Wgmma16Prog) -> (String, (usize, u64)) {
+    let pick = |d: u8, v: &[u64]| v[usize::from(d) % v.len()];
+    // A deep `k` (768, 1024) on a 64- or 128-square tile: a small tile's
+    // stage deepens (`tma-digits`' price), a larger one's ring turns over.
+    let k0 = pick(p.dims[2], &[64, 128, 256, 768, 1024]);
+    let (m, n) = match k0 >= 768 {
+        true => [(64, 64), (128, 128), (64, 128), (128, 64)][usize::from(p.dims[0]) % 4],
+        false => (
+            pick(p.dims[0], &[16, 64, 128, 192, 256]),
+            pick(p.dims[1], &[8, 64, 128, 192, 256]),
+        ),
+    };
+    // At most 2²⁴ products a fold of the interpreter's.
+    let k = [k0, 256, 128, 64]
+        .into_iter()
+        .find(|&k| m * n * k <= 1 << 24)
+        .unwrap_or(64);
+    let set = if p.f16 { ": f16 | f32" } else { ": bf16 | f32" };
+    let (a1, a2) = (
+        u64::from(p.law[0] % 13) * 2 + 3,
+        u64::from(p.law[1] % 11) * 2 + 5,
+    );
+    let store = |f: u8| half_fmt(f).map_or(String::new(), |n| format!(" -> to_{n}"));
+    let read = |f: u8, x: &str| match half_fmt(f) {
+        Some(_) => format!("{x} -> widen_f32"),
+        None => x.to_string(),
+    };
+    let bi = |b: &str| match p.bt {
+        true => format!("{b}[j * {k} + q]"),
+        false => format!("{b}[q * {n} + j]"),
+    };
+    let (ar, br) = (read(p.fa, &format!("a[i * {k} + q]")), read(p.fb, &bi("b")));
+    let post = match p.post {
+        1 => " -> u; r[t] -> rv; u * 0.5 + rv".to_string(),
+        2 => " -> u; r[t] -> rv; 0.0 - u -> exp -> d; u / (1.0 + d) * rv".to_string(),
+        _ => String::new(),
+    };
+    let cells = [
+        u64::from(p.law[0]) * 7 % (m * n),
+        m * n / 2 + 1,
+        m * n - 1 - u64::from(p.law[1]) % n,
+    ];
+    let mut src = format!(
+        "fn main() {{
+    {mk} -> iota -> ia;
+    ia -> map {{ t -> (t * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0{sa} }} -> a;
+    {kn} -> iota -> ib;
+    ib -> map {{ t -> (t * {a2} + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0{sb} }} -> b;
+    {mn} -> iota -> ic;
+    ic -> map {{ t -> (t * 3 + 7) % 17 - 8 -> widen_f32 -> v; v / 8.0 }} -> r;
+    {k} -> iota -> kr;
+    ic -> map {{ t -> t / {n} -> i; t % {n} -> j; (0.0, kr) -> fold{set} {{ acc, q -> {ar} -> x; {br} -> y; acc + x * y }}{post} }} -> y;
+",
+        mk = m * k,
+        kn = k * n,
+        mn = m * n,
+        sa = store(p.fa),
+        sb = store(p.fb),
+    );
+    let (am, bm) = if p.once {
+        src += &format!(
+            "    ia -> map {{ t -> (t * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0{sa} }} -> am;
+    ib -> map {{ t -> (t * {a2} + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0{sb} }} -> bm;
+",
+            sa = store(p.fa),
+            sb = store(p.fb),
+        );
+        (
+            read(p.fa, &format!("am[i * {k} + q]")),
+            read(p.fb, &bi("bm")),
+        )
+    } else {
+        (ar, br)
+    };
+    let scale = match p.post {
+        1 => " * 0.5".to_string(),
+        2 => " * 1.1 * ra".to_string(),
+        _ => String::new(),
+    };
+    src += &format!(
+        "    ic -> map: f32 {{ t -> t / {n} -> i; t % {n} -> j; (0.0, kr) -> fold {{ acc, q -> {am} -> x; {bm} -> y; x * y -> pv; (pv > 0.0) -> {{ -true-> pv; -false-> 0.0 - pv; }} -> av; acc + av }} -> s; r[t] -> rr; (rr > 0.0) -> {{ -true-> rr; -false-> 0.0 - rr; }} -> ra; s{scale} }} -> mag;
+"
+    );
+    for c in cells {
+        src += &format!("    y[{c}] -> println;\n    mag[{c}] -> println;\n");
+    }
+    src += "}\n";
+    (src, (cells.len(), k))
+}
+
 // --- size-generics: helpers called at several sizes, as Mapal source --------
 
 /// ADR-0047: a program of size-generic helpers, each called at one or more

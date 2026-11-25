@@ -206,6 +206,11 @@ pub struct Gpu {
     /// (`wgmma.m64nNk8`, `a` from a shared-memory descriptor); 0 where the
     /// part has none.
     pub wgmma_tf32_per_clk: u64,
+    /// wgmma-16bit: the same for the warpgroup 16-bit products with f32
+    /// accumulators (`wgmma.m64nNk16` bf16 / f16, `b` from a shared-memory
+    /// descriptor, `a` from either home — `calib.cu matrix`'s `wgmma` kinds);
+    /// 0 where the part has none.
+    pub wgmma_half_per_clk: u64,
     /// What the SM executes, as properties ([`Caps`]): no rule compares a
     /// version.
     pub caps: Caps,
@@ -579,6 +584,13 @@ pub struct MatrixOp {
     /// chain term reads it ([`mapal_ir::split::AccModel`]); `g ≥ 1` is what
     /// keeps ADR-0041 D3's member bound sound ([`mapal_ir::split::AccModel::member_sound`]).
     pub acc_g: u32,
+    /// wgmma-16bit: **a shared-memory operand may be MN-major** — the
+    /// instruction's transpose bit (`imm-trans-a` / `imm-trans-b`) reads a
+    /// descriptor operand whose `m` / `n` axis is the contiguous one, so a
+    /// `k × n` panel stored lanes-contiguous is the `b` operand as it lands.
+    /// `wgmma`'s 16-bit forms have it; its TF32 and fp8 forms read K-major
+    /// descriptors only (the S53 kernel's transposed product `cᵀ = bᵀ·aᵀ`).
+    pub mn_major: bool,
 }
 
 impl MatrixOp {
@@ -667,6 +679,7 @@ const fn op(shape: MmaShape, fmt: MmaFmt, a: Home, b: Home, acc: Home) -> Matrix
         acc,
         acc_u: MMA_ACC_U,
         acc_g: MMA_ACC_G,
+        mn_major: false,
     }
 }
 
@@ -695,17 +708,33 @@ const fn group(shape: MmaShape, fmt: MmaFmt) -> MatrixOp {
     op(shape, fmt, Home::Smem, Home::Smem, Home::Regs)
 }
 
+/// wgmma-16bit: a 16-bit warpgroup product as the PTX ISA states its
+/// geometry — either descriptor operand MN-major or K-major (the transpose
+/// bits), `a` from shared memory or, `rs`, from the warpgroup's registers in
+/// the `m64k16` fragment layout (an operand loaded wider is rounded to the
+/// format in its load).
+const fn group16(fmt: MmaFmt, rs: bool) -> MatrixOp {
+    let a = if rs { Home::Regs } else { Home::Smem };
+    MatrixOp {
+        mn_major: true,
+        ..op(WGMMA_16, fmt, a, Home::Smem, Home::Regs)
+    }
+}
+
 /// [`MATRIX_WARP_F8`] and the warpgroup products: `a` and `b` from
-/// shared-memory descriptors, the accumulator in registers.
-pub const MATRIX_WARPGROUP: [MatrixOp; 10] = [
+/// shared-memory descriptors, the accumulator in registers; the 16-bit
+/// forms also with `a` from registers (wgmma-16bit).
+pub const MATRIX_WARPGROUP: [MatrixOp; 12] = [
     MATRIX_WARP_F8[0],
     MATRIX_WARP_F8[1],
     MATRIX_WARP_F8[2],
     MATRIX_WARP_F8[3],
     MATRIX_WARP_F8[4],
     group(WGMMA_TF32, MmaFmt::Tf32),
-    group(WGMMA_16, MmaFmt::Bf16),
-    group(WGMMA_16, MmaFmt::F16),
+    group16(MmaFmt::Bf16, false),
+    group16(MmaFmt::F16, false),
+    group16(MmaFmt::Bf16, true),
+    group16(MmaFmt::F16, true),
     group(WGMMA_F8, MmaFmt::E4m3),
     group(WGMMA_F8, MmaFmt::E5m2),
 ];
@@ -732,6 +761,19 @@ impl Caps {
             .iter()
             .copied()
             .find(|o| o.fmt == fmt && o.a == a)
+    }
+
+    /// wgmma-16bit: **the warpgroup product of `fmt` operands with `a` from
+    /// `a`** — `b` from a shared-memory descriptor, the accumulator in
+    /// registers. `None`: the part issues no such shape.
+    pub fn matrix_group(&self, fmt: MmaFmt, a: Home) -> Option<MatrixOp> {
+        self.matrix.iter().copied().find(|o| {
+            o.fmt == fmt
+                && o.a == a
+                && o.b == Home::Smem
+                && o.acc == Home::Regs
+                && o.shape.threads > 32
+        })
     }
 }
 
@@ -1336,7 +1378,7 @@ impl DeviceCost {
     /// overrides by name ([`Gpu::fp32_lanes`], [`Gpu::clock_khz`], and the
     /// hardware-properties the rung rules read: SMs, L2, shared memory,
     /// threads, registers and blocks per SM, the DRAM interface).
-    pub const NAMES: [&'static str; 50] = [
+    pub const NAMES: [&'static str; 51] = [
         "flops_per_ns",
         "bytes_per_ns",
         "launch_ns",
@@ -1382,6 +1424,7 @@ impl DeviceCost {
         "mma_tf32_per_clk",
         "mma_half_per_clk",
         "wgmma_tf32_per_clk",
+        "wgmma_half_per_clk",
         // ADR-0046 D8: the SM's approximate math units (`calib.cu math`),
         // errors × 10¹² ([`MathUnits`]); `math_specials=1`: they return the
         // contract's special values.
@@ -1498,6 +1541,7 @@ impl Gpu {
                 "mma_tf32_per_clk" => &mut self.mma_tf32_per_clk,
                 "mma_half_per_clk" => &mut self.mma_half_per_clk,
                 "wgmma_tf32_per_clk" => &mut self.wgmma_tf32_per_clk,
+                "wgmma_half_per_clk" => &mut self.wgmma_half_per_clk,
                 "sqrt_approx_rel_e12" => &mut math.sqrt_rel_e12,
                 "sin_approx_rel_e12" => &mut math.sin_rel_e12,
                 "sin_approx_abs_e12" => &mut math.sin_abs_e12,
@@ -1566,6 +1610,7 @@ impl Gpu {
             "mma_tf32_per_clk" => self.mma_tf32_per_clk,
             "mma_half_per_clk" => self.mma_half_per_clk,
             "wgmma_tf32_per_clk" => self.wgmma_tf32_per_clk,
+            "wgmma_half_per_clk" => self.wgmma_half_per_clk,
             n if n.ends_with("_e12") || n == "math_specials" => {
                 MathUnits::of(&self.caps.math).get(n)
             }
@@ -1904,10 +1949,15 @@ impl Gpu {
     /// ([`Self::mma_tf32_per_clk`] and its siblings, by the operand format
     /// and where `a` lives); 0 for a product the part has no rate for.
     pub fn matrix_flops_per_clk(&self, op: &MatrixOp) -> u64 {
-        match (op.fmt, op.a) {
-            (MmaFmt::Tf32, Home::Regs) => self.mma_tf32_per_clk,
-            (MmaFmt::Bf16 | MmaFmt::F16, Home::Regs) => self.mma_half_per_clk,
-            (MmaFmt::Tf32, Home::Smem) => self.wgmma_tf32_per_clk,
+        // The issuing group and `b`'s home name the pipe: a warp's product
+        // takes both operands from registers, a warpgroup's `b` from a
+        // descriptor (its `a` from either home: one rate, wgmma-16bit).
+        let group = op.b == Home::Smem && op.acc == Home::Regs;
+        match (op.fmt, group) {
+            (MmaFmt::Tf32, false) => self.mma_tf32_per_clk,
+            (MmaFmt::Bf16 | MmaFmt::F16, false) => self.mma_half_per_clk,
+            (MmaFmt::Tf32, true) => self.wgmma_tf32_per_clk,
+            (MmaFmt::Bf16 | MmaFmt::F16, true) => self.wgmma_half_per_clk,
             _ => 0,
         }
     }
@@ -2057,15 +2107,8 @@ impl Gpu {
     /// ([`Self::matrix_flops_per_clk`], the fastest of the part's products in
     /// `fmt`); the FFMA rate stands in where no matrix rate is given (it is
     /// the lower one: the price errs toward the copies).
-    pub fn stage_consume_ns(&self, flops: u64, blocks: u64, fmt: MmaFmt) -> u64 {
-        let matrix = self
-            .caps
-            .matrix
-            .iter()
-            .filter(|o| o.fmt == fmt)
-            .map(|o| self.matrix_flops_per_clk(o) * self.clock_khz / 1_000_000)
-            .max()
-            .unwrap_or(0);
+    pub fn stage_consume_ns(&self, flops: u64, blocks: u64, op: &MatrixOp) -> u64 {
+        let matrix = self.matrix_flops_per_clk(op) * self.clock_khz / 1_000_000;
         let per_sm = match matrix {
             0 => self.ffma_flops_per_ns() / self.sms.max(1),
             m => m,
@@ -2575,33 +2618,99 @@ pub struct GpuWgmmaTile {
     /// (`sms × blocks_per_sm`), each walking the tiles `cta, cta + ctas, …`
     /// on one stage ring ([`crate::rules::ws_persist_pays`]). 0: a CTA a tile.
     pub ctas: u64,
+    /// wgmma-16bit: **the instruction's operand format** — `Tf32`: S53's
+    /// product; `Bf16` / `F16`: the 16-bit warpgroup product
+    /// (`wgmma.m64nNk16`), one tile family over the matrix-op capability.
+    pub fmt: MmaFmt,
+    /// wgmma-16bit: **`c = a·b` as stored** — consumer warpgroup `cw` owns
+    /// rows `64·cw ..+64` of the block's `c` tile × its `n` columns, `a` the
+    /// instruction's `a` and `b` its descriptor `b` in either major
+    /// ([`MatrixOp::mn_major`]). `false`: the transposed product `cᵀ = bᵀ·aᵀ`
+    /// the K-major-only TF32 descriptor forces (S53).
+    pub direct: bool,
+    /// Bytes of one staged `a` element (4: f32 storage — rounded to `fmt` as
+    /// the instruction's operand is formed; 2: stored in the format).
+    pub ea: u64,
+    /// Bytes of one staged `b` element.
+    pub eb: u64,
+    /// wgmma-16bit: **where the instruction's `a` operand lives when it
+    /// issues** — `Regs`: fragments the consumer loads from the stage (the
+    /// TF32 kernel's `bᵀ`, rounded in the load; a 16-bit product's f32 `a`,
+    /// rounded to the format in the load); `Smem`: the stage itself through a
+    /// K-major descriptor (a 16-bit `a` stored in the format).
+    pub a_home: Home,
+    /// wgmma-16bit: `b` staged k-major (`n` rows of `k`: the descriptor's
+    /// K-major layout), else lanes-major (`k` rows of 128-byte lane slabs:
+    /// MN-major, the transpose bit set).
+    pub b_kmajor: bool,
 }
 
 impl GpuWgmmaTile {
+    /// The S53 / hopper-wgmma-tma TF32 form's operand fields (`cᵀ = bᵀ·aᵀ`,
+    /// f32 storage, `bᵀ` fragments in registers, `b` lanes-major).
+    pub const TF32: GpuWgmmaTile = GpuWgmmaTile {
+        n: 0,
+        groups: 0,
+        bk: 0,
+        stages: 0,
+        pad_b: 0,
+        blocks_per_sm: 0,
+        ws: false,
+        realloc: None,
+        ctas: 0,
+        fmt: MmaFmt::Tf32,
+        direct: false,
+        ea: 4,
+        eb: 4,
+        a_home: Home::Regs,
+        b_kmajor: false,
+    };
     pub fn bm(&self) -> u64 {
-        self.n
+        match self.direct {
+            true => self.groups * WGMMA_M,
+            false => self.n,
+        }
     }
     pub fn bn(&self) -> u64 {
-        self.groups * WGMMA_M
+        match self.direct {
+            true => self.n,
+            false => self.groups * WGMMA_M,
+        }
+    }
+    /// The instruction's `k` (32 bytes of each operand row).
+    pub fn mma_k(&self) -> u64 {
+        32 / self.fmt.bytes()
     }
     pub fn threads(&self, warp: u64) -> u64 {
         (self.groups + u64::from(self.ws)) * WARPGROUP_WARPS * warp
     }
-    /// `wgmma-ws`: bytes of a stage's `aᵀ` box (`n` rows of `bk` words, the
-    /// 128-byte swizzle the descriptor reads).
+    /// `wgmma-ws`: bytes of a stage's `a` box (`bm` rows of `bk` elements —
+    /// the TF32 form's `aᵀ` — as 128-byte swizzled digit columns).
     pub fn ws_a_bytes(&self) -> u64 {
-        self.n * self.bk * 4
+        self.bm() * self.bk * self.ea
     }
-    /// `wgmma-ws`: the `b` panel's boxes, each `bk` rows of one swizzle span
-    /// (32 words).
+    /// `wgmma-ws`: bytes of a stage's `b` boxes.
+    pub fn ws_b_bytes(&self) -> u64 {
+        self.bn() * self.bk * self.eb
+    }
+    /// `wgmma-ws`: the `b` panel's boxes without `tma-digits` — lanes-major:
+    /// one 2-d box a 128-byte lane slab (`bk` rows each); k-major: one box
+    /// (`bn` rows of the `k` digit columns, 3-d past one column, as `a`'s).
     pub fn ws_b_boxes(&self) -> u64 {
-        self.bn() * 4 / WGMMA_SWIZZLE_BYTES
+        match self.b_kmajor {
+            true => 1,
+            false => self.bn() * self.eb / WGMMA_SWIZZLE_BYTES,
+        }
     }
-    /// `wgmma-ws`: one stage — the `aᵀ` box, then the `b` boxes — whole
+    /// `wgmma-ws`: the `a` box's 128-byte `k` digit columns (`bm` rows each).
+    pub fn ws_a_cols(&self) -> u64 {
+        (self.bk * self.ea).div_ceil(WGMMA_SWIZZLE_BYTES)
+    }
+    /// `wgmma-ws`: one stage — the `a` box, then the `b` boxes — whole
     /// 1024-byte swizzle patterns, so every box starts on one.
     pub fn ws_stage_bytes(&self) -> u64 {
         let atom = WGMMA_ATOM_ROWS * WGMMA_SWIZZLE_BYTES;
-        (self.ws_a_bytes() + self.bn() * self.bk * 4).next_multiple_of(atom)
+        (self.ws_a_bytes() + self.ws_b_bytes()).next_multiple_of(atom)
     }
     /// `wgmma-ws`: the stages and their three barriers each (full, ready,
     /// empty; 8 bytes apiece).
@@ -2638,6 +2747,28 @@ impl GpuWgmmaTile {
     pub fn desc_fields(&self) -> u64 {
         (1 << 16) | ((self.sbo() >> 4) << 32) | (1 << 62)
     }
+    /// wgmma-16bit: the MN-major descriptor of the lanes-major `b` panel
+    /// (PTX ISA, MN-major swizzled layouts): LBO the stride between 128-byte
+    /// lane slabs — one slab is `bk` swizzled rows, so `128·bk` — SBO
+    /// between 8-row groups of `k` (one 1024-byte atom), the 128-byte mode.
+    pub fn desc_mn_fields(&self) -> u64 {
+        let lbo = WGMMA_SWIZZLE_BYTES * self.bk;
+        ((lbo >> 4) << 16) | ((self.sbo() >> 4) << 32) | (1 << 62)
+    }
+}
+
+/// wgmma-16bit: **the operand side of a warp-specialized `wgmma` tile** —
+/// the warpgroup product it issues (its format, `a`'s home, whether a
+/// descriptor operand may be MN-major), each operand's staged element bytes
+/// (an f32 `a` of a 16-bit product is staged f32 and rounded in its fragment
+/// load), and whether `b` is staged k-major. The hopper-wgmma-tma TF32 form:
+/// the TF32 group product, 4 / 4, lanes-major.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WsForm {
+    pub op: MatrixOp,
+    pub ea: u64,
+    pub eb: u64,
+    pub b_kmajor: bool,
 }
 
 /// The smallest row padding, in 32-bit words and a multiple of four (so every
@@ -4472,16 +4603,53 @@ impl TargetProfile {
         digits: bool,
     ) -> Option<GpuWgmmaTile> {
         let g = self.gpu()?;
-        if !g.has_wgmma() || g.caps.bulk.is_none() {
+        if !g.has_wgmma() {
             return None;
         }
-        let row = WGMMA_SWIZZLE_BYTES / 4;
+        let op = g.caps.matrix_op(MmaFmt::Tf32, Home::Smem)?;
+        let form = WsForm {
+            op,
+            ea: 4,
+            eb: 4,
+            b_kmajor: false,
+        };
+        self.gpu_wgmma_ws_tile_of(rows, c, k, realloc, digits, form)
+    }
+
+    /// wgmma-16bit: **[`Self::gpu_wgmma_ws_tile`] over any warpgroup
+    /// product** — the one tile family, the instruction and the operands'
+    /// staged widths a parameter ([`WsForm`]). The form's [`MatrixOp`]
+    /// decides the orientation (`mn_major`: `c = a·b` with consumer
+    /// warpgroups along `c`'s rows, `bm = 64·g`, `n` its columns; else the
+    /// TF32 product transposed, `bn = 64·g`, `n` rows), `a`'s home (a
+    /// register operand holds `4·bk/k` fragment registers; a descriptor
+    /// none) and the depth unit — one 128-byte swizzle row of the format
+    /// (32 TF32 words, 64 16-bit elements); an f32 `a` staged for a 16-bit
+    /// product spans two digit columns a row. A lanes-major `b` lands in
+    /// 128-byte lane slabs (`n` whole slabs); a k-major one in `n` rows.
+    pub fn gpu_wgmma_ws_tile_of(
+        &self,
+        rows: u64,
+        c: u64,
+        k: u64,
+        realloc: bool,
+        digits: bool,
+        form: WsForm,
+    ) -> Option<GpuWgmmaTile> {
+        let g = self.gpu()?;
+        let op = form.op;
+        if g.caps.bulk.is_none() || op.b != Home::Smem || op.acc != Home::Regs {
+            return None;
+        }
+        let direct = op.mn_major;
+        let a_home = if direct { op.a } else { Home::Regs };
+        let row = WGMMA_SWIZZLE_BYTES / op.fmt.bytes();
         if !k.is_multiple_of(row) {
             return None;
         }
         // R1's price: a stage's 2 copies (`tma-digits`) issue within the time
         // its tensor cores take to consume it — the shallowest such depth (a
-        // whole number of swizzle rows, at most 4: the `aᵀ` box's k digits);
+        // whole number of swizzle rows, at most 4: the `a` box's k digits);
         // none: the deepest. Without digits a stage is one swizzle row deep.
         let depths: Vec<u64> = match digits {
             true => (1..=4)
@@ -4494,7 +4662,11 @@ impl TargetProfile {
         let rr = g.caps.reg_realloc.filter(|_| realloc);
         let mut cands = Vec::new();
         for &bk in &depths {
-            let frag = 4 * (bk / WGMMA_K) + WGMMA_WS_ADDR_REGS;
+            let a_regs = match a_home {
+                Home::Regs => 4 * (bk / op.shape.k),
+                _ => 0,
+            };
+            let frag = a_regs + WGMMA_WS_ADDR_REGS;
             for groups in [2u64, 1] {
                 let threads = (groups + 1) * wg;
                 if threads > g.max_threads_per_block {
@@ -4516,13 +4688,23 @@ impl TargetProfile {
                 if cap <= frag {
                     continue;
                 }
-                let bn = groups * WGMMA_M;
-                if !c.is_multiple_of(bn) {
+                // The warpgroups' side, and the extent `n` runs along.
+                let (side, along) = match direct {
+                    true => (rows, c),
+                    false => (c, rows),
+                };
+                if !side.is_multiple_of(groups * WGMMA_M) {
                     continue;
                 }
+                // A lanes-major `b` (the direct form's `n` lanes) in whole
+                // 128-byte slabs.
+                let step = match direct && !form.b_kmajor {
+                    true => WGMMA_SWIZZLE_BYTES / form.eb,
+                    false => WGMMA_N_STEP,
+                };
                 let n_max = (2 * (cap - frag)).min(WGMMA_N_MAX);
-                for n in (1..=n_max / WGMMA_N_STEP).rev().map(|i| i * WGMMA_N_STEP) {
-                    if !rows.is_multiple_of(n) {
+                for n in (1..=n_max / step).rev().map(|i| i * step) {
+                    if !along.is_multiple_of(n) {
                         continue;
                     }
                     let geom = GpuWgmmaTile {
@@ -4535,21 +4717,34 @@ impl TargetProfile {
                         ws: true,
                         realloc: regs,
                         ctas: 0,
+                        fmt: op.fmt,
+                        direct,
+                        ea: form.ea,
+                        eb: form.eb,
+                        a_home,
+                        b_kmajor: form.b_kmajor,
                     };
                     let per = geom.ws_stage_bytes() + 24;
                     let stages = (g.smem_per_block / per).min(k / bk);
-                    if stages < 2 {
+                    // At least a two-stage ring; wgmma-16bit: a fold one stage
+                    // deep (`k = bk`, attention's head width 64) is one stage —
+                    // nothing to overlap within a tile.
+                    let least = match direct {
+                        true => 2.min(k / bk),
+                        false => 2,
+                    };
+                    if stages < least.max(1) {
                         continue;
                     }
                     cands.push(GpuWgmmaTile { stages, ..geom });
                 }
             }
         }
-        let tiles = |w: &GpuWgmmaTile| (rows / w.n) * (c / w.bn());
+        let tiles = |w: &GpuWgmmaTile| (rows / w.bm()) * (c / w.bn());
         let copies = if digits { 2 } else { 0 };
         let priced = |w: &GpuWgmmaTile| {
-            let flops = 2 * w.n * w.bn() * w.bk;
-            copies * g.tma_copy_ns() <= g.stage_consume_ns(flops, 1, MmaFmt::Tf32)
+            let flops = 2 * w.bm() * w.bn() * w.bk;
+            copies * g.tma_copy_ns() <= g.stage_consume_ns(flops, 1, &op)
         };
         // Per (groups, n): the shallowest priced depth, else the deepest.
         let pick = |w: &GpuWgmmaTile| {
@@ -4567,7 +4762,7 @@ impl TargetProfile {
             best.is_some_and(|b| b.bk == w.bk)
         };
         let cands: Vec<GpuWgmmaTile> = cands.iter().filter(|w| pick(w)).copied().collect();
-        let intensity = |w: &GpuWgmmaTile| w.bn() * w.n * 1000 / (w.bn() + w.n);
+        let intensity = |w: &GpuWgmmaTile| w.bn() * w.bm() * 1000 / (w.bn() + w.bm());
         cands
             .iter()
             .filter(|w| tiles(w) >= g.sms)
@@ -4664,6 +4859,7 @@ impl TargetProfile {
                     ws: false,
                     realloc: None,
                     ctas: 0,
+                    ..GpuWgmmaTile::TF32
                 };
                 // Whole 16-byte chunks per thread, and whole swizzle rows.
                 let whole = (n * bk / 4).is_multiple_of(threads)
@@ -5637,6 +5833,7 @@ const ADA_SM: Gpu = Gpu {
     mma_tf32_per_clk: 256,
     mma_half_per_clk: 512,
     wgmma_tf32_per_clk: 0,
+    wgmma_half_per_clk: 0,
     caps: CAPS_WARP_MMA_F8,
 };
 
@@ -5800,6 +5997,13 @@ pub const H100: TargetProfile = TargetProfile {
         mma_tf32_per_clk: 1351,
         mma_half_per_clk: 2702,
         wgmma_tf32_per_clk: 2048,
+        // wgmma-16bit: `wgmma` bf16 / f16 with f32 accumulators — measured
+        // (`calib.cu matrix`, wgmma-16bit's H100 SXM box, two warpgroups an
+        // SM, clock64 spans): `wgmma.m64n256k16.bf16` 4096 flops an SM a
+        // clock with `a` from shared memory or registers (998 / 997 Tflop/s
+        // at 1.85 GHz), the datasheet's dense 989.4 over 132 SMs at 1.83;
+        // the TF32 `m64n256k8` there 2048 (the value above, now measured).
+        wgmma_half_per_clk: 4096,
         caps: CAPS_WARPGROUP_MMA,
         ..ADA_SM
     }),
@@ -5847,6 +6051,7 @@ pub const H100_PCIE: TargetProfile = TargetProfile {
         mma_tf32_per_clk: 1351,
         mma_half_per_clk: 2702,
         wgmma_tf32_per_clk: 2048,
+        wgmma_half_per_clk: 4096,
         caps: CAPS_WARPGROUP_MMA,
         ..ADA_SM
     }),
@@ -6754,20 +6959,20 @@ pub const fn fp32_lanes_of_cc(cc: u64) -> u64 {
 }
 
 /// f32-tensor-cores P1: the warp TF32, warp 16-bit (f32 accumulate) and
-/// warpgroup TF32 products' flops an SM a clock, the SM designs' table by
-/// compute capability — the fallback when the calibration file does not give
-/// `mma_tf32_per_clk` / `mma_half_per_clk` / `wgmma_tf32_per_clk` (`calib.cu
-/// matrix`), as [`fp32_lanes_of_cc`] for the FFMA lanes: the datacenter
-/// `sm_80` SM 1012 / 2024 (the A100 measured); the Hopper SM's `mma.sync`
-/// 1351 / 2702 (the H100 measured, [`H100`]) and its `wgmma` 2048; every
-/// other SM since `sm_86` 256 / 512 (the RTX 5080, 3090, 4090 measured). No
-/// tensor core below `sm_80`.
-pub const fn mma_rates_of_cc(cc: u64) -> [u64; 3] {
+/// warpgroup TF32 and 16-bit products' flops an SM a clock, the SM designs'
+/// table by compute capability — the fallback when the calibration file does
+/// not give `mma_tf32_per_clk` / `mma_half_per_clk` / `wgmma_tf32_per_clk` /
+/// `wgmma_half_per_clk` (`calib.cu matrix`), as [`fp32_lanes_of_cc`] for the
+/// FFMA lanes: the datacenter `sm_80` SM 1012 / 2024 (the A100 measured); the
+/// Hopper SM's `mma.sync` 1351 / 2702 (the H100 measured, [`H100`]) and its
+/// `wgmma` 2048 / 4096 (datasheet); every other SM since `sm_86` 256 / 512
+/// (the RTX 5080, 3090, 4090 measured). No tensor core below `sm_80`.
+pub const fn mma_rates_of_cc(cc: u64) -> [u64; 4] {
     match cc {
-        0..80 => [0, 0, 0],
-        80 => [1012, 2024, 0],
-        90 => [1351, 2702, 2048],
-        _ => [256, 512, 0],
+        0..80 => [0, 0, 0, 0],
+        80 => [1012, 2024, 0, 0],
+        90 => [1351, 2702, 2048, 4096],
+        _ => [256, 512, 0, 0],
     }
 }
 
@@ -6842,6 +7047,11 @@ impl DeviceQuery {
             mma_half_per_clk: mma_rates_of_cc(self.cc)[1],
             wgmma_tf32_per_clk: if arch_specific {
                 mma_rates_of_cc(self.cc)[2]
+            } else {
+                0
+            },
+            wgmma_half_per_clk: if arch_specific {
+                mma_rates_of_cc(self.cc)[3]
             } else {
                 0
             },

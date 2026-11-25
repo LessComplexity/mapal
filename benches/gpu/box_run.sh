@@ -538,11 +538,12 @@ for o in "$PROF"/pt_*.host.o; do
             done
         done ;;
     esac
-    # model-scale: a projection's cuBLAS / cuBLASLt legs (gemm_lib.cu; `_tf32`: the TF32 legs), gated on c[0], c[last].
-    if [[ $b =~ ^pt_pj_m([0-9]+)_n([0-9]+)_k([0-9]+)(_tf32)?$ ]] && [ -x gemm_lib ]; then
+    # model-scale: a projection's cuBLAS / cuBLASLt legs (gemm_lib.cu; `_tf32`: the TF32 legs; `_bf16`, wgmma-16bit:
+    # the bf16 legs), gated on c[0], c[last].
+    if [[ $b =~ ^pt_pj_m([0-9]+)_n([0-9]+)_k([0-9]+)(_tf32|_bf16)?$ ]] && [ -x gemm_lib ]; then
         # shellcheck disable=SC2086  # the values are separate arguments
         ./gemm_lib "$b" "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}" "$REPS" \
-            ${BASH_REMATCH[4]:+--tf32} $vals 2>&1 | tee -a "$LOG"
+            ${BASH_REMATCH[4]:+--${BASH_REMATCH[4]#_}} $vals 2>&1 | tee -a "$LOG"
     fi
     # shellcheck disable=SC2086  # the values are separate arguments
     case $n in *[!0-9]*) continue ;; esac  # S62 `rmlp_<M>x<d>x<h>`: no library leg

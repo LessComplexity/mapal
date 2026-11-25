@@ -589,6 +589,14 @@ impl FnEmit<'_> {
         };
         let cands = gpu::site_cands(one, self.profile, self.contract, arms, order, row.is_some());
         let c0 = cands[0].launch;
+        // wgmma-16bit: a warp-specialized `wgmma` launch (tensor maps by
+        // value, a producer warpgroup's `setmaxnreg` share of its block)
+        // launches alone — merged, every such member faulted on the H100
+        // (`illegal memory access`, 22 of 22 generated programs; alone, 26
+        // of 26 within the bound). Open: what the merged kernel breaks.
+        if c0.wgmma.is_some_and(|w| w.ws) {
+            return None;
+        }
         // A one-candidate atomic site launches directly behind its own zero
         // op (no table to take): never a member.
         let atomic_ok = atomic
@@ -1348,7 +1356,16 @@ pub(super) fn device_fn(text: &str, name: &str, pad: Option<u64>) -> String {
     let (define, body) = text.split_once('\n').expect("a define line");
     let open = define.find('(').expect("parameters");
     let close = define.rfind(") ").expect("attributes");
-    let ps = &define[open + 1..close];
+    // A tensor map the kernel takes by value (`grid_constant`, a TMA
+    // kernel's) is the merged kernel's parameter: the member receives its
+    // address — a byval argument of an internal function is a local copy,
+    // which the bulk-copy engine cannot read (wgmma-16bit: an H100 run of a
+    // merged warp-specialized member faulted, `illegal memory access`).
+    let ps = define[open + 1..close].replace(
+        " byval([128 x i8]) align 64 \"nvvm.grid_constant\"",
+        " readonly align 64",
+    );
+    let ps = ps.as_str();
     let sep = if ps.is_empty() { "" } else { ", " };
     let mut out = format!(
         "define internal void @hz.{name}({ps}{sep}i32 %hz.bx, i32 %hz.by) alwaysinline {{\n"
@@ -1578,6 +1595,17 @@ mod tests {
         // 256-thread grid: 2 blocks / SM.
         let s = [shape(10, 128, 0, 4), shape(10, 256, 0, 6)];
         assert_eq!(merged_per_sm(&s, g), 2);
+    }
+
+    /// wgmma-16bit: a tensor map taken by value (`grid_constant`) becomes
+    /// the device function's pointer to the merged kernel's parameter — a
+    /// byval argument of an internal function would be a local copy.
+    #[test]
+    fn a_tensor_map_parameter_becomes_its_address() {
+        let k = "define ptx_kernel void @mapal_tile_00000000000000cc(ptr addrspace(1) %a, ptr byval([128 x i8]) align 64 \"nvvm.grid_constant\" %tm0) \"nvvm.maxntid\"=\"256\" {\n\
+                 entry:\n  ret void\n}\n";
+        let f = device_fn(k, "mapal_tile_00000000000000cc", None);
+        assert!(f.starts_with("define internal void @hz.mapal_tile_00000000000000cc(ptr addrspace(1) %a, ptr readonly align 64 %tm0, i32 %hz.bx, i32 %hz.by) alwaysinline {"), "{f}");
     }
 
     #[test]

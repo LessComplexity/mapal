@@ -310,6 +310,24 @@ pub fn ws_persist_pays(g: &Gpu, tiles: u64, ctas: u64, stages: u64, tile_bytes: 
     ws_persist_saves_ns(tiles, ctas, fill, epi) > 0
 }
 
+/// **wgmma-16bit (`wgmma16`): the warpgroup product a 16-bit tile takes** —
+/// the part's `wgmma` shape for `fmt` with `a` from `a` and `b` from a
+/// descriptor ([`crate::profile::Caps::matrix_group`]), where its measured
+/// rate (`calib.cu matrix`, [`Gpu::matrix_flops_per_clk`]) exceeds the warp
+/// product's it replaces (`mma.sync.m16n8k16`, both operands in registers).
+/// The H100: 4096 against 2702 flops an SM a clock. `None`: no such shape,
+/// or no faster one — the warp tile stays.
+pub fn wgmma16_pays(
+    g: &Gpu,
+    fmt: crate::profile::MmaFmt,
+    a: crate::profile::Home,
+) -> Option<crate::profile::MatrixOp> {
+    let group = g.caps.matrix_group(fmt, a)?;
+    let warp = g.caps.matrix_op(fmt, crate::profile::Home::Regs);
+    let rate = g.matrix_flops_per_clk(&group);
+    (rate > warp.map_or(0, |w| g.matrix_flops_per_clk(&w))).then_some(group)
+}
+
 /// FP32 lanes per SM below which the exact face's fully unrolled panel loop
 /// costs (`unroll`): the A100's 64-lane SM lost on the exact face.
 pub const FULL_FP32_LANES: u64 = 128;
@@ -656,6 +674,8 @@ mod tests {
                     // gapfix `stream-ld`: the bytes of an operand the grid
                     // reads once.
                     "read_once" => read_once = Some(v.parse::<u64>().expect("read_once")),
+                    // wgmma-16bit: `a`'s home (read below).
+                    "a" => {}
                     _ => {
                         let n: u64 = v.parse().expect(line);
                         let mut over = [None; DeviceCost::NAMES.len()];
@@ -735,6 +755,16 @@ mod tests {
                     }
                     // gapfix `stream-ld`: the read-once operand against the
                     // L2's keep.
+                    // wgmma-16bit `wgmma16`: the part's warpgroup 16-bit
+                    // product (`a=regs`: `a` from registers, else from a
+                    // descriptor) against its warp `mma` rate.
+                    if e.rung == "wgmma16" {
+                        let a = match e.cond.contains("a=regs") {
+                            true => Home::Regs,
+                            false => Home::Smem,
+                        };
+                        v = v && wgmma16_pays(&g, MmaFmt::Bf16, a).is_some();
+                    }
                     if let (Some(b), "stream-ld") = (read_once, e.rung) {
                         v = v && stream_ld_pays(&g, b);
                     }
@@ -788,7 +818,7 @@ mod tests {
         }
         assert_eq!(open, OPEN.to_vec(), "measurements the rules do not pick");
         // The counts the evidence file reports.
-        assert_eq!((picked, null, mixed, open.len()), (172, 82, 17, 22));
+        assert_eq!((picked, null, mixed, open.len()), (174, 82, 18, 22));
     }
 
     /// precision `split-rate`: the split is weighed against the FFMA tile's

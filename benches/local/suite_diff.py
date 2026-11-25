@@ -2,7 +2,7 @@
 """Changed programs: the timed-suite programs and cells an A/B moves (benches/local/README.md).
 
 Every suite program (benches/local/suite.txt, the default face) and every face of each cell is emitted for the
-rtx-5080 on both arms of the A/B; host IR and device IR, less the `; mapal.` evidence comments, are compared
+rtx-5080 (`--arch`: another profile, a rented part's A/B) on both arms of the A/B; host IR and device IR, less the `; mapal.` evidence comments, are compared
 (changed.py `emission`: equal device IR is equal PTX under one LLVM). A program whose text is equal on both arms
 links the same host object and loads the same PTX on both: its A/B is null by construction and it is not timed. The
 others are bundled with the other arm (gpu_bundle.sh ARMS) and timed ABBA (box_run.sh's probe section, the arm order
@@ -12,7 +12,7 @@ reversed on even repetitions; the cells in tile_bench --splitk). A base whose ru
   suite_diff.py <out> --off <rung>[,<rung>..]       HEAD shipped vs HEAD with the rungs OFF   (arm off-<r>[+<r>])
   suite_diff.py <out> --on <rung>[,<rung>..]        HEAD shipped vs HEAD with the rungs ON    (arm on-<r>[+<r>])
   suite_diff.py <out> --base <ref> | --base-emit P  HEAD vs the emitter at <ref> / P          (arm on-base)
-  [--stems ..] [--cells ..] [--jobs N]
+  [--stems ..] [--cells ..] [--jobs N] [--arch <profile>]
 -> <out>/suite.tsv (stem face status head_hash arm_hash); prints STEMS / CELLS / ARMS / BASE_EMIT as shell
    assignments for gpu_bundle.sh (gpu_changed.sh evaluates them).
 """
@@ -35,6 +35,7 @@ CELL_FACES = {'': [], '_x': ['--exact'], '_c': ['--order=sequential'], '_r': ['-
 
 
 def main():
+    global ARCH
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('out')
     arm = ap.add_mutually_exclusive_group(required=True)
@@ -45,7 +46,9 @@ def main():
     ap.add_argument('--stems', nargs='*', help='default: benches/local/suite.txt')
     ap.add_argument('--cells', nargs='*', default=['4096x4096x4096', '16x2048x7168'])
     ap.add_argument('--jobs', type=int)
+    ap.add_argument('--arch', default=ARCH, help='the profile emitted for (default rtx-5080; a rented part: its name)')
     a = ap.parse_args()
+    ARCH = a.arch
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     changed.build_emit()

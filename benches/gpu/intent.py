@@ -68,16 +68,17 @@ INTENT = {
          'an fp8 operand`s element is LDG.U8 — '
          'cross-arch 3a8e654f: the bf16 KV cache`s scores kernel), a 4-element vector (LDG.64, the register-staged '
          'tile; a mixed-radix tile`s k-major `b` copied along its rows, sweep-attention-2 `kmajor-b`), or copied by '
-         'cp.async (LDGSTS: `narrow-async`)',
+         'cp.async (LDGSTS: `narrow-async`) or a tensor box (UTMALDG: wgmma-16bit`s `wgmma16`)',
          "(sass.hot.ldg16 + sass.hot.get('ldg8', 0) > 0 or plan.get('cells', 1) > 1 and sass.hot.ldg128 > 0) "
-         "if plan.kind == 'naive' else "
+         "if plan.kind == 'naive' else sass.get('utmaldg', 0) > 0 if plan.kind == 'wgmma' else "
          "sass.hot.ldg16 + sass.hot.ldg64 + sass.hot.ldg128 > 0 if 'radix' in plan "
          "else sass.ldgsts > 0 if plan.stages >= 2 else sass.hot.ldg64 > 0"),
         ('a narrow panel is register-staged (no cp.async, LDGSTS) unless the tile streams it (`stages` >= 2: '
          'tensor-cores `narrow-async`)', "plan.kind == 'naive' or plan.stages >= 2 or sass.hot.ldgsts == 0"),
         ('the products are f32 (FFMA, or FMUL + FADD on a separate-step face): the widened values exact — or, under '
-         'a 16-bit member (`half-tile`), the tensor core`s exact products (HMMA)',
-         "sass.hot.ffma + sass.hot.fmul > 0 if plan.kind != 'mma' else sass.hmma > 0"),
+         'a 16-bit member (`half-tile`), the tensor core`s exact products (HMMA; the warpgroup`s HGMMA, `wgmma16`)',
+         "sass.hgmma > 0 if plan.kind == 'wgmma' else sass.hot.ffma + sass.hot.fmul > 0 if plan.kind != 'mma' "
+         "else sass.hmma > 0"),
         ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')]),
     'module': dict(applies="plan.kind != 'gen'", on=[
         ('every kernel in the device module is launched by the host', 'mod.launched > 0')]),
@@ -143,7 +144,9 @@ INTENT = {
         ('no spill', 'ptxas.spill_st == 0')]),
     'interleave': dict(applies_on=TILE + ' and plan.tm * plan.tn > 1', on=[
         ('128-bit shared fragment loads', 'sass.hot.lds128 > 0')]),
-    'min-blocks': dict(applies="plan.kind in ('tile', 'mma', 'wgmma')", on=[
+    # The warp-specialized `wgmma` kernel (`ws=1`: `wgmma-ws`, `wgmma16`) declares its one block an SM whatever the
+    # rung — its `setmaxnreg` shares are the SM's registers over that block (its geometry, not this rung's).
+    'min-blocks': dict(applies="plan.kind in ('tile', 'mma') or plan.kind == 'wgmma' and plan.get('ws') != 1", on=[
         ('.minnctapersm = the derived blocks/SM', 'ptx.minnctapersm == plan.blocks_per_sm'),
         ('ptxas met it without spilling', 'ptxas.spill_st == 0')],
         off=[('no .minnctapersm', 'ptx.minnctapersm == 0')]),
@@ -760,10 +763,12 @@ INTENT = {
     # box, onto a full barrier: SYNCS) and rounds the `aT` box once; consumers issue bk/8 HGMMA a trip with no block
     # barrier in the loop. OFF (`.off-wgmma-ws`): the S53 kernel (every warp's cp.async: LDGSTS).
     'wgmma-ws': dict(rule=True, applies_on="plan.kind == 'wgmma' and plan.get('ws') == 1", on=[
-        ('the stage as tensor boxes: one UTMALDG a box, transaction barriers, no LDGSTS',
-         "sass.get('utmaldg', 0) == plan.boxes and sass.get('syncs', 0) > 0 and sass.ldgsts == 0"),
-        ('bk/8 HGMMA a trip of the hot loop, no block barrier in it',
-         'sass.hot.hgmma == plan.bk // 8 and sass.hot.bar == 0'),
+        ('the stage as tensor boxes: one UTMALDG a box on each issue path (the producer`s issue block may be '
+         'duplicated by LLVM), transaction barriers, no LDGSTS',
+         "sass.get('utmaldg', 0) > 0 and sass.get('utmaldg', 0) % plan.boxes == 0 and sass.get('syncs', 0) > 0 "
+         "and sass.ldgsts == 0"),
+        ('bk/k HGMMA a trip of the hot loop (k 8 TF32, 16 the 16-bit `op`), no block barrier in it',
+         "sass.hot.hgmma == plan.bk // (16 if 'op' in plan else 8) and sass.hot.bar == 0"),
         ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')],
         applies_off="plan.kind == 'wgmma' and plan.get('ws') != 1", off=[
         ('cp.async panels: LDGSTS, no UTMALDG', "sass.ldgsts > 0 and sass.get('utmaldg', 0) == 0")]),
@@ -773,11 +778,28 @@ INTENT = {
     'ws-persist': dict(applies_on="plan.kind == 'wgmma' and plan.get('ws') == 1 and 'persist' in plan", on=[
         ('the grid is the persistent CTAs', 'launch.gx * launch.gy == plan.persist and plan.persist < plan.tiles'),
         ('one CTA an SM at most (residency)', 'plan.persist <= occ.blocks_per_sm * occ.sms'),
-        ('bk/8 HGMMA a trip of the hot loop, no block barrier in it',
-         'sass.hot.hgmma == plan.bk // 8 and sass.hot.bar == 0'),
+        ('bk/k HGMMA a trip of the hot loop, no block barrier in it',
+         "sass.hot.hgmma == plan.bk // (16 if 'op' in plan else 8) and sass.hot.bar == 0"),
         ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')],
         applies_off="plan.kind == 'wgmma' and plan.get('ws') == 1 and 'persist' not in plan", off=[
-        ('a CTA a tile', 'launch.gx * launch.gy == (plan.rows // plan.n) * (plan.c // (64 * plan.groups))')]),
+        ('a CTA a tile', "launch.gx * launch.gy == ((plan.rows // plan.n) * (plan.c // (64 * plan.groups)) if 'op' not in "
+                         "plan else (plan.rows // (64 * plan.groups)) * (plan.c // plan.n))")]),
+    # wgmma-16bit `wgmma16`: a bf16 / f16 site on the warpgroup product (`op=m64n<N>k16.<fmt>`, the `wgmma-ws` tile
+    # family): `c = a·b` as stored — `a` from a K-major descriptor (`a_home=smem`: no shared load of `a` in the hot
+    # loop) or from registers (`a_home=regs`: its f32 fragments loaded and rounded, F2FP), `b` from a descriptor
+    # (`bt=1` K-major, else MN-major) — bk/16 HGMMA a trip, the stage as tensor boxes, no warp mma (HMMA). OFF
+    # (`.off-wgmma16`): the warp `mma.sync.m16n8k16` tile (HMMA, no HGMMA).
+    'wgmma16': dict(rule=True, applies_on="plan.kind == 'wgmma' and 'op' in plan", on=[
+        ('16-bit wgmma in PTX, HGMMA in SASS, no HMMA', 'ptx.wgmma > 0 and sass.hgmma > 0 and sass.hmma == 0'),
+        ('bk/16 HGMMA a trip of the hot loop, no block barrier in it',
+         'sass.hot.hgmma == plan.bk // 16 and sass.hot.bar == 0'),
+        ('the stage as tensor boxes: UTMALDG, transaction barriers, no LDGSTS',
+         "sass.get('utmaldg', 0) > 0 and sass.get('syncs', 0) > 0 and sass.ldgsts == 0"),
+        ("`a`'s home: a descriptor reads it (no LDS in the hot loop) or its f32 fragments are loaded and rounded",
+         "(plan.a_home == 'smem' and sass.hot.lds == 0) or (plan.a_home == 'regs' and sass.hot.lds > 0)"),
+        ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')],
+        applies_off="'bf16|f32' in plan.get('set', '') or 'f16|f32' in plan.get('set', '')", off=[
+        ('no 16-bit wgmma: the warp tile', "'op' not in plan or not plan.op.startswith('m64n')")]),
     # hopper-wgmma-tma `ws-regs` (R3): the producer warpgroup gives registers to the consumers (`regs=<p>/<c>`:
     # USETMAXREG DEALLOC + TRY_ALLOC). OFF: no USETMAXREG, the even share (a smaller `n`).
     'ws-regs': dict(applies_on="plan.kind == 'wgmma' and plan.get('ws') == 1 and 'regs' in plan", on=[

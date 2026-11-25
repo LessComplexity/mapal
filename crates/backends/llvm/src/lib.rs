@@ -887,6 +887,17 @@ pub struct GpuRungs {
     /// 2-d boxes do: 2 copies a stage instead of `1 + bn/32` (the engine's
     /// measured cost is per copy, `tma_copy_ns`). Off: a 2-d box per slab.
     pub tma_digits: bool,
+    /// wgmma-16bit (`wgmma16`): **a 16-bit tile on the part's warpgroup
+    /// product** — where the part lists `wgmma.m64nNk16` for the site's
+    /// format ([`profile::Caps::matrix_group`]) at a measured rate above its
+    /// warp `mma` ([`crate::rules::wgmma16_pays`]), the bf16 / f16 site takes
+    /// the warp-specialized tile family of `wgmma-ws` with the format a
+    /// parameter: `c = a·b` as stored, `a` from a K-major descriptor (stored
+    /// in the format) or registers (f32, rounded in its fragment load), `b`
+    /// from a descriptor in either major, TMA boxes on an mbarrier ring
+    /// ([`profile::TargetProfile::gpu_wgmma_ws_tile_of`]). Off
+    /// (`--gpu-off=wgmma16`): the warp `mma.sync.m16n8k16` tile.
+    pub wgmma16: bool,
     /// flash-attention `stream`: a row-block group `stream_plan` proves one
     /// pass over windows of its axis (attention's `q·Kᵀ → softmax → P·V`)
     /// runs as one kernel walking the axis window by window — each fold's
@@ -1325,6 +1336,7 @@ impl GpuRungs {
         vec_spread: true,
         bulk_stage: true,
         wgmma_ws: true,
+        wgmma16: true,
         ws_regs: true,
         tma_digits: true,
         stream: true,
@@ -1376,7 +1388,7 @@ impl GpuRungs {
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 166] = [
+    pub const NAMES: [&'static str; 167] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1496,6 +1508,7 @@ impl GpuRungs {
         "vec-spread",
         "bulk-stage",
         "wgmma-ws",
+        "wgmma16",
         "ws-regs",
         "tma-digits",
         "stream",
@@ -1667,6 +1680,7 @@ impl GpuRungs {
             "vec-spread" => &mut self.vec_spread,
             "bulk-stage" => &mut self.bulk_stage,
             "wgmma-ws" => &mut self.wgmma_ws,
+            "wgmma16" => &mut self.wgmma16,
             "ws-regs" => &mut self.ws_regs,
             "tma-digits" => &mut self.tma_digits,
             "stream" => &mut self.stream,
