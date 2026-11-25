@@ -248,6 +248,8 @@ pub enum Value {
     Narrow(NarrowFloat, u16),
     Bool(bool),
     Str(String),
+    /// The `Unit` witness: the argument `()` of a zero-parameter call.
+    Unit,
 }
 
 impl Value {
@@ -262,6 +264,7 @@ impl Value {
             Value::Narrow(n, _) => Ty::Narrow(*n),
             Value::Bool(_) => Ty::Bool,
             Value::Str(_) => Ty::Str,
+            Value::Unit => Ty::Unit,
         }
     }
 }

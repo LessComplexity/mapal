@@ -1679,6 +1679,19 @@ impl<'a> FnEmit<'a> {
             (false, 1) => self.fnames[body].clone(),
             (r, l) => format!("{}|range={r}|lanes={l}", self.fnames[body]),
         };
+        // structure: two sites of one body differ by the captures each
+        // evaluates from its law (`cell-law`) — their kernels take different
+        // parameters, so the name carries the law slots (two inlined copies
+        // of one fn: one over an `iota` law, one over a loaded array).
+        let tag = if laws.is_empty() {
+            tag
+        } else {
+            let slots: Vec<String> = laws
+                .iter()
+                .map(|(s, g)| format!("{s}:{}", self.fnames[*g]))
+                .collect();
+            format!("{tag}|laws={}", slots.join(","))
+        };
         // caching-memory `retain-cell`: a loop cell whose output changes in
         // a row delta only — not an in-place range cell (its buffer is the
         // state's), not a guarded one (an arm may skip a trip).

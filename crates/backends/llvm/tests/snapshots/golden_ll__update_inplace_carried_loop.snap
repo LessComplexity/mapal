@@ -25,10 +25,9 @@ declare void @mapal_par_watermark(i64)
 declare void @mapal_par_run_pinned(ptr, i32)
 declare void @mapal_par_finish(ptr)
 
-define internal [4 x i32] @fn0(i32 %arg) {
+define internal void @fn0(i32 %arg, ptr noalias %out) {
 entry:
   %o0 = alloca i32
-  %o1 = alloca [4 x i32]
   %o2 = alloca [4 x i32]
   %o3 = alloca { ptr, i32 }
   %o4 = alloca { ptr, i32 }
@@ -154,11 +153,10 @@ bb56:
   br label %bb7
 bb9:
   %t73 = load ptr, ptr %o5
-  call void @llvm.memcpy.p0.p0.i64(ptr %o1, ptr %t73, i64 ptrtoint (ptr getelementptr ([4 x i32], ptr null, i64 1) to i64), i1 false)
+  call void @llvm.memcpy.p0.p0.i64(ptr %out, ptr %t73, i64 ptrtoint (ptr getelementptr ([4 x i32], ptr null, i64 1) to i64), i1 false)
   br label %bb10
 bb10:
-  %t74 = load [4 x i32], ptr %o1
-  ret [4 x i32] %t74
+  ret void
 }
 
 %Frame = type { [4 x i32], { ptr, i32 }, i32, i32 }
@@ -171,18 +169,17 @@ entry:
   %o2 = getelementptr %Frame, ptr %frame, i32 0, i32 0
   %o3 = getelementptr %Frame, ptr %frame, i32 0, i32 1
   %o4 = getelementptr %Frame, ptr %frame, i32 0, i32 2
-  %t0 = call [4 x i32] @fn0(i32 0)
-  store [4 x i32] %t0, ptr %o2
-  %t1 = getelementptr { ptr, i32 }, ptr %o3, i32 0, i32 0
-  store ptr %o2, ptr %t1
+  call void @fn0(i32 0, ptr %o2)
+  %t0 = getelementptr { ptr, i32 }, ptr %o3, i32 0, i32 0
+  store ptr %o2, ptr %t0
+  %t1 = getelementptr { ptr, i32 }, ptr %o3, i32 0, i32 1
+  store i32 2, ptr %t1
   %t2 = getelementptr { ptr, i32 }, ptr %o3, i32 0, i32 1
-  store i32 2, ptr %t2
-  %t3 = getelementptr { ptr, i32 }, ptr %o3, i32 0, i32 1
-  %t4 = load i32, ptr %t3
-  %t5 = sext i32 %t4 to i64
-  %t6 = getelementptr [4 x i32], ptr %o2, i64 0, i64 %t5
-  %t7 = load i32, ptr %t6
-  store i32 %t7, ptr %o4
+  %t3 = load i32, ptr %t2
+  %t4 = sext i32 %t3 to i64
+  %t5 = getelementptr [4 x i32], ptr %o2, i64 0, i64 %t4
+  %t6 = load i32, ptr %t5
+  store i32 %t6, ptr %o4
   ret void
 }
 

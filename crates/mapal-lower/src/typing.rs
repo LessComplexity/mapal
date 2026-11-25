@@ -139,10 +139,22 @@ struct Walk<'a> {
     /// ADR-0048: walking a top-level chain (its bindings are the top-level
     /// names themselves, not locals reusing them).
     top_chain: bool,
-    /// A map whose body's value is an unpinned literal: its element width is
-    /// settled at the end of the walk (an annotation or a use downstream may
-    /// pin it), and its block's output with it — (stage key, the literal).
-    pending_maps: Vec<((u32, u32), usize)>,
+    /// map/fold signatures whose literal widths resolve with the function's
+    /// (a body's float literal takes its width from a later use or
+    /// annotation): `(stage span, body input components, body output,
+    /// captures, name)`, each component a `(WTy, fallback)`.
+    pending_blocks: Vec<PendingBlock>,
+}
+
+/// A map/fold signature awaiting [`Walk::resolve_all`].
+struct PendingBlock {
+    span: (u32, u32),
+    /// `Some(components)`: the body input is this tuple; `None`: `body_in`.
+    comps: Option<Vec<(WTy, Ty)>>,
+    body_in: (WTy, Ty),
+    body_out: (WTy, Ty),
+    captures: Vec<((String, Ty), WTy)>,
+    name: String,
 }
 
 /// A surface fn's declared (surface) signature, for call typing in D1.
@@ -187,7 +199,7 @@ pub fn analyze_fn(
         info: TypeInfo::default(),
         block_counter: 0,
         top_chain: false,
-        pending_maps: Vec::new(),
+        pending_blocks: Vec::new(),
     };
     let mut scope: ScopeStack<WTy> = ScopeStack::new();
     // Bind params to their resolved tys.
@@ -517,14 +529,6 @@ impl Walk<'_> {
     /// Resolve every literal var to a concrete ty (defaults i32/f64) and write
     /// `info.lit_ty`. Range-checking is done at emission against the resolved ty.
     fn resolve_all(&mut self) {
-        // A map's body output is its literal's final width.
-        for (key, v) in std::mem::take(&mut self.pending_maps) {
-            if let Some(t) = self.wty_to_ty(&WTy::Var(v))
-                && let Some(sig) = self.info.blocks.get_mut(&key)
-            {
-                sig.body_out = t;
-            }
-        }
         for v in 0..self.uf.len() {
             let r = self.find(v);
             let ty = match self.state[r].clone() {
@@ -534,6 +538,29 @@ impl Walk<'_> {
             };
             let span = self.var_span[v];
             self.info.lit_ty.insert(span, ty);
+        }
+        for b in std::mem::take(&mut self.pending_blocks) {
+            let mut ty_of =
+                |(w, fallback): &(WTy, Ty)| self.wty_to_ty(w).unwrap_or(fallback.clone());
+            let body_in = match &b.comps {
+                Some(comps) => Ty::Tuple(comps.iter().map(&mut ty_of).collect()),
+                None => ty_of(&b.body_in),
+            };
+            let body_out = ty_of(&b.body_out);
+            let captures = b
+                .captures
+                .into_iter()
+                .map(|((name, t), w)| (name, ty_of(&(w, t))))
+                .collect();
+            self.info.blocks.insert(
+                b.span,
+                BlockSig {
+                    body_in,
+                    body_out,
+                    captures,
+                    name: b.name,
+                },
+            );
         }
     }
 
@@ -611,7 +638,13 @@ impl Walk<'_> {
     /// `map` body correctly (emit already threads the real wire; this keeps the
     /// D1 BlockSig in step).
     fn chain_seeded(&mut self, chain: &Chain, seed: WTy, scope: &mut ScopeStack<WTy>) {
+        // `() -> g`: the Unit witness a zero-parameter fn takes (anywhere
+        // else `()` is not a value — emission's L1301).
+        let zero_call = matches!(chain.stages.first().map(|s| &s.kind),
+            Some(StageKind::Expr(e)) if matches!(&e.kind, ExprKind::Var(n)
+                if self.fn_sigs.get(name_text(self.source, *n)).is_some_and(|g| g.params.is_empty())));
         let mut cur: WTy = match &chain.head {
+            Some(h) if zero_call && matches!(h.kind, ExprKind::Unit) => WTy::Known(Ty::Unit),
             Some(h) => self.expr(h, scope),
             None => seed,
         };
@@ -1015,20 +1048,25 @@ impl Walk<'_> {
         }
         // Resolve each read capture's ty from the enclosing scope (unknown
         // names error later in the body walk as L1101 — not duplicated here).
+        // A capture keeps its literal vars (`[1.0, 2.0] -> xs` read in a
+        // body as `f32`): the body's uses and the signature share them.
         let mut cap_tys: Vec<(String, Ty)> = Vec::new();
+        let mut cap_ws: Vec<WTy> = Vec::new();
         for (cap, _sp) in &caps.reads {
-            if let Some((w, _)) = scope.resolve(cap)
-                && let Some(t) = self.wty_to_ty(w)
-            {
-                cap_tys.push((cap.clone(), t));
+            if let Some((w, _)) = scope.resolve(cap) {
+                let w = w.clone();
+                if let Some(t) = self.wty_to_ty(&w) {
+                    cap_tys.push((cap.clone(), t));
+                    cap_ws.push(w);
+                }
             }
         }
         // Seed the body scope with the captures (leading components), so the
         // body walk types them and nested bodies can capture transitively.
 
         let mut body_scope: ScopeStack<WTy> = ScopeStack::new();
-        for (cap, t) in &cap_tys {
-            body_scope.bind(cap, WTy::Known(t.clone()));
+        for ((cap, _), w) in cap_tys.iter().zip(&cap_ws) {
+            body_scope.bind(cap, w.clone());
         }
         // The fold seed and element WTys are extracted from `cur` *without*
         // resolving (so the seed's var threads into the body and unifies).
@@ -1076,60 +1114,53 @@ impl Walk<'_> {
         if matches!(op, CollOp::Fold) {
             self.unify(&seed_w, &tail_ty, stage_span);
         }
-        let body_out = self.wty_to_ty(&tail_ty).unwrap_or_else(|| match op {
+        // The body's output keeps its literal vars: a float literal in a map
+        // body or a fold's seed takes its width from a later use or
+        // annotation (`map { i -> 0.01 } -> start: [f32; 64]`); the block's
+        // signature is read once the function's literals resolve.
+        let out_fallback = match op {
             CollOp::Map => array_elem(&cur_ty.clone().unwrap_or(Ty::i32())).unwrap_or(Ty::i32()),
             CollOp::Fold => self.wty_to_ty(&seed_w).unwrap_or(Ty::f32()),
-        });
-        let cap_only: Vec<Ty> = cap_tys.iter().map(|(_, t)| t.clone()).collect();
-        let body_in = match op {
-            CollOp::Fold => {
-                let acc = self.wty_to_ty(&seed_w).unwrap_or(Ty::f32());
-                let t = self.wty_to_ty(&elem_w).unwrap_or(Ty::f32());
-                let mut comps = cap_only.clone();
-                comps.push(acc);
-                comps.push(t);
-                Ty::Tuple(comps)
-            }
-            CollOp::Map => {
-                if cap_only.is_empty() {
-                    body_in
-                } else {
-                    let mut comps = cap_only.clone();
-                    comps.push(body_in);
-                    Ty::Tuple(comps)
-                }
-            }
         };
-        self.info.blocks.insert(
-            (stage_span.start, stage_span.end),
-            BlockSig {
-                body_in: body_in.clone(),
-                body_out: body_out.clone(),
-                captures: cap_tys,
-                name,
-            },
-        );
-        let size = cur_ty.as_ref().and_then(array_size).unwrap_or(1);
-        match (op, &tail_ty) {
-            // A literal's width may still be pinned downstream
-            // (`-> table: [f32; n]`): keep its variable, settle at the end.
-            (CollOp::Map, WTy::Var(v)) if self.unpinned(*v) => {
-                self.pending_maps
-                    .push(((stage_span.start, stage_span.end), *v));
-                WTy::Array(Box::new(tail_ty.clone()), size)
+        let body_out_w = match (self.wty_to_ty(&tail_ty), op) {
+            (Some(_), _) => tail_ty.clone(),
+            (None, CollOp::Fold) if self.wty_to_ty(&seed_w).is_some() => seed_w.clone(),
+            (None, _) => WTy::Known(out_fallback.clone()),
+        };
+        let caps: Vec<(WTy, Ty)> = cap_tys
+            .iter()
+            .zip(&cap_ws)
+            .map(|((_, t), w)| (w.clone(), t.clone()))
+            .collect();
+        let comps = match op {
+            CollOp::Fold => {
+                let mut comps = caps;
+                comps.push((seed_w.clone(), Ty::f32()));
+                comps.push((elem_w.clone(), Ty::f32()));
+                Some(comps)
             }
-            (CollOp::Map, _) => WTy::Known(Ty::Array {
-                elem: Box::new(body_out),
-                size,
-            }),
-            (CollOp::Fold, _) => WTy::Known(body_out),
+            CollOp::Map if !caps.is_empty() => {
+                let mut comps = caps;
+                comps.push((WTy::Known(body_in.clone()), body_in.clone()));
+                Some(comps)
+            }
+            CollOp::Map => None,
+        };
+        self.pending_blocks.push(PendingBlock {
+            span: (stage_span.start, stage_span.end),
+            comps,
+            body_in: (WTy::Known(body_in.clone()), body_in),
+            body_out: (body_out_w.clone(), out_fallback),
+            captures: cap_tys.into_iter().zip(cap_ws).collect(),
+            name,
+        });
+        match op {
+            CollOp::Map => WTy::Array(
+                Box::new(body_out_w),
+                cur_ty.as_ref().and_then(array_size).unwrap_or(1),
+            ),
+            CollOp::Fold => body_out_w,
         }
-    }
-
-    /// Whether literal variable `v` has no width yet.
-    fn unpinned(&mut self, v: usize) -> bool {
-        let r = self.find(v);
-        !matches!(self.state[r], LitState::Fixed(_))
     }
 
     fn type_call(&mut self, sig: &FnSig, arg: &WTy, span: syn::SourceLoc) {
@@ -1138,6 +1169,10 @@ impl Walk<'_> {
         // -input mismatch (L1201), NOT a literal-width conflict. Do not unify the
         // arg against `Unit` (that would pin a literal var and misreport L1203 —
         // ATK-18).
+        // `() -> g` calls a zero-parameter fn with the Unit witness.
+        if sig.params.is_empty() && matches!(arg, WTy::Known(Ty::Unit)) {
+            return;
+        }
         if sig.params.is_empty() {
             self.diags.push(diag(
                 LCode::TypeMismatch,
@@ -1270,6 +1305,13 @@ impl Walk<'_> {
                         WTy::Unknown
                     }
                     syn::MemberField::Index { value, .. } => {
+                        // A tuple of literals keeps its vars: `acc.1` of a
+                        // `(1.0, 1.0)` seed takes the width its use gives.
+                        if let WTy::Tuple(ws) = &bty
+                            && let Some(w) = ws.get(*value as usize)
+                        {
+                            return w.clone();
+                        }
                         let bt = self.wty_to_ty(&bty);
                         // Skip the widening for an index > u32::MAX (it would
                         // truncate and unify against the wrong component);
@@ -1296,6 +1338,11 @@ impl Walk<'_> {
                     && n <= i64::MAX as u64
                 {
                     self.unify_known(&iv, &Ty::i64(), index.span);
+                }
+                // An array of literals keeps its element var (`[1.0, 2.0]`
+                // read as `f32`).
+                if let WTy::Array(e, _) = &bty {
+                    return (**e).clone();
                 }
                 let bt = self.wty_to_ty(&bty);
                 match bt.as_ref() {
@@ -1804,6 +1851,20 @@ impl BodyCaptures {
 /// Collect the body's free variables (ADR-0027). L1108's old role — "the
 /// body may not reference an enclosing local (blocks are not closures)" — is
 /// replaced: reads become captures; writes remain rejected.
+/// The enclosing names `block` reads, in first-use order (the free variables
+/// a loop exit arm needs from its loop: [`crate::emit`]'s deferred exit).
+pub(crate) fn block_reads(
+    source: &str,
+    block: &Block,
+    fn_sigs: &BTreeMap<String, FnSig>,
+) -> Vec<String> {
+    body_captures(source, block, &Default::default(), fn_sigs)
+        .reads
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect()
+}
+
 fn body_captures(
     source: &str,
     block: &Block,

@@ -1,0 +1,678 @@
+// llama_tiny.mapal — a Llama-3.2-style language model, small enough to read in one sitting.
+//
+// The architecture is the one Llama-3.2-1B uses, only scaled down:
+//
+//   real model                               this file
+//   vocabulary         128256                256
+//   hidden size        2048                  64
+//   decoder layers     16                    2
+//   query heads        32                    4
+//   key/value heads    8                     2      (grouped-query attention: 2 query heads per kv head)
+//   head size          64                    16
+//   feed-forward size  8192                  128    (SwiGLU)
+//   RMSNorm epsilon    1e-5                  1e-5
+//   RoPE               theta 500000, llama3 frequency scaling (factor 32, low 1, high 4, original context 8192)
+//   output head        tied to the token embedding
+//   weights            bf16, every activation f32
+//
+// What the program does: it builds deterministic synthetic weights, runs the 8-token prompt through every
+// layer at once (prefill, which also fills the key/value cache), then generates 8 tokens greedily — each
+// decode step feeds the previous token at its position, appends that token's key and value to the cache,
+// and picks the most likely next token. It prints the 8 generated tokens and the final step's 256 logits.
+//
+// Matrices are stored the way checkpoints store them: a linear layer with `in` inputs and `out` outputs is
+// `out` rows of `in` weights, flattened row by row, so `weight[row * in + column]`.
+// Arrays of fixed size carry their size in the type; the language has no size-generic functions yet, so a
+// projection is written once per shape (`project_64_to_128` and so on).
+
+// ---------------------------------------------------------------------------------------------------------
+// The model's parameters.
+
+type DecoderLayerWeights {
+    attention_norm: [bf16; 64],
+    query: [bf16; 4096],
+    key: [bf16; 2048],
+    value: [bf16; 2048],
+    output: [bf16; 4096],
+    feed_forward_norm: [bf16; 64],
+    gate: [bf16; 8192],
+    up: [bf16; 8192],
+    down: [bf16; 8192],
+}
+
+type Model {
+    embedding: [bf16; 16384],
+    layers: [DecoderLayerWeights; 2],
+    final_norm: [bf16; 64],
+}
+
+// One layer's key/value cache: for each of 16 positions, 2 kv heads of 16 numbers.
+// Cell `(position * 2 + kv_head) * 16 + dimension`.
+type LayerCache {
+    keys: [f32; 512],
+    values: [f32; 512],
+}
+
+// The rotary tables: for each of 16 positions, the cosine and sine of the 8 rotation angles of a head.
+// Cell `position * 8 + pair`.
+type RotaryTables {
+    cosines: [f32; 128],
+    sines: [f32; 128],
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Synthetic weights.
+
+// A small deterministic pseudo-random number in [-0.5, 0.5): a quadratic and a linear residue of the index
+// (two prime moduli), mixed with a per-tensor seed, modulo the prime 2039. Every intermediate stays well
+// inside i32, even for the 262-million-cell embedding of the real model.
+fn synthetic_number(index: i32, seed: i32) -> f32 {
+    index % 1009 -> a;
+    index % 997 -> b;
+    (a * a * 7 + b * 101 + seed * 211) % 2039 -> bucket;
+    bucket - 1019 -> widen_f32 -> centered;
+    centered / 2039.0 -> ret;
+}
+
+// A weight scaled by `scale` and rounded to bf16. The layers below use 2 / sqrt(inputs) for the value, gate
+// and up projections and 8 / sqrt(inputs) for the query, key, output and down projections: sharp attention
+// and layers that move the residual stream, so that greedy decoding visits several different tokens.
+fn synthetic_weight(index: i32, seed: i32, scale: f32) -> bf16 {
+    (index, seed) -> synthetic_number -> number;
+    number * scale -> to_bf16 -> ret;
+}
+
+// A norm gain near one.
+fn synthetic_gain(index: i32, seed: i32) -> bf16 {
+    (index, seed) -> synthetic_number -> number;
+    1.0 + 0.2 * number -> to_bf16 -> ret;
+}
+
+fn make_layer(layer: i32) -> DecoderLayerWeights {
+    layer * 16 -> seed;
+    64 -> iota -> map {
+        i -> (i, seed + 1) -> synthetic_gain
+    } -> attention_norm;
+    4096 -> iota -> map {
+        i -> (i, seed + 2, 1.0) -> synthetic_weight
+    } -> query;
+    2048 -> iota -> map {
+        i -> (i, seed + 3, 1.0) -> synthetic_weight
+    } -> key;
+    2048 -> iota -> map {
+        i -> (i, seed + 4, 0.25) -> synthetic_weight
+    } -> value;
+    4096 -> iota -> map {
+        i -> (i, seed + 5, 1.0) -> synthetic_weight
+    } -> output;
+    64 -> iota -> map {
+        i -> (i, seed + 6) -> synthetic_gain
+    } -> feed_forward_norm;
+    8192 -> iota -> map {
+        i -> (i, seed + 7, 0.25) -> synthetic_weight
+    } -> gate;
+    8192 -> iota -> map {
+        i -> (i, seed + 8, 0.25) -> synthetic_weight
+    } -> up;
+    8192 -> iota -> map {
+        i -> (i, seed + 9, 0.70710677) -> synthetic_weight
+    } -> down;
+    DecoderLayerWeights {
+        attention_norm: attention_norm,
+        query: query,
+        key: key,
+        value: value,
+        output: output,
+        feed_forward_norm: feed_forward_norm,
+        gate: gate,
+        up: up,
+        down: down,
+    } -> ret;
+}
+
+fn make_model() -> Model {
+    0 -> seed;
+    16384 -> iota -> map {
+        i -> (i, seed + 1000, 1.0) -> synthetic_weight
+    } -> embedding;
+    64 -> iota -> map {
+        i -> (i, seed + 1001) -> synthetic_gain
+    } -> final_norm;
+    seed + 0 -> make_layer -> first_layer;
+    seed + 1 -> make_layer -> second_layer;
+    Model {
+        embedding: embedding,
+        layers: [first_layer, second_layer],
+        final_norm: final_norm,
+    } -> ret;
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Scalar helpers.
+
+fn larger(a: f32, b: f32) -> f32 {
+    (a > b) -> {
+        -true-> a;
+        -false-> b;
+    } -> ret;
+}
+
+// 1 / sqrt(a) for a > 0. There is no square-root builtin: Heron's method s <- (s + a / s) / 2 converges to
+// sqrt(a) from any start above it; (1 + a) / 2 is one, and 24 steps reach f32 precision for a in [1e-6, 1e6].
+fn inverse_square_root(a: f32) -> f32 {
+    24 -> iota -> steps;
+    (0.5 + 0.5 * a, steps) -> fold {
+        root, step -> 0.5 * (root + a / root)
+    } -> root;
+    1.0 / root -> ret;
+}
+
+// SiLU, the gate activation of SwiGLU: x * sigmoid(x).
+fn silu(x: f32) -> f32 {
+    -x -> exp -> decay;
+    x / (1.0 + decay) -> ret;
+}
+
+// sin(x) for x in [-pi, pi] by its Taylor series x - x^3/3! + x^5/5! - ...:
+// each term is the previous one times -x^2 / ((2k)(2k + 1)). Eleven more terms reach f32 precision.
+fn sine_near_zero(x: f32) -> f32 {
+    x * x -> x_squared;
+    11 -> iota -> steps;
+    ((x, x), steps) -> fold {
+        sum_and_term, step ->
+        2 * step + 2 -> k;
+        k * (k + 1) -> widen_f32 -> divisor;
+        -sum_and_term.1 * x_squared / divisor -> term;
+        (sum_and_term.0 + term, term)
+    } -> series;
+    series.0 -> ret;
+}
+
+// cos(x) for x in [-pi, pi]: 1 - x^2/2! + x^4/4! - ..., each term the previous one times -x^2 / ((2k - 1)(2k)).
+fn cosine_near_zero(x: f32) -> f32 {
+    x * x -> x_squared;
+    11 -> iota -> steps;
+    ((1.0, 1.0), steps) -> fold {
+        sum_and_term, step ->
+        2 * step + 1 -> k;
+        k * (k + 1) -> widen_f32 -> divisor;
+        -sum_and_term.1 * x_squared / divisor -> term;
+        (sum_and_term.0 + term, term)
+    } -> series;
+    series.0 -> ret;
+}
+
+// sin and cos of any angle >= 0: the angle modulo 2 pi lies in [0, 2 pi); moving it by pi puts it in
+// [-pi, pi), where the series converge, and flips both signs: sin(a) = -sin(a - pi), cos(a) = -cos(a - pi).
+fn sine(angle: f32) -> f32 {
+    angle % 6.2831855 - 3.1415927 -> shifted;
+    shifted -> sine_near_zero -> s;
+    -s -> ret;
+}
+
+fn cosine(angle: f32) -> f32 {
+    angle % 6.2831855 - 3.1415927 -> shifted;
+    shifted -> cosine_near_zero -> c;
+    -c -> ret;
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Rotary position embedding (RoPE) with llama3 frequency scaling.
+
+// The rotation frequency of pair `pair` of a 16-wide head: theta^(-2 pair / 16) with theta = 500000,
+// written with exp as exp(-(2 pair / 16) ln theta), ln(500000) = 13.122363. Llama 3 then stretches the slow frequencies: wavelengths
+// above 8192 / 1 are divided by 32, those below 8192 / 4 are kept, and those between are blended smoothly.
+fn llama3_frequency(pair: i32, log_theta: f32) -> f32 {
+    pair -> widen_f32 -> p;
+    -(2.0 * p / 16.0) * log_theta -> exp -> frequency;
+    6.2831855 / frequency -> wavelength;
+    (wavelength < 2048.0) -> {
+        -true-> frequency;
+        -false-> {
+            (wavelength > 8192.0) -> {
+                -true-> frequency / 32.0;
+                -false-> {
+                    (8192.0 / wavelength - 1.0) / (4.0 - 1.0) -> smooth;
+                    (1.0 - smooth) * frequency / 32.0 + smooth * frequency
+                }
+            }
+        }
+    } -> ret;
+}
+
+fn make_rotary_tables(log_theta: f32) -> RotaryTables {
+    8 -> iota -> map {
+        pair -> (pair, log_theta) -> llama3_frequency
+    } -> frequencies;
+    128 -> iota -> map {
+        cell ->
+        cell / 8 -> widen_f32 -> position;
+        position * frequencies[cell % 8] -> cosine
+    } -> cosines;
+    128 -> iota -> map {
+        cell ->
+        cell / 8 -> widen_f32 -> position;
+        position * frequencies[cell % 8] -> sine
+    } -> sines;
+    RotaryTables {
+        cosines: cosines,
+        sines: sines
+    } -> ret;
+}
+
+// Rotate every 16-wide head of a token's queries (4 heads) or keys (2 heads) by the angles of its position:
+// the head's first half x and second half y become (x cos - y sin, y cos + x sin).
+fn rotate_query_heads(query: [f32; 64], rotary: RotaryTables, position: i32) -> [f32; 64] {
+    64 -> iota -> map {
+        i ->
+        i % 16 -> within_head;
+        position * 8 + within_head % 8 -> angle;
+        (within_head < 8) -> {
+            -true-> query[i] * rotary.cosines[angle] - query[i + 8] * rotary.sines[angle];
+            -false-> query[i] * rotary.cosines[angle] + query[i - 8] * rotary.sines[angle];
+        }
+    } -> ret;
+}
+
+fn rotate_key_heads(key: [f32; 32], rotary: RotaryTables, position: i32) -> [f32; 32] {
+    32 -> iota -> map {
+        i ->
+        i % 16 -> within_head;
+        position * 8 + within_head % 8 -> angle;
+        (within_head < 8) -> {
+            -true-> key[i] * rotary.cosines[angle] - key[i + 8] * rotary.sines[angle];
+            -false-> key[i] * rotary.cosines[angle] + key[i - 8] * rotary.sines[angle];
+        }
+    } -> ret;
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Building blocks of one token's computation.
+
+fn embed(embedding: [bf16; 16384], token: i32) -> [f32; 64] {
+    64 -> iota -> map {
+        i -> embedding[token * 64 + i] -> widen_f32
+    } -> ret;
+}
+
+// RMSNorm: x / sqrt(mean(x^2) + 1e-5), times a learned gain per feature.
+fn rms_norm(x: [f32; 64], gain: [bf16; 64]) -> [f32; 64] {
+    64 -> iota -> features;
+    (0.0, features) -> fold {
+        sum, i -> sum + x[i] * x[i]
+    } -> sum_of_squares;
+    sum_of_squares / 64.0 + 0.00001 -> inverse_square_root -> scale;
+    features -> map {
+        i ->
+        gain[i] -> widen_f32 -> g;
+        x[i] * scale * g
+    } -> ret;
+}
+
+// Linear layers without bias: output[row] = sum over columns of weight[row][column] * x[column].
+fn project_64_to_64(weight: [bf16; 4096], x: [f32; 64]) -> [f32; 64] {
+    64 -> iota -> columns;
+    64 -> iota -> map {
+        row ->
+        (0.0, columns) -> fold {
+            sum, column ->
+            weight[row * 64 + column] -> widen_f32 -> w;
+            sum + w * x[column]
+        }
+    } -> ret;
+}
+
+fn project_64_to_32(weight: [bf16; 2048], x: [f32; 64]) -> [f32; 32] {
+    64 -> iota -> columns;
+    32 -> iota -> map {
+        row ->
+        (0.0, columns) -> fold {
+            sum, column ->
+            weight[row * 64 + column] -> widen_f32 -> w;
+            sum + w * x[column]
+        }
+    } -> ret;
+}
+
+fn project_64_to_128(weight: [bf16; 8192], x: [f32; 64]) -> [f32; 128] {
+    64 -> iota -> columns;
+    128 -> iota -> map {
+        row ->
+        (0.0, columns) -> fold {
+            sum, column ->
+            weight[row * 64 + column] -> widen_f32 -> w;
+            sum + w * x[column]
+        }
+    } -> ret;
+}
+
+fn project_128_to_64(weight: [bf16; 8192], x: [f32; 128]) -> [f32; 64] {
+    128 -> iota -> columns;
+    64 -> iota -> map {
+        row ->
+        (0.0, columns) -> fold {
+            sum, column ->
+            weight[row * 128 + column] -> widen_f32 -> w;
+            sum + w * x[column]
+        }
+    } -> ret;
+}
+
+// The output head shares the embedding matrix: logit[token] = embedding[token] . x.
+fn project_to_vocabulary(embedding: [bf16; 16384], x: [f32; 64]) -> [f32; 256] {
+    64 -> iota -> columns;
+    256 -> iota -> map {
+        token ->
+        (0.0, columns) -> fold {
+            sum, column ->
+            embedding[token * 64 + column] -> widen_f32 -> w;
+            sum + w * x[column]
+        }
+    } -> ret;
+}
+
+// Softmax over each head's 16 scores (4 heads): subtract the head's maximum, exponentiate, normalize.
+fn softmax_per_head(scores: [f32; 64]) -> [f32; 64] {
+    4 -> iota -> heads;
+    16 -> iota -> positions;
+    heads -> map {
+        head ->
+        (-1000000000.0, positions) -> fold {
+            best, past -> (best, scores[head * 16 + past]) -> larger
+        }
+    } -> head_maximum;
+    64 -> iota -> map {
+        cell -> scores[cell] - head_maximum[cell / 16] -> exp
+    } -> exponentials;
+    heads -> map {
+        head ->
+        (0.0, positions) -> fold {
+            sum, past -> sum + exponentials[head * 16 + past]
+        }
+    } -> head_total;
+    64 -> iota -> map {
+        cell -> exponentials[cell] / head_total[cell / 16]
+    } -> ret;
+}
+
+// Causal grouped-query attention of one token at `position` over the cache: query head h reads kv head h / 2,
+// scores are scaled by 1 / sqrt(16), and cached positions after `position` are masked out.
+fn attend(query: [f32; 64], cache: LayerCache, position: i32) -> [f32; 64] {
+    16 -> iota -> head_dimensions;
+    16 -> iota -> positions;
+    64 -> iota -> map {
+        cell ->
+        cell / 16 -> head;
+        cell % 16 -> past;
+        (past <= position) -> {
+            -true-> {
+                (0.0, head_dimensions) -> fold {
+                    sum, d ->
+                    sum + query[head * 16 + d] * cache.keys[(past * 2 + head / 2) * 16 + d]
+                } -> dot;
+                dot * 0.25
+            }
+            -false-> -1000000000.0;
+        }
+    } -> scores;
+    scores -> softmax_per_head -> weights;
+    64 -> iota -> map {
+        i ->
+        i / 16 -> head;
+        i % 16 -> d;
+        (0.0, positions) -> fold {
+            sum, past ->
+            sum + weights[head * 16 + past] * cache.values[(past * 2 + head / 2) * 16 + d]
+        }
+    } -> ret;
+}
+
+// SwiGLU feed-forward: down(silu(gate(x)) * up(x)).
+fn feed_forward(x: [f32; 64], layer: DecoderLayerWeights) -> [f32; 64] {
+    (layer.gate, x) -> project_64_to_128 -> gate;
+    (layer.up, x) -> project_64_to_128 -> up;
+    128 -> iota -> map {
+        i ->
+        gate[i] -> silu -> activated;
+        activated * up[i]
+    } -> mixed;
+    (layer.down, mixed) -> project_128_to_64 -> ret;
+}
+
+// The rotated key and the value one token adds to the cache.
+fn new_key(normed: [f32; 64], layer: DecoderLayerWeights, rotary: RotaryTables, position: i32) -> [f32; 32] {
+    (layer.key, normed) -> project_64_to_32 -> key;
+    (key, rotary, position) -> rotate_key_heads -> ret;
+}
+
+fn new_value(normed: [f32; 64], layer: DecoderLayerWeights) -> [f32; 32] {
+    (layer.value, normed) -> project_64_to_32 -> ret;
+}
+
+// The rest of a decoder layer for one token, once the cache holds its key and value:
+// attention with a residual connection, then the feed-forward block with a residual connection.
+fn finish_layer(
+    hidden: [f32; 64],
+    normed: [f32; 64],
+    layer: DecoderLayerWeights,
+    cache: LayerCache,
+    rotary: RotaryTables,
+    position: i32,
+) -> [f32; 64] {
+    (layer.query, normed) -> project_64_to_64 -> query;
+    (query, rotary, position) -> rotate_query_heads -> rotated_query;
+    (rotated_query, cache, position) -> attend -> attended;
+    (layer.output, attended) -> project_64_to_64 -> attention_output;
+    64 -> iota -> map {
+        i -> hidden[i] + attention_output[i]
+    } -> after_attention;
+    (after_attention, layer.feed_forward_norm) -> rms_norm -> normed_again;
+    (normed_again, layer) -> feed_forward -> feed_forward_output;
+    64 -> iota -> map {
+        i -> after_attention[i] + feed_forward_output[i]
+    } -> ret;
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Caches.
+
+// The cache with one position's key and value written in.
+fn append_to_cache(cache: LayerCache, key: [f32; 32], value: [f32; 32], position: i32) -> LayerCache {
+    512 -> iota -> map {
+        cell ->
+        (cell / 32 == position) -> {
+            -true-> key[cell % 32];
+            -false-> cache.keys[cell];
+        }
+    } -> keys;
+    512 -> iota -> map {
+        cell ->
+        (cell / 32 == position) -> {
+            -true-> value[cell % 32];
+            -false-> cache.values[cell];
+        }
+    } -> values;
+    LayerCache {
+        keys: keys,
+        values: values
+    } -> ret;
+}
+
+// A fresh cache holding the 8 prompt positions' keys and values.
+fn cache_of_prompt(keys: [[f32; 32]; 8], values: [[f32; 32]; 8]) -> LayerCache {
+    512 -> iota -> map {
+        cell ->
+        (cell / 32 < 8) -> {
+            -true-> keys[cell / 32][cell % 32];
+            -false-> 0.0;
+        }
+    } -> cached_keys;
+    512 -> iota -> map {
+        cell ->
+        (cell / 32 < 8) -> {
+            -true-> values[cell / 32][cell % 32];
+            -false-> 0.0;
+        }
+    } -> cached_values;
+    LayerCache {
+        keys: cached_keys,
+        values: cached_values
+    } -> ret;
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Whole layers: the prompt's 8 tokens at once, or one new token.
+
+fn prefill_layer(
+    hidden: [[f32; 64]; 8],
+    layer: DecoderLayerWeights,
+    rotary: RotaryTables,
+) -> ([[f32; 64]; 8], LayerCache) {
+    8 -> iota -> tokens;
+    tokens -> map {
+        t -> (hidden[t], layer.attention_norm) -> rms_norm
+    } -> normed;
+    tokens -> map {
+        t -> (normed[t], layer, rotary, t) -> new_key
+    } -> keys;
+    tokens -> map {
+        t -> (normed[t], layer) -> new_value
+    } -> values;
+    (keys, values) -> cache_of_prompt -> cache;
+    tokens -> map {
+        t -> (hidden[t], normed[t], layer, cache, rotary, t) -> finish_layer
+    } -> ret.0;
+    cache -> ret.1;
+}
+
+fn decode_layer(
+    hidden: [f32; 64],
+    layer: DecoderLayerWeights,
+    cache: LayerCache,
+    rotary: RotaryTables,
+    position: i32,
+) -> ([f32; 64], LayerCache) {
+    (hidden, layer.attention_norm) -> rms_norm -> normed;
+    (normed, layer, rotary, position) -> new_key -> key;
+    (normed, layer) -> new_value -> value;
+    (cache, key, value, position) -> append_to_cache -> updated_cache;
+    (hidden, normed, layer, updated_cache, rotary, position) -> finish_layer -> ret.0;
+    updated_cache -> ret.1;
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// The model: prefill, one decode step, greedy choice.
+
+// Run the prompt through every layer; return the logits after the last prompt token and the filled caches.
+fn prefill(prompt: [i32; 8], model: Model, rotary: RotaryTables) -> ([f32; 256], [LayerCache; 2]) {
+    8 -> iota -> map {
+        t -> (model.embedding, prompt[t]) -> embed
+    } -> embedded;
+    (0.0, 512) -> fill -> zeros;
+    LayerCache {
+        keys: zeros,
+        values: zeros
+    } -> blank;
+    mut hidden: [[f32; 64]; 8] <- embedded;
+    mut caches: [LayerCache; 2] <- [blank, blank];
+    mut layer: i32 <- 0;
+    loop {
+        (layer < 2) -> {
+            -true-> {
+                (hidden, model.layers[layer], rotary) -> prefill_layer -> result;
+                result.0 -> hidden;
+                caches[layer] <- result.1;
+                layer + 1 -> layer;
+                -> loop;
+            }
+            -false-> {
+                (hidden[7], model.final_norm) -> rms_norm -> last;
+                (model.embedding, last) -> project_to_vocabulary -> ret.0;
+                caches -> ret.1;
+            }
+        }
+    }
+}
+
+// Feed one token at `position`; return the next logits and the caches with this token appended.
+fn decode_step(
+    token: i32,
+    position: i32,
+    model: Model,
+    caches: [LayerCache; 2],
+    rotary: RotaryTables,
+) -> ([f32; 256], [LayerCache; 2]) {
+    (model.embedding, token) -> embed -> embedded;
+    mut hidden: [f32; 64] <- embedded;
+    mut updated: [LayerCache; 2] <- caches;
+    mut layer: i32 <- 0;
+    loop {
+        (layer < 2) -> {
+            -true-> {
+                (hidden, model.layers[layer], updated[layer], rotary, position) -> decode_layer -> result;
+                result.0 -> hidden;
+                updated[layer] <- result.1;
+                layer + 1 -> layer;
+                -> loop;
+            }
+            -false-> {
+                (hidden, model.final_norm) -> rms_norm -> last;
+                (model.embedding, last) -> project_to_vocabulary -> logits;
+                (logits, updated) -> ret;
+            }
+        }
+    }
+}
+
+// Greedy decoding: the token with the largest logit (the first one on a tie).
+fn most_likely_token(logits: [f32; 256]) -> i32 {
+    256 -> iota -> tokens;
+    ((logits[0], 0), tokens) -> fold {
+        best, token ->
+        (logits[token] > best.0) -> {
+            -true-> (logits[token], token);
+            -false-> best;
+        }
+    } -> winner;
+    winner.1 -> ret;
+}
+
+fn main() {
+    () -> make_model -> model;
+    13.122363 -> make_rotary_tables -> rotary;
+    [1, 17, 42, 99, 7, 128, 200, 3] -> prompt;
+    (prompt, model, rotary) -> prefill -> prefilled;
+
+    // Generate 8 tokens: the first comes from the prefill's logits, each later one from a decode step that
+    // feeds the previous token at the next position (8, 9, ...).
+    mut logits: [f32; 256] <- prefilled.0;
+    mut caches: [LayerCache; 2] <- prefilled.1;
+    mut position: i32 <- 8;
+    loop {
+        logits -> most_likely_token -> token;
+        token -> println;
+        (position < 15) -> {
+            -true-> {
+                (token, position, model, caches, rotary) -> decode_step -> stepped;
+                stepped.0 -> logits;
+                stepped.1 -> caches;
+                position + 1 -> position;
+                -> loop;
+            }
+            -false-> logits -> final_logits;
+        }
+    }
+
+    // The last step's logits, one per line.
+    mut index: i32 <- 0;
+    loop {
+        (index < 256) -> {
+            -true-> {
+                final_logits[index] -> println;
+                index + 1 -> index;
+                -> loop;
+            }
+            -false-> index -> printed;
+        }
+    }
+}

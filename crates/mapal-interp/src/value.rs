@@ -118,5 +118,6 @@ pub fn render(v: &Value) -> String {
         Value::Narrow(n, b) => format!("{}", mapal_ir::narrow::widen(*n, *b)),
         Value::Bool(b) => b.to_string(),
         Value::Str(s) => s.clone(),
+        Value::Unit => "()".to_string(),
     }
 }

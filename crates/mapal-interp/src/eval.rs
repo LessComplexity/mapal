@@ -674,7 +674,7 @@ fn neg(x: &RValue) -> RValue {
             Value::U8(n) => Value::U8(n.wrapping_neg()),
             Value::F32(x) => Value::F32(-x),
             Value::F64(x) => Value::F64(-x),
-            Value::Bool(_) | Value::Str(_) | Value::Narrow(..) => {
+            Value::Bool(_) | Value::Str(_) | Value::Narrow(..) | Value::Unit => {
                 unreachable!("Neg on non-numeric")
             }
         }),

@@ -1,0 +1,23 @@
+fn count(n: i32) -> (i32, f32) {
+    mut i: i32 <- 0;
+    mut s: f32 <- 0.0;
+    loop {
+        (i < n) -> {
+            -true-> {
+                s + 1.5 -> s;
+                i + 1 -> i;
+                -> loop;
+            }
+            -false-> {
+                i -> ret.0;
+                s -> ret.1;
+            }
+        }
+    }
+}
+
+fn main() {
+    5 -> count -> r;
+    r.0 -> println;
+    r.1 -> println;
+}

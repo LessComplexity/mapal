@@ -1,0 +1,19 @@
+fn seven() -> i32 {
+    7 -> ret;
+}
+
+fn greet() {
+    "hello" -> println;
+}
+
+fn ones() -> [f32; 4] {
+    (1.0, 4) -> fill -> ret;
+}
+
+fn main() {
+    () -> seven -> x;
+    x -> println;
+    () -> greet;
+    () -> ones -> o;
+    o[3] -> println;
+}

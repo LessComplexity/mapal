@@ -137,6 +137,13 @@ impl<'a> FnEmit<'a> {
         // composition rule 4); the parallel entry goes through `emit_parallel`,
         // so reaching here as the entry IS the sequential flavor.
         self.heap_ok = self.f == self.ir.entry();
+        // structure: a non-entry Named fn (a decode step called per token)
+        // takes its big blocks from the per-call arena instead of its stack.
+        let named = self.ir.func(self.f).expect("func resolves").kind == FuncKind::Named;
+        if !self.heap_ok && named && self.cell_slots.is_empty() && self.lanes.is_none() {
+            self.heap_ok = true;
+            self.frame_heap = true;
+        }
 
         let in_llt = self.prepare_storage();
         self.allocate_local_slots(&in_llt);
@@ -151,8 +158,18 @@ impl<'a> FnEmit<'a> {
         // The topo walk (DESIGN §2/§3).
         self.walk();
 
-        // Epilogue: return the output slot (or void).
+        // Epilogue: return the output slot (or void). structure: an output of
+        // arrays was written through `%out` already.
         let sig_ret = match lower_ty(&ret_ty) {
+            Some(_) if self.out_ptr => {
+                if self.perf_timing {
+                    self.line("call void @mapal_perf_end()");
+                }
+                self.resident_teardown();
+                self.heap_teardown();
+                self.line("ret void");
+                "void".to_string()
+            }
             Some(t) => {
                 let os = self.slot(fd.output).expect("non-void return has a slot");
                 let v = self.tmp();
@@ -184,11 +201,17 @@ impl<'a> FnEmit<'a> {
         // aliases nothing else the fn accesses). Unclean fns stay bare.
         let clean = self.attrs.clean(self.f) && !self.runtime_write && !self.perf_timing;
         let param = match &in_llt {
-            Some(t) if clean && t == "ptr" && self.byref.is_some() => {
+            Some(t) if clean && t == "ptr" && self.byref.is_some() && !self.out_ptr => {
                 format!("{t} noalias nocapture readonly %arg")
             }
             Some(t) => format!("{t} %arg"),
             None => String::new(),
+        };
+        // structure: the caller's storage for an output of arrays.
+        let (param, clean) = match (self.out_ptr, param.is_empty()) {
+            (false, _) => (param, clean),
+            (true, true) => ("ptr noalias %out".to_string(), false),
+            (true, false) => (format!("{param}, ptr noalias %out"), false),
         };
         // `cell-lanes`: the lane variant meets its warp in shuffles — a
         // convergent call no optimizer may sink under the lane-0 store.
@@ -233,6 +256,10 @@ impl<'a> FnEmit<'a> {
             None => (fname, param),
         };
         self.zero_slots_rest();
+        if self.frame_heap && self.heap_used {
+            self.allocas
+                .insert_str(0, "  %hmark = call i64 @mapal_rt_frame_mark()\n");
+        }
         let text = format!(
             "define internal {sig_ret} @{fname}({param}){fn_attrs} {{\nentry:\n{}{}{}}}\n{}{}",
             perf_begin, self.allocas, self.body, self.cand_tables, self.host_par_fns

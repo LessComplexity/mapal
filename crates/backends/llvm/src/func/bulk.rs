@@ -714,6 +714,20 @@ impl<'a> FnEmit<'a> {
             }
             let llt = lower_ty(&self.obj_ty(to)).expect("array route lowers");
             self.emit_memcpy(&dst, &src, &llt);
+        } else if let Some(cty) = self.obj_ty(route).component_ty(k).cloned()
+            && self.holds_array_bytes(
+                &cty,
+                &[sub_paths(&self.slot_paths(route), k), self.slot_paths(to)],
+            )
+            && let Some((_, src)) = self.component_ptr(route, k)
+            && let Some(dst) = self.slot(to)
+        {
+            // structure: a product holding array bytes (a loop's state, its
+            // exit into the caller's `%out`) moves field by field — never as
+            // one SSA aggregate.
+            let sp = sub_paths(&self.slot_paths(route), k);
+            let dp = self.slot_paths(to);
+            self.copy_layout(&cty, &dst, &dp, &src, &sp);
         } else if let Some(llt) = self.big_aggregate(to)
             && self.obj_ty(route).component_ty(k) == Some(&self.obj_ty(to))
             && let Some((_, src)) = self.component_ptr(route, k)
