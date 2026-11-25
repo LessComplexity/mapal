@@ -700,6 +700,19 @@ impl<'a> FnEmit<'a> {
         {
             out.push(Use::Host);
         }
+        out.extend(self.edge_uses(sites, cells, o, fwd));
+        out
+    }
+
+    /// [`Self::uses`] by `o`'s out-edges alone (its escape not counted).
+    fn edge_uses(
+        &self,
+        sites: &SecondaryMap<MorphismId, DevSite>,
+        cells: &SecondaryMap<MorphismId, Cell>,
+        o: ObjectId,
+        fwd: &[MorphismId],
+    ) -> Vec<Use> {
+        let mut out = Vec::new();
         for &m in self.ir.out_edges(o) {
             let morph = self.ir.morphism(m).expect("morphism resolves");
             match morph.op {
@@ -2567,7 +2580,9 @@ impl<'a> FnEmit<'a> {
         // state — the entry takes its buffer, no host reader is left, so it
         // is kept (no copy out). Its only use is the init product's pair.
         let take = gpu::host_rungs(self.profile, self.contract, self.gpu_arms).carry_take;
-        let taken: Vec<ObjectId> = plan
+        // Each taken init with its edges into the init product (the carry's
+        // way in).
+        let taken: Vec<(ObjectId, Vec<MorphismId>)> = plan
             .carries
             .iter()
             .filter(|_| take)
@@ -2591,13 +2606,29 @@ impl<'a> FnEmit<'a> {
                         && !self.lup.escapes(a)
                         && self.lup.death(a).is_some_and(|d| d <= enter))
                         || self.bytes_enter(&plan, a, lp.init, enter)))
-                .then_some(a)
+                .then(|| {
+                    let into = self
+                        .ir
+                        .out_edges(a)
+                        .iter()
+                        .copied()
+                        .filter(|&e| self.ir.morphism(e).is_some_and(|x| x.target == lp.init))
+                        .collect();
+                    (a, into)
+                })
             })
             .collect();
         for c in outs {
             device.push(c);
-            let uses = if plan.is_carry_next(c) || taken.contains(&c) {
+            let uses = if plan.is_carry_next(c) {
                 vec![] // checked device-only when the carry was admitted
+            } else if let Some((_, into)) = taken.iter().find(|(a, _)| *a == c) {
+                // prefill-integrate: a taken init's other readers — at or
+                // before the loop's entry (`bytes_enter`) — read it before
+                // the carry takes its buffer: a host one needs its copy out
+                // (a host fold over it). The way into the carry is the
+                // carry's (`last_use_plan` counts it as an escape).
+                self.edge_uses(&sites, &cells, c, into)
             } else {
                 self.uses(&sites, &cells, c, &[])
             };
