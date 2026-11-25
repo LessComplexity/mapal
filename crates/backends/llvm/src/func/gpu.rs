@@ -3178,6 +3178,18 @@ pub(crate) fn mma_walk(
     if rate == 0 || panels < 2 || tiles * panels <= slots {
         return None;
     }
+    // The walk visits its tiles row-major: where gapfix tensor-tile's C11
+    // gate groups this grid's walk ([`Gpu::raster`]: a block's panels leave
+    // the L2, or row-major's `b` re-reads leave the site DRAM-bound — 256 ×
+    // 28672 × 4096 bf16, its 235 MB `b` read once a block-row), the ordered
+    // grid keeps the grouped walk.
+    let grouped = r.raster
+        && gpu.raster(
+            bm, bn, slots, site.rows, site.c, site.k, e, r.l2_gate, w.eb, rate,
+        ) > 1;
+    if grouped {
+        return None;
+    }
     let iters = (tiles * panels).div_ceil(slots);
     let ctas = (tiles * panels).div_ceil(iters);
     let price = MmaWalk {
