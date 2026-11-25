@@ -7,7 +7,8 @@
 //! (LD12): a `TypeMismatch`/`NotAProduct`/etc. that corresponds to a user
 //! condition is mapped to its L-code; anything truly unexpected is L1901.
 
-use std::collections::BTreeMap;
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet};
 
 use mapal_ir::{
     CategoryIr, Dest, FnBuilder, FuncId, FuncKind, IrBuilder, IrError, ObjectId, Operation, Ty,
@@ -21,8 +22,33 @@ use mapal_syntax::{
 use crate::diag::{LCode, diag};
 use crate::effects::Effects;
 use crate::scope::ScopeStack;
+use crate::sizes::{Generics, Instance, SiteKey, SizeEnv};
 use crate::typing::{FnSig, TypeInfo};
 use crate::tys::{TypeTable, ir_loc, name_text, src_slice};
+
+/// ADR-0047 D5: the instances a round declares, by generic function (sorted
+/// size tuples with their names), and the log emission keeps of its calls.
+pub struct Mono<'a> {
+    pub generics: &'a Generics<'a>,
+    pub instances: &'a BTreeMap<String, Vec<(Vec<u64>, String)>>,
+    pub log: &'a RefCell<CallLog>,
+    /// The typing walk erred where a generic call was untyped: emit every
+    /// unit as far as it goes, to log the calls (the result is discarded).
+    pub probe: bool,
+    /// ADR-0048 D3: when set, the object each name `main` binds (the
+    /// compile-time evaluation of top-level bindings reads them).
+    pub bound: Option<&'a RefCell<BTreeMap<String, ObjectId>>>,
+}
+
+/// What emission found at the calls to generic functions: each site's binding
+/// (from the builder's exact argument type), the instances called, and the
+/// ones called but not declared this round.
+#[derive(Default)]
+pub struct CallLog {
+    pub sites: BTreeMap<SiteKey, Vec<u64>>,
+    pub called: BTreeSet<Instance>,
+    pub requested: BTreeSet<Instance>,
+}
 
 /// A surface-bound symbol (DESIGN §3).
 #[derive(Clone)]
@@ -80,6 +106,10 @@ struct Emitter<'a> {
     /// ADR-0041 D2: the precisions this scope's products admit (the innermost
     /// `: compute` around it; `{f32}` without one).
     prec: mapal_ir::Precision,
+    /// ADR-0047: the generic functions, the round's instances and call log.
+    mono: &'a Mono<'a>,
+    /// ADR-0047 D4: the instance's size values (empty in a fixed-size fn).
+    sizes: &'a SizeEnv,
 }
 
 /// A body's `: compute` as the IR's set; `outer` where it has none.
@@ -136,7 +166,12 @@ fn ir_err(e: IrError, span: syn::SourceLoc) -> syn::Diagnostic {
         ),
         IrError::InvalidExp => (
             LCode::InvalidExp,
-            "`exp` takes an `f32` or `f64`".to_string(),
+            "a math builtin (`exp`, `sqrt`, `sin`, `cos`) takes an `f32` or `f64`".to_string(),
+        ),
+        IrError::InvalidRead => (
+            LCode::ReadAnnotation,
+            "`read` yields a one-dimensional array of i32, i64, u8, f32, f64, bf16 or f16"
+                .to_string(),
         ),
         IrError::InvalidNarrow => (
             LCode::InvalidNarrow,
@@ -163,25 +198,44 @@ pub fn lower_program(
     effects: &Effects,
     fn_sigs: &BTreeMap<String, FnSig>,
     typing: &BTreeMap<String, TypeInfo>,
+    mono: &Mono,
 ) -> Result<CategoryIr, Vec<syn::Diagnostic>> {
     let mut b = IrBuilder::new();
+
+    // The units to declare and build, in source order: a fixed-size fn, or
+    // each instance of a generic one at its position, by size tuple (ADR-0047
+    // D6), with its size environment.
+    let mut units: Vec<(&syn::FnDecl, String, SizeEnv)> = Vec::new();
+    for item in &program.items {
+        if let syn::Item::Fn(fd) = item {
+            let name = name_text(source, fd.name).to_string();
+            if fd.sizes.is_empty() {
+                units.push((fd, name, types.base_env().clone()));
+            } else {
+                for (vs, iname) in mono.instances.get(&name).into_iter().flatten() {
+                    units.push((
+                        fd,
+                        iname.clone(),
+                        crate::sizes::env_of(source, fd, vs, types.base_env()),
+                    ));
+                }
+            }
+        }
+    }
 
     // Pass C: declare every surface fn in source order with its IR tys (§6.2).
     let mut fn_ids: BTreeMap<String, FuncId> = BTreeMap::new();
     let mut main_id: Option<FuncId> = None;
-    for item in &program.items {
-        if let syn::Item::Fn(fd) = item {
-            let name = name_text(source, fd.name).to_string();
-            let sig = fn_sigs.get(&name).expect("fn sig");
-            let (in_ty, out_ty) = ir_signature(sig);
-            let fid = b
-                .declare(FuncKind::Named, &name, in_ty, out_ty, ir_loc(fd.span))
-                .map_err(|e| vec![ir_err(e, fd.span)])?;
-            if name == "main" {
-                main_id = Some(fid);
-            }
-            fn_ids.insert(name, fid);
+    for (fd, name, _) in &units {
+        let sig = fn_sigs.get(name).expect("fn sig");
+        let (in_ty, out_ty) = ir_signature(sig);
+        let fid = b
+            .declare(FuncKind::Named, name, in_ty, out_ty, ir_loc(fd.span))
+            .map_err(|e| vec![ir_err(e, fd.span)])?;
+        if name == "main" {
+            main_id = Some(fid);
         }
+        fn_ids.insert(name.clone(), fid);
     }
     let main_id = main_id.ok_or_else(|| {
         vec![diag(
@@ -191,55 +245,112 @@ pub fn lower_program(
         )]
     })?;
 
-    // Pass D: per fn in source order — D2 (bodies) then D3 (outer).
-    for item in &program.items {
-        if let syn::Item::Fn(fd) = item {
-            let name = name_text(source, fd.name).to_string();
-            let info = typing.get(&name).expect("typing info");
+    // Pass D: per fn in source order — D2 (bodies) then D3 (outer). A probe
+    // (ADR-0047 D5) keeps going past a unit's error and returns the first.
+    let mut first_err: Option<Vec<syn::Diagnostic>> = None;
+    for (fd, name, env) in &units {
+        let fd = *fd;
+        let info = typing.get(name).expect("typing info");
+        // An error inside an instance names it (ADR-0047 D5).
+        let note = |mut d: syn::Diagnostic| {
+            if !fd.sizes.is_empty() {
+                d.message = format!("{} (in `{name}`)", d.message);
+            }
+            vec![d]
+        };
 
-            // D2: declare + build every map/fold body, innermost-first.
-            let mut body_ids: BTreeMap<(u32, u32), FuncId> = BTreeMap::new();
-            let prec = ir_prec(fd.body.compute, mapal_ir::Precision::F32);
-            build_bodies(
-                source,
-                types,
-                effects,
-                &fn_ids,
-                fn_sigs,
-                info,
-                &name,
-                &fd.body,
+        // D2: declare + build every map/fold body, innermost-first.
+        let mut body_ids: BTreeMap<(u32, u32), FuncId> = BTreeMap::new();
+        let prec = ir_prec(fd.body.compute, mapal_ir::Precision::F32);
+        // ADR-0048 D3: the bodies of the top-level chains this function
+        // reads (emitted at its outermost scope), at the default precision.
+        let tops = types.globals().used_by(source, fd);
+        if !tops.is_empty() {
+            let block = types.globals().chains_block(&tops);
+            let built = build_bodies(
+                &Shared {
+                    source,
+                    types,
+                    effects,
+                    fn_ids: &fn_ids,
+                    fn_sigs,
+                    info,
+                    owner: name,
+                    mono,
+                    sizes: env,
+                },
+                &block,
                 &mut b,
                 &mut body_ids,
-                prec,
+                mapal_ir::Precision::F32,
             )
-            .map_err(|d| vec![d])?;
-
-            // D3: build the outer fn body.
-            let fid = fn_ids[&name];
-            let mut em = Emitter {
+            .map_err(note);
+            if let Err(e) = built {
+                if !mono.probe {
+                    return Err(e);
+                }
+                first_err.get_or_insert(e);
+            }
+        }
+        let built = build_bodies(
+            &Shared {
                 source,
                 types,
                 effects,
                 fn_ids: &fn_ids,
                 fn_sigs,
                 info,
-                body_ids: &body_ids,
-                owner_name: name.clone(),
-                token: None,
-                scope: ScopeStack::new(),
-                obj_ty: BTreeMap::new(),
-                loop_depth: 0,
-                decl_seq: 0,
-                derived: std::collections::BTreeSet::new(),
-                enclosing_token_loop: false,
-                outer_carried: std::collections::BTreeSet::new(),
-                captures: std::collections::BTreeSet::new(),
-                prec,
-            };
-            let fb = b.build_fn(fid).map_err(|e| vec![ir_err(e, fd.span)])?;
-            em.emit_fn(fd, fb).map_err(|d| vec![d])?;
+                owner: name,
+                mono,
+                sizes: env,
+            },
+            &fd.body,
+            &mut b,
+            &mut body_ids,
+            prec,
+        )
+        .map_err(note);
+        if let Err(e) = built {
+            if !mono.probe {
+                return Err(e);
+            }
+            first_err.get_or_insert(e);
         }
+
+        // D3: build the outer fn body.
+        let fid = fn_ids[name];
+        let mut em = Emitter {
+            source,
+            types,
+            effects,
+            fn_ids: &fn_ids,
+            fn_sigs,
+            info,
+            body_ids: &body_ids,
+            owner_name: name.clone(),
+            token: None,
+            scope: ScopeStack::new(),
+            obj_ty: BTreeMap::new(),
+            loop_depth: 0,
+            decl_seq: 0,
+            derived: std::collections::BTreeSet::new(),
+            enclosing_token_loop: false,
+            outer_carried: std::collections::BTreeSet::new(),
+            captures: std::collections::BTreeSet::new(),
+            prec,
+            mono,
+            sizes: env,
+        };
+        let fb = b.build_fn(fid).map_err(|e| vec![ir_err(e, fd.span)])?;
+        if let Err(e) = em.emit_fn(fd, fb).map_err(note) {
+            if !mono.probe {
+                return Err(e);
+            }
+            first_err.get_or_insert(e);
+        }
+    }
+    if let Some(e) = first_err {
+        return Err(e);
     }
 
     // Pass E: seal.
@@ -279,21 +390,58 @@ fn ir_signature(sig: &FnSig) -> (Ty, Ty) {
     }
 }
 
+/// ADR-0048 D5: what an error message says about `_` at a value of type
+/// `before` that was read as `after` — `_` read through, or (`before ==
+/// after`) a struct with a `_` none of whose chain fits.
+fn default_note(before: &Ty, after: &Ty) -> Option<String> {
+    let label = |t: &Ty| mapal_ir::ty_label(t);
+    if before != after {
+        return Some(format!(
+            "`_` was applied: the `{}` value was read as its `_`, `{}`",
+            label(before),
+            label(after)
+        ));
+    }
+    let inner = TypeTable::default_of(before)?;
+    Some(format!(
+        "`{}` has a default field `_: {}`, but neither fits here",
+        label(before),
+        label(inner)
+    ))
+}
+
+/// What every body built for one function (or instance) shares.
+struct Shared<'a> {
+    source: &'a str,
+    types: &'a TypeTable,
+    effects: &'a Effects,
+    fn_ids: &'a BTreeMap<String, FuncId>,
+    fn_sigs: &'a BTreeMap<String, FnSig>,
+    info: &'a TypeInfo,
+    owner: &'a str,
+    mono: &'a Mono<'a>,
+    sizes: &'a SizeEnv,
+}
+
 /// D2: declare and build every map/fold body in `block`, innermost-first.
-#[allow(clippy::too_many_arguments)]
 fn build_bodies(
-    source: &str,
-    types: &TypeTable,
-    effects: &Effects,
-    fn_ids: &BTreeMap<String, FuncId>,
-    fn_sigs: &BTreeMap<String, FnSig>,
-    info: &TypeInfo,
-    owner: &str,
+    sh: &Shared,
     block: &Block,
     b: &mut IrBuilder,
     out: &mut BTreeMap<(u32, u32), FuncId>,
     outer: mapal_ir::Precision,
 ) -> ER<()> {
+    let Shared {
+        source,
+        types,
+        effects,
+        fn_ids,
+        fn_sigs,
+        info,
+        owner,
+        mono,
+        sizes,
+    } = *sh;
     // Find every MapFold stage by walking the tree; for each, recurse into its
     // body first (innermost-first), then declare+build it.
     let stages = collect_mapfold_stages(block);
@@ -301,9 +449,7 @@ fn build_bodies(
         // ADR-0041 D2: innermost wins — the step's own, a block's around it, then `outer`.
         let prec = ir_prec(body.compute, ir_prec(around, outer));
         // Recurse into nested map/fold inside this body first.
-        build_bodies(
-            source, types, effects, fn_ids, fn_sigs, info, owner, body, b, out, prec,
-        )?;
+        build_bodies(sh, body, b, out, prec)?;
 
         let sig = info
             .block(stage.span)
@@ -346,6 +492,8 @@ fn build_bodies(
             outer_carried: std::collections::BTreeSet::new(),
             captures: std::collections::BTreeSet::new(),
             prec,
+            mono,
+            sizes,
         };
         let fb = b.build_fn(bid).map_err(|e| ir_err(e, stage.span))?;
         em.emit_body(
@@ -473,6 +621,186 @@ fn internal(span: syn::SourceLoc, msg: &str) -> syn::Diagnostic {
 // ===========================================================================
 
 impl Emitter<'_> {
+    /// Whether `text` names a function — fixed-size or generic (ADR-0047).
+    fn is_fn(&self, text: &str) -> bool {
+        self.fn_ids.contains_key(text) || self.mono.generics.contains_key(text)
+    }
+
+    /// ADR-0047 D4: the value of a size parameter named `text` (no local
+    /// shadows one: L1703).
+    fn size_value(&self, text: &str) -> Option<u64> {
+        if self.scope.resolve(text).is_some() {
+            return None;
+        }
+        self.sizes.get(text).copied()
+    }
+
+    /// D3 at a call to a generic function (emission side, authoritative): the
+    /// sizes from the wire's exact type (and the next stage's annotation), the
+    /// instance's id — or, when this round did not declare it, the request
+    /// that makes the next round declare it.
+    fn generic_callee(
+        &mut self,
+        text: &str,
+        wire: ObjectId,
+        next: Option<&Stage>,
+        sp: syn::SourceLoc,
+    ) -> ER<(FuncId, String)> {
+        let fd = self.mono.generics[text];
+        let arg = self.tyq(wire);
+        let expected = match next.map(|s| &s.kind) {
+            Some(StageKind::Bind { ty: Some(t), .. }) => {
+                self.types
+                    .resolve_sized(self.source, t, self.sizes, &mut Vec::new())
+            }
+            Some(StageKind::Ret { proj: None }) => self
+                .fn_sigs
+                .get(&self.owner_name)
+                .and_then(|s| s.ret.clone()),
+            _ => None,
+        };
+        let values = crate::sizes::infer(self.source, self.types, fd, &arg, expected.as_ref(), sp)?;
+        let name = crate::sizes::instance_name(text, &values);
+        let inst: Instance = (text.to_string(), values.clone());
+        let mut log = self.mono.log.borrow_mut();
+        log.sites
+            .insert((self.owner_name.clone(), sp.start, sp.end), values);
+        match self.fn_ids.get(&name) {
+            Some(&fid) => {
+                log.called.insert(inst);
+                Ok((fid, name))
+            }
+            None => {
+                log.requested.insert(inst);
+                Err(internal(
+                    sp,
+                    &format!("instance `{name}` not declared this round (ADR-0047 D5)"),
+                ))
+            }
+        }
+    }
+
+    /// D4: an integer expression over size parameters and literals, folded.
+    fn size_fold(&self, e: &Expr) -> Option<i128> {
+        if self.sizes.is_empty() {
+            return None;
+        }
+        crate::sizes::fold_value(self.source, e, &|t| self.size_value(t))
+    }
+
+    /// A size written as a value — `-n`, `rows * columns` — is a constant
+    /// like `-4096` (a pre-existing object, never a lookahead `Dest`; D4).
+    fn is_size_literal(&self, e: &Expr) -> bool {
+        match &e.kind {
+            ExprKind::Unary {
+                op: UnOp::Neg,
+                operand,
+                ..
+            } => matches!(&operand.kind, ExprKind::Var(n)
+                if self.size_value(name_text(self.source, *n)).is_some()),
+            ExprKind::Binary { .. } => self.size_fold(e).is_some(),
+            _ => false,
+        }
+    }
+
+    /// ADR-0048 D5: read `obj` through its `_` field(s) until its type fits
+    /// `fits` — as is when it already does, else `obj._`, `obj._._`, … the
+    /// first that fits; `None` when no step of the chain does.
+    fn read_default(
+        &mut self,
+        fb: &mut FnBuilder,
+        obj: ObjectId,
+        fits: impl Fn(&Ty) -> bool,
+        sp: syn::SourceLoc,
+    ) -> ER<Option<ObjectId>> {
+        let ty = self.ty_of(fb, obj);
+        let Some(k) = TypeTable::default_steps(&ty, fits) else {
+            return Ok(None);
+        };
+        let mut cur = obj;
+        for _ in 0..k {
+            let idx = match self.ty_of(fb, cur) {
+                Ty::Struct { fields, .. } => fields.iter().position(|(n, _)| n == "_"),
+                _ => None,
+            }
+            .ok_or_else(|| internal(sp, "default field vanished"))?;
+            cur = self.proj(fb, cur, idx as u32, Dest::Fresh(None), sp)?;
+        }
+        Ok(Some(cur))
+    }
+
+    /// D5 where a type is expected: `obj` as is when it has type `want`, else
+    /// read through `_` (a tuple component by component) when that fits;
+    /// otherwise `obj` unchanged (the consumer reports the mismatch).
+    fn coerce(
+        &mut self,
+        fb: &mut FnBuilder,
+        obj: ObjectId,
+        want: &Ty,
+        sp: syn::SourceLoc,
+    ) -> ER<ObjectId> {
+        let ty = self.ty_of(fb, obj);
+        if &ty == want {
+            return Ok(obj);
+        }
+        if let (Ty::Tuple(have), Ty::Tuple(wants)) = (&ty, want)
+            && have.len() == wants.len()
+            && have
+                .iter()
+                .zip(wants)
+                .all(|(h, w)| TypeTable::default_steps(h, |t| t == w).is_some())
+        {
+            let mut comps = Vec::with_capacity(wants.len());
+            for (k, w) in wants.iter().enumerate() {
+                let c = self.proj(fb, obj, k as u32, Dest::Fresh(None), sp)?;
+                comps.push(self.coerce(fb, c, w, sp)?);
+            }
+            return self
+                .pack(fb, &comps, Dest::Fresh(None), sp)
+                .map_err(|e| ir_err(e, sp));
+        }
+        Ok(self
+            .read_default(fb, obj, |t| t == want, sp)?
+            .unwrap_or(obj))
+    }
+
+    /// ADR-0048 D3: a top-level scalar computed before the program runs, as
+    /// the literal (or the annotated constant) it is.
+    fn global_const(
+        &mut self,
+        fb: &mut FnBuilder,
+        c: &crate::globals::GlobalConst,
+        sp: syn::SourceLoc,
+    ) -> ER<ObjectId> {
+        use crate::globals::GlobalConst;
+        let val = match c {
+            GlobalConst::Int { value, pinned } => {
+                let ty = pinned
+                    .clone()
+                    .or_else(|| self.lit_ty(sp))
+                    .unwrap_or_else(|| Ty::index_ty(value.unsigned_abs() as u64));
+                self.int_value(value.unsigned_abs() as u64, &ty, sp, *value < 0)?
+            }
+            GlobalConst::Float {
+                value,
+                pinned,
+                literal,
+            } => {
+                let ty = pinned
+                    .clone()
+                    .or_else(|| self.lit_ty(sp))
+                    .unwrap_or_else(Ty::f64);
+                match (pinned, literal) {
+                    (None, Some(lit)) => self.float_value(*lit, &ty)?,
+                    _ if ty == Ty::f32() => Value::F32(*value as f32),
+                    _ => Value::F64(*value),
+                }
+            }
+            GlobalConst::Bool(b) => Value::Bool(*b),
+        };
+        self.constant(fb, val, sp)
+    }
+
     /// Build a surface function body (D3).
     fn emit_fn(&mut self, fd: &syn::FnDecl, mut fb: FnBuilder) -> ER<()> {
         let name = self.owner_name.clone();
@@ -499,6 +827,15 @@ impl Emitter<'_> {
             }
         } else {
             self.bind_params(&mut fb, fd, &sig, input, None)?;
+        }
+
+        // ADR-0048 D3: the top-level values this function reads that are not
+        // literals — their chains, at the outermost scope (captured into
+        // map / fold bodies like any enclosing value).
+        let globals = self.types.globals();
+        for i in globals.used_by(self.source, fd) {
+            let chain = globals.items[i].chain.clone();
+            self.emit_chain(&mut fb, &chain, ChainCtx::Statement)?;
         }
 
         // Emit the body block.
@@ -836,7 +1173,7 @@ impl Emitter<'_> {
         let head_is_value = chain
             .head
             .as_ref()
-            .map(|h| expr_is_value_producing(&h.kind))
+            .map(|h| expr_is_value_producing(&h.kind) && !self.is_size_literal(h))
             .unwrap_or(false);
         // A bare pre-existing-object tail (`fn f(x: i32) -> i32 { x }` / a body
         // tail `{ … x }`) must route through `output()` / `emit_ret_existing`
@@ -950,7 +1287,10 @@ impl Emitter<'_> {
             StageKind::Expr(e) => {
                 if let ExprKind::Var(n) = &e.kind {
                     let text = name_text(self.source, *n);
-                    if crate::is_pure_builtin(text) || crate::is_time_builtin(text) {
+                    if crate::is_pure_builtin(text)
+                        || crate::is_time_builtin(text)
+                        || crate::is_read_builtin(text)
+                    {
                         return true;
                     }
                     if let Some(sig) = self.fn_sigs.get(text) {
@@ -988,13 +1328,17 @@ impl Emitter<'_> {
             StageKind::Bind { mut_span, name, ty } => {
                 let wire =
                     cur.ok_or_else(|| diag(LCode::HeadlessChain, sp, "bind with no wire"))?;
-                let bty = if let Some(annot) = ty {
+                let annotated = ty.as_ref().and_then(|annot| {
                     self.types
-                        .resolve(self.source, annot, &mut Vec::new())
-                        .unwrap_or_else(|| self.ty_of(fb, wire))
-                } else {
-                    self.ty_of(fb, wire)
+                        .resolve_sized(self.source, annot, self.sizes, &mut Vec::new())
+                });
+                // ADR-0048 D5: a binding annotated with `_`'s type reads
+                // through it.
+                let wire = match &annotated {
+                    Some(t) => self.coerce(fb, wire, t, sp)?,
+                    None => wire,
                 };
+                let bty = annotated.unwrap_or_else(|| self.ty_of(fb, wire));
                 let bn = name_text(self.source, *name).to_string();
                 self.bind_new(&bn, wire, bty, mut_span.is_some());
                 Ok(Some(wire))
@@ -1117,12 +1461,17 @@ impl Emitter<'_> {
                     let ty = self.ty_of(fb, wire);
                     self.rebind(&text, wire, ty, true);
                     Ok(Some(wire))
-                } else if let Some(&fid) = self.fn_ids.get(&text) {
-                    // call.
+                } else if self.fn_ids.contains_key(&text) || self.mono.generics.contains_key(&text)
+                {
+                    // call (ADR-0047: a generic one calls its instance).
                     let wire =
                         wire.ok_or_else(|| diag(LCode::HeadlessChain, e.span, "call with no arg"))?;
+                    let (fid, callee) = match self.fn_ids.get(&text) {
+                        Some(&fid) => (fid, text.clone()),
+                        None => self.generic_callee(&text, wire, next, e.span)?,
+                    };
                     let dest = self.lookahead_dest(next, ctx, next.is_none())?;
-                    let r = self.emit_call(fb, fid, &text, wire, dest, e.span)?;
+                    let r = self.emit_call(fb, fid, &callee, wire, dest, e.span)?;
                     if let Some(r) = r {
                         self.maybe_bind_next(fb, next, r);
                     }
@@ -1132,6 +1481,18 @@ impl Emitter<'_> {
                         .ok_or_else(|| diag(LCode::HeadlessChain, e.span, "print with no value"))?;
                     self.emit_print(fb, wire, text == "println", e.span)?;
                     Ok(None) // print is a sink; chain ends.
+                } else if crate::is_read_builtin(&text) {
+                    // ADR-0045: `"file" -> read -> name: [T; n]`.
+                    let wire = wire.ok_or_else(|| {
+                        diag(
+                            LCode::ReadSource,
+                            e.span,
+                            "`read` takes a file path: write `\"file.bin\" -> read -> name: [T; n]`",
+                        )
+                    })?;
+                    let r = self.emit_read(fb, wire, next, ctx, e.span)?;
+                    self.maybe_bind_next(fb, next, r);
+                    Ok(Some(r))
                 } else if crate::is_time_builtin(&text) {
                     // `() -> time` (plan-time-builtin): the ONE stage that
                     // takes no wire — the source is the IO token, not a value.
@@ -1155,7 +1516,13 @@ impl Emitter<'_> {
                         "enumerate" => self.emit_enumerate(fb, wire, dest, e.span)?,
                         "iota" => self.emit_iota_stage(fb, wire, dest, e.span)?,
                         "fill" => self.emit_fill_stage(fb, wire, dest, e.span)?,
-                        "exp" => self.emit_exp(fb, wire, dest, e.span)?,
+                        t if mapal_ir::MathFn::from_name(t).is_some() => self.emit_math(
+                            fb,
+                            wire,
+                            mapal_ir::MathFn::from_name(t).expect("math builtin"),
+                            dest,
+                            e.span,
+                        )?,
                         t if crate::narrow_target(t).is_some() => self.emit_narrow(
                             fb,
                             wire,
@@ -1189,7 +1556,7 @@ impl Emitter<'_> {
                 // fn.param → L1106; else L1302.
                 if let (ExprKind::Var(bn), MemberField::Named(_)) = (&base.kind, field) {
                     let bt = name_text(self.source, *bn);
-                    if self.fn_ids.contains_key(bt) {
+                    if self.is_fn(bt) {
                         return Err(diag(
                             LCode::NamedParamApplication,
                             e.span,
@@ -1237,9 +1604,10 @@ impl Emitter<'_> {
                     if let ExprKind::Var(n) = &e.kind {
                         let text = name_text(self.source, *n);
                         // bare name binding (unbound or mut) → name it.
-                        if !self.fn_ids.contains_key(text)
+                        if !self.is_fn(text)
                             && !crate::is_print_builtin(text)
                             && !crate::is_time_builtin(text)
+                            && !crate::is_read_builtin(text)
                             && !crate::is_pure_builtin(text)
                         {
                             return Ok(Dest::Fresh(Some(text.to_string())));
@@ -1275,7 +1643,10 @@ impl Emitter<'_> {
         {
             let bty = ty
                 .as_ref()
-                .and_then(|t| self.types.resolve(self.source, t, &mut Vec::new()))
+                .and_then(|t| {
+                    self.types
+                        .resolve_sized(self.source, t, self.sizes, &mut Vec::new())
+                })
                 .unwrap_or_else(|| self.ty_of(fb, obj));
             let bn = name_text(self.source, *name).to_string();
             self.bind_new(&bn, obj, bty, mut_span.is_some());
@@ -1342,7 +1713,12 @@ impl Emitter<'_> {
     }
 
     fn in_effectful_fn(&self) -> bool {
-        self.effects.is_effectful(&self.owner_name)
+        // An instance is its generic's effect (ADR-0047 D7): its signature
+        // carries the flag under its own name.
+        self.fn_sigs.get(&self.owner_name).map_or_else(
+            || self.effects.is_effectful(&self.owner_name),
+            |s| s.effectful,
+        )
     }
 
     /// A value-less `-> ret` marker (no wire), §8.3 (ATK-09/ATK-10). The
@@ -1492,8 +1868,19 @@ impl Emitter<'_> {
                         sp,
                         format!("`{text}` read after its loop; bind the exit value instead"),
                     )),
+                    None if self.types.globals().consts.contains_key(text) => {
+                        let c = self.types.globals().consts[text].clone();
+                        self.global_const(fb, &c, sp)
+                    }
+                    None if self.sizes.contains_key(text) => {
+                        // ADR-0047 D4: a size is an integer literal.
+                        let v = self.sizes[text];
+                        let ty = self.lit_ty(sp).unwrap_or_else(|| Ty::index_ty(v));
+                        let val = self.int_value(v, &ty, sp, false)?;
+                        self.constant(fb, val, sp)
+                    }
                     None => {
-                        if self.fn_ids.contains_key(text) {
+                        if self.is_fn(text) {
                             Err(diag(
                                 LCode::FunctionAsValue,
                                 sp,
@@ -1512,10 +1899,16 @@ impl Emitter<'_> {
             ExprKind::Hole => Err(internal(sp, "bare Hole in expression position")),
             ExprKind::Unary { op, operand, .. } => match op {
                 UnOp::Neg => {
-                    // Fold negative literals (pin 3).
-                    if let ExprKind::Int(v) = &operand.kind {
+                    // Fold negative literals (pin 3) — a size parameter is
+                    // one (ADR-0047 D4).
+                    let lit = match &operand.kind {
+                        ExprKind::Int(v) => Some(*v),
+                        ExprKind::Var(n) => self.size_value(name_text(self.source, *n)),
+                        _ => None,
+                    };
+                    if let Some(v) = lit {
                         let ty = self.lit_ty(operand.span).unwrap_or_else(Ty::i32);
-                        let val = self.int_value(*v, &ty, operand.span, true)?;
+                        let val = self.int_value(v, &ty, operand.span, true)?;
                         return self.constant(fb, val, sp);
                     }
                     if let ExprKind::Float = &operand.kind {
@@ -1537,6 +1930,12 @@ impl Emitter<'_> {
                 rhs,
                 op_span,
             } => {
+                // ADR-0047 D4: a size expression is one integer literal.
+                if let Some(v) = self.size_fold(expr) {
+                    let ty = self.lit_ty(sp).unwrap_or_else(Ty::i32);
+                    let val = self.int_value(v.unsigned_abs() as u64, &ty, sp, v < 0)?;
+                    return self.constant(fb, val, sp);
+                }
                 let l = self.emit_expr(fb, lhs)?;
                 let r = self.emit_expr(fb, rhs)?;
                 self.binop(fb, map_binop(*op), l, r, dest, *op_span)
@@ -1547,6 +1946,13 @@ impl Emitter<'_> {
                 match field {
                     MemberField::Named(fname) => {
                         let fn_ = name_text(self.source, *fname);
+                        let has = |t: &Ty| match t {
+                            Ty::Struct { fields, .. } => fields.iter().any(|(n, _)| n == fn_),
+                            _ => false,
+                        };
+                        // ADR-0048 D5: a field of `_` reads through it.
+                        let b = self.read_default(fb, b, has, sp)?.unwrap_or(b);
+                        let bty = self.ty_of(fb, b);
                         let idx = match &bty {
                             Ty::Struct { fields, .. } => fields.iter().position(|(n, _)| n == fn_),
                             _ => None,
@@ -1603,9 +2009,65 @@ impl Emitter<'_> {
             }
             ExprKind::Struct { name, fields } => {
                 let tname = name_text(self.source, *name);
-                let sty = self.types.get(tname).cloned().ok_or_else(|| {
-                    diag(LCode::UnknownType, sp, format!("unknown type `{tname}`"))
-                })?;
+                // ADR-0048 D5: an alias's literal `T { _: v }` is `v`.
+                if let Some(td) = self.types.decl(tname)
+                    && let [only] = td.fields.as_slice()
+                    && name_text(self.source, only.name) == "_"
+                    && let [fi] = fields.as_slice()
+                    && name_text(self.source, fi.name) == "_"
+                    && let Some(v) = &fi.value
+                {
+                    return self.emit_expr(fb, v);
+                }
+                // ADR-0048 D4: a size-generic type's literal takes its sizes
+                // from its fields' types.
+                let generic = self
+                    .types
+                    .decl(tname)
+                    .filter(|td| !td.sizes.is_empty())
+                    .cloned();
+                let sty = match &generic {
+                    None => self.types.get(tname).cloned().ok_or_else(|| {
+                        diag(LCode::UnknownType, sp, format!("unknown type `{tname}`"))
+                    })?,
+                    Some(td) => {
+                        let mut objs: BTreeMap<String, ObjectId> = BTreeMap::new();
+                        for fi in fields {
+                            let fname = name_text(self.source, fi.name).to_string();
+                            if let Some(e) = &fi.value {
+                                objs.insert(fname, self.emit_expr(fb, e)?);
+                            } else if let Some((b, false)) = self.scope.resolve(&fname) {
+                                objs.insert(fname, b.obj);
+                            }
+                        }
+                        let mut tys = Vec::new();
+                        for f in &td.fields {
+                            let fname = name_text(self.source, f.name);
+                            let o = objs.get(fname).copied().ok_or_else(|| {
+                                diag(LCode::TypeMismatch, sp, format!("missing field `{fname}`"))
+                            })?;
+                            tys.push(self.ty_of(fb, o));
+                        }
+                        let values =
+                            crate::sizes::infer_type(self.source, self.types, td, &tys, sp)?;
+                        let ty = self
+                            .types
+                            .instance(self.source, tname, &values, sp)
+                            .ok_or_else(|| internal(sp, "generic type instance"))?;
+                        let decl = match &ty {
+                            Ty::Struct { fields, .. } => fields.clone(),
+                            _ => return Err(internal(sp, "non-struct generic literal")),
+                        };
+                        let mut comps = Vec::with_capacity(decl.len());
+                        for (fname, fty) in &decl {
+                            let o = objs[fname];
+                            comps.push(self.coerce(fb, o, fty, sp)?);
+                        }
+                        return self
+                            .pack_struct(fb, ty, &comps, dest, sp)
+                            .map_err(|e| ir_err(e, sp));
+                    }
+                };
                 let decl = match &sty {
                     Ty::Struct { fields, .. } => fields.clone(),
                     _ => return Err(internal(sp, "non-struct in struct ctor")),
@@ -1712,6 +2174,26 @@ impl Emitter<'_> {
         sp: syn::SourceLoc,
     ) -> ER<Option<ObjectId>> {
         let csig = self.fn_sigs.get(callee_name).expect("callee sig").clone();
+        // ADR-0048 D5: an argument reads through `_` where its own type does
+        // not fit the parameter but `_`'s does.
+        let want = match csig.params.as_slice() {
+            [] => None,
+            [one] => Some(one.clone()),
+            ps => Some(Ty::Tuple(ps.to_vec())),
+        };
+        let before = self.ty_of(fb, arg);
+        let arg = match &want {
+            Some(w) => self.coerce(fb, arg, w, sp)?,
+            None => arg,
+        };
+        // D5: an error at this call says whether `_` was read.
+        let after = self.ty_of(fb, arg);
+        let note = |mut d: syn::Diagnostic| {
+            if let Some(n) = default_note(&before, &after) {
+                d.message = format!("{} ({n})", d.message);
+            }
+            d
+        };
         if csig.effectful {
             let tok = self.consume_token(sp)?;
             // arg' = pack(tok, arg) (or tok alone when A absent — but a call
@@ -1721,7 +2203,7 @@ impl Emitter<'_> {
                 .map_err(|e| ir_err(e, sp))?;
             let r = fb
                 .call(callee, arg2, Dest::Fresh(None), ir_loc(sp))
-                .map_err(|e| ir_err(e, sp))?;
+                .map_err(|e| note(ir_err(e, sp)))?;
             // Derives-from-merge: any derived operand ⇒ derived result (§7.3).
             // The call result derives from its argument (the packed `(tok, arg)`);
             // propagate to the result and both projs (ATK-12).
@@ -1746,7 +2228,7 @@ impl Emitter<'_> {
             let out = csig.ret.clone().unwrap_or(Ty::Unit);
             let r = fb
                 .call(callee, arg, dest, ir_loc(sp))
-                .map_err(|e| ir_err(e, sp))?;
+                .map_err(|e| note(ir_err(e, sp)))?;
             self.record(r, out);
             // Derives-from-merge: a pure-call result derives from its argument
             // (§7.3 / ATK-12), so a guard cond flowing through a pure call passes
@@ -1829,6 +2311,69 @@ impl Emitter<'_> {
             .map_err(|e| ir_err(e, sp))?;
         self.record(ms, Ty::f64());
         Ok(ms)
+    }
+
+    /// `read` (ADR-0045): the wire is the path — a string literal, the only
+    /// `Str` there is (L1618 otherwise); the next stage is the binding whose
+    /// annotation types the array (L1617 when it is missing or is not a
+    /// one-dimensional array of `i32`, `i64`, `u8`, `f32`, `f64`, `bf16` or
+    /// `f16`). Then as `time`: consume the token, emit `Read`, split the
+    /// `(IoToken, array)` pair — slot 0 rebinds the token, slot 1 is the
+    /// array the binding names.
+    fn emit_read(
+        &mut self,
+        fb: &mut FnBuilder,
+        wire: ObjectId,
+        next: Option<&Stage>,
+        ctx: &ChainCtx,
+        sp: syn::SourceLoc,
+    ) -> ER<ObjectId> {
+        if !matches!(self.tyq(wire), Ty::Str) {
+            return Err(diag(
+                LCode::ReadSource,
+                sp,
+                format!(
+                    "`read` takes a string literal path, found `{}`",
+                    ty_name(&self.tyq(wire))
+                ),
+            ));
+        }
+        let shape = "`read` needs its binding's array type: \
+                     `\"file.bin\" -> read -> name: [T; n]`, T one of \
+                     i32, i64, u8, f32, f64, bf16, f16";
+        let annot = match next.map(|n| &n.kind) {
+            Some(StageKind::Bind {
+                ty: Some(annot), ..
+            }) => annot,
+            _ => return Err(diag(LCode::ReadAnnotation, sp, shape)),
+        };
+        let ty = self
+            .types
+            .resolve(self.source, annot, &mut Vec::new())
+            .ok_or_else(|| diag(LCode::ReadAnnotation, sp, shape))?;
+        if !mapal_ir::read::readable(&ty) {
+            return Err(diag(
+                LCode::ReadAnnotation,
+                sp,
+                format!("{shape}; found `{}`", ty_name(&ty)),
+            ));
+        }
+        let tok = self.consume_token(sp)?;
+        let pair = fb
+            .read(tok, wire, &ty, ir_loc(sp))
+            .map_err(|e| ir_err(e, sp))?;
+        self.record(pair, Ty::Tuple(vec![Ty::IoToken, ty.clone()]));
+        let nt = fb
+            .proj(pair, 0, Dest::Fresh(None), ir_loc(sp))
+            .map_err(|e| ir_err(e, sp))?;
+        self.record(nt, Ty::IoToken);
+        self.token = Some(nt);
+        let dest = self.lookahead_dest(next, ctx, next.is_none())?;
+        let arr = fb
+            .proj(pair, 1, dest, ir_loc(sp))
+            .map_err(|e| ir_err(e, sp))?;
+        self.record(arr, ty);
+        Ok(arr)
     }
 
     // --- literals -----------------------------------------------------------
@@ -2437,12 +2982,44 @@ impl Emitter<'_> {
                 None => return Err(internal(sp, "capture unbound in the enclosing scope")),
             }
         }
+        // ADR-0048 D5: a mapped struct reads through its `_` array; a fold's
+        // `(seed, s)` reads `s` so.
+        let wire = match op {
+            CollOp::Map => self
+                .read_default(fb, wire, |t| matches!(t, Ty::Array { .. }), sp)?
+                .unwrap_or(wire),
+            CollOp::Fold => match self.ty_of(fb, wire) {
+                Ty::Tuple(ts)
+                    if ts.len() == 2
+                        && !matches!(ts[1], Ty::Array { .. })
+                        && TypeTable::default_steps(&ts[1], |t| matches!(t, Ty::Array { .. }))
+                            .is_some() =>
+                {
+                    let seed = self.proj(fb, wire, 0, Dest::Fresh(None), sp)?;
+                    let s = self.proj(fb, wire, 1, Dest::Fresh(None), sp)?;
+                    let arr = self
+                        .read_default(fb, s, |t| matches!(t, Ty::Array { .. }), sp)?
+                        .unwrap_or(s);
+                    self.pack(fb, &[seed, arr], Dest::Fresh(None), sp)
+                        .map_err(|e| ir_err(e, sp))?
+                }
+                _ => wire,
+            },
+        };
         match op {
             CollOp::Map => {
                 let wty = self.ty_of(fb, wire);
                 let size = match &wty {
                     Ty::Array { size, .. } => *size,
-                    _ => return Err(diag(LCode::MapNonArray, sp, "map applied to a non-array")),
+                    _ => {
+                        let n =
+                            default_note(&wty, &wty).map_or(String::new(), |n| format!(" ({n})"));
+                        return Err(diag(
+                            LCode::MapNonArray,
+                            sp,
+                            format!("map applied to a non-array{n}"),
+                        ));
+                    }
                 };
                 let out = Ty::Array {
                     elem: Box::new(sig.as_ref().map(|s| s.body_out.clone()).unwrap_or(Ty::Unit)),
@@ -2678,27 +3255,32 @@ impl Emitter<'_> {
         Ok(self.record(o, Ty::Narrow(fmt)))
     }
 
-    /// `x -> exp` (ADR-0042): `eˣ` of a float scalar, its width kept. Owns
-    /// L1615 (any other source type).
-    fn emit_exp(
+    /// `x -> exp` (ADR-0042), `x -> sqrt` / `sin` / `cos` (ADR-0046): the
+    /// builtin of a float scalar, its width kept. Owns L1615 (any other
+    /// source type).
+    fn emit_math(
         &mut self,
         fb: &mut FnBuilder,
         wire: ObjectId,
+        f: mapal_ir::MathFn,
         dest: Dest,
         sp: syn::SourceLoc,
     ) -> ER<ObjectId> {
         let source = self.ty_of(fb, wire);
+        let name = f.name();
         if !matches!(source, Ty::Float { bits: 32 | 64 }) {
             return Err(diag(
                 LCode::InvalidExp,
                 sp,
                 format!(
-                    "`exp` takes an `f32` or `f64`, got `{}`; widen an integer first (`x -> widen_f32 -> exp`)",
+                    "`{name}` takes an `f32` or `f64`, got `{}`; widen an integer first (`x -> widen_f32 -> {name}`)",
                     ty_name(&source)
                 ),
             ));
         }
-        let o = fb.exp(wire, dest, ir_loc(sp)).map_err(|e| ir_err(e, sp))?;
+        let o = fb
+            .math(f, wire, dest, ir_loc(sp))
+            .map_err(|e| ir_err(e, sp))?;
         self.prop(o, &[wire]);
         Ok(self.record(o, source))
     }
@@ -3409,9 +3991,10 @@ impl Emitter<'_> {
         if let ExprKind::Var(n) = &e.kind {
             let text = name_text(self.source, *n);
             if self.scope.resolve(text).is_none()
-                && !self.fn_ids.contains_key(text)
+                && !self.is_fn(text)
                 && !crate::is_print_builtin(text)
                 && !crate::is_time_builtin(text)
+                && !crate::is_read_builtin(text)
                 && !crate::is_pure_builtin(text)
             {
                 return Some(text.to_string());
@@ -3586,6 +4169,10 @@ impl Emitter<'_> {
         dest: Dest,
         sp: syn::SourceLoc,
     ) -> ER<ObjectId> {
+        // ADR-0048 D5: an indexed struct reads through its `_` array.
+        let a = self
+            .read_default(fb, a, |t| matches!(t, Ty::Array { .. }), sp)?
+            .unwrap_or(a);
         let aty = self.tyq(a);
         let out = match &aty {
             Ty::Array { elem, .. } => (**elem).clone(),
@@ -3673,6 +4260,11 @@ impl Emitter<'_> {
 
     /// Bind a new surface symbol with a fresh declaration sequence number.
     fn bind_new(&mut self, name: &str, obj: ObjectId, ty: Ty, mutable: bool) {
+        if let Some(b) = self.mono.bound
+            && self.owner_name == "main"
+        {
+            b.borrow_mut().insert(name.to_string(), obj);
+        }
         let seq = self.decl_seq;
         self.decl_seq += 1;
         self.scope.bind(
@@ -3839,6 +4431,7 @@ fn scan_chain(
                     // L1605 check.
                     let effectful = crate::is_print_builtin(text)
                         || crate::is_time_builtin(text)
+                        || crate::is_read_builtin(text)
                         || fn_sigs.get(text).map(|s| s.effectful).unwrap_or(false);
                     if effectful {
                         if scan.effect_span.is_none() {
@@ -4003,7 +4596,11 @@ fn effect_chain(source: &str, chain: &Chain, fn_sigs: &BTreeMap<String, FnSig>, 
                 if let ExprKind::Var(n) = &e.kind {
                     let text = name_text(source, *n);
                     let effectful = fn_sigs.get(text).map(|s| s.effectful).unwrap_or(false);
-                    if crate::is_print_builtin(text) || crate::is_time_builtin(text) || effectful {
+                    if crate::is_print_builtin(text)
+                        || crate::is_time_builtin(text)
+                        || crate::is_read_builtin(text)
+                        || effectful
+                    {
                         *found = true;
                     }
                 }

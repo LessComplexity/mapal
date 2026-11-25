@@ -159,6 +159,38 @@ impl CategoryIr {
         }
     }
 
+    /// ADR-0045: the array objects a `Read`'s `(token, array)` target `p`
+    /// yields — its token-free `Proj`s.
+    pub fn read_values(&self, p: ObjectId) -> Vec<ObjectId> {
+        self.out_edges(p)
+            .iter()
+            .map(|&m| &self.morphisms[m])
+            .filter(|mo| {
+                matches!(mo.op, Operation::Proj { .. })
+                    && !crate::ty::ty_contains_token(&self.objects[mo.target].ty)
+            })
+            .map(|mo| mo.target)
+            .collect()
+    }
+
+    /// The `Read` whose `(token, array)` pair `o` projects out of, when `o`
+    /// is a read's array.
+    pub fn read_of(&self, o: ObjectId) -> Option<MorphismId> {
+        let &[m] = self.in_edges(o) else {
+            return None;
+        };
+        let mo = &self.morphisms[m];
+        if !matches!(mo.op, Operation::Proj { .. })
+            || crate::ty::ty_contains_token(&self.objects[o].ty)
+        {
+            return None;
+        }
+        let &[r] = self.in_edges(mo.source) else {
+            return None;
+        };
+        (self.morphisms[r].op == Operation::Read).then_some(r)
+    }
+
     /// The source of slot `k` of the product `p` (its `Pair` edge).
     fn pair_slot(&self, p: ObjectId, k: u32) -> Option<ObjectId> {
         self.in_edges(p).iter().find_map(|&m| {
@@ -187,8 +219,13 @@ impl CategoryIr {
                 let mut reads = Vec::new();
                 self.byte_sources(mo.source, &mut reads, &mut Vec::new());
                 plan.reads.insert(m, reads);
-                plan.writes
-                    .insert(m, if structural { Vec::new() } else { vec![o] });
+                let mut writes = if structural { Vec::new() } else { vec![o] };
+                // ADR-0045: a read writes the array it yields — the bytes the
+                // `(token, array)` pair's value `Proj`s name.
+                if mo.op == Operation::Read {
+                    writes.extend(self.read_values(o));
+                }
+                plan.writes.insert(m, writes);
             }
         }
         // Storage classes: union-find over the objects.
@@ -218,6 +255,13 @@ impl CategoryIr {
                     && let Some(a) = self.pair_slot(mo.source, 0)
                 {
                     union(&mut parent, o, a);
+                }
+                // ADR-0045: the read's pair and its array are one buffer (the
+                // token is erased; the file's bytes land in the array).
+                if mo.op == Operation::Read {
+                    for v in self.read_values(o) {
+                        union(&mut parent, o, v);
+                    }
                 }
             }
         }

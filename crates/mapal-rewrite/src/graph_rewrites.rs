@@ -192,6 +192,7 @@ pub fn analyze_dce(ir: &CategoryIr) -> RewritePlan {
                         | Operation::Fold { .. }
                         | Operation::Print { .. }
                         | Operation::TimeMs
+                        | Operation::Read
                         | Operation::Output
                         | Operation::LoopEnter
                         | Operation::LoopBack
@@ -492,6 +493,7 @@ fn reads_packed_source(op: Operation) -> bool {
         | Zip
         | Update
         | Print { .. }
+        | Read
         | LoopBack
         | LoopExit => true,
         Map { captures, .. } | Fold { captures, .. } => captures > 0,

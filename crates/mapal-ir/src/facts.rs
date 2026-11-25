@@ -52,6 +52,8 @@ pub(crate) struct FuncFacts {
     pub(crate) bounds_proof: OnceLock<BoundsProof>,
     pub(crate) write_delta: OnceLock<SecondaryMap<ObjectId, Delta>>,
     pub(crate) unchanged_plan: OnceLock<crate::algo::UnchangedPlan>,
+    /// ADR-0048 D3: the compile-time fact.
+    pub(crate) static_plan: OnceLock<crate::algo::StaticPlan>,
     pub(crate) call_keep: OnceLock<SecondaryMap<MorphismId, crate::algo::CallKeep>>,
     pub(crate) guard_plan: OnceLock<Vec<GuardSite>>,
     pub(crate) guard_structure: OnceLock<Vec<GuardSite>>,
@@ -194,6 +196,7 @@ impl CategoryIr {
             entry: self.entry,
             facts,
             precision: self.precision.clone(),
+            data_dir: self.data_dir.clone(),
         }
     }
 

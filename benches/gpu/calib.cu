@@ -45,10 +45,14 @@
 // The `calib device=` line carries the device query's physical facts the rung rules read (`DeviceQuery`).
 //   matrix  f32-tensor-cores P1: the warp products' flops an SM clock (`MatrixOp::sm_flops_per_clk`) and a ns, and the
 //           TF32 split realization's issue pattern against them (`matrix_run`)
-// usage: calib [chase|bw|loaded|lds|gsync|copy|ffma|head|body|bar|matrix ...]   (all when none).  Output: `<kind> k=v ...` lines, one per point.
+//   math    ADR-0046 D8: the SM's math units (sqrt.approx, rsqrt.approx, sin.approx, cos.approx, ex2.approx,
+//           sqrt.rn) — worst relative / absolute error over every f32 of each unit's domain against the f64
+//           function, the special values each returns, its issue cycles; CUDA's sqrtf / sinf / cosf / __sinf for context
+// usage: calib [chase|bw|loaded|lds|gsync|copy|ffma|head|body|bar|matrix|math ...]   (all when none).  Output: `<kind> k=v ...` lines, one per point.
 // build: nvcc -O3 -arch=sm_<cc> -std=c++17 -rdc=true calib.cu -o calib -lcudadevrt   (rdc for the tail launch)
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -786,6 +790,142 @@ static void bar_run() {
     }
     CK(cudaFree(o)); CK(cudaFree(c));
 }
+
+// ---- math (ADR-0046 D8): the SM's math function units, measured -----------------------------------------------
+// Each unit's worst relative and absolute error over every f32 of its domain against the f64 function (exhaustive),
+// whether it returns the contract's special values itself, and its issue cost (cycles a warp instruction an SM
+// sub-partition, clock64 over 8 independent chains a thread, 4 warps a sub-partition); beside CUDA's own `sqrtf`,
+// `sinf`, `cosf` and `__sinf` over every f32 (ulps of the f64 truth) for context. One `math` line a unit.
+__device__ __forceinline__ float m_sqrt_approx(float a) { float r; asm("sqrt.approx.f32 %0, %1;" : "=f"(r) : "f"(a)); return r; }
+__device__ __forceinline__ float m_sqrt_approx_ftz(float a) { float r; asm("sqrt.approx.ftz.f32 %0, %1;" : "=f"(r) : "f"(a)); return r; }
+__device__ __forceinline__ float m_sqrt_rn(float a) { float r; asm("sqrt.rn.f32 %0, %1;" : "=f"(r) : "f"(a)); return r; }
+__device__ __forceinline__ float m_rsqrt_approx(float a) { float r; asm("rsqrt.approx.f32 %0, %1;" : "=f"(r) : "f"(a)); return r; }
+__device__ __forceinline__ float m_sin_approx(float a) { float r; asm("sin.approx.f32 %0, %1;" : "=f"(r) : "f"(a)); return r; }
+__device__ __forceinline__ float m_cos_approx(float a) { float r; asm("cos.approx.f32 %0, %1;" : "=f"(r) : "f"(a)); return r; }
+__device__ __forceinline__ float m_ex2_approx(float a) { float r; asm("ex2.approx.ftz.f32 %0, %1;" : "=f"(r) : "f"(a)); return r; }
+// The worst errors, as fixed point (relative and absolute x 2^60) and ulp x 1e6; mismatch counts.
+__device__ unsigned long long m_worst[32];
+__device__ unsigned long long m_count[8];
+__device__ __forceinline__ void m_max(int i, double v) { atomicMax(&m_worst[i], (unsigned long long)(v * 1152921504606846976.0)); }
+// Units over their domains: 0/1 sqrt.approx (rel) / ftz, 2 x*rsqrt.approx (rel), 3/4 sin.approx on [-pi/4, pi/4]
+// (rel, abs), 5/6 cos.approx (rel, abs), 7 sin.approx abs on [-pi, pi], 8 ex2.approx.ftz rel on [-1/2, 1/2].
+__global__ void math_units(uint32_t base) {
+    uint32_t b = base + blockIdx.x * blockDim.x + threadIdx.x;
+    float x = __uint_as_float(b);
+    if (x > 0.0f && x < INFINITY) {
+        double t = sqrt((double)x);
+        m_max(0, fabs((double)m_sqrt_approx(x) - t) / t);
+        m_max(1, fabs((double)m_sqrt_approx_ftz(x) - t) / t);
+        m_max(2, fabs((double)x * (double)m_rsqrt_approx(x) - t) / t);
+        if (m_sqrt_rn(x) != (float)t || __fsqrt_rn(x) != m_sqrt_rn(x)) atomicAdd(&m_count[0], 1ull);
+    }
+    const float P4 = 0.7854f, P = 3.14159274101f;  // the remainder's range, a little past pi/4
+    if (fabsf(x) <= P4 && x != 0.0f) {
+        double s = sin((double)x), c = cos((double)x);
+        double es = fabs((double)m_sin_approx(x) - s), ec = fabs((double)m_cos_approx(x) - c);
+        m_max(3, es / fabs(s)); m_max(4, es); m_max(5, ec / fabs(c)); m_max(6, ec);
+    }
+    if (fabsf(x) <= P) m_max(7, fabs((double)m_sin_approx(x) - sin((double)x)));
+    if (x >= -0.5f && x <= 0.5f) { double e = exp2((double)x); m_max(8, fabs((double)m_ex2_approx(x) - e) / e); }
+}
+// CUDA's library forms over every finite f32, in ulps of the f64 truth: 9 sqrtf, 10 sinf, 11 cosf, 12 __sinf on
+// [-pi, pi] (absolute x 2^60 there), 13 sinf beyond 2^20.
+__global__ void math_libs(uint32_t base) {
+    uint32_t b = base + blockIdx.x * blockDim.x + threadIdx.x;
+    float x = __uint_as_float(b);
+    if (!(fabsf(x) < INFINITY)) return;
+    auto ulp = [](double t) { double a = fabs(t); return a < 1.1754943508222875e-38 ? ldexp(1.0, -149) : ldexp(1.0, ilogb(a) - 23); };
+    if (x >= 0.0f) { double t = sqrt((double)x); atomicMax(&m_worst[9], (unsigned long long)(fabs((double)sqrtf(x) - t) / ulp(t) * 1e6)); }
+    double s = sin((double)x), c = cos((double)x);
+    atomicMax(&m_worst[fabsf(x) > 1048576.0f ? 13 : 10], (unsigned long long)(fabs((double)sinf(x) - s) / ulp(s) * 1e6));
+    atomicMax(&m_worst[11], (unsigned long long)(fabs((double)cosf(x) - c) / ulp(c) * 1e6));
+    if (fabsf(x) <= 3.14159274101f) m_max(12, fabs((double)__sinf(x) - s));
+}
+// Special values each unit returns: bit 0 sqrt.approx(+0) = +0, 1 (-0) = -0, 2 (+inf) = +inf, 3 (-1) NaN,
+// 4 (NaN) NaN, 5 (-subnormal) NaN; bits 8.. the same for sin.approx: 8 (-0) = -0, 9 (+inf) NaN, 10 (NaN) NaN;
+// 16.. cos.approx: 16 (0) = 1, 17 (+inf) NaN.
+__global__ void math_specials(unsigned* out) {
+    unsigned m = 0;
+    float z = 0.0f, nz = -0.0f, inf = INFINITY, nan = __int_as_float(0x7fc00000), ns = -__int_as_float(1);
+    float r;
+    r = m_sqrt_approx(z); m |= (r == 0.0f && !signbit(r)) << 0;
+    r = m_sqrt_approx(nz); m |= (r == 0.0f && signbit(r)) << 1;
+    r = m_sqrt_approx(inf); m |= (r == inf) << 2;
+    r = m_sqrt_approx(-1.0f); m |= (r != r) << 3;
+    r = m_sqrt_approx(nan); m |= (r != r) << 4;
+    r = m_sqrt_approx(ns); m |= (r != r) << 5;
+    r = m_sin_approx(nz); m |= (r == 0.0f && signbit(r)) << 8;
+    r = m_sin_approx(inf); m |= (r != r) << 9;
+    r = m_sin_approx(nan); m |= (r != r) << 10;
+    r = m_cos_approx(z); m |= (r == 1.0f) << 16;
+    r = m_cos_approx(inf); m |= (r != r) << 17;
+    *out = m;
+}
+// Issue cost: 8 independent chains a thread, `n` steps each; cycles a warp instruction = span / (n * 8) * warps a
+// sub-partition (4 warps a sub-partition: the 128 threads of one block a sub-partition's 32 lanes x 4).
+template <int K>
+__global__ void math_cost(float* out, long long* cyc, int n) {
+    float v[8];
+    for (int j = 0; j < 8; j++) v[j] = 0.1f + 0.01f * (threadIdx.x + j);
+    long long t0 = clock64();
+    for (int i = 0; i < n; i++) {
+#pragma unroll
+        for (int j = 0; j < 8; j++) {
+            float a = v[j];
+            if (K == 0) a = __fmaf_rn(a, 0.999f, 0.0001f);
+            if (K == 1) a = m_sqrt_approx(a) + 0.5f;
+            if (K == 2) a = m_sqrt_rn(a) + 0.5f;
+            if (K == 3) a = m_sin_approx(a) * 0.5f;
+            if (K == 4) a = m_cos_approx(a) * 0.5f;
+            if (K == 5) a = m_ex2_approx(a) * 0.25f;
+            if (K == 6) a = m_rsqrt_approx(a) + 0.5f;
+            v[j] = a;
+        }
+    }
+    long long t1 = clock64();
+    float s = 0; for (int j = 0; j < 8; j++) s += v[j];
+    out[blockIdx.x * blockDim.x + threadIdx.x] = s;
+    if (threadIdx.x == 0) cyc[blockIdx.x] = t1 - t0;
+}
+template <int K> static double math_cost_run(float* o, long long* c) {
+    const int n = 4096;
+    math_cost<K><<<sms, 512>>>(o, c, n); CK(cudaDeviceSynchronize());
+    math_cost<K><<<sms, 512>>>(o, c, n); CK(cudaDeviceSynchronize());
+    std::vector<long long> h(sms); CK(cudaMemcpy(h.data(), c, sms * 8, cudaMemcpyDeviceToHost));
+    double cy = 0; for (auto x : h) cy += x; cy /= sms;
+    // 512 threads = 16 warps an SM, 4 a sub-partition; 8 ops a thread-step, each a dependent op + 1 FMA/FMUL/FADD.
+    return cy / ((double)n * 8) / 4.0;
+}
+static void math_run() {
+    unsigned long long z[32] = {0}, zc[8] = {0};
+    CK(cudaMemcpyToSymbol(m_worst, z, sizeof z)); CK(cudaMemcpyToSymbol(m_count, zc, sizeof zc));
+    for (uint64_t b = 0; b < (1ull << 32); b += (1ull << 30)) {
+        math_units<<<(1u << 30) / 256, 256>>>((uint32_t)b);
+        math_libs<<<(1u << 30) / 256, 256>>>((uint32_t)b);
+    }
+    CK(cudaDeviceSynchronize());
+    unsigned long long w[32], cnt[8];
+    CK(cudaMemcpyFromSymbol(w, m_worst, sizeof w)); CK(cudaMemcpyFromSymbol(cnt, m_count, sizeof cnt));
+    unsigned* sp; unsigned spec = 0; CK(cudaMalloc(&sp, 4)); math_specials<<<1, 1>>>(sp); CK(cudaMemcpy(&spec, sp, 4, cudaMemcpyDeviceToHost)); CK(cudaFree(sp));
+    auto e = [&](int i) { double v = w[i] / 1152921504606846976.0; return v; };
+    auto l2 = [&](double v) { return v > 0 ? log2(v) : -999.0; };
+    float* o; long long* c; CK(cudaMalloc(&o, sms * 512 * 4)); CK(cudaMalloc(&c, 4096 * 8));
+    double cf = math_cost_run<0>(o, c), cq = math_cost_run<1>(o, c), cr = math_cost_run<2>(o, c), cs = math_cost_run<3>(o, c),
+           cc = math_cost_run<4>(o, c), ce = math_cost_run<5>(o, c), crs = math_cost_run<6>(o, c);
+    CK(cudaFree(o)); CK(cudaFree(c));
+    printf("math unit=sqrt.approx.f32 dom=(0,inf) rel=%.4e rel_log2=%.3f specials=%s cycles=%.2f ffma_cycles=%.2f\n", e(0), l2(e(0)),
+           (spec & 0x3f) == 0x3f ? "ok" : "no", cq, cf);
+    printf("math unit=sqrt.approx.ftz.f32 dom=(0,inf) rel=%.4e rel_log2=%.3f (subnormal inputs flush)\n", e(1), l2(e(1)));
+    printf("math unit=x*rsqrt.approx.f32 dom=(0,inf) rel=%.4e rel_log2=%.3f cycles=%.2f\n", e(2), l2(e(2)), crs);
+    printf("math unit=sqrt.rn.f32 dom=(0,inf) mismatches_vs_correctly_rounded=%llu cycles=%.2f\n", cnt[0], cr);
+    printf("math unit=sin.approx.f32 dom=[-0.7854,0.7854] rel=%.4e rel_log2=%.3f abs=%.4e abs_log2=%.3f abs_pi=%.4e abs_pi_log2=%.3f specials=%s cycles=%.2f\n",
+           e(3), l2(e(3)), e(4), l2(e(4)), e(7), l2(e(7)), (spec & 0x700) == 0x700 ? "ok" : "no", cs);
+    printf("math unit=cos.approx.f32 dom=[-0.7854,0.7854] rel=%.4e rel_log2=%.3f abs=%.4e abs_log2=%.3f specials=%s cycles=%.2f\n",
+           e(5), l2(e(5)), e(6), l2(e(6)), (spec & 0x30000) == 0x30000 ? "ok" : "no", cc);
+    printf("math unit=ex2.approx.ftz.f32 dom=[-1/2,1/2] rel=%.4e rel_log2=%.3f units_2^-24=%.3f cycles=%.2f\n", e(8), l2(e(8)), e(8) * 16777216.0, ce);
+    printf("math lib sqrtf_ulp=%.4f sinf_ulp=%.4f sinf_ulp_beyond_2^20=%.4f cosf_ulp=%.4f __sinf_abs_pi=%.4e (2^%.3f) specials_mask=0x%x\n",
+           w[9] / 1e6, w[10] / 1e6, w[13] / 1e6, w[11] / 1e6, e(12), l2(e(12)), spec);
+}
 int main(int argc, char** argv) {
     cudaDeviceProp p; CK(cudaGetDeviceProperties(&p, 0)); sms = p.multiProcessorCount;
     CK(cudaDeviceGetAttribute(&clk_khz, cudaDevAttrClockRate, 0));
@@ -811,5 +951,6 @@ int main(int argc, char** argv) {
     if (on("body")) body_run(p.major * 10 + p.minor);
     if (on("bar")) bar_run();
     if (on("matrix")) matrix_run();
+    if (on("math")) math_run();
     return 0;
 }

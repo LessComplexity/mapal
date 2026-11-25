@@ -9,3 +9,4 @@ crate-type = ["staticlib", "rlib"]
 [dev-dependencies]
 mapal-ir = { path = "../mapal-ir" }
 mapal-interp = { path = "../mapal-interp" }
+tempfile = "3.27.0"

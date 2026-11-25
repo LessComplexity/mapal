@@ -17,10 +17,10 @@
 //! SCC), rejected as [`EmitError::Unsupported`] — the same scope boundary as
 //! interp M1 / rewrite.
 
-mod exp;
 pub mod flags;
 mod func;
 mod loops;
+mod math;
 mod module;
 mod narrow;
 mod profile;
@@ -708,6 +708,13 @@ pub struct GpuRungs {
     /// measured `ex2` error meets the bound (`profile::Caps::ex2`). Off
     /// (`--gpu-off=exp-hw`, `--no-exp-hw`): the oracle's steps on every face.
     pub exp_hw: bool,
+    /// math builtins (ADR-0046 D10): on the default face every math builtin
+    /// takes the cheapest realization its contract admits from the side's
+    /// declared units and definitions (`sqrt.approx`, the `ex2` form, a
+    /// target's routine). Off (`--gpu-off=math-hw`, `--no-math-hw`): the exact
+    /// face's choice on every face — the reference, or an `Exact` unit (IEEE
+    /// `sqrt`).
+    pub math_hw: bool,
     /// exp (ADR-0042 D7, a fact arm, `mapal_ir::FactArms`): `fold_combine`'s
     /// rescale law — a value read only through `exp` of a difference lets a
     /// block's partial take its own shift (online softmax in `row-slices`).
@@ -1188,6 +1195,7 @@ impl GpuRungs {
         piece_delta: true,
         head_group: true,
         exp_hw: true,
+        math_hw: true,
         exp_rescale: true,
         narrow_tile: true,
         streamk_fill: true,
@@ -1245,7 +1253,7 @@ impl GpuRungs {
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 148] = [
+    pub const NAMES: [&'static str; 149] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1341,6 +1349,7 @@ impl GpuRungs {
         "piece-delta",
         "head-group",
         "exp-hw",
+        "math-hw",
         "exp-rescale",
         "narrow-tile",
         "streamk-fill",
@@ -1494,6 +1503,7 @@ impl GpuRungs {
             "piece-delta" => &mut self.piece_delta,
             "head-group" => &mut self.head_group,
             "exp-hw" => &mut self.exp_hw,
+            "math-hw" => &mut self.math_hw,
             "exp-rescale" => &mut self.exp_rescale,
             "narrow-tile" => &mut self.narrow_tile,
             "streamk-fill" => &mut self.streamk_fill,
@@ -2244,6 +2254,14 @@ fn emit_module(
     if funcs.contains("@mapal_rt_alloc") {
         out.push_str(HEAP_DECLS);
     }
+    // ADR-0045: the read seam and the recorded data directory, gated on the
+    // emitted call (a module without a read is byte-identical to before).
+    if funcs.contains("@mapal_read(") {
+        out.push_str(crate::module::READ_DECL);
+    }
+    if funcs.contains("@mapal_read_task(") {
+        out.push_str(crate::module::READ_TASK_DECL);
+    }
     // fold-algebra: an explicit-face pair is one `llvm.fma` (gated on the call).
     for (call, decl) in [
         (
@@ -2259,12 +2277,18 @@ fn emit_module(
             out.push_str(decl);
         }
     }
-    // ADR-0042: the host's `exp` definitions, for the widths a body calls.
+    // ADR-0042 / ADR-0046: the host's math definitions, for the builtins and
+    // widths a body calls (the host's declared units: its IEEE `sqrt`).
     {
-        let hw = crate::func::gpu::host_rungs(profile, opts.contract, opts.gpu).exp_hw;
-        let free = opts.order == Order::Free;
-        let real = crate::exp::choose(free, opts.contract, hw, None);
-        out.push_str(&crate::exp::defs(&funcs, real));
+        let r = crate::func::gpu::host_rungs(profile, opts.contract, opts.gpu);
+        let side = crate::math::Side {
+            free: opts.order == Order::Free,
+            contract: opts.contract,
+            hw: r.math_hw,
+            exp_hw: r.exp_hw,
+            target: &profile.math,
+        };
+        out.push_str(&crate::math::defs(&funcs, side));
     }
     // ADR-0043: the host's narrow roundings, for the formats a body rounds to.
     out.push_str(&crate::narrow::defs(&funcs, false, false).0);
@@ -2338,7 +2362,10 @@ fn emit_module(
     }
     out.push('\n');
 
-    let sg = emit_str_globals(&strings);
+    let mut sg = emit_str_globals(&strings);
+    if funcs.contains(crate::module::DATA_DIR_GLOBAL) {
+        sg.push_str(&crate::module::data_dir_global(ir.data_dir().unwrap_or("")));
+    }
     if !sg.is_empty() {
         out.push_str(&sg);
         out.push('\n');

@@ -63,9 +63,38 @@ local cases = {
   -- them unchanged. The leading `-` is different — it falls to flowOperator the moment
   -- the guard rule stops matching. Found by deliberately breaking a guard and watching
   -- this suite pass.
+  -- ADR-0045: the file read is a builtin stage fed by a string literal.
+  { 48, "read", "flowBuiltin", "read (ADR-0045)" },
+  { 48, '"', "flowString", "the path literal" },
+  { 49, "widen_f32", "flowBuiltin", "widening a read bf16" },
+
+  -- ADR-0042 / ADR-0046: the math builtins are builtins mid-pipeline, never
+  -- the between-arrows binding or a declared fn.
+  { 53, "sqrt", "flowBuiltin", "sqrt (ADR-0046)" },
+  { 53, "r", "flowBinding", "binding after sqrt" },
+  { 54, "sin", "flowBuiltin", "sin (ADR-0046)" },
+  { 55, "cos", "flowBuiltin", "cos (ADR-0046)" },
+  { 55, "c", "flowBinding", "binding after cos" },
+  { 56, "exp", "flowBuiltin", "exp (ADR-0042)" },
+
   { 18, 9, "flowGuardArrow", "chrome of -true->" },
   { 38, 9, "flowGuardArrow", "chrome of -0->" },
   { 41, 9, "flowGuardArrow", "chrome of -Some(x)->" },
+
+  -- ADR-0047 size parameters: the list after a function's name.
+  { 60, "scale", "flowFnName", "a size-generic fn keeps its name colour" },
+  { 60, 9, "flowSizeList", "the `<` opening the size list, not an operator" },
+  { 60, "rows", "flowSizeParam", "a declared size parameter" },
+  { 60, "columns", "flowSizeParam", "the second size parameter" },
+  { 60, 23, "flowSizeList", "the `>` closing the size list" },
+
+  -- ADR-0048: a top-level binding, a size-generic type, `_`, a type's sizes.
+  { 64, "hidden_size", "flowBinding", "a top-level binding binds like a local" },
+  { 66, 12, "flowSizeList", "the `<` opening a type's size list" },
+  { 66, "rows", "flowSizeParam", "a type's size parameter" },
+  { 67, 5, "flowDefaultField", "`_`, the type's default interpretation" },
+  { 70, 19, "flowSizeArgs", "the `<` of a generic type's sizes, not an operator" },
+  { 70, "hidden_size", "flowSizeParam", "a top-level size as a type's size" },
 }
 
 local failures = 0

@@ -164,12 +164,20 @@ pub fn emit_with_opts(ir: &CategoryIr, opts: &EmitOpts) -> Result<String, EmitEr
         "// DESIGN §4 (amended S24b, Sapir): -fmad=true is the product/perf default; conformance runs pin -fmad=false for oracle bit-parity. Host -march=native/-mfma stays forbidden in conformance.\n\n",
     );
     out.push_str(PRELUDE);
-    // ADR-0042: the oracle's `exp`, where the program has one.
-    if ir
+    // ADR-0042 / ADR-0046: the math builtins' references, where the program
+    // has one.
+    let math: std::collections::BTreeSet<(mapal_ir::MathFn, u32)> = ir
         .morphisms()
-        .any(|(_, m)| m.op == mapal_ir::Operation::Exp)
-    {
-        out.push_str(&module::exp_helpers());
+        .filter_map(|(_, m)| match m.op {
+            mapal_ir::Operation::Math(f) => match ir.object(m.target).map(|o| &o.ty) {
+                Some(mapal_ir::Ty::Float { bits }) => Some((f, u32::from(*bits))),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect();
+    if !math.is_empty() {
+        out.push_str(&module::math_helpers(&math));
     }
     // ADR-0043: narrow storage types, where the program has one.
     if ir.objects().any(|(_, o)| ty_has_narrow(&o.ty)) {

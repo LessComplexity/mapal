@@ -62,6 +62,19 @@ pub enum Outcome {
     Diverged,
     /// A defined runtime trap fired (ADR-0013).
     Trapped(TrapKind),
+    /// ADR-0045 D4: a `read` failed — the file is missing, unreadable, or not
+    /// exactly `n · |T|` bytes. The message names the resolved file (and the
+    /// expected and actual byte counts); every backend prints the same one
+    /// and exits [`mapal_ir::read::EXIT_CODE`].
+    ReadFailed(String),
+}
+
+thread_local! {
+    /// The message of the read failure an [`Abort::ReadFailed`] carries
+    /// (the abort is `Copy`; the message is set where the read fails and
+    /// taken where the abort becomes an [`Outcome`]).
+    pub(crate) static READ_FAILURE: std::cell::RefCell<Option<String>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 /// The internal abort carrier: every per-op happy path threads
@@ -72,6 +85,8 @@ pub enum Abort {
     Diverged,
     /// A trap fired.
     Trapped(TrapKind),
+    /// ADR-0045: a read failed ([`READ_FAILURE`] holds its message).
+    ReadFailed,
 }
 
 impl Abort {
@@ -80,6 +95,11 @@ impl Abort {
         match self {
             Abort::Diverged => Outcome::Diverged,
             Abort::Trapped(k) => Outcome::Trapped(k),
+            Abort::ReadFailed => Outcome::ReadFailed(
+                READ_FAILURE
+                    .with(|r| r.borrow_mut().take())
+                    .unwrap_or_else(|| "mapal: read failed".into()),
+            ),
         }
     }
 }

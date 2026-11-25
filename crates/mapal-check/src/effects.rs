@@ -47,7 +47,10 @@ pub fn check(source: &str, program: &Program, ir: &CategoryIr, out: &mut Vec<syn
             .object(fd.output)
             .map(|o| ty_contains_token(&o.ty))
             .unwrap_or(false);
-        effectful.insert(fd.name.as_str(), in_tok || out_tok);
+        // ADR-0047 D6: an instance `f<4, 8>` is its generic `f`'s effect (the
+        // same for every size tuple); calls name the base.
+        let base = fd.name.split_once('<').map_or(fd.name.as_str(), |(b, _)| b);
+        effectful.insert(base, in_tok || out_tok);
     }
 
     // 2. Tree walk, one fn at a time, carrying scope + illegal-effect context.
@@ -202,7 +205,7 @@ impl Walk<'_> {
         if !in_fanout {
             return;
         }
-        if is_print_builtin(text) || is_time_builtin(text) {
+        if is_print_builtin(text) || is_time_builtin(text) || is_read_builtin(text) {
             self.out.push(diag(
                 TCode::EffectInFanout,
                 span,
@@ -235,6 +238,11 @@ fn is_print_builtin(name: &str) -> bool {
 /// reason `print` is: it threads the IO token. Same local-copy rule as above.
 fn is_time_builtin(name: &str) -> bool {
     name == "time"
+}
+
+/// The `read` stage builtin (ADR-0045) — effectful: it threads the IO token.
+fn is_read_builtin(name: &str) -> bool {
+    name == "read"
 }
 
 /// The text of a `Name` (a bare span into `source`), same as lower's helper.

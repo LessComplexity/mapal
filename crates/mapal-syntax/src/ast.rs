@@ -30,19 +30,39 @@ pub struct Program {
     pub span: SourceLoc,
 }
 
-/// A top-level item: a function or type declaration (DESIGN §14.1). `Error`
-/// holds a recovery region (e.g. a top-level statement, ⟦P0012⟧).
+/// A top-level item: a function or type declaration, or a top-level binding
+/// (ADR-0048 D1) (DESIGN §14.1). `Error` holds a recovery region (e.g. a
+/// top-level statement that is not a chain, ⟦P0012⟧).
+// One `FnDecl` per function and a handful per file: boxing it would cost every
+// consumer a deref for no measurable saving.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Item {
     Fn(FnDecl),
     Type(TypeDecl),
+    /// ADR-0048 D1: `2048 -> hidden_size;` — a chain at the top level whose
+    /// binding stages name program-wide immutable values.
+    Bind(TopBind),
     Error(SourceLoc),
 }
 
-/// `fn-decl := 'fn' IDENT '(' params? ')' ( '->' type )? block` (DESIGN §14.1).
+/// ADR-0048 D1: a top-level binding statement — one chain (`;`-terminated)
+/// whose `-> name` stages bind program-wide values. Order-independent, never
+/// `mut`, never effectful (lowering checks: L1801–L1808).
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct TopBind {
+    pub chain: Chain,
+    pub span: SourceLoc,
+}
+
+/// `fn-decl := 'fn' IDENT sizes? '(' params? ')' ( '->' type )? block`
+/// (DESIGN §14.1; `sizes := '<' IDENT (',' IDENT)* ','? '>'`, ADR-0047 D1).
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct FnDecl {
     pub name: Name,
+    /// ADR-0047: the size parameters `<rows, columns>` in declared order;
+    /// empty for a fixed-size function.
+    pub sizes: Vec<Name>,
     pub params: Vec<Param>,
     pub ret_ty: Option<Ty>,
     pub body: Block,
@@ -80,6 +100,9 @@ pub struct Param {
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TypeDecl {
     pub name: Name,
+    /// ADR-0048 D4: the size parameters `type Matrix<rows, columns>`; empty
+    /// for a fixed-size type.
+    pub sizes: Vec<Name>,
     pub fields: Vec<Field>,
     pub span: SourceLoc,
 }
@@ -105,21 +128,65 @@ pub struct Ty {
     pub span: SourceLoc,
 }
 
-/// The shape of a type (DESIGN §14.2). Generic args (⟦P0103⟧) keep their base
-/// `Named`; `Dynamic` (`[T]`, ⟦P0104⟧) is kept for span-precise rejection.
+/// The shape of a type (DESIGN §14.2). Size arguments (`Matrix<64, n>`,
+/// ADR-0048 D4) are `Generic`; arguments that are not size expressions keep
+/// their base `Named` (⟦P0103⟧); `Dynamic` (`[T]`, ⟦P0104⟧) is kept for
+/// span-precise rejection.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum TyKind {
     /// `i32`, `Pixel`, …; also the kept base of ⟦P0103⟧ generics.
     Named(Name),
+    /// ADR-0048 D4: a size-generic type at its sizes, `Matrix<rows, 64 * 4>`
+    /// — one size expression per declared size parameter.
+    Generic {
+        name: Name,
+        args: Vec<SizeExpr>,
+    },
     Tuple(Vec<Ty>),
     Array {
         elem: Box<Ty>,
+        /// The length when written as one integer literal (`[T; 4096]`); 0
+        /// when `size` holds an expression.
         len: u64,
         len_span: SourceLoc,
+        /// ADR-0047 D2: a length written as a size expression
+        /// (`[T; rows * columns]`, `[T; 64 * 64]`); `None` for a literal.
+        size: Option<SizeExpr>,
     },
     /// `[T]` — kept, P0104 reported.
     Dynamic(Box<Ty>),
     Error,
+}
+
+/// ADR-0047 D2: an array length over integer literals and the function's
+/// size parameters — `size := term (('+' | '-') term)*`, `term := atom ('*'
+/// atom)*`, `atom := INT | IDENT | '(' size ')'`. Parentheses only group.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct SizeExpr {
+    pub kind: SizeKind,
+    pub span: SourceLoc,
+}
+
+/// The shape of a [`SizeExpr`].
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum SizeKind {
+    Int(u64),
+    /// A size parameter (resolved by lowering; an undeclared one is L1701).
+    Name(Name),
+    Binary {
+        op: SizeOp,
+        lhs: Box<SizeExpr>,
+        rhs: Box<SizeExpr>,
+    },
+}
+
+/// The operators a size expression admits: the ones whose unknown operand is
+/// recovered exactly from the result (ADR-0047 D2; `/` and `%` are P0119).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SizeOp {
+    Add,
+    Sub,
+    Mul,
 }
 
 /// `block := '{' block-item* tail? '}'` (DESIGN §14.3).

@@ -125,7 +125,8 @@ pub fn replay(ir: &CategoryIr, plan: &RewritePlan) -> Result<CategoryIr, ReplayE
 
     let entry = fmap[ir.entry()];
     Ok(b.seal(entry)
-        .expect("replay: seal rejected a builder-built graph"))
+        .expect("replay: seal rejected a builder-built graph")
+        .with_data_dir(ir.data_dir().map(str::to_string)))
 }
 
 /// Rebuild one function's body (DESIGN §1.1). Phase A reconstructs body objects
@@ -218,6 +219,26 @@ fn reconstruct_a(
             remap.insert(o, new);
             done.insert(o, true);
         }
+        ObjectKind::LoopMerge if plan.drop_loops.contains_key(o) => {
+            // ADR-0048 D3: a loop compile-time evaluation ran to its end that
+            // nothing reads: not replayed (its read exits are constants).
+            let lp = ir.loop_plan(ir.owner(o), o).expect("canonical loop");
+            done.insert(o, true);
+            for &x in &lp.scc_objects {
+                done.insert(x, true);
+            }
+            for &m in lp
+                .decide_order
+                .iter()
+                .chain(&lp.advance_order)
+                .chain(&lp.exits)
+            {
+                let t = ir.morphism(m).expect("loop edge").target;
+                if !plan.constify.contains_key(t) && !plan.embed.contains_key(t) {
+                    done.insert(t, true);
+                }
+            }
+        }
         ObjectKind::LoopMerge => {
             reconstruct_loop(
                 fb, ir, plan, fmap, fused, lifted, remap, done, obj_order, o, ret_obj, ret_dest,
@@ -238,6 +259,12 @@ fn reconstruct_a(
                 done.insert(o, true);
                 return;
             }
+            if let Some(v) = plan.embed.get(o) {
+                let new = materialize(fb, &obj.ty, v, obj.loc).expect("replay: embed");
+                remap.insert(o, new);
+                done.insert(o, true);
+                return;
+            }
             if is_internal_pack(ir, o) {
                 // Rebuilt internally by its consuming primitive; not materialized.
                 done.insert(o, true);
@@ -246,6 +273,44 @@ fn reconstruct_a(
             reconstruct_temp(fb, ir, plan, fmap, fused, lifted, remap, o);
             done.insert(o, true);
         }
+    }
+}
+
+/// ADR-0048 D3: a value of type `ty` as constants packed slot by slot.
+fn materialize(
+    fb: &mut mapal_ir::FnBuilder<'_>,
+    ty: &mapal_ir::Ty,
+    v: &mapal_interp::RValue,
+    loc: mapal_ir::SourceLoc,
+) -> Result<ObjectId, mapal_ir::IrError> {
+    use mapal_interp::RValue;
+    use mapal_ir::{Dest, Ty};
+    match (ty, v) {
+        (_, RValue::Scalar(x)) => fb.constant(x.clone(), loc),
+        (Ty::Array { elem, .. }, RValue::Array(es)) => {
+            let comps = es
+                .iter()
+                .map(|e| materialize(fb, elem, e, loc))
+                .collect::<Result<Vec<_>, _>>()?;
+            fb.pack_array(&comps, Dest::Fresh(None), loc)
+        }
+        (Ty::Tuple(ts), RValue::Tuple(es)) => {
+            let comps = ts
+                .iter()
+                .zip(es)
+                .map(|(t, e)| materialize(fb, t, e, loc))
+                .collect::<Result<Vec<_>, _>>()?;
+            fb.pack(&comps, Dest::Fresh(None), loc)
+        }
+        (Ty::Struct { fields, .. }, RValue::Struct { fields: vs, .. }) => {
+            let comps = fields
+                .iter()
+                .zip(vs)
+                .map(|((_, t), (_, e))| materialize(fb, t, e, loc))
+                .collect::<Result<Vec<_>, _>>()?;
+            fb.pack_struct(ty.clone(), &comps, Dest::Fresh(None), loc)
+        }
+        _ => Err(mapal_ir::IrError::EmptyProduct),
     }
 }
 
@@ -560,9 +625,9 @@ fn emit_op(
         Neg | Not => fb
             .unop(op, feed(plan, remap, src), dest, loc)
             .expect("replay: unop"),
-        Exp => fb
-            .exp(feed(plan, remap, src), dest, loc)
-            .expect("replay: exp"),
+        Math(f) => fb
+            .math(f, feed(plan, remap, src), dest, loc)
+            .expect("replay: math"),
         Widen => {
             let out_ty = ir.object(target).expect("replay: Widen target").ty.clone();
             fb.widen(feed(plan, remap, src), out_ty, dest, loc)
@@ -676,6 +741,18 @@ fn emit_op(
             // effectful, so replay only has to rebuild it faithfully.
             fb.time_ms(feed(plan, remap, src), loc)
                 .expect("replay: time_ms")
+        }
+        Read => {
+            // ADR-0045: (token, path) → the fresh `(IoToken, array)` pair,
+            // the array type the original target's. Effectful: rebuilt as is.
+            let f = slot_feeders(ir, src);
+            let (tok, path) = (feed(plan, remap, f[0]), feed(plan, remap, f[1]));
+            let array = ir
+                .object(target)
+                .and_then(|o| o.ty.component_ty(1))
+                .cloned()
+                .expect("replay: a read's target is (token, array)");
+            fb.read(tok, path, &array, loc).expect("replay: read")
         }
         Pair { .. } | Output | LoopEnter | LoopBack | LoopExit => {
             unreachable!("emit_op: {op:?} is not an object-defining primitive")
@@ -799,7 +876,9 @@ fn inline_call(
     }
 
     // Phase B — the callee's Return writers, redirected.
-    inline_return(fb, ir, plan, fmap, &local, m, ret_obj, ret_dest, arg)
+    inline_return(
+        fb, ir, plan, fmap, fused, lifted, &local, m, ret_obj, ret_dest, arg,
+    )
 }
 
 /// Phase B of an inlined call: wire the callee's Return writers per `ret_dest`
@@ -813,6 +892,8 @@ fn inline_return(
     ir: &CategoryIr,
     plan: &RewritePlan,
     fmap: &SecondaryMap<FuncId, FuncId>,
+    fused: &SecondaryMap<MorphismId, FuncId>,
+    lifted: &SecondaryMap<ObjectId, FuncId>,
     local: &SecondaryMap<ObjectId, ObjectId>,
     call: MorphismId,
     ret_obj: ObjectId,
@@ -882,6 +963,14 @@ fn inline_return(
                 arg
             }
         },
+        // A callee whose Return is written by a call that is itself inlined
+        // (`fn f(x) { x -> g -> ret; }`): substitute that callee too, with
+        // the same destination — as `replay_fn` does for its own Return
+        // writers. Emitting it as a `Call` would name a function the plan
+        // dropped.
+        Operation::Call(_) if plan.inline.contains_key(writers[0]) => inline_call(
+            fb, ir, plan, fmap, fused, lifted, local, writers[0], ret_dest,
+        ),
         op => {
             let dest = match ret_dest {
                 RetDest::Fresh(name) => Dest::Fresh(name),
@@ -925,6 +1014,7 @@ fn reads_packed_source(op: Operation) -> bool {
         | Zip
         | Update
         | Print { .. }
+        | Read
         | LoopBack
         | LoopExit => true,
         Map { captures, .. } | Fold { captures, .. } => captures > 0,

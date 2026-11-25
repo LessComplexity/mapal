@@ -143,6 +143,16 @@ pub enum Operation {
     /// token-threaded exactly like `Print`, so it is never reordered, folded,
     /// CSE'd, or DCE'd.
     TimeMs,
+    /// `(IoToken × Str) → (IoToken × [T; n])` — the effectful file read
+    /// (ADR-0045): the source pairs the token with the path literal (a `Str`
+    /// constant, the print pair's shape); the target pairs the next token
+    /// with the array, whose type the binding's annotation gave — `n`
+    /// little-endian elements of `T ∈ {i32, i64, u8, f32, f64, bf16, f16}`,
+    /// exactly `n · |T|` bytes. Token-threaded like `Print` / `TimeMs`, so it
+    /// is never reordered, folded, CSE'd or DCE'd; the array it yields is an
+    /// ordinary immutable value. A relative path resolves per
+    /// [`crate::read::resolve`] against [`CategoryIr::data_dir`].
+    Read,
     // loops (§7) — the inline-cycle realization of `Tr^U`
     /// `U → U`, init value → LoopMerge.
     LoopEnter,
@@ -161,11 +171,19 @@ pub enum Operation {
     /// ([`crate::narrow::round`]): the `to_bf16` / `to_f16` builtins. Pure —
     /// no token; total and trap-free.
     Narrow,
-    /// `eˣ` on a float scalar, `Float{b} → Float{b}` (ADR-0042): the
-    /// `x -> exp` pipeline builtin. Pure — no token; total and trap-free. Its
-    /// value is [`crate::exp`]'s algorithm on the exact faces and within that
-    /// module's bound on the default face.
-    Exp,
+    /// A math builtin on a float scalar, `Float{b} → Float{b}` (ADR-0046;
+    /// `exp` ADR-0042): the `x -> exp` / `sqrt` / `sin` / `cos` pipeline
+    /// builtins. Pure — no token; total and trap-free. Its value is
+    /// [`crate::math`]'s reference on the exact faces and within its
+    /// contract on the default face.
+    Math(crate::math::MathFn),
+}
+
+impl Operation {
+    /// ADR-0042's `exp`, now one member of [`Operation::Math`] (every reader
+    /// of the operation keeps its meaning).
+    #[allow(non_upper_case_globals)]
+    pub const Exp: Operation = Operation::Math(crate::math::MathFn::Exp);
 }
 
 /// A directed dataflow edge (DESIGN §5). Exactly one source, one target (I1).
@@ -279,6 +297,10 @@ pub struct CategoryIr {
     pub(crate) facts: crate::facts::Facts,
     /// ADR-0041 D1: each float product's admitted set, where it is not `{f32}`.
     pub(crate) precision: SecondaryMap<MorphismId, Precision>,
+    /// ADR-0045 D5: the directory a relative `read` path resolves against —
+    /// the program's source directory, recorded by the driver at compile
+    /// time (`None`: the working directory at run time).
+    pub(crate) data_dir: Option<String>,
 }
 
 impl std::fmt::Debug for CategoryIr {
@@ -357,5 +379,19 @@ impl CategoryIr {
     /// The entry function (DESIGN §2). Always `FuncKind::Named`.
     pub fn entry(&self) -> FuncId {
         self.entry
+    }
+
+    /// ADR-0045 D5: the directory a relative `read` path resolves against,
+    /// when the driver recorded one ([`Self::with_data_dir`]).
+    pub fn data_dir(&self) -> Option<&str> {
+        self.data_dir.as_deref()
+    }
+
+    /// The same graph with its `read` base directory recorded (ADR-0045 D5):
+    /// the driver passes the program's source directory; a rewrite carries
+    /// it to the graph it rebuilds. Not part of the graph's identity.
+    pub fn with_data_dir(mut self, dir: Option<String>) -> Self {
+        self.data_dir = dir;
+        self
     }
 }

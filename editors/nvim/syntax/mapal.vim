@@ -52,13 +52,18 @@ syn keyword flowKeyword fn type loop seq mut void
 "   zip/enumerate      pure collection ops (ADR-0018)
 "   iota/fill          procedural sources (ADR-0029 stage 2)
 "   widen_i64/f32/f64  the widening family (ADR-0029 amendment)
+"   exp/sqrt/sin/cos   the math builtins (ADR-0042, ADR-0046)
 "   time               clock read (plan-time-builtin); no CUDA seam
+"   read               file read (ADR-0045): "file.bin" -> read -> name: [T; n]
 "   print/println      the two effects (ADR-0015 — println appends a newline)
 syn keyword flowBuiltin map fold print println zip enumerate iota fill
-syn keyword flowBuiltin widen_i64 widen_f32 widen_f64 exp to_bf16 to_f16 time
+syn keyword flowBuiltin widen_i64 widen_f32 widen_f64 exp sqrt sin cos to_bf16 to_f16 time read
 
 " Boolean literals.
 syn keyword flowBoolean true false
+
+" ADR-0048 D5: `_`, a type's default interpretation (`type Hidden { _: … }`).
+syn match flowDefaultField "\<_\>"
 
 " ---------------------------------------------------------------------------
 " ret  — the graph sink (function return object). Highlight as Special.
@@ -191,6 +196,21 @@ syn match flowOperator "[+\-*/%=!<>]\|==\|!=\|<=\|>=\|&&\|||"
 syn match flowArrow "->\|<-"
 
 " ---------------------------------------------------------------------------
+" Size parameters (ADR-0047)  (DEFINED AFTER operators so `<` / `>` read as
+" the list's delimiters, not comparisons)
+" ---------------------------------------------------------------------------
+" `fn project<rows, columns>(…)`: the list right after a function's name. The
+" names are the instance's sizes — integer constants in the body — so they read
+" as Constant; the angle brackets as Delimiter. Lookbehind starts the match at
+" the `<` (flowFnName owns the name before it).
+" ADR-0048 D4: a size-generic type at its sizes, `Matrix<hidden_size, 64>` —
+" a PascalCase type name followed by the size list (its names are sizes).
+" Defined before the declaration list, which wins at `type Matrix<rows, …>`.
+syn match flowSizeArgs "\%(\<\u\w*\)\@<=<[^<>]*>" contains=flowSizeParam,flowNumber
+syn match flowSizeList "\%(\<\%(fn\|type\)\s\+\h\w*\s*\)\@<=<[^<>]*>" contains=flowSizeParam
+syn match flowSizeParam contained "\h\w*"
+
+" ---------------------------------------------------------------------------
 " Guard arrows  (DEFINED LAST so they win over flowArrow and the `-` operator)
 " ---------------------------------------------------------------------------
 " SPLIT COLORING (CHANGE 1): the outer flowGuardArrow match links to Statement,
@@ -259,6 +279,10 @@ hi default link flowBinding    Identifier
 hi default link flowLabel      Label
 hi default link flowLabelJump  Label
 hi default link flowOperator   Operator
+hi default link flowSizeList   Delimiter
+hi default link flowSizeArgs   Delimiter
+hi default link flowSizeParam  Constant
+hi default link flowDefaultField Special
 hi default link flowArrow      Statement
 " Guard CHROME reads as flow plumbing — same as flowArrow (CHANGE 1).
 hi default link flowGuardArrow    Statement

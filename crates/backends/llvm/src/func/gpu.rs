@@ -5167,13 +5167,22 @@ pub(crate) fn device_module(
         out.push_str(&decls);
         out.push_str(super::calls::GSYNC);
     }
-    // ADR-0042: the device's `exp` definitions, for the widths a body calls —
-    // the hardware form where the part's measured `ex2` error meets the bound.
+    // ADR-0042 / ADR-0046: the device's math definitions, for the builtins
+    // and widths a body calls — each the cheapest realization the part's
+    // declared units admit on the face (`ex2` where its measured error meets
+    // `exp`'s bound).
     {
-        let hw = host_rungs(profile, contract, arms).exp_hw;
-        let ex2 = profile.gpu().map(|g| g.caps.ex2);
-        let real = crate::exp::choose(order == Order::Free, contract, hw, ex2);
-        let defs = crate::exp::defs(&out, real);
+        let r = host_rungs(profile, contract, arms);
+        let none = mapal_ir::math::Target::NONE;
+        let target = profile.gpu().map_or(&none, |g| &g.caps.math);
+        let side = crate::math::Side {
+            free: order == Order::Free,
+            contract,
+            hw: r.math_hw,
+            exp_hw: r.exp_hw,
+            target,
+        };
+        let defs = crate::math::defs(&out, side);
         out.push_str(&defs);
     }
     // ADR-0043: the device's narrow roundings (`cvt.rn`).

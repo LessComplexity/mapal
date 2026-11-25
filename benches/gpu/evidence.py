@@ -110,6 +110,8 @@ EXTRA = [('atom_add', r'^atom\.(?:\w+\.)*?add\.f'), ('red_add', r'^red\.(?:\w+\.
          ('ld_global_vec', r'^ld\.global(\.nc)?\.v[24]\.'),
          # exp (ADR-0042) `exp-hw`: the hardware form's `ex2.approx.ftz.f32`.
          ('ex2', r'^ex2\.approx'),
+         # math (ADR-0046) `math-hw`: the admitted approximate units.
+         ('math_approx', r'^(?:sqrt|sin|cos)\.approx'),
          # sweep-runtime-2 `streamk-epi`: a tile's ticket (an acq_rel integer add on the tile's counter).
          ('ticket', r'^atom\.acq_rel\.(?:\w+\.)*?add\.u32')]
 
@@ -230,6 +232,8 @@ def sass_facts(body):
     f['mufu_ex2'] = sum(1 for _, ins in body if split(ins)[1].startswith('MUFU.EX2'))
     # gapfix `stream-ld`: global loads on the L2's evict-first policy (`ld.global.cs`: LDG.E.EF).
     f['ldg_ef'] = sum(1 for _, ins in body if split(ins)[1].startswith('LDG') and '.EF' in split(ins)[1])
+    # math (ADR-0046) `math-hw`: the SFU's square root and cosine (sine is never admitted on the measured parts).
+    f['mufu_math'] = sum(1 for _, ins in body if split(ins)[1].startswith(('MUFU.SQRT', 'MUFU.COS', 'MUFU.SIN')))
     addr = [a for a, _ in body]
     best, spans = None, []
     for i, (a, ins) in enumerate(body):
@@ -817,9 +821,10 @@ def launch_facts(path):
     return f
 
 
-def exp_calls(dev):
+def exp_calls(dev, sym=r'@mapal\.exp\.f32'):
     """exp (ADR-0042): {kernel: calls of `@mapal.exp.f32` in its body or the internal functions it reaches} — the
-    device unit's call graph (a member body is a function the kernel calls; the exp definition is inlined later)."""
+    device unit's call graph (a member body is a function the kernel calls; the exp definition is inlined later).
+    `sym`: another builtin's symbol pattern (ADR-0046: sqrt, sin, cos)."""
     fns = {}
     for chunk in dev.split('\ndefine ')[1:]:
         m = re.match(r'[^@]*@([\w.$]+)\(', chunk)
@@ -832,9 +837,9 @@ def exp_calls(dev):
         seen, todo, n = {k}, [k], 0
         while todo:
             b = fns[todo.pop()]
-            n += len(re.findall(r'call float @mapal\.exp\.f32\(', b))
+            n += len(re.findall(r'call float ' + sym + r'\(', b))
             for c in re.findall(r'call [^@\n]*@([\w.$]+)\(', b):
-                if c in fns and c not in seen and c != 'mapal.exp.f32':
+                if c in fns and c not in seen and not re.fullmatch(sym.lstrip('@'), c):
                     seen.add(c)
                     todo.append(c)
         out[k] = n
@@ -1002,6 +1007,10 @@ def facts(d, sm):
         flows = {f['kernel']: flow_facts(f, dev) for f in (kv(m) for m in re.findall(r'^; mapal\.flow (.*)$', dev, re.M))}
         exps = exp_calls(dev)
         hw_exp = int('@llvm.nvvm.ex2.approx.ftz.f(' in dev)
+        # math (ADR-0046) `math-hw`: f32 sqrt / sin / cos calls a kernel reaches; whether the module's definitions
+        # take an approximate unit (the default face's admitted `sqrt.approx` / `cos.approx`).
+        maths = exp_calls(dev, r'@mapal\.(?:sqrt|sin|cos)\.f32')
+        hw_math = int(bool(re.search(r'@llvm\.nvvm\.(?:sqrt|sin|cos)\.approx\.f\(', dev)))
         # kernel-merging `calls`: each persistent kernel's grid barriers as emitted (before opt / llc copy any).
         gsyncs = {m.group(1): len(re.findall(r'call void @mapal_gsync\(', m.group(2)))
                   for m in re.finditer(r'^define ptx_kernel void @([\w.$]+)\((.*?)^}', dev, re.M | re.S)}
@@ -1049,7 +1058,8 @@ def facts(d, sm):
             axes = [[sg, r, real(r)] for sg, r in flips.get(k, [])]
             kf = dict(plan=p, flow=flows.get(k, {}), ptx=pf.get(k, {}), ptxas=pa.get(k, {}),
                       mod=dict(launched=launched(k, hll), cand=int(k in cands), alt=int(bool(axes)), axes=axes,
-                               exp32=exps.get(k, 0), hw_exp=hw_exp, gsync=gsyncs.get(k, 0)),
+                               exp32=exps.get(k, 0), hw_exp=hw_exp, math32=maths.get(k, 0), hw_math=hw_math,
+                               gsync=gsyncs.get(k, 0)),
                       launch=la,
                       sass=sass_facts(sf[k]) if k in sf else {},
                       remarks=dict(opt=remark_facts(rem_opt, k), llc=remark_facts(rem_llc, k)))

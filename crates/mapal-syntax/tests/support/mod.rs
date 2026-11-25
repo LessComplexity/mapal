@@ -294,9 +294,16 @@ impl<'a> TreeWriter<'a> {
             Item::Fn(f) => self.fn_decl(d, f),
             Item::Type(t) => {
                 self.line(d, t.span, &format!("Type {}", self.quoted(t.name.span)));
+                for n in &t.sizes {
+                    self.line(d + 1, n.span, &format!("size {}", self.quoted(n.span)));
+                }
                 for field in &t.fields {
                     self.field(d + 1, field);
                 }
+            }
+            Item::Bind(b) => {
+                self.line(d, b.span, "Bind");
+                self.chain(d + 1, &b.chain);
             }
             Item::Error(span) => self.line(d, *span, "Item::Error"),
         }
@@ -304,6 +311,9 @@ impl<'a> TreeWriter<'a> {
 
     fn fn_decl(&mut self, d: usize, f: &FnDecl) {
         self.line(d, f.span, &format!("Fn {}", self.quoted(f.name.span)));
+        for n in &f.sizes {
+            self.line(d + 1, n.span, &format!("size {}", self.quoted(n.span)));
+        }
         for p in &f.params {
             self.param(d + 1, p);
         }
@@ -332,14 +342,35 @@ impl<'a> TreeWriter<'a> {
     fn ty(&mut self, d: usize, t: &Ty) {
         match &t.kind {
             TyKind::Named(n) => self.line(d, t.span, &format!("Ty::Named {}", self.quoted(n.span))),
+            TyKind::Generic { name, args } => {
+                let args: Vec<String> = args.iter().map(|a| self.quoted(a.span)).collect();
+                self.line(
+                    d,
+                    t.span,
+                    &format!(
+                        "Ty::Generic {} <{}>",
+                        self.quoted(name.span),
+                        args.join(", ")
+                    ),
+                );
+            }
             TyKind::Tuple(es) => {
                 self.line(d, t.span, "Ty::Tuple");
                 for e in es {
                     self.ty(d + 1, e);
                 }
             }
-            TyKind::Array { elem, len, .. } => {
-                self.line(d, t.span, &format!("Ty::Array len={len}"));
+            TyKind::Array {
+                elem, len, size, ..
+            } => {
+                match size {
+                    None => self.line(d, t.span, &format!("Ty::Array len={len}")),
+                    Some(e) => self.line(
+                        d,
+                        t.span,
+                        &format!("Ty::Array size={}", self.quoted(e.span)),
+                    ),
+                }
                 self.ty(d + 1, elem);
             }
             TyKind::Dynamic(elem) => {

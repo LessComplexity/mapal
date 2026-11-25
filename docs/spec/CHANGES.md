@@ -231,6 +231,70 @@ the threshold; L1616 otherwise) and `w -> widen_f32` / `widen_f64` widen exactly
 site: the device's one-thread-per-cell kernel loads the 2-byte format, the register-staged tile widens its panels as
 it copies them; the cost model prices operand bytes per format. fp8 and 16-bit tensor-core products are decided in ADR-0043 and open.
 
+### 9.3 `read` — loading an array from a file (ADR-0045, 2026-11-25)
+
+**Before.** A program observed nothing outside its source: `main` takes no parameters and the only effects were
+`print` / `println` and `time`. Model-scale benchmarks synthesized their weights from closed-form laws — arrays the
+compiler can rebuild where they are read, so loading and uploading real data was never measured.
+
+**After.** `"weights/embedding.bin" -> read -> token_embedding: [bf16; n];` is an effectful pipeline builtin (IR
+`Operation::Read : (IoToken × Str) → (IoToken × [T; n])`): a string literal path, the binding's required array
+annotation (L1617 otherwise; L1618 for a path that is not a string literal), elements `i32 i64 u8 f32 f64 bf16 f16`
+as raw little-endian bytes, exactly `n·|T|` of them. Failures exit 103 with one message on every backend. A relative
+path resolves against `$MAPAL_DATA_DIR`, else the source directory recorded at compile time, else the working
+directory. The value is an ordinary immutable array to every fact; the host reads the file once into it, a GPU
+build uploads it once. Editors highlight `read`; the random program generator draws chains whose operands are read
+from files (`read_chain_strategy`).
+
+### 9.4 `sqrt`, `sin`, `cos` and one builtin-realization framework (ADR-0046, 2026-11-25)
+
+**Before.** `exp` was the only math builtin, its algorithm spelled by hand four times (the interpreter's Rust, the
+LLVM host and device text in three realizations, the CUDA C), its one hardware form a `Caps::ex2` field; a norm's
+square root or a rotary embedding's `sin` / `cos` had no spelling, and a target with different (or no) function units
+had no way to say so.
+
+**After.** `x -> sqrt`, `x -> sin`, `x -> cos` are pure pipeline builtins like `exp` (L1615 for a non-float operand,
+reserved names), IR `Operation::Math(MathFn)` (`Operation::Exp` = `Math(Exp)`). Each builtin has a contract (the
+exact faces the reference's bits; the default face a relative bound with the special values fixed — `sqrt` 2⁻²²,
+`sin` / `cos` 2⁻²¹ over the whole f32 range, f64 2⁻⁵¹ / 2⁻⁵⁰), a reference definition written once in plain
+operations (`mapal-ir/src/math.rs`: `sqrt` a correctly rounded digit recurrence, `sin` / `cos` an integer
+Payne–Hanek reduction for every `|x| ≥ π/4` and Cephes / fdlibm polynomials) that the interpreter runs natively and
+every backend prints from its trace, and target realizations as capability data — `Unit`s (an instruction with its
+measured or proved error, domain and cost) and `TargetDef`s (a routine the target supplies), admitted per face by
+the contract and chosen by cost, never by name. `exp` moved onto it with its module text byte-identical. The RTX
+5080's calibration (`calib.cu math`) admits `sqrt.approx.f32` (2⁻²³·²⁵) and `cos.approx.f32` (2⁻²¹·⁵⁸, the `cos r`
+part of a trig form) and refuses `sin.approx.f32` (absolute error only); a host without a `sqrt` instruction
+(`plain-fp`) runs every reference from plain operations with the same bits. OFF arm `--no-math-hw`.
+
+### 9.5 Size-generic functions (ADR-0047, 2026-11-25)
+
+**Before.** An array's size is part of its type, so a function over arrays served one shape: the readable Llama
+model wrote `project_64_to_64`, `project_64_to_32`, … — one copy of the same body per shape.
+
+**After.** `fn project<rows, columns>(weight: [bf16; rows * columns], x: [f32; columns]) -> [f32; rows]` declares size
+parameters after the name; array lengths are size expressions (`+`, `-`, `*`; `/` `%` are P0119). A call stays
+`(a, b) -> project -> y;`: lowering infers the sizes from the argument's type (bare names bind, compound dimensions
+are inverted exactly, `n * n` by bisection, an output-only size from the result's annotation; L1701–L1707) and
+monomorphizes — one fixed-size function `project<4096, 4096>` per size tuple, so the IR, every fact and every backend
+are unchanged (the lowered IR is the hand-specialized program's; tested with its twin on the interpreter, native CPU,
+the RTX 5080 and every emulator mode, and on generated programs). In the body a size is an integer literal.
+`examples/matmul4_loop.mapal` is written over `n`; the formatter keeps `fn f<a, b>(` tight; Neovim highlights the list.
+
+### 9.6 Top-level bindings, compile-time evaluation, `_`, size-generic types (ADR-0048, 2026-11-25)
+
+**Before.** A model's sizes were literals in every signature (the real-size Llama was rendered by a Python template);
+types were spelled structurally; a value computable before the program runs (a table, `1 / sqrt(head_size)`) was
+recomputed at run time — constant folding stopped at one scalar operation.
+
+**After.** `2048 -> hidden_size;` at the top level binds a program-wide value (order-independent, immutable, no effects;
+L1801–L1807). The compiler decides from the dataflow which values are computable before the program runs: top-level
+scalars are computed by the interpreter during lowering and become literals (usable as sizes; L1808 when a size does
+not come out); on the graph, the `static_plan` fact marks every value with no input and no effect in its cone and
+realizes it by bytes against work — `fold_static` embeds the cheap ones (oracle values, cones and finished loops
+dropped), the rest run. `type Hidden { _: [f32; hidden_size] }` is a zero-cost alias; `_` beside other fields is read
+where the struct's own type does not fit; `type Matrix<rows, columns>` is a size-generic type (`Matrix<hidden_size,
+hidden_size>`; L1809). Formatter, Neovim, tests on generated programs (interpreter, native CPU, every emulator mode).
+
 ---
 
 **Version:** 0.2 · **Status:** Design specification.

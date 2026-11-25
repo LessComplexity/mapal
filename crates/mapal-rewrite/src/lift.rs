@@ -244,6 +244,7 @@ fn body_cone(
             if matches!(
                 morph.op,
                 Operation::Print { .. }
+                    | Operation::Read
                     | Operation::LoopEnter
                     | Operation::LoopBack
                     | Operation::LoopExit
@@ -296,7 +297,7 @@ fn cloneable_invariant(ir: &CategoryIr, morph: &mapal_ir::Morphism) -> bool {
             | Operation::Phi
             | Operation::Widen
             | Operation::Narrow
-            | Operation::Exp
+            | Operation::Math(_)
     )
 }
 

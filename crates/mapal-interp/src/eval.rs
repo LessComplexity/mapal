@@ -88,8 +88,33 @@ pub(crate) fn eval_fn(
     budget: &mut u64,
     orders: &[(FuncId, MorphismId, u64)],
 ) -> Result<RValue, Abort> {
+    eval_fn_within(ir, f, arg, budget, orders, None).map(|(v, _)| v)
+}
+
+/// ADR-0048: evaluate the objects `want` of `f` — a cone closed under its
+/// sources that holds neither the input nor an IO token — and return their
+/// values. Every other morphism is skipped; a loop runs when its merge is
+/// wanted (the cone then holds the whole loop).
+pub(crate) fn eval_cone(
+    ir: &CategoryIr,
+    f: FuncId,
+    want: &SecondaryMap<ObjectId, ()>,
+    budget: &mut u64,
+) -> Result<SecondaryMap<ObjectId, RValue>, Abort> {
+    eval_fn_within(ir, f, RValue::Unit, budget, &[], Some(want)).map(|(_, env)| env)
+}
+
+fn eval_fn_within(
+    ir: &CategoryIr,
+    f: FuncId,
+    arg: RValue,
+    budget: &mut u64,
+    orders: &[(FuncId, MorphismId, u64)],
+    want: Option<&SecondaryMap<ObjectId, ()>>,
+) -> Result<(RValue, SecondaryMap<ObjectId, RValue>), Abort> {
     let fd = ir.func(f).expect("sealed graph: func resolves");
     let mut ctx = EvalCtx::new(ir, f, orders);
+    let wanted = |o: ObjectId| want.is_none_or(|w| w.contains_key(o));
 
     // Seed: the one Parameter object, and every Constant.
     ctx.env.insert(fd.input, arg);
@@ -127,6 +152,9 @@ pub(crate) fn eval_fn(
     for m in ir.topo_order(f) {
         let morph = ir.morphism(m).expect("sealed graph: morphism resolves");
         let op = morph.op;
+        if !wanted(morph.target) {
+            continue;
+        }
         match op {
             Operation::LoopEnter => {
                 if ctx.gated.contains_key(m) {
@@ -159,12 +187,15 @@ pub(crate) fn eval_fn(
         }
     }
 
+    if want.is_some() {
+        return Ok((RValue::Unit, ctx.env));
+    }
     // Return env[output], or Unit if the output ty is Unit and unwritten (§7).
     match ctx.env.get(fd.output) {
-        Some(v) => Ok(v.clone()),
+        Some(v) => Ok((v.clone(), SecondaryMap::new())),
         None => {
             if *ctx.ty_of(fd.output) == Ty::Unit {
-                Ok(RValue::Unit)
+                Ok((RValue::Unit, SecondaryMap::new()))
             } else {
                 // I-RET guarantees a writer fired for non-Unit returns.
                 unreachable!("sealed graph: non-Unit return is always written");
@@ -281,12 +312,13 @@ pub(crate) fn eval_morphism(
             write(ctx, target, RValue::Scalar(v));
             Ok(())
         }
-        Operation::Exp => {
-            // ADR-0042: the oracle's algorithm (`mapal_ir::exp`), bit for bit.
+        Operation::Math(f) => {
+            // ADR-0042 / ADR-0046: the builtin's reference (`mapal_ir::math`),
+            // bit for bit.
             let v = match read(ctx, source) {
-                RValue::Scalar(Value::F32(x)) => Value::F32(mapal_ir::exp::exp_f32(*x)),
-                RValue::Scalar(Value::F64(x)) => Value::F64(mapal_ir::exp::exp_f64(*x)),
-                _ => unreachable!("Exp on a non-float passed validation"),
+                RValue::Scalar(Value::F32(x)) => Value::F32(mapal_ir::math::eval_f32(f, *x)),
+                RValue::Scalar(Value::F64(x)) => Value::F64(mapal_ir::math::eval_f64(f, *x)),
+                _ => unreachable!("Math on a non-float passed validation"),
             };
             write(ctx, target, RValue::Scalar(v));
             Ok(())
@@ -518,6 +550,39 @@ pub(crate) fn eval_morphism(
                 RValue::Tuple(vec![tok, RValue::Scalar(Value::F64(ms))]),
             );
             Ok(())
+        }
+        Operation::Read => {
+            // `(IoToken, Str) → (IoToken, [T; n])` (ADR-0045): the file's
+            // `n · |T|` little-endian bytes, resolved against the graph's
+            // recorded directory; any other length, or no file, fails the run.
+            let src = read(ctx, source).clone();
+            let tok = component(&src, 0).clone();
+            let RValue::Scalar(Value::Str(path)) = component(&src, 1) else {
+                unreachable!("Read path is not a Str")
+            };
+            let arr_ty = ctx
+                .ty_of(target)
+                .component_ty(1)
+                .cloned()
+                .expect("Read target is (token, array)");
+            let Ty::Array { elem, .. } = &arr_ty else {
+                unreachable!("Read target value is not an array")
+            };
+            let bytes = mapal_ir::read::file_bytes(&arr_ty).expect("a readable array");
+            match mapal_ir::read::load(path, ctx.ir.data_dir(), bytes) {
+                Ok(b) => {
+                    let vals = mapal_ir::read::decode(&b, elem)
+                        .into_iter()
+                        .map(RValue::Scalar)
+                        .collect();
+                    write(ctx, target, RValue::Tuple(vec![tok, RValue::array(vals)]));
+                    Ok(())
+                }
+                Err(msg) => {
+                    crate::value::READ_FAILURE.with(|r| *r.borrow_mut() = Some(msg));
+                    Err(Abort::ReadFailed)
+                }
+            }
         }
         Operation::Output => {
             let v = read(ctx, source).clone();

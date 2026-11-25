@@ -321,6 +321,7 @@ fn expect_native(ir: &CategoryIr, rr: &RunResult) -> Option<(Option<String>, i32
     match &rr.outcome {
         Outcome::Diverged => None,
         Outcome::Trapped(_) => Some((None, 101)),
+        Outcome::ReadFailed(_) => Some((None, mapal_ir::read::EXIT_CODE)),
         Outcome::Done(v) => {
             let entry = ir.entry();
             let in_ty = &ir.object(ir.func(entry).unwrap().input).unwrap().ty;
@@ -1022,6 +1023,34 @@ fn differential_exp_programs_raw_and_rewritten() {
         let rw = rewrite(lower_src(&src)).ir;
         let rr = run(&rw, 2_000_000_000);
         assert_parity(&nvcc, &rw, &rr, &format!("exp{i}/rewritten"));
+    }
+}
+
+/// ADR-0046: `sqrt`, `sin`, `cos` on the CUDA backend — the references printed
+/// from their traces (each device step an explicit round-to-nearest
+/// intrinsic, the integer Payne–Hanek reduction, IEEE `__fsqrt_rn` /
+/// `sqrtf`) — generated programs over every branch (huge arguments,
+/// subnormals, ±0, ±∞, NaN, `f64`, fold bodies), raw and rewritten, byte for
+/// byte with the interpreter on the device and the host.
+#[test]
+fn differential_math_programs_raw_and_rewritten() {
+    let Some(nvcc) = nvcc() else {
+        eprintln!("SKIP: {SKIP_REASON}");
+        return;
+    };
+    let mut runner = TestRunner::deterministic();
+    for i in 0..6 {
+        let p = testgen::math_prog_strategy()
+            .new_tree(&mut runner)
+            .unwrap()
+            .current();
+        let src = testgen::math_src(&p);
+        let ir = lower_src(&src);
+        let rr = run(&ir, 2_000_000_000);
+        assert_parity(&nvcc, &ir, &rr, &format!("math{i}/raw"));
+        let rw = rewrite(lower_src(&src)).ir;
+        let rr = run(&rw, 2_000_000_000);
+        assert_parity(&nvcc, &rw, &rr, &format!("math{i}/rewritten"));
     }
 }
 

@@ -317,6 +317,31 @@ pub(crate) fn collect_str_globals(ir: &CategoryIr) -> SecondaryMap<ObjectId, Str
     out
 }
 
+/// ADR-0045: `mapal_read(path, path_len, dir, dir_len, dst, bytes)` — the
+/// file's bytes into `dst` (`null`: checked, not read), or the defined
+/// failure (exit 103 with the message). Not `noreturn`: it returns on success.
+pub(crate) const READ_DECL: &str = "declare void @mapal_read(ptr, i64, ptr, i64, ptr, i64)\n";
+
+/// ADR-0045 D8: `mapal_read_task(…, topo)` — the read in a task of the
+/// parallel entry: a failure zero-fills `dst` and is recorded as a trap at
+/// `topo`, delivered by the first checkpoint past it.
+pub(crate) const READ_TASK_DECL: &str =
+    "declare void @mapal_read_task(ptr, i64, ptr, i64, ptr, i64, i64)\n";
+
+/// ADR-0045 D5: the global holding the directory the program's relative
+/// `read` paths resolve against (its source directory at compile time).
+pub(crate) const DATA_DIR_GLOBAL: &str = "@.mapal_data_dir";
+
+/// The [`DATA_DIR_GLOBAL`] definition for `dir` (empty: none recorded — the
+/// working directory at run time).
+pub(crate) fn data_dir_global(dir: &str) -> String {
+    format!(
+        "{DATA_DIR_GLOBAL} = private unnamed_addr constant [{} x i8] c\"{}\"\n",
+        dir.len(),
+        escape_bytes(dir.as_bytes())
+    )
+}
+
 /// Emit the `Str` globals block (deterministic object order via the SecondaryMap).
 pub(crate) fn emit_str_globals(globals: &SecondaryMap<ObjectId, StrGlobal>) -> String {
     let mut out = String::new();

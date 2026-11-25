@@ -94,6 +94,10 @@ fn main() -> ExitCode {
             eprintln!("run: trapped — {what} (ADR-0013).");
             ExitCode::FAILURE
         }
+        Outcome::ReadFailed(msg) => {
+            eprintln!("{msg}");
+            ExitCode::from(mapal_ir::read::EXIT_CODE as u8)
+        }
     }
 }
 

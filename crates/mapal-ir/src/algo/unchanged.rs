@@ -947,6 +947,9 @@ impl CategoryIr {
                                     None => self.map_image(f, m, &slot_state),
                                 }
                             }
+                            // ADR-0045 D7: a read in the body yields the
+                            // same bytes every trip.
+                            Operation::Proj { .. } if self.read_of(t).is_some() => Chg::Same,
                             Operation::Proj { index } => {
                                 match self.pair_slot_source(mm.source, index) {
                                     Some(s) => state_of(&st, s),
@@ -1114,9 +1117,8 @@ impl CategoryIr {
         }
         let input = fd.input;
         let tuple = matches!(self.object(input).map(|o| &o.ty), Some(Ty::Tuple(_)));
-        if !tuple {
-            mask.insert(input, 1);
-        }
+        // A whole-input read (not a slot's `Proj`) depends on every slot.
+        mask.insert(input, if tuple { u64::MAX } else { 1 });
         for &m in &fd.morphisms {
             if let Some(mm) = self.morphism(m)
                 && mm.source == input
@@ -1134,6 +1136,10 @@ impl CategoryIr {
                 }
                 let add = match mm.op {
                     Operation::TimeMs => u64::MAX,
+                    // ADR-0045 D7: a read's array is the file's bytes — the
+                    // same at every call and every trip (a literal path, the
+                    // recorded directory, a file the run does not change).
+                    Operation::Proj { .. } if self.read_of(mm.target).is_some() => 0,
                     Operation::Proj { index } => match self.component_sources(mm.source, index) {
                         Some(cs) => cs
                             .iter()

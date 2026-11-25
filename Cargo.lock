@@ -483,6 +483,7 @@ dependencies = [
  "mapal-lower",
  "mapal-rewrite",
  "mapal-syntax",
+ "tempfile",
 ]
 
 [[package]]
@@ -512,6 +513,7 @@ version = "0.0.1"
 dependencies = [
  "criterion",
  "insta",
+ "mapal-interp",
  "mapal-ir",
  "mapal-syntax",
  "proptest",
@@ -529,6 +531,7 @@ dependencies = [
  "mapal-syntax",
  "proptest",
  "slotmap",
+ "tempfile",
 ]
 
 [[package]]
@@ -537,6 +540,7 @@ version = "0.0.1"
 dependencies = [
  "mapal-interp",
  "mapal-ir",
+ "tempfile",
 ]
 
 [[package]]

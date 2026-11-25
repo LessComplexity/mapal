@@ -84,6 +84,14 @@ impl<'a> FnEmit<'a> {
         }
         self.plan_loop_buffers();
         self.mark_elided_arrays(&ms);
+        // ADR-0045: a read's `(token, array)` pair holds no bytes of its own —
+        // the file lands in the array it yields (`emit_read`).
+        for &m in &ms {
+            let mo = self.ir.morphism(m).expect("morphism resolves");
+            if mo.op == Operation::Read {
+                self.elided_arrays.insert(mo.target, ());
+            }
+        }
         // S54 `arena`: a device-only array has no host bytes to hold.
         if let Some(a) = self.resident.as_ref().and_then(|p| p.arena.as_ref()) {
             for o in a.host_free.keys() {

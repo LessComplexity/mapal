@@ -270,8 +270,8 @@ fn edge_type_ok(ir: &CategoryIr, m: &crate::graph::Morphism, sty: &Ty, tty: &Ty)
                 .unwrap_or(false)
         }
         Operation::Neg => sty.is_numeric() && sty == tty,
-        // ADR-0042: `exp` keeps its float width.
-        Operation::Exp => matches!(sty, Ty::Float { bits: 32 | 64 }) && sty == tty,
+        // ADR-0042 / ADR-0046: a math builtin keeps its float width.
+        Operation::Math(_) => matches!(sty, Ty::Float { bits: 32 | 64 }) && sty == tty,
         Operation::Eq | Operation::Neq => two_tuple(sty)
             .map(|(a, b)| a == b && (a.is_numeric() || *a == Ty::Bool) && *tty == Ty::Bool)
             .unwrap_or(false),
@@ -454,6 +454,17 @@ fn edge_type_ok(ir: &CategoryIr, m: &crate::graph::Morphism, sty: &Ty, tty: &Ty)
         Operation::Print { .. } => match sty {
             Ty::Tuple(ts) if ts.len() == 2 => {
                 ts[0] == Ty::IoToken && ts[1].is_printable() && *tty == Ty::IoToken
+            }
+            _ => false,
+        },
+        // ADR-0045: (IoToken, Str) -> (IoToken, [T; n]), T readable; the path
+        // is the literal (a `Str` Constant — I9s keeps every Str one).
+        Operation::Read => match (sty, tty) {
+            (Ty::Tuple(ss), Ty::Tuple(ts)) if ss.len() == 2 && ts.len() == 2 => {
+                ss[0] == Ty::IoToken
+                    && ss[1] == Ty::Str
+                    && ts[0] == Ty::IoToken
+                    && crate::read::readable(&ts[1])
             }
             _ => false,
         },
@@ -1195,6 +1206,7 @@ mod typing_table_golden {
             funcs,
             entry: call_f,
             precision: SecondaryMap::new(),
+            data_dir: None,
         };
         Fx {
             ir,
@@ -2051,6 +2063,55 @@ mod typing_table_golden {
                 Print { newline: false },
                 tup(&[Ty::IoToken, tup(&[i32t.clone(), i32t.clone()])]),
                 Ty::IoToken,
+                p,
+                false,
+            ),
+            // Read (ADR-0045): (IoToken, Str) -> (IoToken, [T; n]).
+            (
+                "Read f32 ok",
+                Read,
+                tup(&[Ty::IoToken, Ty::Str]),
+                tup(&[Ty::IoToken, arr(f32t(), 4)]),
+                p,
+                true,
+            ),
+            (
+                "Read bf16 ok",
+                Read,
+                tup(&[Ty::IoToken, Ty::Str]),
+                tup(&[Ty::IoToken, arr(Ty::Narrow(crate::NarrowFloat::Bf16), 4)]),
+                p,
+                true,
+            ),
+            (
+                "Read path not str",
+                Read,
+                tup(&[Ty::IoToken, i32t.clone()]),
+                tup(&[Ty::IoToken, arr(f32t(), 4)]),
+                p,
+                false,
+            ),
+            (
+                "Read target not array",
+                Read,
+                tup(&[Ty::IoToken, Ty::Str]),
+                tup(&[Ty::IoToken, f32t()]),
+                p,
+                false,
+            ),
+            (
+                "Read nested array",
+                Read,
+                tup(&[Ty::IoToken, Ty::Str]),
+                tup(&[Ty::IoToken, arr(arr(f32t(), 2), 4)]),
+                p,
+                false,
+            ),
+            (
+                "Read bool elements",
+                Read,
+                tup(&[Ty::IoToken, Ty::Str]),
+                tup(&[Ty::IoToken, arr(Ty::Bool, 4)]),
                 p,
                 false,
             ),

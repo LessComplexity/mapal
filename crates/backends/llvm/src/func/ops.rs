@@ -77,6 +77,17 @@ impl<'a> FnEmit<'a> {
                     self.line(format!("store {sllt} {sval}, ptr {ptr}"));
                 }
             }
+            Operation::Proj { .. } if self.ir.read_of(target).is_some() => {
+                // ADR-0045: the read wrote the file's bytes into its first
+                // array's storage; a second `Proj` of the same pair copies.
+                let first = self.ir.read_values(source)[0];
+                if first != target {
+                    let src = self.slot(first).expect("read array slot");
+                    let dst = self.slot(target).expect("read array slot");
+                    let llt = lower_ty(&self.obj_ty(target)).expect("read array lowers");
+                    self.emit_memcpy(&dst, &src, &llt);
+                }
+            }
             Operation::Proj { index } => {
                 if self.host_free(target) {
                     // S65 `by-ref`: a device-carried view has no host bytes.
@@ -133,15 +144,15 @@ impl<'a> FnEmit<'a> {
                 self.line(format!("{r} = xor i1 {val}, true"));
                 self.store_obj(target, "i1", &r);
             }
-            Operation::Exp => {
-                // ADR-0042: one call; the module defines it per side and face
-                // (`crate::exp`).
-                let (llt, val) = self.load_whole(source).expect("exp operand");
+            Operation::Math(f) => {
+                // ADR-0042 / ADR-0046: one call; the module defines it per
+                // side and face (`crate::math`).
+                let (llt, val) = self.load_whole(source).expect("math operand");
                 let bits = if llt == "double" { 64 } else { 32 };
                 let r = self.tmp();
                 self.line(format!(
                     "{r} = call {llt} {}({llt} {val})",
-                    crate::exp::symbol(bits)
+                    crate::math::symbol(f, bits)
                 ));
                 self.store_obj(target, &llt, &r);
             }
@@ -288,6 +299,7 @@ impl<'a> FnEmit<'a> {
             Operation::Fill => self.emit_fill(source, target),
             Operation::Print { newline } => self.emit_print(source, newline),
             Operation::TimeMs => self.emit_time_ms(target),
+            Operation::Read => self.emit_read(m, source, target),
             Operation::Output => {
                 if matches!(self.obj_ty(source), Ty::Array { .. }) {
                     let src = self
@@ -652,6 +664,42 @@ impl<'a> FnEmit<'a> {
         let r = self.tmp();
         self.line(format!("{r} = call double @mapal_time_ms()"));
         self.store_obj(target, "double", &r);
+    }
+
+    /// `read` (ADR-0045): one call into the runtime, which resolves the path
+    /// (the literal, `$MAPAL_DATA_DIR`, the recorded source directory) and
+    /// reads the file's `n · |T|` bytes straight into the array's storage —
+    /// the `(token, array)` pair itself has none (`prepare_storage`), so the
+    /// bytes move once. An array nobody reads still has its file checked.
+    ///
+    /// In a task of the parallel entry (ADR-0045 D8) a failure is recorded
+    /// at the read's topo position, like a task's trap
+    /// (`mapal_read_task`), and delivered at the first checkpoint past it;
+    /// on the spine and in a sequential function it exits at once.
+    pub(super) fn emit_read(&mut self, m: MorphismId, source: ObjectId, target: ObjectId) {
+        let p_obj = self.pair_source(source, 1).expect("read path source");
+        let g = self.strings.get(p_obj).expect("read path global");
+        let (path, plen) = (g.name.clone(), g.bytes.len());
+        let dlen = self.ir.data_dir().map_or(0, str::len);
+        let arr_ty = self
+            .obj_ty(target)
+            .component_ty(1)
+            .cloned()
+            .expect("read target is (token, array)");
+        let bytes = mapal_ir::read::file_bytes(&arr_ty).expect("a readable array");
+        let dst = match self.ir.read_values(target).first() {
+            Some(&v) => self.slot(v).unwrap_or_else(|| "null".into()),
+            None => "null".into(),
+        };
+        let dir = crate::module::DATA_DIR_GLOBAL;
+        let args = format!("ptr {path}, i64 {plen}, ptr {dir}, i64 {dlen}, ptr {dst}, i64 {bytes}");
+        if matches!(self.guard_flavor, GuardFlavor::Host) {
+            self.line(format!("call void @mapal_read({args})"));
+        } else {
+            let topo = self.task_site(m);
+            self.line(format!("call void @mapal_read_task({args}, i64 {topo})"));
+            self.runtime_write = true;
+        }
     }
 
     /// The source object of the `Pair{slot==k}` edge feeding aggregate `agg`.

@@ -2252,15 +2252,15 @@ impl<'a> DevEmit<'a> {
                     self.store_obj(target, &format!("({ct})(0 - ({uct}){val})"));
                 }
             }
-            Operation::Exp => {
-                // ADR-0042: the oracle's algorithm (`module::exp_helpers`).
-                let (_, val) = self.load_whole(source).expect("exp operand");
+            Operation::Math(f) => {
+                // ADR-0042 / ADR-0046: the reference (`module::math_helpers`).
+                let (_, val) = self.load_whole(source).expect("math operand");
                 let w = if matches!(self.obj_ty(source), Ty::Float { bits: 64 }) {
                     64
                 } else {
                     32
                 };
-                self.store_obj(target, &format!("mapal_exp_f{w}({val})"));
+                self.store_obj(target, &format!("mapal_{}_f{w}({val})", f.name()));
             }
             Operation::Eq
             | Operation::Neq
@@ -2321,8 +2321,8 @@ impl<'a> DevEmit<'a> {
             Operation::Fold { body, captures } => self.emit_fold(source, target, body, captures),
             Operation::Index => self.emit_index(m, source, target),
             Operation::Update => self.emit_update(source, target),
-            Operation::Print { .. } | Operation::TimeMs => {
-                unreachable!("token-free twins contain no Print/TimeMs (E2)")
+            Operation::Print { .. } | Operation::TimeMs | Operation::Read => {
+                unreachable!("token-free twins contain no Print/TimeMs/Read (E2)")
             }
             Operation::Output => self.emit_output(source, target),
             Operation::LoopEnter | Operation::LoopBack | Operation::LoopExit => {

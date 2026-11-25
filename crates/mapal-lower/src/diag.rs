@@ -75,9 +75,30 @@ pub enum LCode {
     IotaArgs,              // L1612
     FillArgs,              // L1613
     InvalidWiden,          // L1614
-    InvalidExp,            // L1615
+    InvalidExp,            // L1615 (every math builtin: exp, sqrt, sin, cos)
     InvalidNarrow,         // L1616
-    Internal,              // L1901
+    ReadAnnotation,        // L1617
+    ReadSource,            // L1618
+    // ADR-0047: size-generic functions (the L17xx band).
+    UnknownSize,     // L1701
+    DuplicateSize,   // L1702
+    SizeRebound,     // L1703
+    SizeConflict,    // L1704
+    SizeNotIntegral, // L1705
+    SizeUnbound,     // L1706
+    SizeOutOfRange,  // L1707
+    // ADR-0048: top-level bindings, compile-time evaluation, `_` and
+    // size-generic types (the L18xx band).
+    TopMutable,    // L1801
+    TopNameReused, // L1802
+    TopStage,      // L1803
+    TopDuplicate,  // L1804
+    TopNoBinding,  // L1805
+    TopEffect,     // L1806
+    TopCycle,      // L1807
+    NotComputable, // L1808
+    TypeSizes,     // L1809
+    Internal,      // L1901
 }
 
 impl LCode {
@@ -148,6 +169,24 @@ impl LCode {
             LCode::InvalidWiden => "L1614",
             LCode::InvalidExp => "L1615",
             LCode::InvalidNarrow => "L1616",
+            LCode::ReadAnnotation => "L1617",
+            LCode::ReadSource => "L1618",
+            LCode::UnknownSize => "L1701",
+            LCode::DuplicateSize => "L1702",
+            LCode::SizeRebound => "L1703",
+            LCode::SizeConflict => "L1704",
+            LCode::SizeNotIntegral => "L1705",
+            LCode::SizeUnbound => "L1706",
+            LCode::SizeOutOfRange => "L1707",
+            LCode::TopMutable => "L1801",
+            LCode::TopNameReused => "L1802",
+            LCode::TopStage => "L1803",
+            LCode::TopDuplicate => "L1804",
+            LCode::TopNoBinding => "L1805",
+            LCode::TopEffect => "L1806",
+            LCode::TopCycle => "L1807",
+            LCode::NotComputable => "L1808",
+            LCode::TypeSizes => "L1809",
             LCode::Internal => "L1901",
         }
     }

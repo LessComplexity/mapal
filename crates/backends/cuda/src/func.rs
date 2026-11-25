@@ -836,15 +836,15 @@ impl<'a> FnEmit<'a> {
                     self.store_obj(target, &format!("({ct})(0 - ({uct}){val})"));
                 }
             }
-            Operation::Exp => {
-                // ADR-0042: the oracle's algorithm (`module::exp_helpers`).
-                let (_, val) = self.load_whole(source).expect("exp operand");
+            Operation::Math(f) => {
+                // ADR-0042 / ADR-0046: the reference (`module::math_helpers`).
+                let (_, val) = self.load_whole(source).expect("math operand");
                 let w = if matches!(self.obj_ty(source), Ty::Float { bits: 64 }) {
                     64
                 } else {
                     32
                 };
-                self.store_obj(target, &format!("mapal_exp_f{w}({val})"));
+                self.store_obj(target, &format!("mapal_{}_f{w}({val})", f.name()));
             }
             Operation::Eq
             | Operation::Neq
@@ -922,6 +922,15 @@ impl<'a> FnEmit<'a> {
             Operation::TimeMs => {
                 return Err(EmitError::Unsupported {
                     feature: "the `time` builtin (no CUDA clock seam)".into(),
+                    loc,
+                });
+            }
+            // ADR-0045: the file read is the llvm backend's (`mapal_read` in
+            // mapal-rt, then the residency machinery's upload); this
+            // backend's arrays are device handles with no host read seam.
+            Operation::Read => {
+                return Err(EmitError::Unsupported {
+                    feature: "the `read` builtin (no CUDA read seam)".into(),
                     loc,
                 });
             }

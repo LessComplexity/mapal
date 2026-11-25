@@ -24,6 +24,7 @@ use mapal_syntax::{
 
 use crate::diag::{LCode, diag};
 use crate::scope::ScopeStack;
+use crate::sizes::{Generics, Instance, SiteKey, SizeEnv};
 use crate::tys::{TypeTable, name_text};
 
 /// A literal's resolved scalar ty (the union-find leaf state).
@@ -88,12 +89,41 @@ enum WTy {
     Unknown,
 }
 
+/// ADR-0047: what the typing walk of one function (or instance) needs about
+/// size generics — its own sizes, the generic functions, the call sites'
+/// bindings emission found in an earlier round.
+pub struct SizeCtx<'a> {
+    /// The function's (instance) name: `f` or `f<4, 8>`.
+    pub owner: String,
+    /// The instance's size values (empty for a fixed-size function).
+    pub env: SizeEnv,
+    pub generics: &'a Generics<'a>,
+    /// Emission's binding of each call site, from earlier rounds (D5).
+    pub sites: &'a BTreeMap<SiteKey, Vec<u64>>,
+}
+
+/// What the typing walk found at its calls to generic functions: the binding
+/// it used at each site, and the instances they name.
+#[derive(Default)]
+pub struct SizeUse {
+    pub sites: BTreeMap<SiteKey, Vec<u64>>,
+    pub instances: Vec<Instance>,
+    /// Generic calls the walk could not type (its own types did not reach
+    /// and no earlier round's emission bound the site): its diagnostics
+    /// downstream of one may be artifacts of the missing result type.
+    pub unresolved: usize,
+}
+
 /// The typing walk state for one function.
 struct Walk<'a> {
     source: &'a str,
     types: &'a TypeTable,
     fn_sigs: &'a BTreeMap<String, FnSig>,
     owner_name: String,
+    /// ADR-0047: the size context and what the walk found.
+    sizes: &'a SizeCtx<'a>,
+    size_use: SizeUse,
+    effects: &'a crate::effects::Effects,
     /// the owner's declared (surface) return ty, for ret-write unification.
     owner_ret: Option<Ty>,
     /// union-find parent links over literal vars.
@@ -106,6 +136,13 @@ struct Walk<'a> {
     info: TypeInfo,
     /// per-owner map/fold counter (deterministic block names).
     block_counter: usize,
+    /// ADR-0048: walking a top-level chain (its bindings are the top-level
+    /// names themselves, not locals reusing them).
+    top_chain: bool,
+    /// A map whose body's value is an unpinned literal: its element width is
+    /// settled at the end of the walk (an annotation or a use downstream may
+    /// pin it), and its block's output with it — (stage key, the literal).
+    pending_maps: Vec<((u32, u32), usize)>,
 }
 
 /// A surface fn's declared (surface) signature, for call typing in D1.
@@ -116,23 +153,32 @@ pub struct FnSig {
     /// surface return ty (resolved), if declared.
     pub ret: Option<Ty>,
     pub effectful: bool,
+    /// ADR-0047: a size-generic function's placeholder (`params` / `ret`
+    /// empty: each instance has its own resolved signature).
+    pub generic: bool,
 }
 
-/// Run D1 over one function. Returns the typing info + diagnostics.
+/// Run D1 over one function (or one instance of a size-generic function,
+/// `sizes.owner` naming it). Returns the typing info, the diagnostics and the
+/// generic calls it typed (ADR-0047 D5).
 pub fn analyze_fn(
     source: &str,
     types: &TypeTable,
-    _effects: &crate::effects::Effects,
+    effects: &crate::effects::Effects,
     fn_sigs: &BTreeMap<String, FnSig>,
     fd: &syn::FnDecl,
-) -> (TypeInfo, Vec<syn::Diagnostic>) {
-    let owner_name = name_text(source, fd.name).to_string();
+    sizes: &SizeCtx,
+) -> (TypeInfo, Vec<syn::Diagnostic>, SizeUse) {
+    let owner_name = sizes.owner.clone();
     let owner_ret = fn_sigs.get(&owner_name).and_then(|s| s.ret.clone());
     let mut walk = Walk {
         source,
         types,
         fn_sigs,
         owner_name,
+        sizes,
+        size_use: SizeUse::default(),
+        effects,
         owner_ret,
         uf: Vec::new(),
         state: Vec::new(),
@@ -140,21 +186,180 @@ pub fn analyze_fn(
         diags: Vec::new(),
         info: TypeInfo::default(),
         block_counter: 0,
+        top_chain: false,
+        pending_maps: Vec::new(),
     };
     let mut scope: ScopeStack<WTy> = ScopeStack::new();
     // Bind params to their resolved tys.
     let sig = walk.fn_sigs.get(&walk.owner_name).cloned();
     if let Some(sig) = &sig {
         for (p, pty) in fd.params.iter().zip(sig.params.iter()) {
+            walk.check_not_size(p.name);
             scope.bind(name_text(source, p.name), WTy::Known(pty.clone()));
         }
     }
+    // ADR-0048 D3: the top-level values this function reads that are not
+    // literals are their chains, walked at the outermost scope.
+    let globals = types.globals();
+    for i in globals.used_by(source, fd) {
+        walk.top_chain = true;
+        walk.chain(&globals.items[i].chain, &mut scope);
+        walk.top_chain = false;
+    }
     walk.block(&fd.body, &mut scope);
     walk.resolve_all();
-    (walk.info, walk.diags)
+    (walk.info, walk.diags, walk.size_use)
 }
 
 impl Walk<'_> {
+    /// ADR-0048 D3: a top-level scalar computed before the program runs — an
+    /// unannotated number is a literal (its width from context), an
+    /// annotated one a constant of its type.
+    fn global_const(&mut self, text: &str, span: syn::SourceLoc) -> WTy {
+        use crate::globals::GlobalConst;
+        match self.types.globals().consts[text].clone() {
+            GlobalConst::Int {
+                pinned: Some(t), ..
+            }
+            | GlobalConst::Float {
+                pinned: Some(t), ..
+            } => WTy::Known(t),
+            GlobalConst::Int {
+                value,
+                pinned: None,
+            } => {
+                let var = self.fresh_var(span, false);
+                if value > i128::from(i32::MAX) || value < i128::from(i32::MIN) {
+                    self.pin(var, &Ty::i64(), span);
+                }
+                WTy::Var(var)
+            }
+            GlobalConst::Float { pinned: None, .. } => WTy::Var(self.fresh_var(span, true)),
+            GlobalConst::Bool(_) => WTy::Known(Ty::Bool),
+        }
+    }
+
+    /// ADR-0048 D5: a known struct read through its `_` field(s) until `fits`.
+    fn through_default(&mut self, w: &WTy, fits: impl Fn(&Ty) -> bool) -> WTy {
+        if let Some(t) = self.wty_to_ty(w)
+            && matches!(t, Ty::Struct { .. })
+            && let Some(k) = TypeTable::default_steps(&t, &fits)
+        {
+            let mut cur = t;
+            for _ in 0..k {
+                cur = TypeTable::default_of(&cur).cloned().unwrap_or(Ty::Unit);
+            }
+            return WTy::Known(cur);
+        }
+        w.clone()
+    }
+
+    // --- size parameters (ADR-0047 D4) --------------------------------------
+
+    /// The value of a size parameter named `text` not shadowed in `scope`.
+    fn size_value(&self, text: &str, scope: &ScopeStack<WTy>) -> Option<u64> {
+        if scope.contains(text) {
+            return None;
+        }
+        self.sizes.env.get(text).copied()
+    }
+
+    /// An integer literal's value, or a size expression's (D4: a size is an
+    /// integer literal in every respect).
+    fn int_const(&self, e: &Expr, scope: &ScopeStack<WTy>) -> Option<u64> {
+        match &e.kind {
+            ExprKind::Int(n) => Some(*n),
+            _ => self.size_fold(e, scope).and_then(|v| u64::try_from(v).ok()),
+        }
+    }
+
+    /// D4: the value of an integer expression over size parameters and
+    /// literals (`rows * columns`, `n - 1`), folded to one literal.
+    fn size_fold(&self, e: &Expr, scope: &ScopeStack<WTy>) -> Option<i128> {
+        if self.sizes.env.is_empty() {
+            return None;
+        }
+        crate::sizes::fold_value(self.source, e, &|t| self.size_value(t, scope))
+    }
+
+    /// L1703: a binding may not reuse a size parameter's name.
+    fn check_not_size(&mut self, name: syn::Name) {
+        let text = name_text(self.source, name);
+        if self.types.globals().is_top(text) {
+            if !self.top_chain {
+                self.diags.push(diag(
+                    LCode::TopNameReused,
+                    name.span,
+                    format!(
+                        "`{text}` is a top-level name; a local cannot reuse it — pick another name \
+                         (ADR-0048 D1)"
+                    ),
+                ));
+            }
+        } else if self.sizes.env.contains_key(text) {
+            self.diags.push(diag(
+                LCode::SizeRebound,
+                name.span,
+                format!("`{text}` is a size parameter; it cannot be rebound — pick another name"),
+            ));
+        }
+    }
+
+    /// D3 at a call to a generic function (typing side): emission's binding
+    /// of this site when an earlier round found one, else this walk's own
+    /// inference from `cur` (and the next stage's annotation). The result is
+    /// the instance's output type; `Unknown` when neither reaches.
+    fn generic_call(
+        &mut self,
+        name: &str,
+        cur: &WTy,
+        next: Option<&Stage>,
+        span: syn::SourceLoc,
+    ) -> WTy {
+        let Some(fd) = self.sizes.generics.get(name).copied() else {
+            return WTy::Unknown;
+        };
+        let key: SiteKey = (self.owner_name.clone(), span.start, span.end);
+        let values = match self.sizes.sites.get(&key) {
+            Some(v) => Some(v.clone()),
+            None => self.wty_to_ty(cur).and_then(|arg| {
+                let expected = self.expected_result(next);
+                crate::sizes::infer(self.source, self.types, fd, &arg, expected.as_ref(), span).ok()
+            }),
+        };
+        let Some(values) = values else {
+            self.size_use.unresolved += 1;
+            return WTy::Unknown;
+        };
+        let env = crate::sizes::env_of(self.source, fd, &values, self.types.base_env());
+        let effectful = self.effects.is_effectful(name);
+        let Some(sig) = crate::sizes::instance_sig(self.source, self.types, fd, &env, effectful)
+        else {
+            return WTy::Unknown;
+        };
+        self.size_use.sites.insert(key, values.clone());
+        self.size_use.instances.push((name.to_string(), values));
+        self.type_call(&sig, cur, span);
+        match sig.ret {
+            Some(r) => WTy::Known(r),
+            None => WTy::Unknown,
+        }
+    }
+
+    /// D3.4: the type a call's result is bound with — the next stage's
+    /// annotation (`-> y: [f32; 8]`), or the owner's output at a `-> ret`.
+    fn expected_result(&mut self, next: Option<&Stage>) -> Option<Ty> {
+        match next.map(|s| &s.kind) {
+            Some(StageKind::Bind { ty: Some(t), .. }) => {
+                let mut sink = Vec::new();
+                self.types
+                    .resolve_sized(self.source, t, &self.sizes.env, &mut sink)
+            }
+            Some(StageKind::Ret { proj: None }) => self.owner_ret.clone(),
+            _ => None,
+        }
+    }
+
     // --- union-find ---------------------------------------------------------
 
     fn fresh_var(&mut self, span: syn::SourceLoc, float: bool) -> usize {
@@ -312,6 +517,14 @@ impl Walk<'_> {
     /// Resolve every literal var to a concrete ty (defaults i32/f64) and write
     /// `info.lit_ty`. Range-checking is done at emission against the resolved ty.
     fn resolve_all(&mut self) {
+        // A map's body output is its literal's final width.
+        for (key, v) in std::mem::take(&mut self.pending_maps) {
+            if let Some(t) = self.wty_to_ty(&WTy::Var(v))
+                && let Some(sig) = self.info.blocks.get_mut(&key)
+            {
+                sig.body_out = t;
+            }
+        }
         for v in 0..self.uf.len() {
             let r = self.find(v);
             let ty = match self.state[r].clone() {
@@ -348,6 +561,7 @@ impl Walk<'_> {
                 self.chain(c, scope);
             }
             StmtKind::Bind(b) => {
+                self.check_not_size(b.name);
                 let v = self.expr(&b.value, scope);
                 // `c[i] <- v` (ADR-0021): an *indexed* bind is an element write,
                 // not a fresh binding. Type the index, unify `v` with `c`'s
@@ -365,7 +579,12 @@ impl Walk<'_> {
                     return;
                 }
                 if let Some(annot) = &b.ty
-                    && let Some(t) = self.types.resolve(self.source, annot, &mut self.diags)
+                    && let Some(t) = self.types.resolve_sized(
+                        self.source,
+                        annot,
+                        &self.sizes.env,
+                        &mut self.diags,
+                    )
                 {
                     self.unify_known(&v, &t, b.span);
                     scope.bind(name_text(self.source, b.name), WTy::Known(t));
@@ -397,8 +616,9 @@ impl Walk<'_> {
             None => seed,
         };
         let mut prev: Option<&Expr> = chain.head.as_ref();
-        for stage in &chain.stages {
-            cur = self.stage(&stage.kind, stage.span, cur, prev, scope);
+        for (i, stage) in chain.stages.iter().enumerate() {
+            let next = chain.stages.get(i + 1);
+            cur = self.stage(&stage.kind, stage.span, cur, prev, next, scope);
             prev = match &stage.kind {
                 StageKind::Expr(e) => Some(e),
                 _ => None,
@@ -406,12 +626,14 @@ impl Walk<'_> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn stage(
         &mut self,
         kind: &StageKind,
         stage_span: syn::SourceLoc,
         cur: WTy,
         prev: Option<&Expr>,
+        next: Option<&Stage>,
         scope: &mut ScopeStack<WTy>,
     ) -> WTy {
         match kind {
@@ -425,6 +647,9 @@ impl Walk<'_> {
                             self.unify(&cur, &bty, e.span);
                         }
                         cur
+                    } else if self.fn_sigs.get(text).is_some_and(|s| s.generic) {
+                        // ADR-0047: a call to a size-generic function.
+                        self.generic_call(text, &cur, next, e.span)
                     } else if let Some(sig) = self.fn_sigs.get(text).cloned() {
                         // call: cur (arg) unifies with declared input; result ty.
                         self.type_call(&sig, &cur, e.span);
@@ -434,6 +659,10 @@ impl Walk<'_> {
                         }
                     } else if crate::is_print_builtin(text) {
                         // print sink; result is "no value".
+                        WTy::Unknown
+                    } else if crate::is_read_builtin(text) {
+                        // ADR-0045: the binding's annotation types the array
+                        // (emit owns L1617 / L1618); nothing to unify here.
                         WTy::Unknown
                     } else if crate::is_time_builtin(text) {
                         // `() -> time` (plan-time-builtin): no source, f64
@@ -452,15 +681,16 @@ impl Walk<'_> {
                         // ADR-0031: `n -> iota` — the count flows in. Size
                         // synthesized from the visible literal stage; emit
                         // re-derives and the builder owns static-n (L1612).
-                        match prev.map(|p| &p.kind) {
-                            Some(ExprKind::Int(n)) if *n > 0 && *n <= i32::MAX as u64 => {
-                                WTy::Array(Box::new(WTy::Known(Ty::i32())), *n)
+                        // A size parameter is a literal (ADR-0047 D4).
+                        match prev.and_then(|p| self.int_const(p, scope)) {
+                            Some(n) if n > 0 && n <= i32::MAX as u64 => {
+                                WTy::Array(Box::new(WTy::Known(Ty::i32())), n)
                             }
                             // onto-device: an extent past i32 — the count is an
                             // `i64` literal and the elements its index type.
-                            Some(ExprKind::Int(n)) if *n <= i64::MAX as u64 && *n > 0 => {
+                            Some(n) if n <= i64::MAX as u64 && n > 0 => {
                                 self.unify_known(&cur, &Ty::i64(), e.span);
-                                WTy::Array(Box::new(WTy::Known(Ty::index_ty(*n))), *n)
+                                WTy::Array(Box::new(WTy::Known(Ty::index_ty(n))), n)
                             }
                             _ => WTy::Unknown,
                         }
@@ -473,18 +703,20 @@ impl Walk<'_> {
                             _ => WTy::Unknown,
                         };
                         match prev.map(|p| &p.kind) {
-                            Some(ExprKind::Tuple(xs)) if xs.len() == 2 => match &xs[1].kind {
-                                ExprKind::Int(n) if *n > 0 && *n <= i32::MAX as u64 => {
-                                    WTy::Array(Box::new(elem), *n)
-                                }
-                                ExprKind::Int(n) if *n > 0 && *n <= i64::MAX as u64 => {
-                                    if let WTy::Tuple(ws) = &cur {
-                                        self.unify_known(&ws[1], &Ty::i64(), e.span);
+                            Some(ExprKind::Tuple(xs)) if xs.len() == 2 => {
+                                match self.int_const(&xs[1], scope) {
+                                    Some(n) if n > 0 && n <= i32::MAX as u64 => {
+                                        WTy::Array(Box::new(elem), n)
                                     }
-                                    WTy::Array(Box::new(elem), *n)
+                                    Some(n) if n > 0 && n <= i64::MAX as u64 => {
+                                        if let WTy::Tuple(ws) = &cur {
+                                            self.unify_known(&ws[1], &Ty::i64(), e.span);
+                                        }
+                                        WTy::Array(Box::new(elem), n)
+                                    }
+                                    _ => WTy::Unknown,
                                 }
-                                _ => WTy::Unknown,
-                            },
+                            }
                             _ => WTy::Unknown,
                         }
                     } else if let Some(target) = crate::widen_target(text) {
@@ -497,16 +729,18 @@ impl Walk<'_> {
                             self.unify_known(&cur, &Ty::f32(), e.span);
                         }
                         WTy::Known(Ty::Narrow(fmt))
-                    } else if text == "exp" {
-                        // ADR-0042: `x -> exp` keeps the float width — a
-                        // literal's variable flows through, so the width is
-                        // whatever unifies with it (emit owns L1615).
+                    } else if mapal_ir::MathFn::from_name(text).is_some() {
+                        // ADR-0042 / ADR-0046: `x -> exp` (`sqrt`, `sin`,
+                        // `cos`) keeps the float width — a literal's variable
+                        // flows through, so the width is whatever unifies
+                        // with it (emit owns L1615).
                         match &cur {
                             WTy::Known(Ty::Float { .. }) | WTy::Var(_) => cur.clone(),
                             _ => WTy::Unknown,
                         }
                     } else {
                         // bind cur to a fresh name.
+                        self.check_not_size(*n);
                         scope.bind(text, cur.clone());
                         cur
                     }
@@ -522,8 +756,14 @@ impl Walk<'_> {
                 self.expr_with_hole(expr, &cur, scope)
             }
             StageKind::Bind { name, ty, .. } => {
+                self.check_not_size(*name);
                 if let Some(annot) = ty
-                    && let Some(t) = self.types.resolve(self.source, annot, &mut self.diags)
+                    && let Some(t) = self.types.resolve_sized(
+                        self.source,
+                        annot,
+                        &self.sizes.env,
+                        &mut self.diags,
+                    )
                 {
                     self.unify_known(&cur, &t, stage_span);
                     scope.bind(name_text(self.source, *name), WTy::Known(t.clone()));
@@ -662,8 +902,9 @@ impl Walk<'_> {
             None => scrutinee.clone(),
         };
         let mut prev: Option<&Expr> = chain.head.as_ref();
-        for stage in &chain.stages {
-            cur = self.stage(&stage.kind, stage.span, cur, prev, scope);
+        for (i, stage) in chain.stages.iter().enumerate() {
+            let next = chain.stages.get(i + 1);
+            cur = self.stage(&stage.kind, stage.span, cur, prev, next, scope);
             prev = match &stage.kind {
                 StageKind::Expr(e) => Some(e),
                 _ => None,
@@ -681,7 +922,22 @@ impl Walk<'_> {
         cur: &WTy,
         scope: &mut ScopeStack<WTy>,
     ) -> WTy {
-        // Determine element / acc tys from cur.
+        // Determine element / acc tys from cur (ADR-0048 D5: a struct reads
+        // through its `_` array).
+        let cur = &match (op, cur) {
+            (CollOp::Map, _) => self.through_default(cur, |t| matches!(t, Ty::Array { .. })),
+            (CollOp::Fold, WTy::Tuple(ws)) if ws.len() == 2 => WTy::Tuple(vec![
+                ws[0].clone(),
+                self.through_default(&ws[1], |t| matches!(t, Ty::Array { .. })),
+            ]),
+            (CollOp::Fold, WTy::Known(Ty::Tuple(ts))) if ts.len() == 2 => WTy::Tuple(vec![
+                WTy::Known(ts[0].clone()),
+                self.through_default(&WTy::Known(ts[1].clone()), |t| {
+                    matches!(t, Ty::Array { .. })
+                }),
+            ]),
+            _ => cur.clone(),
+        };
         let cur_ty = self.wty_to_ty(cur);
         let idx = self.block_counter;
         self.block_counter += 1;
@@ -734,8 +990,17 @@ impl Walk<'_> {
         // broadcast edges, hidden leading body-input components). The one
         // remaining L1108 case is a WRITE to an enclosing name (an indexed
         // bind targeting it, ADR-0021's "rebind, never a fresh shadow").
-        let param_names: std::collections::BTreeSet<&str> =
-            params.iter().map(|p| name_text(self.source, *p)).collect();
+        for p in params {
+            self.check_not_size(*p);
+        }
+        // ADR-0047 D4: a size parameter is a constant in the body, never a
+        // capture (seeded as a body-local name).
+        let param_names: std::collections::BTreeSet<&str> = params
+            .iter()
+            .map(|p| name_text(self.source, *p))
+            .chain(self.sizes.env.keys().map(String::as_str))
+            .chain(self.types.globals().consts.keys().map(String::as_str))
+            .collect();
         let caps = body_captures(self.source, body, &param_names, self.fn_sigs);
         if let Some((cap, sp)) = &caps.write {
             self.diags.push(diag(
@@ -844,13 +1109,27 @@ impl Walk<'_> {
                 name,
             },
         );
-        match op {
-            CollOp::Map => WTy::Known(Ty::Array {
+        let size = cur_ty.as_ref().and_then(array_size).unwrap_or(1);
+        match (op, &tail_ty) {
+            // A literal's width may still be pinned downstream
+            // (`-> table: [f32; n]`): keep its variable, settle at the end.
+            (CollOp::Map, WTy::Var(v)) if self.unpinned(*v) => {
+                self.pending_maps
+                    .push(((stage_span.start, stage_span.end), *v));
+                WTy::Array(Box::new(tail_ty.clone()), size)
+            }
+            (CollOp::Map, _) => WTy::Known(Ty::Array {
                 elem: Box::new(body_out),
-                size: cur_ty.as_ref().and_then(array_size).unwrap_or(1),
+                size,
             }),
-            CollOp::Fold => WTy::Known(body_out),
+            (CollOp::Fold, _) => WTy::Known(body_out),
         }
+    }
+
+    /// Whether literal variable `v` has no width yet.
+    fn unpinned(&mut self, v: usize) -> bool {
+        let r = self.find(v);
+        !matches!(self.state[r], LitState::Fixed(_))
     }
 
     fn type_call(&mut self, sig: &FnSig, arg: &WTy, span: syn::SourceLoc) {
@@ -912,6 +1191,17 @@ impl Walk<'_> {
     // --- expressions --------------------------------------------------------
 
     fn expr(&mut self, expr: &Expr, scope: &mut ScopeStack<WTy>) -> WTy {
+        // ADR-0047 D4: a size expression in value position is one integer
+        // literal (unpinned `Ty::index_ty`).
+        if matches!(expr.kind, ExprKind::Binary { .. })
+            && let Some(v) = self.size_fold(expr, scope)
+        {
+            let var = self.fresh_var(expr.span, false);
+            if v > i128::from(i32::MAX) || v < i128::from(i32::MIN) {
+                self.pin(var, &Ty::i64(), expr.span);
+            }
+            return WTy::Var(var);
+        }
         match &expr.kind {
             ExprKind::Int(_) => WTy::Var(self.fresh_var(expr.span, false)),
             ExprKind::Float => WTy::Var(self.fresh_var(expr.span, true)),
@@ -921,7 +1211,21 @@ impl Walk<'_> {
                 let text = name_text(self.source, *n);
                 match scope.resolve(text) {
                     Some((b, _)) => b.clone(),
-                    None => WTy::Unknown,
+                    None if self.types.globals().consts.contains_key(text) => {
+                        self.global_const(text, expr.span)
+                    }
+                    None => match self.sizes.env.get(text).copied() {
+                        // ADR-0047 D4: an integer literal of the size's value;
+                        // unpinned it is `Ty::index_ty(n)`.
+                        Some(v) => {
+                            let var = self.fresh_var(expr.span, false);
+                            if v > i32::MAX as u64 {
+                                self.pin(var, &Ty::i64(), expr.span);
+                            }
+                            WTy::Var(var)
+                        }
+                        None => WTy::Unknown,
+                    },
                 }
             }
             ExprKind::Hole => WTy::Unknown,
@@ -951,6 +1255,11 @@ impl Walk<'_> {
                 let bty = self.expr(base, scope);
                 match field {
                     syn::MemberField::Named(fname) => {
+                        let fn_ = name_text(self.source, *fname);
+                        let bty = self.through_default(&bty, |t| match t {
+                            Ty::Struct { fields, .. } => fields.iter().any(|(n, _)| n == fn_),
+                            _ => false,
+                        });
                         let bt = self.wty_to_ty(&bty);
                         if let Some(Ty::Struct { fields, .. }) = bt.as_ref() {
                             let fn_ = name_text(self.source, *fname);
@@ -977,13 +1286,14 @@ impl Walk<'_> {
             }
             ExprKind::Index { base, index } => {
                 let bty = self.expr(base, scope);
+                let bty = self.through_default(&bty, |t| matches!(t, Ty::Array { .. }));
                 let iv = self.expr(index, scope);
                 // index is an integer; if a lit var, leave it (defaults i32) —
                 // unless the literal itself is past i32 (an extent past 2³¹
                 // indexes in `i64`, its index type).
-                if let ExprKind::Int(n) = &index.kind
-                    && *n > i32::MAX as u64
-                    && *n <= i64::MAX as u64
+                if let Some(n) = self.int_const(index, scope)
+                    && n > i32::MAX as u64
+                    && n <= i64::MAX as u64
                 {
                     self.unify_known(&iv, &Ty::i64(), index.span);
                 }
@@ -1019,6 +1329,54 @@ impl Walk<'_> {
             }
             ExprKind::Struct { name, fields } => {
                 let tname = name_text(self.source, *name);
+                // ADR-0048 D4: a size-generic type's literal, its sizes from
+                // its fields' types (where they are known).
+                if let Some(td) = self
+                    .types
+                    .decl(tname)
+                    .filter(|td| !td.sizes.is_empty())
+                    .cloned()
+                {
+                    let mut tys = Vec::new();
+                    let mut ws = Vec::new();
+                    for f in &td.fields {
+                        let fname = name_text(self.source, f.name);
+                        let w = fields
+                            .iter()
+                            .find(|fi| name_text(self.source, fi.name) == fname)
+                            .map(|fi| match &fi.value {
+                                Some(v) => self.expr(v, scope),
+                                None => scope
+                                    .resolve(fname)
+                                    .map(|(b, _)| b.clone())
+                                    .unwrap_or(WTy::Unknown),
+                            })
+                            .unwrap_or(WTy::Unknown);
+                        // A literal field (no type yet) carries no size.
+                        tys.push(match &w {
+                            WTy::Var(_) => Some(Ty::i32()),
+                            _ => self.wty_to_ty(&w),
+                        });
+                        ws.push(w);
+                    }
+                    let Some(tys) = tys.into_iter().collect::<Option<Vec<Ty>>>() else {
+                        return WTy::Unknown;
+                    };
+                    let Some(ty) =
+                        crate::sizes::infer_type(self.source, self.types, &td, &tys, expr.span)
+                            .ok()
+                            .and_then(|vs| self.types.instance(self.source, tname, &vs, expr.span))
+                    else {
+                        return WTy::Unknown;
+                    };
+                    // The fields' literals take the instance's field types.
+                    if let Ty::Struct { fields: decl, .. } = &ty {
+                        for (w, (_, ft)) in ws.iter().zip(decl) {
+                            self.unify_known(w, ft, expr.span);
+                        }
+                    }
+                    return WTy::Known(ty);
+                }
                 if let Some(sty) = self.types.get(tname).cloned() {
                     if let Ty::Struct { fields: decl, .. } = &sty {
                         for fi in fields {
@@ -1395,7 +1753,11 @@ fn body_effect_span(
         {
             let text = name_text(source, *n);
             let effectful = fn_sigs.get(text).map(|s| s.effectful).unwrap_or(false);
-            if crate::is_print_builtin(text) || crate::is_time_builtin(text) || effectful {
+            if crate::is_print_builtin(text)
+                || crate::is_time_builtin(text)
+                || crate::is_read_builtin(text)
+                || effectful
+            {
                 found = Some(stage.span);
             }
         }
@@ -1601,6 +1963,7 @@ fn capture_chain(
                         && fn_sigs.get(text).is_none()
                         && !crate::is_print_builtin(text)
                         && !crate::is_time_builtin(text)
+                        && !crate::is_read_builtin(text)
                     {
                         if acc.seen.contains(text) {
                             acc.record_write(text, e.span);
@@ -1791,6 +2154,19 @@ pub fn build_fn_sigs(
     for item in &program.items {
         if let syn::Item::Fn(fd) = item {
             let name = name_text(source, fd.name).to_string();
+            if !fd.sizes.is_empty() {
+                // ADR-0047: each instance resolves its own signature.
+                out.insert(
+                    name.clone(),
+                    FnSig {
+                        params: Vec::new(),
+                        ret: None,
+                        effectful: effects.is_effectful(&name),
+                        generic: true,
+                    },
+                );
+                continue;
+            }
             let mut params = Vec::new();
             for p in &fd.params {
                 if let Some(t) = types.resolve(source, &p.ty, diags) {
@@ -1809,6 +2185,7 @@ pub fn build_fn_sigs(
                     params,
                     ret,
                     effectful: effects.is_effectful(&name),
+                    generic: false,
                 },
             );
         }
