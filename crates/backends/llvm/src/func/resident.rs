@@ -2624,7 +2624,19 @@ impl<'a> FnEmit<'a> {
                         })
                     })
                     .collect();
-                self.uses(&sites, &cells, c, &into)
+                let mut u = self.uses(&sites, &cells, c, &into);
+                // The state's way out (`last_use_plan` counts it as the
+                // array's escape, the first use `uses` lists) is the carry's.
+                let escape = self.lup.escapes(c)
+                    && self.ir.try_owner(c) == Some(self.f)
+                    && self
+                        .ir
+                        .object(c)
+                        .is_some_and(|x| x.kind != ObjectKind::Parameter);
+                if escape && matches!(u.first(), Some(Use::Host)) {
+                    u.remove(0);
+                }
+                u
             } else {
                 self.uses(&sites, &cells, c, &[])
             };
