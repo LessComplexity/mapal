@@ -207,6 +207,14 @@ INTENT = {
         ('one ticket a piece: an acq_rel atom.add.u32', 'ptx.ticket > 0'),
         ('one wave of blocks', 'plan.ctas <= occ.blocks_per_sm * occ.sms'),
         ('no local-memory traffic in the hot loop', 'sass.hot.stl + sass.hot.ldl == 0')]),
+    # bf16 tensor-tile `mma-walk`: a 16-bit tensor tile walked by stream-K over every resident slot at its whole warp
+    # tile — the same pipelined k loop (HMMA / LDSM / LDGSTS a panel), the shared tiles' partials added (`red`, or the
+    # group's workspace and ticket), one wave of blocks. `.off-mma-walk`: the ordered tile (or its cut).
+    'mma-walk': dict(applies_on="plan.kind == 'mma' and plan.combine == 'streamk'", on=[
+        ('the walk is the tensor tile\'s', "plan.walk == 'mma'"),
+        ('pieces add their partials', 'ptx.atom_add + ptx.red_add > 0'),
+        ('one wave of blocks', 'plan.ctas <= occ.blocks_per_sm * occ.sms'),
+        ('no local-memory traffic in the hot loop', 'sass.hot.stl + sass.hot.ldl == 0')]),
     # large-gemm `streamk-fill`: stream-K walks a launched tile grid that gives the part its fill target at its own
     # geometry (`resident` warps a scheduler: 8 an SM); a grid short of it takes the `fill-wave` split (16 x 2048 x
     # 7168: 16 one-warp tiles). The stream-K of `k-fill` (an under-filled site's full tile, `wps < 2`) is its own.

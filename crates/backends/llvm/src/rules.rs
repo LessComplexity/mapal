@@ -788,7 +788,7 @@ mod tests {
         }
         assert_eq!(open, OPEN.to_vec(), "measurements the rules do not pick");
         // The counts the evidence file reports.
-        assert_eq!((picked, null, mixed, open.len()), (172, 82, 16, 22));
+        assert_eq!((picked, null, mixed, open.len()), (172, 82, 17, 22));
     }
 
     /// precision `split-rate`: the split is weighed against the FFMA tile's

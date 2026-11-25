@@ -158,6 +158,20 @@ pub fn host_device(dev: &str) -> String {
                 l = format!("{}add {ty} {v}, 0", &l[..i]);
             }
         }
+        // bf16 tensor-tile `mma-walk`: a group workspace's fire-and-forget add
+        // (`red`) is the atomic add whose value goes unread.
+        let red = "call void asm sideeffect \"red.relaxed.gpu.global.add.f32 [$0], $1;\", \"l,f,~{memory}\"(ptr ";
+        if let Some(i) = l.find(red)
+            && let Some((p, x)) = l[i + red.len()..]
+                .trim_end_matches(')')
+                .split_once(", float ")
+        {
+            let name = format!("%emu_red_{}", p.trim_start_matches('%'));
+            l = format!(
+                "{}{name} = atomicrmw fadd ptr {p}, float {x} monotonic, align 4",
+                &l[..i]
+            );
+        }
         // gapfix `stream-ld`: a streaming load (`ld.global.cs.nc`, the L2's
         // eviction priority) is a plain load of the same words.
         if let Some(i) = l.find(" asm \"ld.global.cs.nc.")
