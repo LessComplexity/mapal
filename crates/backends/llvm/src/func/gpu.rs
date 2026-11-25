@@ -5169,6 +5169,18 @@ pub(crate) fn device_module(
         out.push('\n');
         out.push_str(&u.text);
     }
+    // model-ready `lanes-unroll`: each warp-a-cell fold loop its own loop id,
+    // unrolled `NAIVE_UNROLL` trips (`FnEmit::emit_fold`'s `!@UNROLL@`).
+    let mut id = 2 * kernels.len();
+    while let Some(at) = out.find("!@UNROLL@") {
+        out.replace_range(at..at + "!@UNROLL@".len(), &format!("!{id}"));
+        md.push_str(&format!(
+            "!{id} = distinct !{{!{id}, !{}}}\n!{} = !{{!\"llvm.loop.unroll.count\", i32 {NAIVE_UNROLL}}}\n",
+            id + 1,
+            id + 1
+        ));
+        id += 2;
+    }
     out.push('\n');
     out.push_str(&md);
     let mut out = super::horizontal::compose(out, hz, launched);

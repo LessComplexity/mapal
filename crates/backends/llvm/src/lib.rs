@@ -1123,6 +1123,15 @@ pub struct GpuRungs {
     /// carry's next state forwards its pointer into the back edge — no host
     /// read there. Off: the back edge's pack is a host read.
     pub carry_fwd: bool,
+    /// model-ready integration `lanes-unroll`: a warp-a-cell fold loop
+    /// (`cell-lanes` / `stride-lanes`) is unrolled `NAIVE_UNROLL` trips
+    /// (`llvm.loop.unroll.count`) where each lane walks at least that many —
+    /// the loads in flight a lane keeps, as the stream rules price a naive
+    /// thread (`NAIVE_UNROLL`), stated in the IR instead of left to `ptxas`
+    /// (which unrolls the loop only when its index is loaded: an `iota-law`
+    /// index left it rolled, one weight load in flight a warp). Off
+    /// (`--gpu-off=lanes-unroll`): no loop metadata.
+    pub lanes_unroll: bool,
 }
 
 impl GpuRungs {
@@ -1282,11 +1291,12 @@ impl GpuRungs {
         range_chain: true,
         stride_lanes: true,
         carry_fwd: true,
+        lanes_unroll: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 154] = [
+    pub const NAMES: [&'static str; 155] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1441,6 +1451,7 @@ impl GpuRungs {
         "range-chain",
         "stride-lanes",
         "carry-fwd",
+        "lanes-unroll",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -1600,6 +1611,7 @@ impl GpuRungs {
             "range-chain" => &mut self.range_chain,
             "stride-lanes" => &mut self.stride_lanes,
             "carry-fwd" => &mut self.carry_fwd,
+            "lanes-unroll" => &mut self.lanes_unroll,
             _ => return None,
         })
     }

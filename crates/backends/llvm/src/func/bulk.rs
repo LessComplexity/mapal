@@ -430,7 +430,20 @@ impl<'a> FnEmit<'a> {
         let iv1 = self.tmp();
         self.line(format!("{iv1} = add i64 {iv}, {stride}"));
         self.line(format!("store i64 {iv1}, ptr {ctr}"));
-        self.line(format!("br label %{lh}"));
+        // `lanes-unroll`: a lane that walks at least `NAIVE_UNROLL` steps
+        // keeps that many loads in flight — the depth the stream rules price
+        // a thread at — by the loop's own unroll count (`device_module` gives
+        // each `!@UNROLL@` its loop id), not by `ptxas`'s choice.
+        let unroll = match lane {
+            Some((_, _, l))
+                if !self.gpu_arms.off.lanes_unroll
+                    && n / l.max(1) >= crate::profile::NAIVE_UNROLL =>
+            {
+                ", !llvm.loop !@UNROLL@"
+            }
+            _ => "",
+        };
+        self.line(format!("br label %{lh}{unroll}"));
         self.label_line(&ld);
         let mut fin = self.tmp();
         self.line(format!("{fin} = load {acc_llt}, ptr {accslot}"));

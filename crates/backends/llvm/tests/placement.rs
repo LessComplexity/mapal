@@ -129,6 +129,16 @@ fn check(clang: &str, i: usize, g: &testgen::DecodeProg) -> Vec<(&'static str, u
     if dev.contains("kind=cell uniform=1 nested=0") {
         c.push(("gather-cells", 1));
     }
+    // `lanes-unroll`: every warp-a-cell fold loop's placeholder became its
+    // own loop id, unrolled `NAIVE_UNROLL` trips.
+    assert!(
+        !dev.contains("@UNROLL@"),
+        "a loop id left unnumbered\n{src}"
+    );
+    let unrolled = dev.matches("llvm.loop.unroll.count").count() as u64;
+    if unrolled > 0 {
+        c.push(("unrolled-lane-loops", unrolled));
+    }
     let ex = emu::build_emulated(clang, &em.text, dev);
     for (mode, (got, _)) in MODES.iter().zip(ex.run_each(&MODES)) {
         assert_eq!(got, want, "{mode:?}\n{src}");
@@ -140,9 +150,16 @@ fn check(clang: &str, i: usize, g: &testgen::DecodeProg) -> Vec<(&'static str, u
     );
     assert_eq!(cpu, want, "cpu\n{src}");
     if i % 3 == 0 {
-        let arm = ["range-cell", "devmap", "cell-lanes"][(i / 3) % 3];
+        let arm = ["range-cell", "devmap", "cell-lanes", "lanes-unroll"][(i / 3) % 4];
         let off = device_emission(&ir, &[arm]);
-        let got = emu::run_emulated(clang, &off.text, off.device.as_deref().unwrap_or(""));
+        let off_dev = off.device.as_deref().unwrap_or("");
+        if arm == "lanes-unroll" {
+            assert!(
+                !off_dev.contains("llvm.loop.unroll.count"),
+                "{arm} off\n{src}"
+            );
+        }
+        let got = emu::run_emulated(clang, &off.text, off_dev);
         assert_eq!(got, want, "{arm} off\n{src}");
         c.push(("off-arm-runs", 1));
     }
@@ -182,6 +199,7 @@ fn placement_on_generated_programs() {
         "range-chains",
         "lane-cells",
         "gather-cells",
+        "unrolled-lane-loops",
         "off-arm-runs",
     ] {
         assert!(c.get(key).copied().unwrap_or(0) > 0, "{key}: {c:?}");

@@ -7435,7 +7435,8 @@ pub struct DecodeProg {
 
 pub fn decode_strategy() -> impl Strategy<Value = DecodeProg> {
     (
-        prop::sample::select(vec![32u64, 64]),
+        // 256: a lane of a warp-a-row fold walks 8 steps (`lanes-unroll`).
+        prop::sample::select(vec![32u64, 64, 256]),
         prop::sample::select(vec![4u64, 8]),
         prop::sample::select(vec![8u64, 16]),
         1u64..3,
