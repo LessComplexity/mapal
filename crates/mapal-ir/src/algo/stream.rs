@@ -204,12 +204,20 @@ pub struct StreamGuard {
     /// it reads (its value at a masked cell is one function of the masked
     /// constant and its row's values), every fold over the axis is a `+` or
     /// a running extreme, and every consumer's column operand is proven
-    /// finite (`finite_plan`: `0·y = 0`). The kernel still checks, after the
-    /// visible windows, that each fold's term at the masked constant is its
-    /// identity at the final values; where it is not the skipped windows run.
+    /// finite (`finite_plan`: `0·y = 0`) or checked finite at run time
+    /// (`check`). The kernel still checks, after the visible windows, that
+    /// each fold's term at the masked constant is its identity at the final
+    /// values; where it is not the skipped windows run.
     pub skip: bool,
     /// Why not, when `skip` is false.
     pub why: &'static str,
+    /// bf16-class `finite-check`: the consumers (member indices) whose
+    /// column operand `finite_plan` does not prove finite — a skipped
+    /// window's `0·y` is `0` only where its `y` is, so the kernel reads the
+    /// column operand's elements the skipped windows hold and runs them
+    /// where one is not finite (the oracle's `0·∞ = NaN`). Empty: every
+    /// column operand proven finite.
+    pub check: Vec<usize>,
 }
 
 fn digit_range(d: &AxisDigit, x0: u64, x1: u64) -> (u64, u64) {
@@ -816,21 +824,24 @@ impl CategoryIr {
             _ => false,
         }) {
             "term"
-        } else if (0..ms.len()).any(|j| match (&roles[j], &ms[j].kind) {
-            (StreamRole::Consume { .. }, UnitKind::Tile(t)) => self
-                .pair_slot_source(self.morphisms[ms[j].m].source, t.b.slot)
-                .is_none_or(|b| !fin.finite(b)),
-            _ => false,
-        }) {
-            "finite"
         } else {
             ""
         };
+        // A consumer's column operand not proven finite: checked at run time.
+        let check: Vec<usize> = (0..ms.len())
+            .filter(|&j| match (&roles[j], &ms[j].kind) {
+                (StreamRole::Consume { .. }, UnitKind::Tile(t)) => self
+                    .pair_slot_source(self.morphisms[ms[j].m].source, t.b.slot)
+                    .is_none_or(|b| !fin.finite(b)),
+                _ => false,
+            })
+            .collect();
         Some(StreamGuard {
             producer: k,
             form,
             skip: why.is_empty(),
             why,
+            check,
         })
     }
 

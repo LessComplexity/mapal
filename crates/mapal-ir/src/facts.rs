@@ -38,6 +38,7 @@ pub(crate) struct FuncFacts {
     pub(crate) row_fold: OnceLock<SecondaryMap<MorphismId, RowFoldSite>>,
     pub(crate) whole_fold: OnceLock<SecondaryMap<MorphismId, RowFoldSite>>,
     pub(crate) cell_plan: OnceLock<SecondaryMap<MorphismId, CellSite>>,
+    pub(crate) trap_cell_plan: OnceLock<SecondaryMap<MorphismId, CellSite>>,
     pub(crate) linear_plan: OnceLock<SecondaryMap<MorphismId, LinearSite>>,
     pub(crate) footprint_plan: OnceLock<FootprintPlan>,
     pub(crate) elem_plan: OnceLock<ElemPlan>,

@@ -546,6 +546,17 @@ fn check_flash(clang: &str, i: usize, p: &testgen::FlashProg) -> Vec<(&'static s
         }
         builds.push(("async off", em));
     }
+    let skipped = lines.iter().any(|l| field(l, "skip") == "on");
+    out.extend(check_finite(
+        clang,
+        i,
+        p,
+        &src,
+        (b, kb, 0, 0, 0),
+        skipped,
+        "",
+        &within,
+    ));
     for (arm, em) in &builds {
         let ex = emu::build_emulated(clang, &em.text, em.device.as_deref().unwrap_or(""));
         let modes: &[[(&str, &str); 2]] = match *arm {
@@ -562,6 +573,126 @@ fn check_flash(clang: &str, i: usize, p: &testgen::FlashProg) -> Vec<(&'static s
         }
     }
     out
+}
+
+/// bf16-class `finite-check`: `src` with its values written so `finite_plan`
+/// cannot prove them finite — an arm never taken that overflows (every value
+/// finite: the masked windows still skipped, checked at run time), or the
+/// last key's last value `∞` (masked for every earlier token: the oracle's
+/// `0·∞ = NaN` there, which the kernel's check reproduces by running the
+/// windows it would skip). Off (`finite-check`): none skipped. Each build
+/// against the oracle in every emulator mode (`ok`: the arm's comparison).
+#[allow(clippy::too_many_arguments)]
+fn check_finite(
+    clang: &str,
+    i: usize,
+    p: &testgen::FlashProg,
+    src: &str,
+    force: (u64, u64, u64, u64, u64),
+    skipped: bool,
+    tag: &'static str,
+    ok: &dyn Fn(&str, &str) -> bool,
+) -> Vec<(&'static str, u64)> {
+    let mut out = Vec::new();
+    let plain = "        v / 4.0\n    } -> vv;";
+    if p.heads == 0 || !(p.causal || p.tm > 0) || !src.contains(plain) {
+        return out;
+    }
+    let len = p.n * (p.heads / p.group) * p.d;
+    let huge = "v * 1000000000000000000000000000000.0 * 1000000000000000000000000000000.0";
+    let arm = |cond: String| {
+        format!(
+            "        ({cond}) -> {{\n            -true-> {huge};\n            -false-> v / 4.0;\n        }}\n    }} -> vv;"
+        )
+    };
+    for (name, cond, inf) in [
+        ("finite unproven", format!("t > {len}"), false),
+        ("masked inf", format!("t == {}", len - 1), true),
+    ] {
+        let src2 = src.replace(plain, &arm(cond));
+        let ir2 = lower(&src2);
+        let rr2 = run(&ir2, 2_000_000_000);
+        if !matches!(rr2.outcome, Outcome::Done(_)) {
+            continue;
+        }
+        let em = emission(&ir2, Some(force), &[]);
+        let checked = stream_lines(&em).iter().any(|l| field(l, "skip") == "on");
+        let key = format!("{tag}check:{name}");
+        out.push((
+            Box::leak(key.into_boxed_str()) as &'static str,
+            u64::from(checked && skipped),
+        ));
+        if inf {
+            out.push(("check:oracle nan", u64::from(rr2.output.contains("NaN"))));
+        }
+        let mut arms = vec![(name, em)];
+        if checked && i % 2 == 0 {
+            let off = emission(&ir2, Some(force), &["finite-check"]);
+            out.push((
+                "check off unskipped",
+                u64::from(stream_lines(&off).iter().all(|l| field(l, "skip") != "on")),
+            ));
+            arms.push(("finite-check off", off));
+        }
+        for (arm, em) in &arms {
+            let ex = emu::build_emulated(clang, &em.text, em.device.as_deref().unwrap_or(""));
+            for (mode, (got, _)) in MODES.iter().zip(ex.run_each(&MODES)) {
+                assert!(
+                    ok(&got, &rr2.output),
+                    "{arm} {mode:?}: {got:?} vs {:?}\n{src2}",
+                    rr2.output
+                );
+                out.push(("runs", 1));
+            }
+        }
+    }
+    out
+}
+
+/// bf16-class `narrow-window`: `src` with its keys and values stored bf16
+/// (a bf16 KV cache: each written element rounded once, `-> to_bf16`; each
+/// read widened exactly before its product, `-> widen_f32`) — the struct's
+/// fields too. `None` when the source has no such reads.
+fn bf16_cache_src(src: &str) -> Option<String> {
+    let mut out = String::new();
+    let mut reads = 0;
+    for line in src.lines() {
+        let t = line.trim_start();
+        let ind = &line[..line.len() - t.len()];
+        let wide = [" * kr[", " * vv[", " * cache.keys[", " * cache.values["]
+            .iter()
+            .find(|k| t.contains(*k));
+        if t.starts_with("acc, ")
+            && let Some(k) = wide
+        {
+            let (head, rest) = t.split_once(" -> ").expect("a fold step");
+            let at = rest.find(k).expect("the read");
+            let (lhs, read) = (&rest[..at], &rest[at + 3..]);
+            out +=
+                &format!("{ind}{head} ->\n{ind}{read} -> widen_f32 -> kv16;\n{ind}{lhs} * kv16\n");
+            reads += 1;
+            continue;
+        }
+        out += line;
+        out.push('\n');
+    }
+    if reads != 2 {
+        return None;
+    }
+    for name in ["kr", "vv"] {
+        let plain = format!("        v / 4.0\n    }} -> {name};");
+        if !out.contains(&plain) {
+            return None;
+        }
+        out = out.replace(
+            &plain,
+            &format!("        v / 4.0 -> to_bf16\n    }} -> {name};"),
+        );
+    }
+    Some(
+        out.replace("keys: [f32;", "keys: [bf16;")
+            .replace("values: [f32;", "values: [bf16;"),
+    )
 }
 
 /// Generated attention programs (`testgen::flash_strategy`): 1–64 query
@@ -641,6 +772,10 @@ fn stream_on_generated_attention() {
         "skip:tm law",
         "skip:tm load",
         "skip:tm uniform",
+        "check:finite unproven",
+        "check:masked inf",
+        "check:oracle nan",
+        "check off unskipped",
         "runs",
     ] {
         assert!(c.get(key).copied().unwrap_or(0) > 0, "{key}: {c:?}");
@@ -753,6 +888,58 @@ fn check_flash_mma(clang: &str, i: usize, p: &testgen::FlashProg) -> Vec<(&'stat
     };
     let tol = 2.0 * 2f64.powi(-9) * 1.5 * trips;
     let cells = (p.n * p.d * if p.lp { p.group } else { p.heads }) as f64;
+    // bf16-class `narrow-window`: the keys and values stored bf16 — the
+    // windows hold their bytes, the fragments take them as they stand; the
+    // oracle reads the same rounded elements (the member's bound). Off: no
+    // stream.
+    if mma && let Some(src16) = bf16_cache_src(&src) {
+        let ir16 = lower(&src16);
+        let rr16 = run(&ir16, 2_000_000_000);
+        if matches!(rr16.outcome, Outcome::Done(_)) {
+            let em = emission(&ir16, Some((16, kb, 2, 0, 0)), &[]);
+            let ls = stream_lines(&em);
+            let on16 = ls.iter().any(|l| field(l, "stream").contains(":mma"));
+            out.push(("mma narrow window", u64::from(on16)));
+            out.push((
+                "mma narrow window skip",
+                u64::from(on16 && ls.iter().any(|l| field(l, "skip") == "on")),
+            ));
+            let off = emission(&ir16, Some((16, kb, 2, 0, 0)), &["narrow-window"]);
+            out.push((
+                "narrow-window off unstreamed",
+                u64::from(stream_lines(&off).is_empty()),
+            ));
+            for (arm, em) in [("narrow window", em), ("narrow-window off", off)] {
+                let ex = emu::build_emulated(clang, &em.text, em.device.as_deref().unwrap_or(""));
+                let modes: &[[(&str, &str); 2]] = if on16 && arm == "narrow window" {
+                    &MODES
+                } else {
+                    &MODES[..1]
+                };
+                for (mode, (got, _)) in modes.iter().zip(ex.run_each(modes)) {
+                    assert!(
+                        within_member(&got, &rr16.output, tol, cells),
+                        "{arm} {mode:?}: {got:?} vs {:?}\n{src16}",
+                        rr16.output
+                    );
+                    out.push(("runs", 1));
+                }
+            }
+        }
+    }
+    if mma {
+        let skipped = lines.iter().any(|l| field(l, "skip") == "on");
+        out.extend(check_finite(
+            clang,
+            i,
+            p,
+            &src,
+            (16, kb, 2, 0, 0),
+            skipped,
+            "mma ",
+            &|got: &str, want: &str| within_member(got, want, tol, cells),
+        ));
+    }
     for (arm, em) in &builds {
         let ex = emu::build_emulated(clang, &em.text, em.device.as_deref().unwrap_or(""));
         let modes: &[[(&str, &str); 2]] = match *arm {
@@ -811,6 +998,11 @@ fn stream_mma_on_generated_attention() {
         "mma run-time mask",
         "mma split-kv",
         "off streams ffma",
+        "mma check:finite unproven",
+        "mma check:masked inf",
+        "mma narrow window",
+        "mma narrow window skip",
+        "narrow-window off unstreamed",
         "runs",
     ] {
         assert!(c.get(key).copied().unwrap_or(0) > 0, "{key}: {c:?}");

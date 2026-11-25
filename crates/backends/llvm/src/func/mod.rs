@@ -311,6 +311,9 @@ pub(crate) struct FnEmit<'a> {
     frame_geps: String,
     /// Host guards call `mapal_trap`; task/body guards record into the run.
     guard_flavor: GuardFlavor,
+    /// bf16-class `device-trap`: this is a cell body's device variant — a
+    /// recorded trap goes to the module's trap word (`@dev_trap_record`).
+    device_trap: bool,
     /// Split-task collection loops use `%lo..%hi`; every other loop keeps
     /// today's `0..n`.
     split_range: bool,

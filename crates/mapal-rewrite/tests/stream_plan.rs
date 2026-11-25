@@ -116,9 +116,12 @@ fn model_scale_prefill_is_one_stream_group() {
         match (arms.stream, arms.guard_box, arms.finite) {
             (false, _, _) => assert!(sp.groups.is_empty()),
             (_, false, _) => assert!(sp.groups[0].guard.is_none()),
+            // F7 off: nothing proven finite — bf16-class `finite-check`:
+            // the skip stands, every consumer's column operand checked at
+            // run time (`StreamGuard::check`).
             _ => {
                 let gd = sp.groups[0].guard.as_ref().unwrap();
-                assert!(!gd.skip && gd.why == "finite");
+                assert!(gd.skip && !gd.check.is_empty(), "{gd:?}");
             }
         }
     }

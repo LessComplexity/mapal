@@ -47,6 +47,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "mapal_choice.h"
 
@@ -1506,6 +1507,55 @@ void mapal_gpu_free(uint64_t *slot) {
  * init still running is device work in flight too (S54: a program whose first
  * launch is after the read — every operand built in its kernel — would
  * otherwise time the context inside its clock): it is joined. */
+
+/* bf16-class `device-trap`: a cell that checks an unproven index records a
+ * trap into the module's word `mapal_dev_trap` (i64::MAX: none; else
+ * `topo << 8 | kind`). Its launch arms the next host checkpoint (a print, the
+ * clock, a trap, the exit: `mapal_rt_checkpoint_hook`), which waits for the
+ * device and reads the word — a recorded trap is raised there, the oracle's
+ * outcome. Unarmed, a checkpoint costs nothing. */
+extern void mapal_trap(uint32_t kind) __attribute__((noreturn));
+extern void mapal_rt_checkpoint_hook(void (*f)(void));
+static int trap_armed, trap_hooked;
+static long long trap_word(void);
+static void trap_poll(void) {
+  if (!trap_armed)
+    return;
+  trap_armed = 0;
+  long long v = trap_word();
+  if (v != 0x7fffffffffffffffLL)
+    mapal_trap((uint32_t)(v & 0xff));
+}
+static void trap_exit(void) {
+  if (!trap_armed)
+    return;
+  trap_armed = 0;
+  long long v = trap_word();
+  if (v != 0x7fffffffffffffffLL) {
+    fflush(stdout);
+    fprintf(stderr, "mapal trap: %s\n", (v & 0xff) == 0 ? "div_zero" : "index_oob");
+    _exit(101);
+  }
+}
+void mapal_gpu_trap_arm(void) {
+  trap_armed = 1;
+  if (!trap_hooked) {
+    trap_hooked = 1;
+    mapal_rt_checkpoint_hook(trap_poll);
+    atexit(trap_exit);
+  }
+}
+
+static long long trap_word(void) {
+  static CUdeviceptr word;
+  size_t sz = 0;
+  long long v = 0x7fffffffffffffffLL;
+  if (!word && cuModuleGetGlobal(&word, &sz, module, "mapal_dev_trap") != CUDA_SUCCESS)
+    return v;
+  CK(cuCtxSynchronize());
+  CK(cuMemcpyDtoH(&v, word, sizeof v));
+  return v;
+}
 void mapal_gpu_sync(void) {
   if (init_state == 1)
     load_module();
