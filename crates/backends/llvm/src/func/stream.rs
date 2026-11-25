@@ -479,7 +479,14 @@ impl<'a> FnEmit<'a> {
         for (k, mb) in members.iter().enumerate() {
             let elem =
                 crate::profile::elem_bytes(super::resident::array_elem(&self.obj_ty(mb.out)));
-            if elem != 4 {
+            // bf16-class `round-post`: a consumer whose epilogue rounds its
+            // cell as stored writes the narrow format (its call's result).
+            let rounded = matches!(
+                (&sg.roles[k], &mb.kind),
+                (StreamRole::Consume { .. }, UKind::Tile { site })
+                    if site.post.as_ref().is_some_and(|p| p.round.is_some())
+            );
+            if elem != 4 && !(elem == 2 && rounded) {
                 return Err("elem");
             }
             match (&sg.roles[k], &mb.kind) {
@@ -799,7 +806,18 @@ impl<'a> FnEmit<'a> {
         let seen = st.visited(rows);
         let flops =
             ((2 * rows * w * fma + rows * w * cells * STREAM_CELL_FLOPS) as f64 * seen) as u64;
-        let win_bytes = (win_bytes as f64 * seen) as u64;
+        // bf16-class `finite-check`: a checked consumer's column bytes in
+        // the windows each block skips, read for the check (no products).
+        let check: u64 = st.skip().map_or(0, |gd| {
+            gd.check
+                .iter()
+                .filter_map(|&k| match &members.get(k)?.kind {
+                    UKind::Tile { site } => Some(nb * st.kb * site.c * self::win_bytes(site)),
+                    _ => None,
+                })
+                .sum()
+        });
+        let win_bytes = (win_bytes as f64 * seen + check as f64 * (1.0 - seen)) as u64;
         // attention-chains: the busiest SM — its `⌈blocks / sms⌉` blocks
         // carry their share of the products at the SM's rate (a partial wave
         // of `per_sm`-block slots no slower: one block alone on an SM issues

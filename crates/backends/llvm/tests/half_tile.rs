@@ -784,3 +784,125 @@ fn round_store_shared_bodies_on_generated_programs() {
     ];
     assert!(all.iter().all(|&x| x > 0), "{c:?}");
 }
+
+/// bf16-class `round-post`: a GEMM whose map goes on past its fold (an
+/// epilogue: `÷ s`, `+ r[i]`, `· g[j]`, or none) feeding a second GEMM under
+/// `fold: bf16 | f32` — the first product's output is read only as the
+/// second's multiplicand, so it is stored rounded once by its producer
+/// (`precision_plan().store`): the site's epilogue ends in the rounding
+/// (`TilePost::round`), the map writes bf16 and the second site reads a
+/// narrow operand — its rows read down `y`'s columns (`zᵀ = yᵀ·w2`: no
+/// row-block stream joins the two, whose axis-wide values are never
+/// stored). `(t, k1, c1, c2, epi)`.
+fn round_post_src(t: u64, k1: u64, c1: u64, c2: u64, epi: u8) -> String {
+    let data = |name: &str, len: u64, a: u64, b: u64, m: u64, d: f64| {
+        format!(
+            "    {len} -> iota -> i_{name};\n    i_{name} -> map {{\n        x -> (x * {a} + {b}) % {m} - {} -> widen_f32 -> v;\n        v / {d:?}\n    }} -> {name};\n",
+            m / 2
+        )
+    };
+    let mut s = String::from("fn main() {\n");
+    s += &data("a", t * k1, 7, 3, 13, 8.0);
+    s += &data("w1", k1 * c1, 5, 1, 11, 16.0);
+    s += &data("w2", t * c2, 3, 2, 9, 16.0);
+    s += &data("r", t, 5, 4, 7, 4.0);
+    s += &data("g", c1, 3, 1, 5, 2.0);
+    s += &format!("    {k1} -> iota -> rk1;\n    {t} -> iota -> rk2;\n");
+    let tail = match epi {
+        0 => "dot / 3.0".to_string(),
+        1 => format!("dot + r[cell / {c1}]"),
+        2 => format!("dot * g[cell % {c1}]"),
+        _ => "dot".to_string(),
+    };
+    s += &format!(
+        "    {} -> iota -> map {{\n        cell -> (0.0, rk1) -> fold: bf16 | f32 {{\n            acc, k -> acc + a[cell / {c1} * {k1} + k] * w1[k * {c1} + cell % {c1}]\n        }} -> dot;\n        {tail}\n    }} -> y;\n",
+        t * c1
+    );
+    s += &format!(
+        "    {} -> iota -> map {{\n        cell -> (0.0, rk2) -> fold: bf16 | f32 {{\n            acc, k -> acc + y[k * {c1} + cell / {c2}] * w2[k * {c2} + cell % {c2}]\n        }}\n    }} -> z;\n",
+        c1 * c2
+    );
+    for i in [0, c1 * c2 / 3, c1 * c2 / 2 + 1, c1 * c2 - 1] {
+        s += &format!("    z[{i}] -> println;\n");
+    }
+    s + "}\n"
+}
+
+/// bf16-class `round-post` on generated GEMM chains (`round_post_src`): the
+/// first site's array stored bf16 with its epilogue's rounding
+/// (`TilePost::round`, every epilogue form), the second site's `a` narrow;
+/// the device's values against the weakest member's interpreter in every
+/// emulator mode, and under `round-store` off; coverage non-zero.
+#[test]
+fn round_post_on_generated_chains() {
+    let Some(clang) = emu::clang() else {
+        return;
+    };
+    let mut progs = Vec::new();
+    for (i, t) in [8u64, 16, 32, 48].into_iter().enumerate() {
+        for (j, k1) in [16u64, 32, 64].into_iter().enumerate() {
+            for epi in 0..4u8 {
+                let c1 = [16u64, 32, 64][(i + j + epi as usize) % 3];
+                let c2 = [16u64, 32][(i + epi as usize) % 2];
+                progs.push((t, k1, c1, c2, epi));
+            }
+        }
+    }
+    let covers = testgen::par_check(&progs, |_, &(t, k1, c1, c2, epi)| {
+        let src = round_post_src(t, k1, c1, c2, epi);
+        let ir = lower(&src);
+        let want = floats(&run_weakest(&ir, 4_000_000_000, &[]).output);
+        let mut cover = [0u64; 6];
+        cover[0] = 1;
+        let g = ir.narrow_stored().expect("y stored bf16");
+        let rounded = g
+            .funcs()
+            .flat_map(|(f, _)| {
+                let post = g.tile_plan_post(f).sites;
+                let radix = g.tile_plan_radix(f);
+                let narrow = g.tile_plan_narrow(f).sites;
+                post.into_iter()
+                    .chain(radix)
+                    .chain(narrow)
+                    .map(|(_, s)| s)
+                    .collect::<Vec<_>>()
+            })
+            .filter(|s| {
+                s.post
+                    .as_ref()
+                    .is_some_and(|p| p.round == Some(NarrowFloat::Bf16))
+            })
+            .count();
+        assert!(rounded >= 1, "the first site rounds as it stores\n{src}");
+        cover[1] = 1;
+        cover[2 + usize::from(epi.min(3))] = 1;
+        let check = |got: &str, what: &str| {
+            let got = floats(got);
+            assert_eq!(got.len(), want.len(), "{what}\n{src}");
+            for (x, w) in got.iter().zip(&want) {
+                let tol = 2f64.powi(-6) * w.abs().max(1.0);
+                assert!((x - w).abs() <= tol, "{what}: {x} vs {w}\n{src}");
+            }
+        };
+        for off in [&[][..], &["round-store"][..]] {
+            let mut arms = vec!["half-fill"];
+            arms.extend_from_slice(off);
+            let em = emission(&ir, "rtx-5080", EmitOpts::default(), &arms);
+            let built = emu::build_emulated(&clang, &em.text, em.device.as_deref().unwrap_or(""));
+            let modes: &[[(&str, &str); 2]] = if off.is_empty() { &MODES } else { &MODES[..1] };
+            for mode in modes {
+                let (got, _) = built.run(mode);
+                check(&got, &format!("{off:?} {mode:?}"));
+            }
+        }
+        cover
+    });
+    let mut c = [0u64; 6];
+    for k in covers {
+        for (a, b) in c.iter_mut().zip(k) {
+            *a += b;
+        }
+    }
+    eprintln!("round-post generated: programs, rounded, epi ÷ + · none: {c:?}");
+    assert!(c.iter().all(|&x| x > 0), "{c:?}");
+}

@@ -6188,7 +6188,10 @@ impl Kernel<'_> {
 
     /// The group values' types: the accumulator's, then each call's result.
     fn epi_tys(&self, epi: &EpiKernel) -> Vec<String> {
-        std::iter::once(self.t.clone())
+        // bf16-class `round-post`: value 0 is the post body's result (the
+        // narrow format where it rounds the cell as stored).
+        let v0 = epi.post.as_ref().map_or(self.t.clone(), |p| p.ret.clone());
+        std::iter::once(v0)
             .chain(epi.calls.iter().map(|c| c.ret.clone()))
             .collect()
     }
@@ -6342,11 +6345,8 @@ impl Kernel<'_> {
         }
         let mut outs: Vec<(String, String, Vec<String>)> = Vec::new();
         if epi.store_out {
-            outs.push((
-                "%o".to_string(),
-                self.t.clone(),
-                std::mem::take(&mut per[0]),
-            ));
+            let v0 = epi.post.as_ref().map_or(self.t.clone(), |p| p.ret.clone());
+            outs.push(("%o".to_string(), v0, std::mem::take(&mut per[0])));
         }
         let mut y = 0;
         for (k, c) in epi.calls.iter().enumerate() {
@@ -6361,7 +6361,11 @@ impl Kernel<'_> {
         }
         let n = accs.len();
         for (p, ty, vals) in outs {
-            let e = if ty == "double" { 8 } else { 4 };
+            let e = match ty.as_str() {
+                "double" => 8,
+                "bfloat" | "half" | "i16" => 2,
+                _ => 4,
+            };
             let (sty, v) = if n == 1 {
                 (ty.clone(), vals[0].clone())
             } else {

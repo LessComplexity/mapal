@@ -850,6 +850,12 @@ pub struct TilePost {
     /// so where this is empty an epilogue evaluated without the numbers is
     /// the body's.
     pub after: Vec<u32>,
+    /// bf16-class `round-post`: the cell's result rounded once to this
+    /// narrow format as the map stores it (`precision_plan().store`, the
+    /// array's every reader a product admitting it): the body's last step a
+    /// `Narrow`, the map's output array that format. The fold, its operands
+    /// and every other term stay the site's (`TileSite::elem`).
+    pub round: Option<crate::ty::NarrowFloat>,
 }
 
 /// The derived `Debug`'s text, `after` printed only where it is not every
@@ -864,6 +870,9 @@ impl std::fmt::Debug for TilePost {
             .field("guarded", &self.guarded);
         if self.after != self.uniform {
             d.field("after", &self.after);
+        }
+        if let Some(r) = self.round {
+            d.field("round", &r);
         }
         d.finish()
     }
@@ -3463,7 +3472,40 @@ impl CategoryIr {
             uniform,
             guarded,
             after,
+            round: self.body_rounds(body),
         })
+    }
+
+    /// bf16-class `round-post`: the narrow format body `body`'s result is
+    /// rounded to by its last step (`Narrow` from the f32 value) — a map
+    /// storing its cells narrow ([`TilePost::round`]).
+    fn body_rounds(&self, body: FuncId) -> Option<crate::ty::NarrowFloat> {
+        let r = self.func(body)?.output;
+        let Ty::Narrow(n) = self.objects.get(r)?.ty else {
+            return None;
+        };
+        let [m] = self.in_edges(r) else {
+            return None;
+        };
+        let m = self.morphisms.get(*m)?;
+        (m.op == Operation::Narrow && self.objects.get(m.source)?.ty == Ty::f32()).then_some(n)
+    }
+
+    /// The element type a tile site over map `map_target` writes, as its
+    /// products see it: the array's own, or the f32 an epilogue's last step
+    /// rounds to the array's narrow format ([`TilePost::round`]).
+    pub(crate) fn tile_out_elem(&self, map_target: ObjectId) -> Option<Ty> {
+        let Ty::Array { elem, .. } = &self.objects.get(map_target)?.ty else {
+            return None;
+        };
+        if let Ty::Narrow(n) = **elem
+            && let [m] = self.in_edges(map_target)
+            && let Operation::Map { body, .. } = self.morphisms.get(*m)?.op
+            && self.body_rounds(body) == Some(n)
+        {
+            return Some(Ty::f32());
+        }
+        Some((**elem).clone())
     }
 
     fn tile_split(
@@ -3617,10 +3659,8 @@ impl CategoryIr {
         };
 
         let acc_ty = self.objects.get(acc)?.ty.clone();
-        let Ty::Array { elem: map_elem, .. } = &self.objects.get(map_target)?.ty else {
-            return None;
-        };
-        if elem0 != acc_ty || elem0 != **map_elem || seed.ty() != elem0 || !elem0.is_numeric() {
+        let map_elem = self.tile_out_elem(map_target)?;
+        if elem0 != acc_ty || elem0 != map_elem || seed.ty() != elem0 || !elem0.is_numeric() {
             return None;
         }
         Some(TileSite {
