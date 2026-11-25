@@ -349,6 +349,7 @@ pub fn analyze_cse(ir: &CategoryIr) -> RewritePlan {
     // itself merged, first-wins).
     let mut merged: SecondaryMap<ObjectId, ObjectId> = SecondaryMap::new();
     let mut seen: BTreeMap<String, ObjectId> = BTreeMap::new();
+    let (crep, arm) = value_scope(ir, &seq);
 
     for (o, obj) in ir.objects() {
         if obj.kind != ObjectKind::Temporary || scc.contains_key(o) {
@@ -360,7 +361,8 @@ pub fn analyze_cse(ir: &CategoryIr) -> RewritePlan {
         if is_internal_pack(ir, o) {
             continue; // rebuilt by its consuming primitive; keying it is inert.
         }
-        let key = match cse_key(ir, &merged, &seq, &fseq, o) {
+        let consts = (!arm.contains_key(o) && is_view(ir, o)).then_some(&crep);
+        let key = match cse_key(ir, &merged, &seq, &fseq, consts, o) {
             Some(k) => k,
             None => continue,
         };
@@ -377,29 +379,78 @@ pub fn analyze_cse(ir: &CategoryIr) -> RewritePlan {
     plan
 }
 
+/// prefill-residency **value scope**: each `Constant` object's value class —
+/// the first constant of its function with the same type and value (by
+/// `objects()` order) — and the objects a guard arm computes alone (its own
+/// work, `guard_plan`). An element view (`Index` of an array: its parent's
+/// bytes, §sub-buffer alias) outside every arm keys a constant index by its
+/// value: two views of one array at equal constant indices (an unrolled
+/// layer's `model.layers[l]` in a prompt pass and in a decode step) are the
+/// same bytes — one object, so one host view and one device copy, and every
+/// projection of it merges by object after. Inside an arm it stays keyed by
+/// object: merging there would make one arm's work another arm's (or the
+/// straight line's) operand. (Every other op keeps P1's object keys: keying
+/// all constants by value merges equal `iota`s and fills across the suite —
+/// a broader rewrite with its own A/B.)
+fn value_scope(
+    ir: &CategoryIr,
+    seq: &SecondaryMap<ObjectId, u32>,
+) -> (SecondaryMap<ObjectId, u32>, SecondaryMap<ObjectId, ()>) {
+    let mut first: BTreeMap<String, u32> = BTreeMap::new();
+    let mut crep: SecondaryMap<ObjectId, u32> = SecondaryMap::new();
+    for (o, obj) in ir.objects() {
+        let (ObjectKind::Constant, Some(v)) = (obj.kind, &obj.value) else {
+            continue;
+        };
+        let owner = ir.try_owner(o).map(|f| format!("{f:?}"));
+        let key = format!("{owner:?}|{}|{v:?}", ty_label(&obj.ty));
+        let rep = *first.entry(key).or_insert(seq[o]);
+        crep.insert(o, rep);
+    }
+    let mut arm: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
+    for (f, _) in ir.funcs() {
+        for site in ir.guard_plan(f) {
+            for m in site.on_true.own.iter().chain(&site.on_false.own) {
+                if let Some(x) = ir.morphism(*m) {
+                    arm.insert(x.target, ());
+                }
+            }
+        }
+    }
+    (crep, arm)
+}
+
 /// A deterministic value-number key for `o`: its op (functions by `funcs()`
 /// order, not a `FuncId` bit pattern), its value feeders resolved through the
-/// pass-local merge map (by `objects()` order), and its result ty. `None` for an
-/// object with no keyable recipe.
+/// pass-local merge map (by `objects()` order) — a constant by its value
+/// class where `consts` is given ([`value_scope`]) — and its result ty.
+/// `None` for an object with no keyable recipe.
 fn cse_key(
     ir: &CategoryIr,
     merged: &SecondaryMap<ObjectId, ObjectId>,
     seq: &SecondaryMap<ObjectId, u32>,
     fseq: &SecondaryMap<FuncId, u32>,
+    consts: Option<&SecondaryMap<ObjectId, u32>>,
     o: ObjectId,
 ) -> Option<String> {
     let ty = ty_label(&ir.object(o)?.ty);
-    let resolve = |f: ObjectId| -> u32 { seq[merged.get(f).copied().unwrap_or(f)] };
+    let resolve = |f: ObjectId| -> String {
+        let r = merged.get(f).copied().unwrap_or(f);
+        match consts.and_then(|c| c.get(r)) {
+            Some(k) => format!("k{k}"),
+            None => format!("o{}", seq[r]),
+        }
+    };
 
     // A materialized product (pack): key by kind-ty + slot feeders.
     if is_pack(ir, o) {
-        let feeders: Vec<u32> = slot_feeders(ir, o).into_iter().map(resolve).collect();
+        let feeders: Vec<String> = slot_feeders(ir, o).into_iter().map(resolve).collect();
         return Some(format!("pack|{ty}|{feeders:?}"));
     }
     // An op-defined temporary.
     let m = op_edge(ir, o)?;
     let morph = ir.morphism(m).expect("op");
-    let feeders: Vec<u32> = value_feeders(ir, morph.op, morph.source)
+    let feeders: Vec<String> = value_feeders(ir, morph.op, morph.source)
         .into_iter()
         .map(resolve)
         .collect();
@@ -488,6 +539,19 @@ fn op_edge(ir: &CategoryIr, o: ObjectId) -> Option<MorphismId> {
         | Operation::Output => None,
         _ => Some(m),
     }
+}
+
+/// Whether `o` is an element view: made by an `Index` whose result is an
+/// array or a record (a sub-buffer of its parent; a scalar element is a
+/// load, keyed by object as before).
+fn is_view(ir: &CategoryIr, o: ObjectId) -> bool {
+    let Some(m) = op_edge(ir, o) else {
+        return false;
+    };
+    ir.morphism(m).is_some_and(|x| x.op == Operation::Index)
+        && ir
+            .object(o)
+            .is_some_and(|x| matches!(x.ty, Ty::Array { .. } | Ty::Struct { .. } | Ty::Tuple(_)))
 }
 
 /// Whether `o` is a pack-built product (≥1 in-edge, all `Pair`).
