@@ -6560,7 +6560,7 @@ pub const NATIVE_GPU: &str = "native-gpu";
 
 /// **hardware-properties: this machine's GPU as physical properties** —
 /// device 0's `cuDeviceGetAttribute` facts ([`DeviceQuery`]) and the
-/// calibration file's measured rates ([`gpu_calib_path`]); never a name
+/// measured rates of its calibration line ([`calib_supply`]); never a name
 /// lookup. `None` without a CUDA driver or device.
 pub fn native_gpu() -> Option<&'static TargetProfile> {
     static NATIVE_GPU_PROFILE: std::sync::OnceLock<Option<TargetProfile>> =
@@ -6568,10 +6568,77 @@ pub fn native_gpu() -> Option<&'static TargetProfile> {
     NATIVE_GPU_PROFILE
         .get_or_init(|| {
             let q = DeviceQuery::device(0)?;
-            let calib = gpu_calib_path().and_then(|p| std::fs::read_to_string(p).ok());
-            Some(q.profile(calib.as_deref()))
+            let (src, text) = calib_supply(&q.calib_key());
+            let _ = NATIVE_GPU_CALIB.set(src.clone());
+            if let CalibSource::None(tried) = &src {
+                // residency `calib-supply`: never unpriced in silence.
+                eprintln!(
+                    "mapal: warning: native-gpu: no calibration line for `{}` (tried {tried}); \
+                     building with unmeasured device costs — PDL and every priced rule fall back. \
+                     Measure the part (`benches/gpu/calib.cu`, the line format of \
+                     `benches/results/evidence/local-rtx-5080/calib/rtx-5080.calib`) and supply its \
+                     line by `MAPAL_GPU_CALIB=<file>` or `{}`.",
+                    q.calib_key(),
+                    gpu_calib_path().map_or("$XDG_CACHE_HOME/mapal/gpu-calib".into(), |p| p.display().to_string()),
+                );
+            }
+            Some(q.profile(text.as_deref()))
         })
         .as_ref()
+}
+
+/// Where the `native-gpu` build's calibration line came from ([`calib_supply`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CalibSource {
+    /// `MAPAL_GPU_CALIB` or the user's cache file: its path.
+    File(String),
+    /// A line this repository carries ([`COMMITTED_CALIB`]).
+    Committed,
+    /// No line for the device's key: what was tried.
+    None(String),
+}
+
+static NATIVE_GPU_CALIB: std::sync::OnceLock<CalibSource> = std::sync::OnceLock::new();
+
+/// The source of this process's `native-gpu` calibration, once resolved.
+pub fn native_gpu_calib() -> Option<&'static CalibSource> {
+    NATIVE_GPU_CALIB.get()
+}
+
+/// residency `calib-supply`: **the measured calibration lines this repository
+/// carries**, keyed like every line by the device query's physical facts
+/// ([`DeviceQuery::calib_key`], never a name): a part someone measured and
+/// committed is priced on every machine that has it, with no manual step.
+pub const COMMITTED_CALIB: &[&str] = &[include_str!(
+    "../../../../benches/results/evidence/local-rtx-5080/calib/rtx-5080.calib"
+)];
+
+/// The calibration text whose line for `key` a `native-gpu` build reads:
+/// `MAPAL_GPU_CALIB`'s file, else the user's cache file
+/// ([`gpu_calib_path`]), each only when it holds a line for `key`, else the
+/// committed lines ([`COMMITTED_CALIB`]). `MAPAL_GPU_CALIB=none`: no line
+/// (the measurement arm of an uncalibrated build), said as such.
+pub fn calib_supply(key: &str) -> (CalibSource, Option<String>) {
+    if std::env::var("MAPAL_GPU_CALIB").is_ok_and(|v| v == "none") {
+        return (CalibSource::None("MAPAL_GPU_CALIB=none".into()), None);
+    }
+    let mut tried = Vec::new();
+    if let Some(p) = gpu_calib_path() {
+        tried.push(p.display().to_string());
+        if let Ok(t) = std::fs::read_to_string(&p)
+            && calib_line(&t, key).is_some()
+        {
+            return (CalibSource::File(p.display().to_string()), Some(t));
+        }
+    }
+    if let Some(t) = COMMITTED_CALIB
+        .iter()
+        .find(|t| calib_line(t, key).is_some())
+    {
+        return (CalibSource::Committed, Some(t.to_string()));
+    }
+    tried.push("the committed lines".into());
+    (CalibSource::None(tried.join(", ")), None)
 }
 
 /// The `cuDeviceGetAttribute` facts a GPU profile is built from.
@@ -6722,6 +6789,43 @@ pub fn gpu_calib_path() -> Option<std::path::PathBuf> {
         .map(std::path::PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| std::path::Path::new(&h).join(".cache")))?;
     Some(base.join("mapal").join("gpu-calib"))
+}
+
+#[cfg(test)]
+mod calib_supply_tests {
+    use super::*;
+
+    /// residency `calib-supply`: every committed line parses for its own key
+    /// into measured rates (a part someone measured is priced with no manual
+    /// step); a key no line carries resolves to `None`, naming what was
+    /// tried, so the build says it runs unpriced.
+    #[test]
+    fn committed_lines_price_their_parts_and_a_miss_is_named() {
+        let mut keys = 0;
+        for text in COMMITTED_CALIB {
+            for line in text
+                .lines()
+                .map(|l| l.split('#').next().unwrap_or("").trim())
+            {
+                let Some((key, _)) = line.split_once('\t') else {
+                    continue;
+                };
+                let over = calib_line(text, key).expect("a committed line parses");
+                assert!(over.iter().filter(|v| v.is_some()).count() >= 10, "{key}");
+                let (src, got) = calib_supply(key);
+                assert!(!matches!(src, CalibSource::None(_)), "{key}: {src:?}");
+                assert!(got.is_some_and(|t| calib_line(&t, key).is_some()));
+                keys += 1;
+            }
+        }
+        assert!(keys >= 1);
+        let (src, got) = calib_supply("cc=1 sms=1 l2=1 mem=1x1");
+        assert!(got.is_none());
+        assert!(
+            matches!(&src, CalibSource::None(t) if t.contains("committed")),
+            "{src:?}"
+        );
+    }
 }
 
 /// The rates `text` gives the device keyed `key` (`None` without a line).

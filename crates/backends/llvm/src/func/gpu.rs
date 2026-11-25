@@ -499,22 +499,41 @@ pub(crate) fn device_made(
     o: ObjectId,
     carry: bool,
 ) -> bool {
-    device_made_at(ir, dev, o, carry, &mut Vec::new())
+    device_made_at(ir, dev, o, carry, None, &mut Vec::new())
 }
 
+/// `assume`: a carried view taken as device-made (the induction step of
+/// [`device_made`]'s carried rule).
 fn device_made_at(
     ir: &CategoryIr,
     dev: &SecondaryMap<MorphismId, ()>,
     o: ObjectId,
     carry: bool,
+    assume: Option<ObjectId>,
     seen: &mut Vec<ObjectId>,
 ) -> bool {
+    if assume == Some(o) {
+        return true;
+    }
     if seen.contains(&o) || seen.len() > 4096 {
         return false;
     }
     seen.push(o);
     if carry && let Some(next) = carried_from(ir, o) {
-        return device_made_at(ir, dev, next, carry, seen);
+        if device_made_at(ir, dev, next, carry, assume, seen) {
+            return true;
+        }
+        // residency `carry-induct`: a carried view the loop enters with on
+        // the device (its init device-made) whose next state the device
+        // makes from it (the view assumed device-made, every other operand
+        // as found) is device-made on every trip, by induction over trips.
+        // A loop state written in place each trip (a KV cache the prompt
+        // filled on the device) is anchored by its init, not by the cycle.
+        return assume.is_none()
+            && carried_init(ir, o).is_some_and(|i| {
+                device_made_at(ir, dev, i, carry, None, &mut Vec::new())
+                    && device_made_at(ir, dev, next, carry, Some(o), &mut Vec::new())
+            });
     }
     let Some(&p) = ir.in_edges(o).first() else {
         return false;
@@ -534,11 +553,36 @@ fn device_made_at(
         .map(|q| q.source)
         .collect();
     if pairs.is_empty() {
-        device_made_at(ir, dev, morph.source, carry, seen)
+        device_made_at(ir, dev, morph.source, carry, assume, seen)
     } else {
         pairs
             .into_iter()
-            .any(|x| device_made_at(ir, dev, x, carry, seen))
+            .any(|x| device_made_at(ir, dev, x, carry, assume, seen))
+    }
+}
+
+/// The value a loop view `o` enters the loop with: the init's slot of a
+/// canonical loop's merge projection, or the init of a one-value loop.
+fn carried_init(ir: &CategoryIr, o: ObjectId) -> Option<ObjectId> {
+    let obj = ir.object(o)?;
+    let (merge, k) = if obj.kind == mapal_ir::ObjectKind::LoopMerge {
+        (o, None)
+    } else {
+        let &p = ir.in_edges(o).first()?;
+        let morph = ir.morphism(p)?;
+        match morph.op {
+            Operation::Proj { index }
+                if ir.object(morph.source)?.kind == mapal_ir::ObjectKind::LoopMerge =>
+            {
+                (morph.source, Some(index))
+            }
+            _ => return None,
+        }
+    };
+    let plan = ir.loop_plan(ir.owner(merge), merge)?;
+    match k {
+        Some(k) => super::pair_source_ir(ir, plan.init, k),
+        None => Some(plan.init),
     }
 }
 

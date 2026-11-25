@@ -2406,9 +2406,20 @@ impl<'a> FnEmit<'a> {
                     // for the output (the data stays where its readers are).
                     let moved = || {
                         let bytes = |o: ObjectId| self.array_bytes(&self.obj_ty(o));
+                        // residency `shared-upload`: an operand another
+                        // device reader loads is uploaded for it anyway (the
+                        // residual stream beside a norm): this cell adds no
+                        // bytes by reading it there too.
+                        let shared = |o: ObjectId| {
+                            self.uses(sites, cells, o, &[])
+                                .iter()
+                                .filter(|u| matches!(u, Use::Dev))
+                                .count()
+                                > 1
+                        };
                         let up: u64 = ops
                             .iter()
-                            .filter(|&&(o, _)| !(there(o) || walked(o)))
+                            .filter(|&&(o, _)| !(there(o) || walked(o) || shared(o)))
                             .map(|&(o, _)| bytes(o))
                             .sum();
                         let down: u64 = ops
@@ -2565,7 +2576,7 @@ impl<'a> FnEmit<'a> {
         // state — the entry takes its buffer, no host reader is left, so it
         // is kept (no copy out). Its only use is the init product's pair.
         let take = gpu::host_rungs(self.profile, self.contract, self.gpu_arms).carry_take;
-        let taken: Vec<ObjectId> = plan
+        let taken: Vec<(ObjectId, ObjectId)> = plan
             .carries
             .iter()
             .filter(|_| take)
@@ -2589,13 +2600,31 @@ impl<'a> FnEmit<'a> {
                         && !self.lup.escapes(a)
                         && self.lup.death(a).is_some_and(|d| d <= enter))
                         || self.bytes_enter(&plan, a, lp.init, enter)))
-                .then_some(a)
+                .then_some((a, lp.init))
             })
             .collect();
         for c in outs {
             device.push(c);
-            let uses = if plan.is_carry_next(c) || taken.contains(&c) {
+            let uses = if plan.is_carry_next(c) {
                 vec![] // checked device-only when the carry was admitted
+            } else if taken.iter().any(|&(a, _)| a == c) {
+                // The taking loop's init pair is the carry's way in (its
+                // buffer); any other reader — a host fold or element before
+                // the entry (`bytes_enter` admits one), another loop entered
+                // with it earlier — still needs the bytes out.
+                let into: Vec<MorphismId> = self
+                    .ir
+                    .out_edges(c)
+                    .iter()
+                    .copied()
+                    .filter(|&e| {
+                        self.ir.morphism(e).is_some_and(|x| {
+                            matches!(x.op, Operation::Pair { .. })
+                                && taken.iter().any(|&(a, init)| a == c && init == x.target)
+                        })
+                    })
+                    .collect();
+                self.uses(&sites, &cells, c, &into)
             } else {
                 self.uses(&sites, &cells, c, &[])
             };

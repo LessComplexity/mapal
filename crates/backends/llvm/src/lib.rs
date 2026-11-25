@@ -2137,8 +2137,16 @@ fn host_line(
             }
         }
     }
+    // residency `calib-supply`: where a `native-gpu` build's measured costs
+    // came from (`file`, `committed`), or `none`.
+    let calib = match (profile.name, profile::native_gpu_calib()) {
+        (profile::NATIVE_GPU, Some(profile::CalibSource::File(_))) => " calib=file",
+        (profile::NATIVE_GPU, Some(profile::CalibSource::Committed)) => " calib=committed",
+        (profile::NATIVE_GPU, _) => " calib=none",
+        _ => "",
+    };
     em.text.push_str(&format!(
-        "; mapal.host profile={} fma={} order={:?} device_sites={dev} host_sites={host}\n",
+        "; mapal.host profile={} fma={} order={:?} device_sites={dev} host_sites={host}{calib}\n",
         em.profile,
         u8::from(opts.contract),
         opts.order
