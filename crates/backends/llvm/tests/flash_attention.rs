@@ -280,6 +280,19 @@ fn stream_priced_on_every_part() {
 }
 
 /// One generated program's checks and coverage counts.
+/// mask-frontend: the run's values of a generated program's open guard
+/// sides (`testgen::flash_tm_src`: `first` is `0`, `pos[i] = i`).
+struct RunEnv;
+
+impl mapal_ir::GuardEnv for RunEnv {
+    fn number(&self, _: u32) -> Option<u64> {
+        Some(0)
+    }
+    fn element(&self, _: u32, index: u64) -> Option<i64> {
+        Some(index as i64)
+    }
+}
+
 fn check_flash(clang: &str, i: usize, p: &testgen::FlashProg) -> Vec<(&'static str, u64)> {
     let src = testgen::flash_src(p);
     let ir = lower(&src);
@@ -332,11 +345,14 @@ fn check_flash(clang: &str, i: usize, p: &testgen::FlashProg) -> Vec<(&'static s
             for r0 in (0..rows).step_by(bs as usize) {
                 for l0 in (0..g.axis).step_by(ws as usize) {
                     let (r1, l1) = ((r0 + bs).min(rows) - 1, (l0 + ws).min(g.axis) - 1);
+                    // mask-frontend: an open side at the run's values
+                    // (`first` is `0`, `pos[i] = i`).
+                    let env = RunEnv;
                     let cells: Vec<bool> = (r0..=r1)
                         .flat_map(|r| (l0..=l1).map(move |l| (r, l)))
-                        .map(|(r, l)| gd.form.visible(r, l))
+                        .map(|(r, l)| gd.form.visible_with(r, l, &env).expect("run values"))
                         .collect();
-                    match gd.form.classify((r0, r1), (l0, l1)) {
+                    match gd.form.classify_with((r0, r1), (l0, l1), &env) {
                         mapal_ir::BoxClass::Visible => assert!(cells.iter().all(|&c| c), "{src}"),
                         mapal_ir::BoxClass::Masked => assert!(cells.iter().all(|&c| !c), "{src}"),
                         mapal_ir::BoxClass::Mixed => {}
@@ -410,6 +426,25 @@ fn check_flash(clang: &str, i: usize, p: &testgen::FlashProg) -> Vec<(&'static s
             u64::from(skip == "on" && p.mask == 1),
         ));
         out.push(("causal streamed", u64::from(p.heads > 0 && p.causal)));
+        // mask-frontend: the token-major forms streamed — walked in the
+        // scores' tile order, the mask through a positions array or a
+        // run-time position skipping its windows.
+        out.push(("token-major streamed", u64::from(p.tm > 0)));
+        // The keys and values read through a captured struct (its fields'
+        // captures, `flatten_captures`).
+        out.push(("struct cache streamed", u64::from(p.tm > 0 && p.scale == 1)));
+        if p.tm > 0 && skip == "on" {
+            out.push((
+                [
+                    "",
+                    "skip:tm digit",
+                    "skip:tm law",
+                    "skip:tm load",
+                    "skip:tm uniform",
+                ][p.tm as usize],
+                1,
+            ));
+        }
         out.push(("cp", u64::from(field(l, "stream").ends_with(":cp"))));
         out.push(("seed inside", u64::from(p.seed == 1)));
         out.push(("den seed one", u64::from(p.den_one)));
@@ -482,7 +517,7 @@ fn check_flash(clang: &str, i: usize, p: &testgen::FlashProg) -> Vec<(&'static s
     if i % 3 == 1 {
         builds.push(("stream fact off", emission(&ir, None, &["stream-fact"])));
     }
-    if p.heads > 0 && p.causal {
+    if p.heads > 0 && (p.causal || p.tm > 0) {
         // F5 off: every window computed; F7 off: nothing finite, none skipped.
         builds.push((
             "guard-box off",
@@ -600,6 +635,12 @@ fn stream_on_generated_attention() {
         "trailing streamed",
         "moved operands",
         "unit-uniform off unstreamed",
+        "token-major streamed",
+        "struct cache streamed",
+        "skip:tm digit",
+        "skip:tm law",
+        "skip:tm load",
+        "skip:tm uniform",
         "runs",
     ] {
         assert!(c.get(key).copied().unwrap_or(0) > 0, "{key}: {c:?}");

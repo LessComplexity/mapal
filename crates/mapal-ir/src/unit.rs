@@ -134,8 +134,22 @@ pub struct UnitGroup {
     /// flash-attention F2: the panel batch — the most group rows (a power of
     /// two dividing `rows`) over which every tile member's column operand
     /// address does not move: a block of that many rows reads one `b` panel
-    /// (a KV head's rows for its query heads).
+    /// (a KV head's rows for its query heads). Counted in [`Self::order`].
     pub panel: u64,
+    /// mask-frontend: the order a block walks the group's rows in —
+    /// position `p` is group row `order.group_row(p)`: the seed's tile order
+    /// where its tile rows permute its output rows ([`out_rows`]: the batch
+    /// digits most significant, so a block of consecutive positions is one
+    /// KV head's queries over many tokens, one `b` panel). `None`: the rows
+    /// themselves.
+    pub order: Option<RowMap>,
+}
+
+impl UnitGroup {
+    /// The group row at walk position `p` ([`Self::order`]).
+    pub fn row_at(&self, p: u64) -> u64 {
+        self.order.as_ref().map_or(p, |o| o.group_row(p))
+    }
 }
 
 /// Every row-block group of one function.
@@ -220,6 +234,47 @@ impl Cand {
             _ => true,
         }
     }
+}
+
+/// mask-frontend: **a tile site's output rows over its tile rows** — the
+/// site numbers its rows `i` by its own digits (`tile_plan_radix`: the batch
+/// digits both operands read most significant), and writes row `i`'s cells
+/// at `out(i, lane)`. Where that is `R(i)·c + lane` (`radix.out` row-wise:
+/// base 0, its lane digit the lane itself, every row digit a multiple of
+/// `c`) the output's own rows are the digit permutation `R` of the tile's:
+/// `Ok(None)` the identity (no mixed-radix output, or one in tile order),
+/// `Ok(Some(map))` a permutation ([`RowMap::group_row`] of tile row `i` is
+/// `R(i)`), `Err(())` an output that is no row of `c` cells per tile row —
+/// attention's token-major scores `[(t·H + h)·T + past]` under a
+/// KV-head-major tile order are the second.
+pub fn out_rows(t: &TileSite, rows: u64) -> Result<Option<RowMap>, ()> {
+    let Some(out) = t.radix.as_ref().and_then(|r| r.out.as_ref()) else {
+        return Ok(None);
+    };
+    let c = t.c;
+    let lane_ok = match out.lane.as_slice() {
+        [] => c == 1,
+        [d] => d.stride == 1 && d.coef == 1 && d.radix >= c,
+        _ => false,
+    };
+    if !lane_ok || out.base != 0 || !out.k.is_empty() || c == 0 {
+        return Err(());
+    }
+    let mut to_group = Vec::with_capacity(out.i.len());
+    for d in &out.i {
+        if !d.coef.is_multiple_of(c) {
+            return Err(());
+        }
+        to_group.push(AxisDigit {
+            stride: d.stride,
+            radix: d.radix,
+            coef: d.coef / c,
+        });
+    }
+    if rows <= 1 << 22 && (0..rows).all(|r| digit_sum(&to_group, r) == r) {
+        return Ok(None);
+    }
+    RowMap::of(to_group, rows).map(Some).ok_or(())
 }
 
 impl CategoryIr {
@@ -341,9 +396,21 @@ impl CategoryIr {
                 continue;
             }
             let rows = s.rows;
+            // mask-frontend: the group's rows are the seed's output rows —
+            // its tile rows under [`out_rows`]' permutation (its readers read
+            // those rows); a seed writing no row a tile row is no group's.
+            let Ok(seed_rows) = out_rows(s, rows) else {
+                continue;
+            };
             // (member, cells a row, reads, its rows' map)
             let mut g: Vec<(MorphismId, u64, Vec<(u32, usize)>, Option<RowMap>)> =
-                vec![(seed, s.c, Vec::new(), None)];
+                vec![(seed, s.c, Vec::new(), seed_rows)];
+            // A member whose output rows are not the group's: every member's
+            // but the seed's whose tile rows a map permutes (the seed's map
+            // is its output's own rows).
+            let moved = |g: &[(MorphismId, u64, Vec<(u32, usize)>, Option<RowMap>)], k: usize| {
+                k > 0 && g[k].3.is_some()
+            };
             // The seed's own operands: made before it, read whole by the
             // tile (neither may be a member: there is none yet).
             loop {
@@ -396,7 +463,7 @@ impl CategoryIr {
                                 }
                                 // A member read by a member whose rows are a
                                 // permutation: only in the permuted rows.
-                                if g[k].3.is_some() {
+                                if moved(&g, k) {
                                     return false;
                                 }
                                 let pw = g[k].1;
@@ -489,7 +556,8 @@ impl CategoryIr {
         let map = self.morphisms.get(r)?;
         let a = self.pair_slot_source(map.source, t.a.slot)?;
         let k = outs.iter().position(|&o| o == a)?;
-        if g[k].1 != t.k || g[k].3.is_some() {
+        // mask-frontend: the seed's map is its output's own rows.
+        if g[k].1 != t.k || (k > 0 && g[k].3.is_some()) {
             return None;
         }
         let (base, digits) = crate::algo::whole_rows(ra, t.k)?;
@@ -556,7 +624,7 @@ impl CategoryIr {
             let Some(p) = outs.iter().position(|&o| o == src) else {
                 continue;
             };
-            if g[p].1 != 1 || g[p].3.is_some() {
+            if g[p].1 != 1 || (p > 0 && g[p].3.is_some()) {
                 continue;
             }
             // Every read of the slot in the body: its index's digits.
@@ -706,7 +774,10 @@ impl CategoryIr {
                 _ => None,
             })
             .sum();
-        let panel = self.panel_rows(rows, &members);
+        // mask-frontend: walked in the seed's tile order where it permutes
+        // the seed's output rows (the group's).
+        let order = g[0].3.clone();
+        let panel = self.panel_rows(rows, &members, order.as_ref());
         UnitGroup {
             rows,
             members,
@@ -714,6 +785,7 @@ impl CategoryIr {
             shared_bytes,
             extended: false,
             panel,
+            order,
         }
     }
 }
@@ -723,7 +795,7 @@ impl CategoryIr {
     /// `rows` — over which no tile member's column operand address moves
     /// (its mixed-radix row digits, at each member's own rows; a plain
     /// column operand reads no row).
-    fn panel_rows(&self, rows: u64, members: &[UnitMember]) -> u64 {
+    fn panel_rows(&self, rows: u64, members: &[UnitMember], order: Option<&RowMap>) -> u64 {
         let mut step = 0u64;
         for mb in members {
             let UnitKind::Tile(t) = &mb.kind else {
@@ -735,7 +807,9 @@ impl CategoryIr {
             if b.i.is_empty() {
                 continue;
             }
-            let at = |gr: u64| {
+            // Walk position `p`'s group row, as the member numbers it.
+            let at = |p: u64| {
+                let gr = order.map_or(p, |o| o.group_row(p));
                 let r = mb.row_of.as_ref().map_or(gr, |m| m.member_row(gr));
                 digit_sum(&b.i, r)
             };

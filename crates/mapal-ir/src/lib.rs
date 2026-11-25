@@ -46,14 +46,14 @@ pub use algo::{
     ATTEMPT_WORK, Affine, AxisDigit, BoundsProof, BoxClass, CallKeep, CellRead, CellSite,
     Checkpoint, Delta, DepLaw, Digit, EMBED_BYTES, EVAL_WORK, Edge, ElemPlan, ElemSrc,
     EmissionClass, EmissionPlan, FinitePlan, FmaPair, FoldCombine, FoldCombinePlan, Footprint,
-    FootprintPlan, GuardArm, GuardBox, GuardSide, GuardSite, LastUsePlan, LinearSite, LoopPlan,
-    LoopScc, MovePlan, MoveSite, NarrowStore, Outside, PathPlan, PrecisionPlan, RadixAddr,
-    RadixForm, RadixTile, Reach, Realize, Regroup, RescaleArg, RowDep, RowFoldOp, RowFoldSite,
-    StaticPlan, StaticRoot, StepAlgebra, StepFlags, StreamGroup, StreamGuard, StreamLaw,
-    StreamPlan, StreamRole, Tap, Task, TaskId, TaskKind, TensorAxis, TensorDim, TensorForm,
-    TileKSplit, TilePlan, TilePost, TileRead, TileSite, TripPhase, TripSplit, UnchangedPlan,
-    WaitEntry, bound_coef, bound_coef_unit, bound_coef_units, extreme_up, gamma, ty_extent,
-    uniform_at,
+    FootprintPlan, GuardArm, GuardBox, GuardEnv, GuardSide, GuardSite, LastUsePlan, LinearSite,
+    LoopPlan, LoopScc, MovePlan, MoveSite, NarrowStore, NoValues, Outside, PathPlan, PrecisionPlan,
+    RadixAddr, RadixForm, RadixTile, Reach, Realize, Regroup, RescaleArg, RowDep, RowFoldOp,
+    RowFoldSite, RowLoad, StaticPlan, StaticRoot, StepAlgebra, StepFlags, StreamGroup, StreamGuard,
+    StreamLaw, StreamPlan, StreamRole, Tap, Task, TaskId, TaskKind, TensorAxis, TensorDim,
+    TensorForm, TileKSplit, TilePlan, TilePost, TileRead, TileSite, TripPhase, TripSplit,
+    UnchangedPlan, WaitEntry, bound_coef, bound_coef_unit, bound_coef_units, extreme_up, gamma,
+    ty_extent, uniform_at,
 };
 pub use builder::{Dest, FnBuilder, IrBuilder, IrError, LoopHandle};
 pub use facts::FactArms;
@@ -66,5 +66,5 @@ pub use math::MathFn;
 pub use mermaid::lint_mermaid;
 pub use residence::{Residence, ResidencePlan};
 pub use ty::{MAX_TY_DEPTH, NarrowFloat, Ty, Value, ty_contains_token, ty_label};
-pub use unit::{RowMap, UnitGroup, UnitKind, UnitMember, UnitPlan};
+pub use unit::{RowMap, UnitGroup, UnitKind, UnitMember, UnitPlan, out_rows};
 pub use validate::{IrViolation, validate};

@@ -124,6 +124,25 @@ pub(crate) struct GMove {
     pub elem: u64,
 }
 
+/// mask-frontend `stream-numbers`: the numbers a streamed unit's tile
+/// epilogues read after their folds ([`mapal_ir::TilePost::after`]: a
+/// scale, a guard's per-launch side) — `(member, capture slot)` in member
+/// then slot order, one 8-byte launch argument each after the zero pass's.
+pub(crate) fn stream_numbers(u: &Unit) -> Vec<(usize, u32)> {
+    if u.stream.is_none() {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for (k, mb) in u.members.iter().enumerate() {
+        if let UKind::Tile { site } = &mb.kind
+            && let Some(p) = &site.post
+        {
+            out.extend(p.after.iter().map(|&s| (k, s)));
+        }
+    }
+    out
+}
+
 /// long-rows `row-slices`: a unit whose rows each run over `s` blocks
 /// ([`FnEmit::row_slices`]). A fold's partial state per block goes to a
 /// workspace; a later phase combines a row's `s` partials in block order
@@ -2293,6 +2312,17 @@ impl<'a> FnEmit<'a> {
         }
         // kernel-merging `zero-fold`: later sites' zero passes as its tail.
         self.zero_args(u.members[0].m, &gx.to_string(), block, &mut ptrs);
+        // mask-frontend `stream-numbers`: the epilogues' numbers, as the
+        // host holds them this launch.
+        for (k, s) in stream_numbers(u) {
+            let source = self.ir.morphism(u.members[k].m).expect("member").source;
+            let (t, v) = self
+                .load_component(source, s)
+                .expect("a captured number loads");
+            let w = self.tmp();
+            self.line(gpu::uniform_to_i64(&w, &v, &t));
+            ptrs.push(w);
+        }
         // long-prefill `slice-launches`: one launch a phase, its number last.
         let phased = u
             .slices
@@ -2624,6 +2654,17 @@ impl<'a> FnEmit<'a> {
                 .into_iter()
                 .skip(usize::from(zero == 0)),
         );
+        // mask-frontend `stream-numbers`: each epilogue number, as its own
+        // type in the entry block.
+        for (k, s) in stream_numbers(u) {
+            params.push(format!("i64 %u{k}_{s}"));
+            let ty = g.calls[k].as_ref().expect("an epilogue call").field_ty[s as usize].clone();
+            g.entry.push_str(&gpu::uniform_from_i64(
+                &format!("%uv{k}_{s}"),
+                &format!("%u{k}_{s}"),
+                &ty,
+            ));
+        }
         // long-prefill `slice-launches`: the phase this launch runs.
         if u.slices.as_ref().is_some_and(|sl| sl.launches) {
             params.push("i64 %phase".to_string());

@@ -36,7 +36,7 @@ pub struct RadixForm {
 }
 
 impl RadixForm {
-    fn add(&self, o: &Self) -> Option<Self> {
+    pub(crate) fn add(&self, o: &Self) -> Option<Self> {
         let mut r = self.clone();
         r.base = r.base.checked_add(o.base)?;
         for d in &o.digits {
@@ -52,7 +52,7 @@ impl RadixForm {
         Some(r)
     }
 
-    fn scale(&self, by: u64) -> Option<Self> {
+    pub(crate) fn scale(&self, by: u64) -> Option<Self> {
         let mut r = self.clone();
         r.base = r.base.checked_mul(by)?;
         for d in &mut r.digits {

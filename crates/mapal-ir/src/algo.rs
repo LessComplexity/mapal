@@ -37,8 +37,8 @@ pub use statics::{
     ATTEMPT_WORK, EMBED_BYTES, EVAL_WORK, Realize, StaticPlan, StaticRoot, ty_extent,
 };
 pub use stream::{
-    BoxClass, GuardBox, GuardSide, StreamGroup, StreamGuard, StreamLaw, StreamPlan, StreamRole,
-    extreme_up,
+    BoxClass, GuardBox, GuardEnv, GuardSide, NoValues, RowLoad, StreamGroup, StreamGuard,
+    StreamLaw, StreamPlan, StreamRole, extreme_up,
 };
 pub use unchanged::{CallKeep, UnchangedPlan};
 
