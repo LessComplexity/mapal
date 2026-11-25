@@ -1131,91 +1131,44 @@ impl FnBuilder<'_> {
         self.b.intake_ty(&target_ty)?;
         // Choose the product object per dest.
         let plan = self.dest_target(&dest, &target_ty, loc)?;
-        let product = match plan {
-            DestPlan::Direct(tgt) => tgt,
-            DestPlan::Slot { .. } => {
-                // Packing into a Ret slot: the pack target is a fresh component,
-                // then a Pair edge wires it into Return. We need the product to
-                // exist as one object; emit pack into the fresh comp.
-                // emit_to_dest expects a single defining edge, but a pack has
-                // `arity` defining edges. Handle slot-dest packs explicitly.
-                return self.build_pack_into_slot(components, target_ty, dest, loc);
-            }
-        };
-        for (k, &c) in components.iter().enumerate() {
-            self.b.add_edge(
-                self.f,
-                c,
-                product,
-                Operation::Pair {
-                    slot: k as u32,
-                    arity,
-                },
-                loc,
-            );
-        }
-        Ok(product)
-    }
-
-    /// Pack components into a fresh product object, then `Pair`-write that
-    /// object into a Return slot (the `Dest::Ret{Some(k)}` pack case).
-    fn build_pack_into_slot(
-        &mut self,
-        components: &[ObjectId],
-        target_ty: Ty,
-        dest: Dest,
-        loc: SourceLoc,
-    ) -> Result<ObjectId, IrError> {
-        let arity = components.len() as u32;
-        let slot = match dest {
-            Dest::Ret { slot: Some(k) } => k,
-            _ => unreachable!("build_pack_into_slot only for Ret slot dest"),
-        };
-        let out_ty = self.output_ty();
-        if out_ty.product_arity().is_none() {
-            return Err(IrError::RetNotProduct);
-        }
-        // u64 arity capped to u32: a > u32::MAX-arity product is not
-        // slot-addressable (F4/SND-3).
-        let ret_arity = out_ty.product_arity_u32().ok_or(IrError::SlotOutOfRange)?;
-        if slot >= ret_arity {
-            return Err(IrError::SlotOutOfRange);
-        }
-        let comp_ty = out_ty.component_ty(slot).unwrap().clone();
-        if comp_ty != target_ty {
-            return Err(IrError::RetTypeMismatch);
-        }
-        let product = self.b.mint_object(
-            self.f,
-            target_ty.clone(),
-            None,
-            ObjectKind::Temporary,
-            None,
-            loc,
-        );
-        for (k, &c) in components.iter().enumerate() {
-            self.b.add_edge(
-                self.f,
-                c,
-                product,
-                Operation::Pair {
-                    slot: k as u32,
-                    arity,
-                },
-                loc,
-            );
-        }
-        let ret = self.output_id();
-        self.b.add_edge(
-            self.f,
-            product,
-            ret,
-            Operation::Pair {
+        // A Ret-slot dest: `dest_target` already minted the slot's component
+        // (it type-checked the slot); the pack writes that component, then a
+        // `Pair` edge wires it into Return. (mask-frontend: a second, fresh
+        // product here left the minted component writerless — a struct
+        // literal straight to `ret.1` crashed replay on it.)
+        let (product, wire) = match plan {
+            DestPlan::Direct(tgt) => (tgt, None),
+            DestPlan::Slot {
+                comp,
+                ret,
                 slot,
-                arity: ret_arity,
-            },
-            loc,
-        );
+                arity,
+            } => (comp, Some((ret, slot, arity))),
+        };
+        for (k, &c) in components.iter().enumerate() {
+            self.b.add_edge(
+                self.f,
+                c,
+                product,
+                Operation::Pair {
+                    slot: k as u32,
+                    arity,
+                },
+                loc,
+            );
+        }
+        if let Some((ret, slot, ret_arity)) = wire {
+            self.b.add_edge(
+                self.f,
+                product,
+                ret,
+                Operation::Pair {
+                    slot,
+                    arity: ret_arity,
+                },
+                loc,
+            );
+        }
         Ok(product)
     }
 
