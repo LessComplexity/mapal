@@ -8165,3 +8165,133 @@ pub fn prefill_prog_src(g: &PrefillProg) -> String {
     );
     s
 }
+
+/// bound-blkdec (the composed bound, ADR-0041 D5 `bound(o)`): a decode block
+/// over `steps` trips — an optional RMS norm (a sum of squares and a Newton
+/// square root), the fused QKV projection over bf16 weights, the step's key
+/// and value rounded into a bf16 cache (`to_bf16` of values that carry the
+/// default face's deviation), causal scores over the cache, a running max,
+/// `exp`, the sum, `P·V ÷ sum` (an epilogue the stored rounding ends:
+/// `round-post`), the output projection with its residual and an optional
+/// ReLU FFN (`ffn` its width, 0 none): the paths `round-store`,
+/// `round-post` and a bf16 cache take. Inputs by closed integer laws (`law`
+/// shifts them).
+#[derive(Clone, Debug)]
+pub struct BlockProg {
+    pub rows: u64,
+    pub d: u64,
+    pub len: u64,
+    pub steps: u64,
+    pub norm: bool,
+    pub ffn: u64,
+    pub law: u64,
+}
+
+/// [`BlockProg`]s at the interpreter's scale.
+pub fn block_strategy() -> impl Strategy<Value = BlockProg> {
+    (
+        prop::sample::select(vec![1u64, 2]),
+        prop::sample::select(vec![8u64, 16, 32]),
+        prop::sample::select(vec![4u64, 8, 16]),
+        1u64..4,
+        any::<bool>(),
+        prop::sample::select(vec![0u64, 8, 24]),
+        0u64..4,
+    )
+        .prop_map(|(rows, d, len, steps, norm, ffn, law)| BlockProg {
+            rows,
+            d,
+            len,
+            steps,
+            norm,
+            ffn,
+            law,
+        })
+}
+
+/// [`BlockProg`]'s source; `member`: every fold `: bf16 | f32` (else f32
+/// products: the same exact face, no permission to round).
+pub fn block_src(p: &BlockProg, member: bool) -> String {
+    let (r, d, l, f) = (p.rows, p.d, p.len, p.ffn);
+    let q = 3 * d;
+    let k = if member { ": bf16 | f32 " } else { "" };
+    let law = |n: u64, m: u64, a: u64, div: &str, narrow: bool| {
+        let h = (m - 1) / 2;
+        format!(
+            "    {n} -> iota -> map {{\n        t -> (t % {m} * {s} + {a}) % {m} - {h} -> widen_f32 -> v;\n        v / {div}{tail}\n    }}",
+            s = 7 + 2 * p.law,
+            a = a + 5 * p.law,
+            tail = if narrow { " -> to_bf16" } else { "" },
+        )
+    };
+    let (w, wf) = (format!("{}.0", 8 * d), format!("{}.0", 8 * f.max(1)));
+    let mut s = String::from("fn main() {\n");
+    s += &format!("{} -> x0;\n", law(r * d, 101, 13, "29.0", false));
+    s += &format!("{} -> wqkv;\n", law(d * q, 103, 57, &w, true));
+    s += &format!("{} -> wo;\n", law(d * d, 97, 3, &w, true));
+    s += &format!("{} -> kc0;\n", law(r * l * d, 109, 29, "29.0", true));
+    s += &format!("{} -> vc0;\n", law(r * l * d, 89, 1, "29.0", true));
+    if f > 0 {
+        s += &format!("{} -> wg;\n", law(d * f, 107, 7, &w, true));
+        s += &format!("{} -> wd;\n", law(f * d, 97, 41, &wf, true));
+    }
+    for (n, name) in [
+        (r, "rR"),
+        (d, "rD"),
+        (r * d, "rRD"),
+        (r * q, "rRQ"),
+        (r * l, "rRL"),
+        (l, "rL"),
+        (r * l * d, "rC"),
+        (8, "rN"),
+        (r * f.max(1), "rRF"),
+        (f.max(1), "rF"),
+    ] {
+        s += &format!("    {n} -> iota -> {name};\n");
+    }
+    s += &format!(
+        "    mut kc: [bf16; {c}] <- kc0;\n    mut vc: [bf16; {c}] <- vc0;\n    mut x: [f32; {rd}] <- x0;\n    mut t: i32 <- 0;\n    loop {{\n        (t < {steps}) -> {{\n            -true-> {{\n                {p0} + t -> p;\n",
+        c = r * l * d,
+        rd = r * d,
+        steps = p.steps,
+        p0 = l - p.steps,
+    );
+    let b = "                ";
+    if p.norm {
+        s += &format!(
+            "{b}rR -> map {{\n{b}    b -> (0.0, rD) -> fold{k}{{\n{b}        acc, i -> x[b * {d} + i] -> v;\n{b}        acc + v * v\n{b}    }} -> ss;\n{b}    ss / {d}.0 + 0.01 -> ra;\n{b}    (0.5 + 0.5 * ra, rN) -> fold{k}{{\n{b}        acc, n -> 0.5 * (acc + ra / acc)\n{b}    }} -> sd;\n{b}    1.0 / sd\n{b}}} -> rinv;\n{b}rRD -> map {{\n{b}    e -> x[e] * rinv[e / {d}]\n{b}}} -> xn;\n"
+        );
+    } else {
+        s += &format!("{b}rRD -> map {{\n{b}    e -> x[e] * 0.75\n{b}}} -> xn;\n");
+    }
+    s += &format!(
+        "{b}rRQ -> map {{\n{b}    e -> e / {q} -> b;\n{b}    e % {q} -> j;\n{b}    (0.0, rD) -> fold{k}{{\n{b}        acc, c -> wqkv[c * {q} + j] -> widen_f32 -> w;\n{b}        acc + xn[b * {d} + c] * w\n{b}    }}\n{b}}} -> qkv;\n"
+    );
+    for (cache, off) in [("kc", d), ("vc", 2 * d)] {
+        s += &format!(
+            "{b}rC -> map {{\n{b}    c -> c / {ld} -> b;\n{b}    c / {d} % {l} -> r;\n{b}    (r == p) -> {{\n{b}        -true-> qkv[b * {q} + {off} + c % {d}] -> to_bf16;\n{b}        -false-> {cache}[c];\n{b}    }}\n{b}}} -> {cache};\n",
+            ld = l * d,
+        );
+    }
+    s += &format!(
+        "{b}rRL -> map {{\n{b}    e -> e / {l} -> b;\n{b}    e % {l} -> r;\n{b}    (r <= p) -> {{\n{b}        -true-> {{\n{b}            (0.0, rD) -> fold{k}{{\n{b}                acc, i -> kc[(b * {l} + r) * {d} + i] -> widen_f32 -> kv;\n{b}                acc + qkv[b * {q} + i] * kv\n{b}            }} -> dt;\n{b}            dt / {sc}\n{b}        }}\n{b}        -false-> -1000000000.0;\n{b}    }}\n{b}}} -> s;\n",
+        sc = if d >= 16 { "4.0" } else { "2.0" },
+    );
+    s += &format!(
+        "{b}rR -> map {{\n{b}    b -> (-1000000000.0, rL) -> fold{k}{{\n{b}        acc, r -> s[b * {l} + r] -> se;\n{b}        (se > acc) -> {{\n{b}            -true-> se;\n{b}            -false-> acc;\n{b}        }}\n{b}    }}\n{b}}} -> mx;\n{b}rRL -> map {{\n{b}    e -> s[e] - mx[e / {l}] -> exp\n{b}}} -> pe;\n{b}rR -> map {{\n{b}    b -> (0.0, rL) -> fold{k}{{\n{b}        acc, r -> acc + pe[b * {l} + r]\n{b}    }}\n{b}}} -> den;\n"
+    );
+    s += &format!(
+        "{b}rRD -> map {{\n{b}    e -> e / {d} -> b;\n{b}    e % {d} -> i;\n{b}    (0.0, rL) -> fold{k}{{\n{b}        acc, r -> vc[(b * {l} + r) * {d} + i] -> widen_f32 -> vv;\n{b}        acc + pe[b * {l} + r] * vv\n{b}    }} -> av;\n{b}    av / den[b]\n{b}}} -> att;\n{b}rRD -> map {{\n{b}    e -> e / {d} -> b;\n{b}    e % {d} -> j;\n{b}    (0.0, rD) -> fold{k}{{\n{b}        acc, c -> wo[c * {d} + j] -> widen_f32 -> w;\n{b}        acc + att[b * {d} + c] * w\n{b}    }} -> y;\n{b}    x[e] + y\n{b}}} -> {h};\n",
+        h = if f > 0 { "h" } else { "x" },
+    );
+    if f > 0 {
+        s += &format!(
+            "{b}rRF -> map {{\n{b}    e -> e / {f} -> b;\n{b}    e % {f} -> j;\n{b}    (0.0, rD) -> fold{k}{{\n{b}        acc, c -> wg[c * {f} + j] -> widen_f32 -> w;\n{b}        acc + h[b * {d} + c] * w\n{b}    }} -> g;\n{b}    (g > 0.0) -> {{\n{b}        -true-> g;\n{b}        -false-> 0.0;\n{b}    }}\n{b}}} -> hh;\n{b}rRD -> map {{\n{b}    e -> e / {d} -> b;\n{b}    e % {d} -> j;\n{b}    (0.0, rF) -> fold{k}{{\n{b}        acc, c -> wd[c * {d} + j] -> widen_f32 -> w;\n{b}        acc + hh[b * {f} + c] * w\n{b}    }} -> y2;\n{b}    h[e] + y2\n{b}}} -> x;\n"
+        );
+    }
+    s += &format!(
+        "{b}t + 1 -> t;\n{b}-> loop;\n            }}\n            -false-> x -> out;\n        }}\n    }}\n    out[0] -> println;\n    out[{last}] -> println;\n    0.0 -> zero: f32;\n    (zero, out) -> fold{k}{{\n        acc, v -> acc + v * v\n    }} -> ssq;\n    ssq -> println;\n}}\n",
+        last = r * d - 1,
+    );
+    s
+}

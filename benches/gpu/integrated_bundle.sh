@@ -113,6 +113,13 @@ done
 PX=${PX-""}
 for p in $PX; do
     [ -s "$OUT/tiles/$p.expect" ] || "$ROOT/target/release/examples/run" "$OUT/tiles/$p.mapal" > "$OUT/tiles/$p.expect"
+    # bound-blkdec: a program whose products admit a reduced member answers to its composed bound (ADR-0041 D5
+    # `bound(o)`: the oracle's `--bound`, one bound a printed value), not to one site's coefficient.
+    if grep -qE ': (bf16|f16|tf32) \|' "$OUT/tiles/$p.mapal" && [ ! -s "$OUT/tiles/${p}_xbound.expect" ]; then
+        [ -x "$ROOT/target/release/mapal" ] || (cd "$ROOT" && cargo build -q --release -p mapal-cli)
+        "$ROOT/target/release/mapal" run "$OUT/tiles/$p.mapal" --interp --bound --budget 20000000000 \
+            > "$OUT/tiles/${p}_xbound.expect"
+    fi
 done
 
 # ADR-0041 D7: the TF32 face is the program's — `<src>` with `: tf32 | f32` on every fold step, written

@@ -16,6 +16,7 @@
 //! No `Display` impls (C3); a plain [`render`] owns value→string. Determinism
 //! (E2) is structural: `SecondaryMap` + `Vec` only, no `HashMap` anywhere.
 
+mod bound;
 mod eval;
 mod loops;
 mod value;
@@ -23,6 +24,7 @@ mod value;
 use mapal_ir::{CategoryIr, FuncId, MorphismId, ObjectId, Ty};
 use slotmap::SecondaryMap;
 
+pub use bound::Bound;
 pub use value::{Outcome, RValue, TrapKind, render};
 
 /// The result of running a program (interp DESIGN §7): the [`Outcome`] plus the
@@ -89,6 +91,29 @@ pub fn run_weakest(
     let r = run_ordered(ir, budget, orders);
     eval::WEAKEST.with(|w| w.set(false));
     r
+}
+
+/// [`run`] with the composed a-priori bound of the default face (ADR-0041
+/// D5 `bound(o)`, ADR-0049 D1): beside the exact face's output, one [`Bound`]
+/// per print, in print order (a closed entry's returned scalar last) —
+/// `|default − exact| ≤ bound` to first order, each operation's own
+/// default-face bound (ADR-0040 D2 / ADR-0041 D3 per regrouped fold and
+/// admitted product, ADR-0043 D3 per narrow rounding of an operand carrying
+/// error, ADR-0042 / ADR-0046 per math builtin) composed through the
+/// program's derivatives (`bound.rs`). The value gates of programs whose
+/// products admit a reduced member read it.
+pub fn run_bound(ir: &CategoryIr, budget: u64) -> (RunResult, Vec<Bound>) {
+    bound::record(|| {
+        let rr = run(ir, budget);
+        if let Outcome::Done(v) = &rr.outcome {
+            let entry = ir.func(ir.entry()).expect("sealed graph: entry resolves");
+            let token = ir.object(entry.input).is_some_and(|o| o.ty == Ty::IoToken);
+            if !token {
+                bound::printed(v, true);
+            }
+        }
+        rr
+    })
 }
 
 /// ADR-0048 (compile-time evaluation): the values of `roots` — objects of
@@ -234,7 +259,7 @@ pub fn native_observable(ir: &CategoryIr, rr: &RunResult) -> Option<(Option<Stri
             let in_ty = &ir.object(ir.func(entry).unwrap().input).unwrap().ty;
             let stdout = if *in_ty == Ty::IoToken {
                 rr.output.clone()
-            } else if let RValue::Scalar(sv) = v {
+            } else if let RValue::Scalar(sv) | RValue::Tracked(sv, _) = v {
                 // The @main wrapper prints the scalar return with a newline.
                 format!("{}\n", render(sv))
             } else {

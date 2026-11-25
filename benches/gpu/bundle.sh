@@ -91,6 +91,11 @@ sys.exit(1 if n == 0 or " - " in rest or "max" in rest or "exp" in rest else ope
             "$EMIT" "${b}_xabs.mapal" - --rewrite --exact --target=apple-m > "${b}_xabs.cpu.ll"
             clang -O2 "${b}_xabs.cpu.ll" "$ROOT/target/release/libmapal_rt.a" -o "${b}_xabs.cpu" 2>/dev/null
             "${b}_xabs.cpu" > "${b}_xabs.expect"
+        fi
+        # bound-blkdec: a program whose products admit a reduced member answers to its composed bound
+        # (ADR-0041 D5 `bound(o)`: the oracle's `--bound`, one bound a printed value).
+        if grep -qE ': (bf16|f16|tf32) \|' "$f" && [ ! -s "${b}_xbound.expect" ]; then
+            "$ROOT/target/release/mapal" run "$f" --interp --bound --budget 20000000000 > "${b}_xbound.expect"
         fi ;;
     esac
 done
