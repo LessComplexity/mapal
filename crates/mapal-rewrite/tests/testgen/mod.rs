@@ -3429,6 +3429,12 @@ pub struct ZeroProg {
     pub c: u64,
     pub k: u64,
     pub steps: Vec<[u8; 3]>,
+    /// prefill-residency: straight-line, the result reads the last site and
+    /// every cell — an earlier site's output dies at the cells reading it,
+    /// so a later site's output may take its bytes (the arena) and that
+    /// site's zero is hoisted toward the reader's launch (a horizontal
+    /// member's is its group's).
+    pub drop_sites: bool,
 }
 
 pub fn zero_prog_strategy() -> impl Strategy<Value = ZeroProg> {
@@ -3447,6 +3453,7 @@ pub fn zero_prog_strategy() -> impl Strategy<Value = ZeroProg> {
             c,
             k,
             steps,
+            drop_sites: false,
         })
 }
 
@@ -3506,8 +3513,14 @@ pub fn zero_src(p: &ZeroProg) -> String {
     // dead operand's bytes).
     let last = sites - 1;
     let mut sum = format!("y{last}[e]");
-    for y in 0..last {
-        sum += &format!(" + y{y}[(e + {}) % {rc}] / 8.0", y + 1);
+    if p.drop_sites && !p.looped {
+        for q in 0..cells {
+            sum += &format!(" + q{q}[(e + {}) % {}] / 8.0", q + 1, r * k);
+        }
+    } else {
+        for y in 0..last {
+            sum += &format!(" + y{y}[(e + {}) % {rc}] / 8.0", y + 1);
+        }
     }
     // One site: its output is the next state itself.
     let next = match sites {

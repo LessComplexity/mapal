@@ -346,11 +346,14 @@ struct Cover {
     none: usize,
     runs: usize,
     hoisted: usize,
+    /// Hoisted zeros in a program with merged (`horizontal`) launches.
+    merged: usize,
 }
 
 impl Cover {
     fn add(&mut self, d: &Cover) {
         self.hoisted += d.hoisted;
+        self.merged += d.merged;
         self.programs += d.programs;
         self.sites += d.sites;
         self.folded += d.folded;
@@ -381,7 +384,29 @@ fn zero_fold_on_generated_programs() {
     let progs: Vec<testgen::ZeroProg> = (0..120)
         .map(|_| strat.new_tree(&mut runner).unwrap().current())
         .collect();
-    let covers = testgen::par_check(&progs, |z, p| {
+    let covers = testgen::par_check(&progs, |z, p| check_zero(&clang, z, p));
+    let mut cv = Cover::default();
+    for d in &covers {
+        cv.add(d);
+    }
+    eprintln!("zero_fold_on_generated_programs: {cv:?}");
+    assert!(
+        cv.folded > 0
+            && cv.loops > 0
+            && cv.straight > 0
+            && cv.multi > 0
+            && cv.stopped > 0
+            && cv.none > 0
+            && cv.hoisted > 0,
+        "{cv:?}"
+    );
+}
+
+/// One generated program of [`zero_fold_on_generated_programs`]: ON (every
+/// pick, serialized both ways) against the interpreter and the OFF arm.
+fn check_zero(clang: &str, z: usize, p: &testgen::ZeroProg) -> Cover {
+    {
+        let clang = clang.to_string();
         let mut cv = Cover::default();
         let src = testgen::zero_src(p);
         let ir = lower(&src);
@@ -465,22 +490,57 @@ fn zero_fold_on_generated_programs() {
             cv.runs += 1;
         }
         cv
+    }
+}
+
+/// prefill-residency: **a hoisted zero waits for the merged launch that
+/// reads the bytes it takes.** Straight-line generated programs whose
+/// earlier sites' outputs die at the cells reading them (`drop_sites`): a
+/// later site's output may take such an output's bytes in the arena, and a
+/// cell reading it may be a `horizontal` member launched at its group's
+/// last member — the zero is issued after that launch, not after the
+/// member's own step (the full model's rotate cells read their projection
+/// after the zero had taken its bytes). Values as in
+/// [`zero_fold_on_generated_programs`]; coverage: hoisted zeros in programs
+/// with merged groups.
+#[test]
+fn zero_hoist_waits_for_merged_launches() {
+    let Some(clang) = emu::clang() else {
+        return;
+    };
+    let mut runner = TestRunner::deterministic();
+    let strat = testgen::zero_prog_strategy();
+    let progs: Vec<testgen::ZeroProg> = (0..48)
+        .map(|_| strat.new_tree(&mut runner).unwrap().current())
+        .map(|p| {
+            // Two sites, then two cells each reading one of them (independent:
+            // a merged pair, the first's operand dead at its own step), then
+            // a site over one of the cells, then the draw's own steps.
+            let s0 = p.steps[0];
+            let mut steps = vec![[1, 0, 1], [1, 0, 1], [0, s0[1], 0], [0, s0[1] / 2, 3]];
+            steps.push([1, 1 + s0[2] % 2, 0]);
+            steps.extend(&p.steps[1..]);
+            testgen::ZeroProg {
+                looped: false,
+                drop_sites: true,
+                steps,
+                ..p
+            }
+        })
+        .collect();
+    let covers = testgen::par_check(&progs, |z, p| {
+        let on = emulated(&lower(&testgen::zero_src(p)), true);
+        let hz = on.text.contains("; mapal.hz kernel=");
+        let mut cv = check_zero(&clang, z, p);
+        cv.merged = usize::from(hz && cv.hoisted > 0);
+        cv
     });
     let mut cv = Cover::default();
     for d in &covers {
         cv.add(d);
     }
-    eprintln!("zero_fold_on_generated_programs: {cv:?}");
-    assert!(
-        cv.folded > 0
-            && cv.loops > 0
-            && cv.straight > 0
-            && cv.multi > 0
-            && cv.stopped > 0
-            && cv.none > 0
-            && cv.hoisted > 0,
-        "{cv:?}"
-    );
+    eprintln!("zero_hoist_waits_for_merged_launches: {cv:?}");
+    assert!(cv.hoisted > 0 && cv.merged > 0 && cv.straight > 0, "{cv:?}");
 }
 
 /// gap-fixes merge (`zero-hoist`): **a hoisted zero stays with its site's
