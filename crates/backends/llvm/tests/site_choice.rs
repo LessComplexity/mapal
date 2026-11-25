@@ -477,6 +477,11 @@ fn candidate_zero_is_the_pre_sprint_emission() {
         // hopper-wgmma-tma: the 2048² TF32 MLP site takes the warp-specialized
         // wgmma tile on the sm_90a profiles (h100-pcie's pt_mlp_2048_tf32);
         // its OFF arm keeps the emission before it.
+        // prefill-integrate: a shared body's one-cell-buffer device variant is
+        // named `<body>_u<slots>`, apart from cell-law's `<body>_cell`
+        // (prefill-precision): px_mlp2_64_f64's, pt_rq_mlp2_512's and
+        // pt_smlp_4096_256_1024's 36 rows change by that name alone (with the
+        // names normalized their host and device text is equal) — regolded.
         for f in [
             target.as_str(),
             "--host=x86-64-v3",
