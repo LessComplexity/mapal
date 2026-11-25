@@ -30,6 +30,11 @@
      "file": ".claude/raw-evidence/local-rtx-5080/gapfix-integrate/zeroab2/results-rtx-5080.txt",
      "step": "gapfix-integrate/zeroab2",
      "commit": "9abeb446"
+    },
+    {
+     "file": ".claude/raw-evidence/local-rtx-5080/gapfix-boundary/res/chain-legs-rtx-5080.txt",
+     "step": "gapfix-boundary/res",
+     "commit": "81a89c02"
     }
    ],
    "rtx-3090": [
@@ -131,26 +136,27 @@
    "precision": "f32",
    "unit": "ms",
    "mapal_ms": 0.03558,
-   "best_ms": 0.0348,
+   "best_ms": 0.0367,
    "best_leg": "chain-fused",
    "best_family": "cuda",
-   "ratio": 1.0224,
+   "ratio": 0.9695,
    "null": 0.0554,
    "verdict": "even",
-   "base_best_ms": 0.0348,
+   "base_best_ms": 0.0367,
    "base_best_leg": "chain-fused",
-   "base_ratio": 1.0224,
+   "base_ratio": 0.9695,
    "base_verdict": "even",
    "bf16_ref_ms": null,
    "bf16_ref_leg": null,
    "commit": "d945c641",
    "source": "gapfix-integrate/resS",
    "leg_sources": [
+    "gapfix-boundary/res",
     "gapfix-integrate/resS"
    ],
    "legs": {
-    "chain-fused": 0.0348,
-    "chain-eager": 0.041,
+    "chain-fused": 0.0367,
+    "chain-eager": 0.0439,
     "torch-compile": 0.0466,
     "torch-compile-cg": 0.0514,
     "torch-compile-ro": 0.0537,
@@ -162,11 +168,11 @@
    },
    "every_leg": {
     "chain-eager": [
-     0.041,
+     0.0439,
      ""
     ],
     "chain-fused": [
-     0.0348,
+     0.0367,
      ""
     ],
     "torch-eager": [
@@ -202,9 +208,9 @@
      ""
     ]
    },
-   "old_best_ms": 0.0348,
+   "old_best_ms": 0.0367,
    "old_best_leg": "chain-fused",
-   "old_ratio": 1.0224,
+   "old_ratio": 0.9695,
    "old_verdict": "even",
    "legs_from": null
   },
@@ -230,8 +236,8 @@
    "commit": "9abeb446",
    "source": "gapfix-integrate/zeroab2",
    "leg_sources": [
-    "gapfix-integrate/resS",
-    "gapfix-integrate/zeroab2"
+    "gapfix-boundary/res",
+    "gapfix-integrate/resS"
    ],
    "legs": {
     "torch-sdpa-compile": 0.1141,
@@ -239,19 +245,19 @@
     "torch-compile": 0.1203,
     "torch-compile-cg": 0.1223,
     "torch-compile-ro": 0.1265,
-    "chain-fused": 0.127,
-    "chain-eager": 0.1393,
+    "chain-fused": 0.1306,
+    "chain-eager": 0.1417,
     "torch-sdpa": 0.1538,
     "torch-eager": 0.1618,
     "triton": 0.8353
    },
    "every_leg": {
     "chain-eager": [
-     0.1393,
+     0.1417,
      ""
     ],
     "chain-fused": [
-     0.127,
+     0.1306,
      ""
     ],
     "torch-eager": [
@@ -315,28 +321,28 @@
    "commit": "9abeb446",
    "source": "gapfix-integrate/zeroab2",
    "leg_sources": [
-    "gapfix-integrate/resS",
-    "gapfix-integrate/zeroab2"
+    "gapfix-boundary/res",
+    "gapfix-integrate/resS"
    ],
    "legs": {
     "torch-sdpa-compile": 0.0938,
     "torch-compile-ro": 0.0941,
-    "chain-fused": 0.0942,
+    "chain-fused": 0.0964,
     "torch-sdpa-compile-cg": 0.0966,
     "torch-compile": 0.0972,
     "torch-compile-cg": 0.106,
-    "chain-eager": 0.1065,
+    "chain-eager": 0.1104,
     "torch-sdpa": 0.1241,
     "torch-eager": 0.1292,
     "triton": 0.3434
    },
    "every_leg": {
     "chain-eager": [
-     0.1065,
+     0.1104,
      ""
     ],
     "chain-fused": [
-     0.0942,
+     0.0964,
      ""
     ],
     "torch-eager": [
@@ -601,26 +607,27 @@
    "precision": "f32",
    "unit": "ms",
    "mapal_ms": 8.674129,
-   "best_ms": 16.414,
+   "best_ms": 16.476,
    "best_leg": "chain-cache",
    "best_family": "cuda",
-   "ratio": 0.5285,
+   "ratio": 0.5265,
    "null": 0.0065,
    "verdict": "win",
-   "base_best_ms": 16.414,
+   "base_best_ms": 16.476,
    "base_best_leg": "chain-cache",
-   "base_ratio": 0.5285,
+   "base_ratio": 0.5265,
    "base_verdict": "win",
    "bf16_ref_ms": null,
    "bf16_ref_leg": null,
    "commit": "d945c641",
    "source": "gapfix-integrate/resS",
    "leg_sources": [
+    "gapfix-boundary/res",
     "gapfix-integrate/resS"
    ],
    "legs": {
-    "chain-cache": 16.414,
-    "chain-nocache": 23.721,
+    "chain-cache": 16.476,
+    "chain-nocache": 23.694,
     "torch-compile-cg": 45.8202,
     "torch-compile-ro": 45.8795,
     "torch-compile": 48.2885,
@@ -628,11 +635,11 @@
    },
    "every_leg": {
     "chain-cache": [
-     16.414,
+     16.476,
      ""
     ],
     "chain-nocache": [
-     23.721,
+     23.694,
      ""
     ],
     "torch-eager": [
@@ -652,9 +659,9 @@
      ""
     ]
    },
-   "old_best_ms": 16.414,
+   "old_best_ms": 16.476,
    "old_best_leg": "chain-cache",
-   "old_ratio": 0.5285,
+   "old_ratio": 0.5265,
    "old_verdict": "win",
    "legs_from": null
   },
@@ -665,49 +672,49 @@
    "precision": "f32",
    "unit": "ms",
    "mapal_ms": 1.369006,
-   "best_ms": 1.3783,
+   "best_ms": 1.3848,
    "best_leg": "chain-lt",
    "best_family": "vendor",
-   "ratio": 0.9933,
+   "ratio": 0.9886,
    "null": 0.0007,
    "verdict": "even",
-   "base_best_ms": 1.3783,
+   "base_best_ms": 1.3848,
    "base_best_leg": "chain-lt",
-   "base_ratio": 0.9933,
+   "base_ratio": 0.9886,
    "base_verdict": "even",
    "bf16_ref_ms": null,
    "bf16_ref_leg": null,
    "commit": "9abeb446",
    "source": "gapfix-integrate/zeroab2",
    "leg_sources": [
-    "gapfix-integrate/resS",
-    "gapfix-integrate/zeroab2"
+    "gapfix-boundary/res",
+    "gapfix-integrate/resS"
    ],
    "legs": {
-    "chain-lt": 1.3783,
-    "chain-streams": 1.3946,
+    "chain-lt": 1.3848,
     "torch-eager": 1.4008,
     "torch-compile": 1.4018,
-    "chain-eager": 1.4029,
+    "chain-streams": 1.4027,
     "torch-compile-cg": 1.4053,
+    "chain-eager": 1.408,
     "torch-compile-ro": 1.4172,
-    "chain-cutlass": 1.6466
+    "chain-cutlass": 1.6544
    },
    "every_leg": {
     "chain-eager": [
-     1.4029,
+     1.408,
      ""
     ],
     "chain-streams": [
-     1.3946,
+     1.4027,
      ""
     ],
     "chain-lt": [
-     1.3783,
+     1.3848,
      ""
     ],
     "chain-cutlass": [
-     1.6466,
+     1.6544,
      ""
     ],
     "torch-eager": [
@@ -727,9 +734,9 @@
      ""
     ]
    },
-   "old_best_ms": 1.3783,
+   "old_best_ms": 1.3848,
    "old_best_leg": "chain-lt",
-   "old_ratio": 0.9933,
+   "old_ratio": 0.9886,
    "old_verdict": "even",
    "legs_from": null
   },
@@ -740,44 +747,45 @@
    "precision": "f32",
    "unit": "ms",
    "mapal_ms": 3.538373,
-   "best_ms": 3.5697,
+   "best_ms": 3.5831,
    "best_leg": "chain-lt",
    "best_family": "vendor",
-   "ratio": 0.9912,
+   "ratio": 0.9875,
    "null": 0.0013,
    "verdict": "even",
-   "base_best_ms": 3.5697,
+   "base_best_ms": 3.5831,
    "base_best_leg": "chain-lt",
-   "base_ratio": 0.9912,
+   "base_ratio": 0.9875,
    "base_verdict": "even",
    "bf16_ref_ms": null,
    "bf16_ref_leg": null,
    "commit": "d945c641",
    "source": "gapfix-integrate/resS",
    "leg_sources": [
+    "gapfix-boundary/res",
     "gapfix-integrate/resS"
    ],
    "legs": {
-    "chain-lt": 3.5697,
+    "chain-lt": 3.5831,
     "torch-compile-ro": 3.663,
     "torch-compile-cg": 3.676,
     "torch-compile": 3.6798,
-    "chain-eager": 3.7007,
-    "chain-cutlass": 3.7601,
+    "chain-eager": 3.7147,
+    "chain-cutlass": 3.7758,
     "torch-eager": 3.8212,
     "triton": 4.4913
    },
    "every_leg": {
     "chain-eager": [
-     3.7007,
+     3.7147,
      ""
     ],
     "chain-lt": [
-     3.5697,
+     3.5831,
      ""
     ],
     "chain-cutlass": [
-     3.7601,
+     3.7758,
      ""
     ],
     "torch-eager": [
@@ -801,9 +809,9 @@
      ""
     ]
    },
-   "old_best_ms": 3.5697,
+   "old_best_ms": 3.5831,
    "old_best_leg": "chain-lt",
-   "old_ratio": 0.9912,
+   "old_ratio": 0.9875,
    "old_verdict": "even",
    "legs_from": null
   },
@@ -814,38 +822,39 @@
    "precision": "f32",
    "unit": "ms",
    "mapal_ms": 0.08805,
-   "best_ms": 0.2478,
+   "best_ms": 0.2491,
    "best_leg": "chain-fused",
    "best_family": "cuda",
-   "ratio": 0.3553,
+   "ratio": 0.3535,
    "null": 0.0018,
    "verdict": "win",
-   "base_best_ms": 0.2478,
+   "base_best_ms": 0.2491,
    "base_best_leg": "chain-fused",
-   "base_ratio": 0.3553,
+   "base_ratio": 0.3535,
    "base_verdict": "win",
    "bf16_ref_ms": null,
    "bf16_ref_leg": null,
    "commit": "d945c641",
    "source": "gapfix-integrate/resS",
    "leg_sources": [
+    "gapfix-boundary/res",
     "gapfix-integrate/resS"
    ],
    "legs": {
-    "chain-fused": 0.2478,
+    "chain-fused": 0.2491,
     "torch-compile": 0.2605,
     "torch-compile-cg": 0.2657,
     "torch-compile-ro": 0.2668,
-    "chain-eager": 0.5714,
+    "chain-eager": 0.5718,
     "torch-eager": 0.5763
    },
    "every_leg": {
     "chain-eager": [
-     0.5714,
+     0.5718,
      ""
     ],
     "chain-fused": [
-     0.2478,
+     0.2491,
      ""
     ],
     "torch-eager": [
@@ -865,9 +874,9 @@
      ""
     ]
    },
-   "old_best_ms": 0.2478,
+   "old_best_ms": 0.2491,
    "old_best_leg": "chain-fused",
-   "old_ratio": 0.3553,
+   "old_ratio": 0.3535,
    "old_verdict": "win",
    "legs_from": null
   },
@@ -932,26 +941,27 @@
    "precision": "f32",
    "unit": "ms",
    "mapal_ms": 0.913573,
-   "best_ms": 0.9114,
+   "best_ms": 0.9224,
    "best_leg": "chain-streams",
    "best_family": "vendor",
-   "ratio": 1.0024,
+   "ratio": 0.9904,
    "null": 0.001,
    "verdict": "even",
-   "base_best_ms": 0.9114,
+   "base_best_ms": 0.9224,
    "base_best_leg": "chain-streams",
-   "base_ratio": 1.0024,
+   "base_ratio": 0.9904,
    "base_verdict": "even",
    "bf16_ref_ms": null,
    "bf16_ref_leg": null,
    "commit": "d945c641",
    "source": "gapfix-integrate/resS",
    "leg_sources": [
+    "gapfix-boundary/res",
     "gapfix-integrate/resS"
    ],
    "legs": {
-    "chain-streams": 0.9114,
-    "chain-eager": 0.9236,
+    "chain-streams": 0.9224,
+    "chain-eager": 0.9327,
     "torch-eager": 0.9439,
     "torch-compile": 0.951,
     "torch-compile-cg": 0.9536,
@@ -959,11 +969,11 @@
    },
    "every_leg": {
     "chain-eager": [
-     0.9236,
+     0.9327,
      ""
     ],
     "chain-streams": [
-     0.9114,
+     0.9224,
      ""
     ],
     "torch-eager": [
@@ -983,9 +993,9 @@
      ""
     ]
    },
-   "old_best_ms": 0.9114,
+   "old_best_ms": 0.9224,
    "old_best_leg": "chain-streams",
-   "old_ratio": 1.0024,
+   "old_ratio": 0.9904,
    "old_verdict": "even",
    "legs_from": null
   },
@@ -1158,49 +1168,49 @@
    "precision": "f32",
    "unit": "ms",
    "mapal_ms": 0.937224,
-   "best_ms": 0.9155,
+   "best_ms": 0.926,
    "best_leg": "chain-lt",
    "best_family": "vendor",
-   "ratio": 1.0237,
+   "ratio": 1.0121,
    "null": 0.0014,
    "verdict": "even",
-   "base_best_ms": 0.9155,
+   "base_best_ms": 0.926,
    "base_best_leg": "chain-lt",
-   "base_ratio": 1.0237,
+   "base_ratio": 1.0121,
    "base_verdict": "even",
    "bf16_ref_ms": null,
    "bf16_ref_leg": null,
    "commit": "9abeb446",
    "source": "gapfix-integrate/zeroab2",
    "leg_sources": [
-    "gapfix-integrate/resS",
-    "gapfix-integrate/zeroab2"
+    "gapfix-boundary/res",
+    "gapfix-integrate/resS"
    ],
    "legs": {
-    "chain-lt": 0.9155,
-    "chain-streams": 0.9318,
+    "chain-lt": 0.926,
     "torch-eager": 0.9327,
-    "chain-eager": 0.938,
     "torch-compile": 0.94,
+    "chain-streams": 0.9426,
     "torch-compile-cg": 0.9432,
+    "chain-eager": 0.9494,
     "torch-compile-ro": 0.9564,
-    "chain-cutlass": 1.0916
+    "chain-cutlass": 1.1037
    },
    "every_leg": {
     "chain-eager": [
-     0.938,
+     0.9494,
      ""
     ],
     "chain-streams": [
-     0.9318,
+     0.9426,
      ""
     ],
     "chain-lt": [
-     0.9155,
+     0.926,
      ""
     ],
     "chain-cutlass": [
-     1.0916,
+     1.1037,
      ""
     ],
     "torch-eager": [
@@ -1220,9 +1230,9 @@
      ""
     ]
    },
-   "old_best_ms": 0.9155,
+   "old_best_ms": 0.926,
    "old_best_leg": "chain-lt",
-   "old_ratio": 1.0237,
+   "old_ratio": 1.0121,
    "old_verdict": "even",
    "legs_from": null
   },
@@ -1233,49 +1243,49 @@
    "precision": "f32",
    "unit": "ms",
    "mapal_ms": 0.039361,
-   "best_ms": 0.0365,
+   "best_ms": 0.0406,
    "best_leg": "chain-streams",
    "best_family": "vendor",
-   "ratio": 1.0784,
+   "ratio": 0.9695,
    "null": 0.0086,
-   "verdict": "loss",
-   "base_best_ms": 0.0365,
+   "verdict": "even",
+   "base_best_ms": 0.0406,
    "base_best_leg": "chain-streams",
-   "base_ratio": 1.0784,
-   "base_verdict": "loss",
+   "base_ratio": 0.9695,
+   "base_verdict": "even",
    "bf16_ref_ms": null,
    "bf16_ref_leg": null,
    "commit": "9abeb446",
    "source": "gapfix-integrate/zeroab2",
    "leg_sources": [
-    "gapfix-integrate/resS",
-    "gapfix-integrate/zeroab2"
+    "gapfix-boundary/res",
+    "gapfix-integrate/resS"
    ],
    "legs": {
-    "chain-streams": 0.0365,
-    "chain-lt": 0.043,
-    "chain-eager": 0.0451,
+    "chain-streams": 0.0406,
+    "chain-lt": 0.0458,
+    "chain-eager": 0.0481,
     "torch-compile": 0.0491,
     "torch-eager": 0.0496,
     "torch-compile-cg": 0.0556,
     "torch-compile-ro": 0.0673,
-    "chain-cutlass": 0.1044
+    "chain-cutlass": 0.1055
    },
    "every_leg": {
     "chain-eager": [
-     0.0451,
+     0.0481,
      ""
     ],
     "chain-streams": [
-     0.0365,
+     0.0406,
      ""
     ],
     "chain-lt": [
-     0.043,
+     0.0458,
      ""
     ],
     "chain-cutlass": [
-     0.1044,
+     0.1055,
      ""
     ],
     "torch-eager": [
@@ -1295,10 +1305,10 @@
      ""
     ]
    },
-   "old_best_ms": 0.0365,
+   "old_best_ms": 0.0406,
    "old_best_leg": "chain-streams",
-   "old_ratio": 1.0784,
-   "old_verdict": "loss",
+   "old_ratio": 0.9695,
+   "old_verdict": "even",
    "legs_from": null
   },
   {
@@ -4331,43 +4341,44 @@
    "precision": "f32",
    "unit": "ms",
    "mapal_ms": 26.904774,
-   "best_ms": 28.5143,
+   "best_ms": 28.0967,
    "best_leg": "chain-lt",
    "best_family": "vendor",
-   "ratio": 0.9436,
+   "ratio": 0.9576,
    "null": 0.0007,
-   "verdict": "win",
-   "base_best_ms": 28.5143,
+   "verdict": "even",
+   "base_best_ms": 28.0967,
    "base_best_leg": "chain-lt",
-   "base_ratio": 0.9436,
-   "base_verdict": "win",
+   "base_ratio": 0.9576,
+   "base_verdict": "even",
    "bf16_ref_ms": null,
    "bf16_ref_leg": null,
    "commit": "d945c641",
    "source": "gapfix-integrate/resS",
    "leg_sources": [
+    "gapfix-boundary/res",
     "gapfix-integrate/resS"
    ],
    "legs": {
-    "chain-lt": 28.5143,
-    "chain-cutlass": 28.7601,
+    "chain-lt": 28.0967,
     "torch-compile-cg": 29.2435,
     "torch-compile-ro": 29.2797,
     "torch-eager": 29.2841,
     "torch-compile": 29.2892,
-    "chain-eager": 30.211
+    "chain-eager": 29.7048,
+    "chain-cutlass": 29.8545
    },
    "every_leg": {
     "chain-eager": [
-     30.211,
+     29.7048,
      ""
     ],
     "chain-lt": [
-     28.5143,
+     28.0967,
      ""
     ],
     "chain-cutlass": [
-     28.7601,
+     29.8545,
      ""
     ],
     "torch-eager": [
@@ -4387,10 +4398,10 @@
      ""
     ]
    },
-   "old_best_ms": 28.5143,
+   "old_best_ms": 28.0967,
    "old_best_leg": "chain-lt",
-   "old_ratio": 0.9436,
-   "old_verdict": "win",
+   "old_ratio": 0.9576,
+   "old_verdict": "even",
    "legs_from": null
   },
   {
@@ -4666,54 +4677,55 @@
    "precision": "f32",
    "unit": "ms",
    "mapal_ms": 1.815957,
-   "best_ms": 1.7688,
+   "best_ms": 1.7823,
    "best_leg": "chain-lt2",
    "best_family": "vendor",
-   "ratio": 1.0267,
+   "ratio": 1.0189,
    "null": 0.0022,
    "verdict": "even",
-   "base_best_ms": 1.7688,
+   "base_best_ms": 1.7823,
    "base_best_leg": "chain-lt2",
-   "base_ratio": 1.0267,
+   "base_ratio": 1.0189,
    "base_verdict": "even",
    "bf16_ref_ms": null,
    "bf16_ref_leg": null,
    "commit": "d945c641",
    "source": "gapfix-integrate/resS",
    "leg_sources": [
+    "gapfix-boundary/res",
     "gapfix-integrate/resS"
    ],
    "legs": {
-    "chain-lt2": 1.7688,
-    "chain-streams": 1.7955,
-    "chain-lt": 1.8493,
-    "chain-eager": 1.8749,
+    "chain-lt2": 1.7823,
+    "chain-streams": 1.8082,
+    "chain-lt": 1.8577,
+    "chain-eager": 1.8837,
     "torch-compile": 1.8883,
     "torch-eager": 1.8898,
     "torch-compile-cg": 1.8904,
     "torch-compile-ro": 1.8949,
-    "chain-cutlass": 2.2108,
+    "chain-cutlass": 2.2174,
     "triton": 2.4556
    },
    "every_leg": {
     "chain-eager": [
-     1.8749,
+     1.8837,
      ""
     ],
     "chain-streams": [
-     1.7955,
+     1.8082,
      ""
     ],
     "chain-lt": [
-     1.8493,
+     1.8577,
      ""
     ],
     "chain-lt2": [
-     1.7688,
+     1.7823,
      ""
     ],
     "chain-cutlass": [
-     2.2108,
+     2.2174,
      ""
     ],
     "torch-eager": [
@@ -4737,9 +4749,9 @@
      ""
     ]
    },
-   "old_best_ms": 1.7688,
+   "old_best_ms": 1.7823,
    "old_best_leg": "chain-lt2",
-   "old_ratio": 1.0267,
+   "old_ratio": 1.0189,
    "old_verdict": "even",
    "legs_from": null
   },
@@ -4806,44 +4818,45 @@
    "precision": "f32",
    "unit": "ms",
    "mapal_ms": 0.877924,
-   "best_ms": 0.9114,
+   "best_ms": 0.9235,
    "best_leg": "chain-lt",
    "best_family": "vendor",
-   "ratio": 0.9633,
+   "ratio": 0.9506,
    "null": 0.0006,
    "verdict": "even",
-   "base_best_ms": 0.9114,
+   "base_best_ms": 0.9235,
    "base_best_leg": "chain-lt",
-   "base_ratio": 0.9633,
+   "base_ratio": 0.9506,
    "base_verdict": "even",
    "bf16_ref_ms": null,
    "bf16_ref_leg": null,
    "commit": "d945c641",
    "source": "gapfix-integrate/resS",
    "leg_sources": [
+    "gapfix-boundary/res",
     "gapfix-integrate/resS"
    ],
    "legs": {
-    "chain-lt": 0.9114,
-    "chain-eager": 0.9257,
+    "chain-lt": 0.9235,
     "torch-eager": 0.9329,
+    "chain-eager": 0.9372,
     "torch-compile": 0.9523,
     "torch-compile-ro": 0.9564,
     "torch-compile-cg": 0.9574,
-    "chain-cutlass": 1.0895,
+    "chain-cutlass": 1.1014,
     "triton": 1.227
    },
    "every_leg": {
     "chain-eager": [
-     0.9257,
+     0.9372,
      ""
     ],
     "chain-lt": [
-     0.9114,
+     0.9235,
      ""
     ],
     "chain-cutlass": [
-     1.0895,
+     1.1014,
      ""
     ],
     "torch-eager": [
@@ -4867,9 +4880,9 @@
      ""
     ]
    },
-   "old_best_ms": 0.9114,
+   "old_best_ms": 0.9235,
    "old_best_leg": "chain-lt",
-   "old_ratio": 0.9633,
+   "old_ratio": 0.9506,
    "old_verdict": "even",
    "legs_from": null
   },
@@ -4936,44 +4949,45 @@
    "precision": "f32",
    "unit": "ms",
    "mapal_ms": 0.03871,
-   "best_ms": 0.043,
+   "best_ms": 0.0453,
    "best_leg": "chain-lt",
    "best_family": "vendor",
-   "ratio": 0.9002,
+   "ratio": 0.8545,
    "null": 0.0186,
    "verdict": "win",
-   "base_best_ms": 0.043,
+   "base_best_ms": 0.0453,
    "base_best_leg": "chain-lt",
-   "base_ratio": 0.9002,
+   "base_ratio": 0.8545,
    "base_verdict": "win",
    "bf16_ref_ms": null,
    "bf16_ref_leg": null,
    "commit": "d945c641",
    "source": "gapfix-integrate/resS",
    "leg_sources": [
+    "gapfix-boundary/res",
     "gapfix-integrate/resS"
    ],
    "legs": {
-    "chain-lt": 0.043,
-    "chain-eager": 0.0451,
+    "chain-lt": 0.0453,
+    "chain-eager": 0.0474,
     "torch-compile": 0.048,
     "torch-eager": 0.0481,
     "torch-compile-cg": 0.055,
     "triton": 0.0564,
     "torch-compile-ro": 0.0666,
-    "chain-cutlass": 0.1065
+    "chain-cutlass": 0.1094
    },
    "every_leg": {
     "chain-eager": [
-     0.0451,
+     0.0474,
      ""
     ],
     "chain-lt": [
-     0.043,
+     0.0453,
      ""
     ],
     "chain-cutlass": [
-     0.1065,
+     0.1094,
      ""
     ],
     "torch-eager": [
@@ -4997,9 +5011,9 @@
      ""
     ]
    },
-   "old_best_ms": 0.043,
+   "old_best_ms": 0.0453,
    "old_best_leg": "chain-lt",
-   "old_ratio": 0.9002,
+   "old_ratio": 0.8545,
    "old_verdict": "win",
    "legs_from": null
   },
@@ -8244,27 +8258,27 @@
    "precision": "f32",
    "unit": "ms",
    "mapal_ms": 0.453282,
-   "best_ms": 0.4628,
+   "best_ms": 0.4665,
    "best_leg": "chain-eager",
    "best_family": "vendor",
-   "ratio": 0.9794,
+   "ratio": 0.9717,
    "null": 0.0009,
    "verdict": "even",
-   "base_best_ms": 0.4628,
+   "base_best_ms": 0.4665,
    "base_best_leg": "chain-eager",
-   "base_ratio": 0.9794,
+   "base_ratio": 0.9717,
    "base_verdict": "even",
    "bf16_ref_ms": null,
    "bf16_ref_leg": null,
    "commit": "9abeb446",
    "source": "gapfix-integrate/zeroab2",
    "leg_sources": [
-    "gapfix-integrate/resS",
-    "gapfix-integrate/zeroab2"
+    "gapfix-boundary/res",
+    "gapfix-integrate/resS"
    ],
    "legs": {
-    "chain-eager": 0.4628,
-    "chain-gemv": 0.4649,
+    "chain-eager": 0.4665,
+    "chain-gemv": 0.4688,
     "torch-eager": 0.4719,
     "torch-compile": 0.4855,
     "torch-compile-cg": 0.4883,
@@ -8272,11 +8286,11 @@
    },
    "every_leg": {
     "chain-eager": [
-     0.4628,
+     0.4665,
      ""
     ],
     "chain-gemv": [
-     0.4649,
+     0.4688,
      ""
     ],
     "torch-eager": [
@@ -8296,9 +8310,9 @@
      ""
     ]
    },
-   "old_best_ms": 0.4628,
+   "old_best_ms": 0.4665,
    "old_best_leg": "chain-eager",
-   "old_ratio": 0.9794,
+   "old_ratio": 0.9717,
    "old_verdict": "even",
    "legs_from": null
   },
@@ -8309,39 +8323,39 @@
    "precision": "f32",
    "unit": "ms",
    "mapal_ms": 3.744207,
-   "best_ms": 3.6045,
+   "best_ms": 3.6237,
    "best_leg": "chain-gemv",
    "best_family": "vendor",
-   "ratio": 1.0388,
+   "ratio": 1.0333,
    "null": 0.0019,
    "verdict": "even",
-   "base_best_ms": 3.6045,
+   "base_best_ms": 3.6237,
    "base_best_leg": "chain-gemv",
-   "base_ratio": 1.0388,
+   "base_ratio": 1.0333,
    "base_verdict": "even",
    "bf16_ref_ms": null,
    "bf16_ref_leg": null,
    "commit": "9abeb446",
    "source": "gapfix-integrate/zeroab2",
    "leg_sources": [
-    "gapfix-integrate/resS",
-    "gapfix-integrate/zeroab2"
+    "gapfix-boundary/res",
+    "gapfix-integrate/resS"
    ],
    "legs": {
-    "chain-gemv": 3.6045,
-    "chain-eager": 3.6157,
+    "chain-gemv": 3.6237,
     "torch-eager": 3.6284,
     "torch-compile-cg": 3.6299,
+    "chain-eager": 3.6317,
     "torch-compile": 3.6322,
     "torch-compile-ro": 3.645
    },
    "every_leg": {
     "chain-eager": [
-     3.6157,
+     3.6317,
      ""
     ],
     "chain-gemv": [
-     3.6045,
+     3.6237,
      ""
     ],
     "torch-eager": [
@@ -8361,9 +8375,9 @@
      ""
     ]
    },
-   "old_best_ms": 3.6045,
+   "old_best_ms": 3.6237,
    "old_best_leg": "chain-gemv",
-   "old_ratio": 1.0388,
+   "old_ratio": 1.0333,
    "old_verdict": "even",
    "legs_from": null
   },
@@ -8482,28 +8496,29 @@
    "precision": "f32",
    "unit": "ms",
    "mapal_ms": 0.156951,
-   "best_ms": 0.1556,
+   "best_ms": 0.157,
    "best_leg": "chain-lt",
    "best_family": "vendor",
-   "ratio": 1.0087,
+   "ratio": 0.9997,
    "null": 0.0001,
    "verdict": "even",
-   "base_best_ms": 0.1556,
+   "base_best_ms": 0.157,
    "base_best_leg": "chain-lt",
-   "base_ratio": 1.0087,
+   "base_ratio": 0.9997,
    "base_verdict": "even",
    "bf16_ref_ms": null,
    "bf16_ref_leg": null,
    "commit": "d945c641",
    "source": "gapfix-integrate/resS",
    "leg_sources": [
+    "gapfix-boundary/res",
     "gapfix-integrate/resS"
    ],
    "legs": {
-    "chain-lt": 0.1556,
-    "chain-cutlass": 0.1577,
-    "chain-eager": 0.1679,
+    "chain-lt": 0.157,
+    "chain-cutlass": 0.1593,
     "torch-compile": 0.1687,
+    "chain-eager": 0.1708,
     "torch-compile-cg": 0.1723,
     "torch-eager": 0.1808,
     "torch-compile-ro": 0.1882,
@@ -8511,15 +8526,15 @@
    },
    "every_leg": {
     "chain-eager": [
-     0.1679,
+     0.1708,
      ""
     ],
     "chain-lt": [
-     0.1556,
+     0.157,
      ""
     ],
     "chain-cutlass": [
-     0.1577,
+     0.1593,
      ""
     ],
     "torch-eager": [
@@ -8543,9 +8558,9 @@
      ""
     ]
    },
-   "old_best_ms": 0.1556,
+   "old_best_ms": 0.157,
    "old_best_leg": "chain-lt",
-   "old_ratio": 1.0087,
+   "old_ratio": 0.9997,
    "old_verdict": "even",
    "legs_from": null
   },
@@ -8556,40 +8571,40 @@
    "precision": "f32",
    "unit": "ms",
    "mapal_ms": 0.463142,
-   "best_ms": 0.4895,
-   "best_leg": "chain-fused",
-   "best_family": "cuda",
-   "ratio": 0.9462,
+   "best_ms": 0.4899,
+   "best_leg": "torch-compile",
+   "best_family": "compile",
+   "ratio": 0.9454,
    "null": 0.0006,
    "verdict": "win",
-   "base_best_ms": 0.4895,
-   "base_best_leg": "chain-fused",
-   "base_ratio": 0.9462,
+   "base_best_ms": 0.4899,
+   "base_best_leg": "torch-compile",
+   "base_ratio": 0.9454,
    "base_verdict": "win",
    "bf16_ref_ms": null,
    "bf16_ref_leg": null,
    "commit": "9abeb446",
    "source": "gapfix-integrate/zeroab2",
    "leg_sources": [
-    "gapfix-integrate/resS",
-    "gapfix-integrate/zeroab2"
+    "gapfix-boundary/res",
+    "gapfix-integrate/resS"
    ],
    "legs": {
-    "chain-fused": 0.4895,
     "torch-compile": 0.4899,
+    "chain-fused": 0.4937,
     "torch-compile-cg": 0.4956,
     "torch-compile-ro": 0.4996,
-    "chain-eager": 0.5018,
+    "chain-eager": 0.5049,
     "torch-eager": 0.5276,
     "triton": 0.6297
    },
    "every_leg": {
     "chain-eager": [
-     0.5018,
+     0.5049,
      ""
     ],
     "chain-fused": [
-     0.4895,
+     0.4937,
      ""
     ],
     "torch-eager": [
@@ -8613,9 +8628,9 @@
      ""
     ]
    },
-   "old_best_ms": 0.4895,
-   "old_best_leg": "chain-fused",
-   "old_ratio": 0.9462,
+   "old_best_ms": 0.4899,
+   "old_best_leg": "torch-compile",
+   "old_ratio": 0.9454,
    "old_verdict": "win",
    "legs_from": null
   },
@@ -8641,25 +8656,25 @@
    "commit": "9abeb446",
    "source": "gapfix-integrate/zeroab2",
    "leg_sources": [
-    "gapfix-integrate/resS",
-    "gapfix-integrate/zeroab2"
+    "gapfix-boundary/res",
+    "gapfix-integrate/resS"
    ],
    "legs": {
     "torch-compile-ro": 3.6817,
     "torch-compile": 3.689,
     "torch-compile-cg": 3.6975,
-    "chain-fused": 3.753,
-    "chain-eager": 3.9086,
+    "chain-fused": 3.7754,
+    "chain-eager": 3.9346,
     "torch-eager": 4.2032,
     "triton": 4.6196
    },
    "every_leg": {
     "chain-eager": [
-     3.9086,
+     3.9346,
      ""
     ],
     "chain-fused": [
-     3.753,
+     3.7754,
      ""
     ],
     "torch-eager": [
@@ -8749,16 +8764,16 @@
    "family": "gemm",
    "precision": "f32",
    "unit": "ms",
-   "mapal_ms": 0.0799,
-   "best_ms": 0.0799,
+   "mapal_ms": 0.0816,
+   "best_ms": 0.0849,
    "best_leg": "cublas",
    "best_family": "vendor",
-   "ratio": 1.0,
+   "ratio": 0.9611,
    "null": 0.0,
    "verdict": "even",
-   "base_best_ms": 0.0799,
+   "base_best_ms": 0.0849,
    "base_best_leg": "cublas",
-   "base_ratio": 1.0,
+   "base_ratio": 0.9611,
    "base_verdict": "even",
    "bf16_ref_ms": null,
    "bf16_ref_leg": null,
@@ -8768,22 +8783,22 @@
     "gapfix-integrate/resS"
    ],
    "legs": {
-    "cublas": 0.0799,
+    "cublas": 0.0849,
     "triton": 0.1732,
-    "cutlass-tuned": 0.3871,
-    "cutlass": 0.5284
+    "cutlass-tuned": 0.38915,
+    "cutlass": 0.52935
    },
    "every_leg": {
     "cublas": [
-     0.0799,
+     0.0849,
      ""
     ],
     "cutlass": [
-     0.5284,
+     0.52935,
      ""
     ],
     "cutlass-tuned": [
-     0.3871,
+     0.38915,
      ""
     ],
     "triton": [
@@ -8791,9 +8806,9 @@
      ""
     ]
    },
-   "old_best_ms": 0.0799,
+   "old_best_ms": 0.0849,
    "old_best_leg": "cublas",
-   "old_ratio": 1.0,
+   "old_ratio": 0.9611,
    "old_verdict": "even"
   },
   {
@@ -8802,16 +8817,16 @@
    "family": "gemm",
    "precision": "f32",
    "unit": "ms",
-   "mapal_ms": 3.8185,
-   "best_ms": 3.67765,
+   "mapal_ms": 3.82315,
+   "best_ms": 3.6857,
    "best_leg": "cublas",
    "best_family": "vendor",
-   "ratio": 1.0383,
-   "null": 0.0031,
+   "ratio": 1.0373,
+   "null": 0.0032,
    "verdict": "even",
-   "base_best_ms": 3.67765,
+   "base_best_ms": 3.6857,
    "base_best_leg": "cublas",
-   "base_ratio": 1.0383,
+   "base_ratio": 1.0373,
    "base_verdict": "even",
    "bf16_ref_ms": null,
    "bf16_ref_leg": null,
@@ -8821,22 +8836,22 @@
     "gapfix-integrate/resS"
    ],
    "legs": {
-    "cublas": 3.67765,
-    "cutlass": 3.73455,
+    "cublas": 3.6857,
+    "cutlass": 3.73985,
     "triton": 4.479,
-    "cutlass-tuned": 9.09005
+    "cutlass-tuned": 9.11045
    },
    "every_leg": {
     "cublas": [
-     3.67765,
+     3.6857,
      ""
     ],
     "cutlass": [
-     3.73455,
+     3.73985,
      ""
     ],
     "cutlass-tuned": [
-     9.09005,
+     9.11045,
      ""
     ],
     "triton": [
@@ -8844,9 +8859,9 @@
      ""
     ]
    },
-   "old_best_ms": 3.67765,
+   "old_best_ms": 3.6857,
    "old_best_leg": "cublas",
-   "old_ratio": 1.0383,
+   "old_ratio": 1.0373,
    "old_verdict": "even"
   },
   {

@@ -43,7 +43,7 @@ def parse(path):
             if v := re.match(r'values leg=(\S+) .*within_bound=(\w+) fnv=(\w+)', rest):
                 fnv[(cell, v[1])][p] = v[3]
                 bound[v[2]].add((cell, v[1]))
-            if t := re.match(r'time leg=(\S+) .*med_ms=([\d.]+)', rest):
+            if t := re.match(r'time leg=(\S+) .*?\bmed_ms=([\d.]+)', rest):
                 pmed[cell][t[1]][p] = float(t[2])
             if s := re.match(r'samples leg=(\S+) (\S*)', rest):
                 samples[cell][s[1]] += [float(x) for x in s[2].split(',') if x]

@@ -10,7 +10,7 @@ med = statistics.median
 PROBE = re.compile(r'^probe prog=(\S+) face=(\S+) arm=(\S+) rep=\d+ .*?iter ms=\s*([-\d.eE+]+)')
 TORCH = re.compile(r'^torch prog=(\S+) mode=(\S+) n=\d+ min_ms=\S+ med_ms=([\d.]+) .*within=(\w+)')
 CHAIN = re.compile(r'^chain probe=(\S+) ((?:\w+=\S+ )*?)leg=(\S+) .*?(?:wall_med_ms|med_ms)=([\d.]+)')
-CELL = re.compile(r'^pass=\d+ cell=(\S+) time leg=(\S+) .*med_ms=([\d.]+)')
+CELL = re.compile(r'^pass=\d+ cell=(\S+) time leg=(\S+) .*?\bmed_ms=([\d.]+)')
 probe = defaultdict(list); other = defaultdict(dict); cells = defaultdict(lambda: defaultdict(list))
 for l in open(sys.argv[1], errors='replace'):
     if m := PROBE.match(l): probe[(m[1], m[3])].append(float(m[4])); continue

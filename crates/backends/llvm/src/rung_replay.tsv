@@ -300,6 +300,6 @@ stream-ld	rtx-3090	A	C	null	read_once=100663296	benches/results/evidence/local-r
 stream-ld	rtx-3090	A	C	null	read_once=67108864	benches/results/evidence/local-rtx-5080/gapfix-rows-operands.md (rented 3090: pj_m1_n4096_k4096 1.025, spreads overlap)
 stream-ld	rtx-3090	A	C	null	read_once=234881024	benches/results/evidence/local-rtx-5080/gapfix-rows-operands.md (rented 3090: pj_m1_n4096_k14336 1.047, GEMV 0.284 -> 0.289 ms: the hint's cost, share 0.028)
 stream-ld	rtx-3090	A	C	null	read_once=58720256	benches/results/evidence/local-rtx-5080/gapfix-rows-operands.md (rented 3090: pj_m1_n2048_k7168 0.995)
-shfl-tree	rtx-3090	A	C	on		benches/results/evidence/local-rtx-5080/gapfix-rows-operands.md (rented 3090: lsm_32_8192 0.743, 0.0481 -> 0.0357 ms)
+shfl-tree	rtx-3090	A	C	null		benches/results/evidence/local-rtx-5080/gapfix-rows-operands.md (rented 3090: lsm_32_8192 at one pick, candidate 0 on both arms: OFF 0.0481 / ON-text rules 0.0466 ms, 0.969, ranges overlap, inside the session's null 0.137; the former 0.743 read ON's wisdom pick 3 against the OFF text's pick 0)
 iota-law	rtx-3090	A	C	on		benches/results/evidence/local-rtx-5080/gapfix-rows-operands.md (rented 3090: llm_dec_b32_l2048_bf16kv 0.984, spreads apart)
 kvec-swizzle	rtx-3090	A	C	on		benches/results/evidence/local-rtx-5080/gapfix-rows-operands.md (rented 3090: llm_dec_b32_l2048_bf16kv 0.960, 10.59 -> 10.16 ms, spreads apart)

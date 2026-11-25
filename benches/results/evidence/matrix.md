@@ -20,21 +20,21 @@ Built 2026-11-25 by `benches/local/matrix.py` from existing results files (comma
 
 | geomean Mapal/best | rtx-5080 | rtx-3090 | a100 | rtx-4090 | h100 |
 |---|---:|---:|---:|---:|---:|
-| GEMM cells & projections | 0.927 (47) | 1.116 (47) | 1.389 (46) | 1.075 (47) | 1.511 (47) |
-| MLP chains | 0.988 (6) | 1.131 (6) | 1.263 (6) | 1.123 (6) | 1.381 (6) |
-| Attention / softmax / long rows | 0.642 (14) | 0.742 (14) | 0.853 (14) | 0.678 (14) | 0.933 (14) |
+| GEMM cells & projections | 0.926 (47) | 1.116 (47) | 1.389 (46) | 1.075 (47) | 1.511 (47) |
+| MLP chains | 0.974 (6) | 1.131 (6) | 1.263 (6) | 1.123 (6) | 1.381 (6) |
+| Attention / softmax / long rows | 0.639 (14) | 0.742 (14) | 0.853 (14) | 0.678 (14) | 0.933 (14) |
 | LLM decode / prefill / block (f32, tf32, bf16 storage) | 0.987 (37) | 0.962 (37) | 1.121 (37) | 0.903 (37) | 1.031 (37) |
 | Conv / FIR / elementwise | 0.493 (7) | 0.879 (7) | 1.242 (7) | 0.879 (7) | 0.908 (7) |
-| Fan-in/out, loops, CPU+GPU | 0.992 (9) | 1.026 (9) | 1.019 (9) | 1.040 (9) | 1.183 (9) |
-| all f32 rows | 0.775 (66) | 0.891 (66) | 0.953 (65) | 0.869 (66) | 0.974 (66) |
+| Fan-in/out, loops, CPU+GPU | 0.979 (9) | 1.026 (9) | 1.019 (9) | 1.040 (9) | 1.183 (9) |
+| all f32 rows | 0.772 (66) | 0.891 (66) | 0.953 (65) | 0.869 (66) | 0.974 (66) |
 | all tf32 rows | 1.154 (13) | 1.139 (13) | 2.087 (13) | 1.239 (13) | 1.688 (13) |
 | all bf16w rows | 1.559 (9) | 1.419 (9) | 1.682 (9) | 1.377 (9) | 1.749 (9) |
 | all bf16kv rows | 0.971 (7) | 0.938 (7) | 1.035 (7) | 0.863 (7) | 1.022 (7) |
 | all bf16 rows | 0.846 (25) | 1.122 (25) | 1.423 (25) | 0.958 (25) | 1.620 (25) |
 | all f8w rows | - | - | - | - | - |
-| **all rows** | 0.880 (120) | 0.997 (120) | 1.185 (119) | 0.954 (120) | 1.204 (120) |
-| rows timed on every part (119) | 0.879 (119) | 0.996 (119) | 1.185 (119) | 0.954 (119) | 1.205 (119) |
-| win / even / loss | 47/42/31 | 42/18/60 | 41/6/72 | 42/26/52 | 25/7/88 |
+| **all rows** | 0.878 (120) | 0.997 (120) | 1.185 (119) | 0.954 (120) | 1.204 (120) |
+| rows timed on every part (119) | 0.876 (119) | 0.996 (119) | 1.185 (119) | 0.954 (119) | 1.205 (119) |
+| win / even / loss | 46/44/30 | 42/18/60 | 41/6/72 | 42/26/52 | 25/7/88 |
 
 Geomean cells: value (rows). Parts time different row sets; compare columns on the "every part" row.
 
@@ -42,9 +42,9 @@ Geomean cells: value (rows). Parts time different row sets; compare columns on t
 
 | workload | prec | rtx-5080 | rtx-3090 | a100 | rtx-4090 | h100 |
 |---|---|---|---|---|---|---|
-| epi_4096 | f32 | 0.99≈ 3.538/3.57 (chain-lt) | **0.84** 5.567/6.654 (torch-compile-cg) | **0.91** 6.618/7.27 (chain-lt) | **0.95** 4.581/4.843 (chain-lt) | 1.13 4.408/3.912 (torch-compile-cg) |
-| mm_16x2048x7168 | f32 | 1.00≈ 0.0799/0.0799 (cublas) | 1.03≈ 0.0901/0.08755 (cublas) | 1.02≈ 0.0963/0.0942 (cublas) | 1.15 0.1305/0.1137 (cublas) | 1.59 0.1017/0.0639 (cublas) |
-| mm_4096x4096x4096 | f32 | 1.04≈ 3.818/3.678 (cublas) | 1.10 7.511/6.804 (cublas) | - | 0.97≈ 4.673/4.837 (cublas) | 1.17 4.84/4.134 (cublas) |
+| epi_4096 | f32 | 0.99≈ 3.538/3.583 (chain-lt) | **0.84** 5.567/6.654 (torch-compile-cg) | **0.91** 6.618/7.27 (chain-lt) | **0.95** 4.581/4.843 (chain-lt) | 1.13 4.408/3.912 (torch-compile-cg) |
+| mm_16x2048x7168 | f32 | 0.96≈ 0.0816/0.0849 (cublas) | 1.03≈ 0.0901/0.08755 (cublas) | 1.02≈ 0.0963/0.0942 (cublas) | 1.15 0.1305/0.1137 (cublas) | 1.59 0.1017/0.0639 (cublas) |
+| mm_4096x4096x4096 | f32 | 1.04≈ 3.823/3.686 (cublas) | 1.10 7.511/6.804 (cublas) | - | 0.97≈ 4.673/4.837 (cublas) | 1.17 4.84/4.134 (cublas) |
 | pj_m128_n28672_k4096 | f32 | 1.07 0.8019/0.7501 (lt) | 0.98≈ 1.202/1.223 (torch-compile-ro) | **0.93** 1.616/1.739 (cublas) | **0.94** 1.105/1.18 (lt) | 1.06 0.9701/0.918 (torch-compile-ro) |
 | pj_m128_n4096_k14336 | f32 | 1.09 0.4447/0.4071 (lt-fresh) | 1.03≈ 0.7032/0.684 (torch-compile) | 1.28 1.101/0.8591 (torch-eager) | 1.00≈ 0.6412/0.64 (torch-eager) | 1.21 0.5062/0.4187 (torch-compile-ro) |
 | pj_m128_n4096_k4096 | f32 | 0.99≈ 0.1368/0.1383 (lt-fresh) | 1.10 0.2449/0.2222 (lt) | 1.18 0.3488/0.2959 (cublas) | 1.18 0.2367/0.2007 (lt-fresh) | 1.30 0.1592/0.1222 (lt-fresh) |
@@ -89,46 +89,46 @@ Geomean cells: value (rows). Parts time different row sets; compare columns on t
 | pj_m2048_n4096_k14336_bf16 | bf16 | 1.07 2.264/2.123 (torch-bf16-compile) | **0.94** 3.961/4.223 (torch-bf16-compile) | 2.06 1.828/0.8878 (torch-bf16) | 1.04≈ 3.251/3.119 (torch-bf16-compile) | 1.93 1.307/0.6779 (torch-bf16-compile-cg) |
 | pj_m2048_n4096_k4096_bf16 | bf16 | 1.10 0.6779/0.6175 (torch-bf16) | 1.10 1.151/1.044 (torch-bf16-compile-ro) | 1.94 0.5977/0.3082 (triton-bf16) | 1.05 0.9449/0.898 (torch-bf16-compile) | 2.21 0.3732/0.1689 (torch-bf16) |
 | pj_m2048_n6144_k4096_bf16 | bf16 | 1.03≈ 0.9364/0.9095 (torch-bf16-compile) | 1.02≈ 1.633/1.608 (torch-bf16-compile-cg) | 1.94 0.7945/0.4106 (torch-bf16) | 1.05≈ 1.401/1.337 (torch-bf16-compile-cg) | 2.21 0.5863/0.265 (torch-bf16) |
-| geomean f32 | | 0.971 (23) | 1.056 (23) | 1.125 (22) | 1.105 (23) | 1.216 (23) |
+| geomean f32 | | 0.970 (23) | 1.056 (23) | 1.125 (22) | 1.105 (23) | 1.216 (23) |
 | geomean tf32 | | 1.202 (8) | 1.117 (8) | 1.876 (8) | 1.196 (8) | 1.656 (8) |
 | geomean bf16 | | 0.760 (16) | 1.210 (16) | 1.595 (16) | 0.980 (16) | 1.971 (16) |
-| **geomean** | | 0.927 (47) | 1.116 (47) | 1.389 (46) | 1.075 (47) | 1.511 (47) |
+| **geomean** | | 0.926 (47) | 1.116 (47) | 1.389 (46) | 1.075 (47) | 1.511 (47) |
 | win / even / loss | | 13/19/15 | 4/13/30 | 7/1/38 | 6/12/29 | 2/3/42 |
 
 ## MLP chains
 
 | workload | prec | rtx-5080 | rtx-3090 | a100 | rtx-4090 | h100 |
 |---|---|---|---|---|---|---|
-| mlp2_2048 | f32 | 1.03≈ 1.816/1.769 (chain-lt2) | **0.88** 3.252/3.694 (torch-compile) | **0.95** 3.543/3.748 (chain-streams) | **0.95** 2.375/2.501 (chain-cutlass) | 1.12 1.886/1.687 (torch-compile-ro) |
-| mlp_2048 | f32 | 0.96≈ 0.8779/0.9114 (chain-lt) | **0.94** 1.618/1.728 (torch-compile) | **0.90** 1.772/1.968 (torch-compile-ro) | **0.94** 1.182/1.251 (chain-cutlass) | 1.11 0.9296/0.8394 (torch-compile-ro) |
-| mlp_512 | f32 | **0.90** 0.03871/0.043 (chain-lt) | 1.56 0.06864/0.044 (triton) | 1.58 0.1054/0.0666 (torch-eager) | 1.62 0.07976/0.0492 (torch-compile-cg) ±8% | 1.50 0.04546/0.0303 (torch-compile-cg) |
-| smlp_4096_256_1024 | f32 | 1.01≈ 0.157/0.1556 (chain-lt) | 1.21 0.2814/0.2324 (torch-compile) | **0.93** 0.2877/0.3082 (triton) | 1.09 0.2083/0.1915 (torch-compile-cg) | 1.42 0.1765/0.1244 (chain-lt) |
+| mlp2_2048 | f32 | 1.02≈ 1.816/1.782 (chain-lt2) | **0.88** 3.252/3.694 (torch-compile) | **0.95** 3.543/3.748 (chain-streams) | **0.95** 2.375/2.501 (chain-cutlass) | 1.12 1.886/1.687 (torch-compile-ro) |
+| mlp_2048 | f32 | 0.95≈ 0.8779/0.9235 (chain-lt) | **0.94** 1.618/1.728 (torch-compile) | **0.90** 1.772/1.968 (torch-compile-ro) | **0.94** 1.182/1.251 (chain-cutlass) | 1.11 0.9296/0.8394 (torch-compile-ro) |
+| mlp_512 | f32 | **0.85** 0.03871/0.0453 (chain-lt) | 1.56 0.06864/0.044 (triton) | 1.58 0.1054/0.0666 (torch-eager) | 1.62 0.07976/0.0492 (torch-compile-cg) ±8% | 1.50 0.04546/0.0303 (torch-compile-cg) |
+| smlp_4096_256_1024 | f32 | 1.00≈ 0.157/0.157 (chain-lt) | 1.21 0.2814/0.2324 (torch-compile) | **0.93** 0.2877/0.3082 (triton) | 1.09 0.2083/0.1915 (torch-compile-cg) | 1.42 0.1765/0.1244 (chain-lt) |
 | mlp2_2048_tf32 | tf32 | 1.01≈ 1.569/1.549 (torch-compile-ro-tf32) | 1.11 2.857/2.583 (torch-compile-ro-tf32) | 1.73 1.211/0.6984 (torch-compile-ro-tf32) | 1.14 2.103/1.846 (torch-compile-ro-tf32) | 1.56 0.5719/0.367 (torch-compile-ro-tf32) |
 | mlp_2048_tf32 | tf32 | 1.02≈ 0.7861/0.7697 (torch-eager-tf32) | 1.21 1.406/1.158 (torch-compile-ro-tf32) | 1.86 0.656/0.3523 (torch-compile-ro-tf32) | 1.11 1.031/0.9257 (torch-compile-ro-tf32) | 1.69 0.2924/0.1733 (torch-compile-ro-tf32) |
-| geomean f32 | | 0.973 (4) | 1.117 (4) | 1.059 (4) | 1.122 (4) | 1.274 (4) |
+| geomean f32 | | 0.954 (4) | 1.117 (4) | 1.059 (4) | 1.122 (4) | 1.274 (4) |
 | geomean tf32 | | 1.017 (2) | 1.159 (2) | 1.797 (2) | 1.126 (2) | 1.622 (2) |
-| **geomean** | | 0.988 (6) | 1.131 (6) | 1.263 (6) | 1.123 (6) | 1.381 (6) |
+| **geomean** | | 0.974 (6) | 1.131 (6) | 1.263 (6) | 1.123 (6) | 1.381 (6) |
 | win / even / loss | | 1/5/0 | 2/0/4 | 3/0/3 | 2/0/4 | 0/0/6 |
 
 ## Attention / softmax / long rows
 
 | workload | prec | rtx-5080 | rtx-3090 | a100 | rtx-4090 | h100 |
 |---|---|---|---|---|---|---|
-| attn_1024_64 | f32 | 1.02≈ 0.03558/0.0348 (chain-fused) ±6% | 1.06 0.04884/0.0461 (torch-compile-ro) | 1.18 0.06892/0.0584 (torch-compile-ro) ±9% | 1.09 0.04562/0.042 (torch-sdpa-compile-cg) | 1.75 0.04302/0.0246 (torch-compile-cg) |
+| attn_1024_64 | f32 | 0.97≈ 0.03558/0.0367 (chain-fused) ±6% | 1.06 0.04884/0.0461 (torch-compile-ro) | 1.18 0.06892/0.0584 (torch-compile-ro) ±9% | 1.09 0.04562/0.042 (torch-sdpa-compile-cg) | 1.75 0.04302/0.0246 (torch-compile-cg) |
 | attn_2048_128 | f32 | 0.99≈ 0.1131/0.1141 (torch-sdpa-compile) | 1.49 0.2682/0.1802 (torch-compile-cg) | 1.61 0.2923/0.1812 (torch-sdpa-compile) | 1.15 0.1707/0.1485 (torch-compile-ro) | 1.49 0.1257/0.0841 (torch-compile-ro) |
 | attn_2048_64 | f32 | **0.78** 0.07282/0.0938 (torch-sdpa-compile) | **0.95** 0.1244/0.1311 (torch-compile-ro) | 1.46 0.1844/0.126 (torch-compile) | 1.21 0.1238/0.1024 (torch-sdpa-compile-cg) ±5% | 1.16 0.06664/0.0573 (torch-compile-cg) |
 | causal_1024_256 | f32 | **0.30** 13.45/45.22 (torch-compile-cg) | **0.14** 25.37/179.4 (torch-compile-cg) | **0.28** 53.11/192.8 (torch-compile-cg) | **0.14** 33.74/244.1 (torch-compile-cg) | **0.18** 21.44/116.7 (torch-compile-cg) |
-| decode_1024_256 | f32 | **0.53** 8.674/16.41 (chain-cache) | **0.53** 17.58/33.16 (chain-cache) | 0.86≈ 45.81/53.39 (chain-nocache) ±24% | **0.41** 21.02/51.3 (chain-cache) | 1.45 28.48/19.66 (chain-cache) |
+| decode_1024_256 | f32 | **0.53** 8.674/16.48 (chain-cache) | **0.53** 17.58/33.16 (chain-cache) | 0.86≈ 45.81/53.39 (chain-nocache) ±24% | **0.41** 21.02/51.3 (chain-cache) | 1.45 28.48/19.66 (chain-cache) |
 | gen_1024_512_256 | f32 | **0.30** 6.862/23.08 (torch-compile-cg) | **0.14** 12.93/93.44 (torch-compile-cg) | **0.26** 24.18/92.24 (torch-compile-cg) | **0.14** 17.01/120.9 (torch-compile-ro) | **0.19** 10.82/56.96 (torch-compile) |
 | lsm_1_131072 | f32 | **0.39** 0.0165/0.0426 (torch-eager) ±28% | 1.24 0.03164/0.0256 (torch-compile-cg) | 1.16 0.03691/0.0317 (torch-compile-ro) | 0.93≈ 0.02959/0.0317 (torch-compile-ro) ±15% | 1.44 0.02653/0.0184 (torch-sdpa-compile-cg) |
 | lsm_32_8192 | f32 | **0.84** 0.0162/0.0193 (torch-sdpa) | 3.16 0.03221/0.0102 (torch-compile-cg) | 2.25 0.0392/0.0174 (triton) | 2.66 0.03271/0.0123 (torch-compile-cg) | 2.86 0.02521/0.0088 (torch-compile-cg) |
 | lsm_4_32768 | f32 | **0.57** 0.01451/0.0254 (torch-sdpa) | 1.62 0.02655/0.0164 (torch-sdpa-compile-cg) | 1.51 0.03402/0.0225 (torch-compile-cg) | 1.16 0.02384/0.0205 (torch-compile-cg) | 1.56 0.02406/0.0154 (torch-sdpa-compile-cg) ±6% |
 | prefill_1024_512_256 | f32 | **0.30** 6.767/22.58 (torch-compile-cg) | **0.15** 13.09/90.17 (torch-compile-cg) | **0.26** 24.54/93.03 (torch-compile-cg) | **0.14** 17.04/121 (torch-compile-ro) | **0.19** 10.9/56.43 (torch-compile-ro) |
-| rowsum_2048 | f32 | 0.98≈ 0.4533/0.4628 (chain-eager) | 1.06 0.8261/0.7803 (torch-compile) | **0.73** 0.9173/1.248 (torch-compile-ro) | **0.95** 0.6164/0.6513 (torch-compile-ro) | 1.22 0.5114/0.4195 (torch-compile-cg) |
-| rowsum_4096 | f32 | 1.04≈ 3.744/3.604 (chain-gemv) | **0.94** 6.181/6.568 (chain-eager) | **0.93** 6.746/7.29 (torch-eager) | 0.97≈ 4.754/4.879 (torch-compile) | 1.14 4.532/3.986 (torch-compile-ro) |
-| softmax_rows_2048 | f32 | **0.95** 0.4631/0.4895 (chain-fused) | 1.15 0.8582/0.7455 (torch-compile-cg) | **0.95** 0.9513/1.002 (torch-compile) | 0.97≈ 0.636/0.6554 (torch-compile-cg) | 1.25 0.5364/0.4275 (torch-compile-cg) |
+| rowsum_2048 | f32 | 0.97≈ 0.4533/0.4665 (chain-eager) | 1.06 0.8261/0.7803 (torch-compile) | **0.73** 0.9173/1.248 (torch-compile-ro) | **0.95** 0.6164/0.6513 (torch-compile-ro) | 1.22 0.5114/0.4195 (torch-compile-cg) |
+| rowsum_4096 | f32 | 1.03≈ 3.744/3.624 (chain-gemv) | **0.94** 6.181/6.568 (chain-eager) | **0.93** 6.746/7.29 (torch-eager) | 0.97≈ 4.754/4.879 (torch-compile) | 1.14 4.532/3.986 (torch-compile-ro) |
+| softmax_rows_2048 | f32 | **0.95** 0.4631/0.4899 (torch-compile) | 1.15 0.8582/0.7455 (torch-compile-cg) | **0.95** 0.9513/1.002 (torch-compile) | 0.97≈ 0.636/0.6554 (torch-compile-cg) | 1.25 0.5364/0.4275 (torch-compile-cg) |
 | softmax_rows_4096 | f32 | 1.03≈ 3.804/3.682 (torch-compile-ro) | **0.95** 6.317/6.672 (torch-compile) | **0.93** 6.812/7.356 (torch-compile-ro) | 0.99≈ 4.84/4.891 (torch-compile-ro) | 1.14 4.576/4.002 (torch-compile-ro) |
-| **geomean** | | 0.642 (14) | 0.742 (14) | 0.853 (14) | 0.678 (14) | 0.933 (14) |
+| **geomean** | | 0.639 (14) | 0.742 (14) | 0.853 (14) | 0.678 (14) | 0.933 (14) |
 | win / even / loss | | 9/5/0 | 7/0/7 | 7/1/6 | 5/4/5 | 3/0/11 |
 
 ## LLM decode / prefill / block (f32, tf32, bf16 storage)
@@ -193,7 +193,7 @@ Geomean cells: value (rows). Parts time different row sets; compare columns on t
 |---|---|---|---|---|---|---|
 | conv_2048_5 | f32 | **0.43** 0.06647/0.1563 (torch-eager) | **0.71** 0.1139/0.1608 (torch-compile-cg) | **0.71** 0.09762/0.1382 (torch-compile-cg) | **0.60** 0.1009/0.1679 (torch-compile-cg) | **0.45** 0.04371/0.0972 (torch-eager) |
 | convmc_8_64_56_3 | f32 | **0.67** 0.08205/0.1222 (torch-eager) | 1.93 0.1501/0.0778 (torch-eager) | 3.07 0.2707/0.0881 (torch-eager) ±8% | 2.05 0.1867/0.0911 (torch-eager) | 1.71 0.1193/0.0697 (torch-eager) |
-| ew_4096 | f32 | **0.36** 0.08805/0.2478 (chain-fused) | **0.61** 0.1466/0.2406 (torch-compile) | 1.23 0.193/0.1567 (torch-compile) | **0.60** 0.156/0.2601 (chain-fused) | 1.32 0.09409/0.0712 (torch-compile) ±15% |
+| ew_4096 | f32 | **0.35** 0.08805/0.2491 (chain-fused) | **0.61** 0.1466/0.2406 (torch-compile) | 1.23 0.193/0.1567 (torch-compile) | **0.60** 0.156/0.2601 (chain-fused) | 1.32 0.09409/0.0712 (torch-compile) ±15% |
 | ewconvew_2048_5 | f32 | **0.37** 0.07822/0.2092 (torch-compile) | **0.53** 0.131/0.2458 (torch-compile) | **0.60** 0.1167/0.1956 (torch-eager) | **0.55** 0.1194/0.2181 (torch-compile-cg) | **0.47** 0.05485/0.1162 (torch-compile-cg) |
 | fir_4194304_16 | f32 | **0.42** 0.04549/0.1083 (torch-eager) | **0.69** 0.07618/0.1097 (torch-compile-ro) | **0.79** 0.06793/0.086 (torch-compile) | **0.65** 0.07014/0.1075 (torch-eager) | **0.53** 0.03159/0.0595 (torch-eager) |
 | firew_rowsum_2048x2048_16 | f32 | **0.40** 0.05164/0.1294 (torch-compile) | **0.75** 0.1042/0.1393 (torch-compile-cg) | **0.70** 0.08268/0.1178 (torch-compile-cg) | **0.70** 0.08167/0.1167 (torch-compile-cg) | **0.59** 0.03816/0.0644 (torch-compile-ro) |
@@ -207,17 +207,17 @@ Geomean cells: value (rows). Parts time different row sets; compare columns on t
 
 | workload | prec | rtx-5080 | rtx-3090 | a100 | rtx-4090 | h100 |
 |---|---|---|---|---|---|---|
-| diamond_2048 | f32 | 0.99≈ 1.369/1.378 (chain-lt) | **0.90** 2.419/2.678 (chain-streams) | **0.92** 2.701/2.939 (chain-lt) | 0.95≈ 1.79/1.877 (chain-cutlass) | 1.14 1.443/1.269 (torch-eager) |
-| fanout_2048 | f32 | 1.00≈ 0.9136/0.9114 (chain-streams) | **0.92** 1.653/1.805 (chain-streams) | **0.91** 1.809/1.99 (torch-compile-cg) | **0.94** 1.214/1.285 (chain-streams) | 1.15 0.9712/0.8438 (torch-compile-ro) |
-| indep_2048 | f32 | 1.02≈ 0.9372/0.9155 (chain-lt) | **0.92** 1.629/1.77 (chain-streams) | **0.90** 1.758/1.958 (torch-compile-cg) | 0.96≈ 1.207/1.253 (chain-cutlass) | 1.16 0.9733/0.8421 (torch-compile-cg) |
-| indep_512 | f32 | 1.08 0.03936/0.0365 (chain-streams) | 1.59 0.07504/0.0471 (torch-compile) | 1.45 0.0981/0.0676 (torch-eager) | 1.54 0.07232/0.0471 (torch-compile) | 1.83 0.04893/0.0268 (torch-compile) |
-| loop_4096 | f32 | **0.94** 26.9/28.51 (chain-lt) | 1.22 63.56/52.03 (torch-compile-cg) | **0.90** 52.81/58.44 (torch-compile-ro) | **0.94** 36.33/38.66 (chain-lt) | 1.04≈ 32.16/30.9 (chain-lt) |
+| diamond_2048 | f32 | 0.99≈ 1.369/1.385 (chain-lt) | **0.90** 2.419/2.678 (chain-streams) | **0.92** 2.701/2.939 (chain-lt) | 0.95≈ 1.79/1.877 (chain-cutlass) | 1.14 1.443/1.269 (torch-eager) |
+| fanout_2048 | f32 | 0.99≈ 0.9136/0.9224 (chain-streams) | **0.92** 1.653/1.805 (chain-streams) | **0.91** 1.809/1.99 (torch-compile-cg) | **0.94** 1.214/1.285 (chain-streams) | 1.15 0.9712/0.8438 (torch-compile-ro) |
+| indep_2048 | f32 | 1.01≈ 0.9372/0.926 (chain-lt) | **0.92** 1.629/1.77 (chain-streams) | **0.90** 1.758/1.958 (torch-compile-cg) | 0.96≈ 1.207/1.253 (chain-cutlass) | 1.16 0.9733/0.8421 (torch-compile-cg) |
+| indep_512 | f32 | 0.97≈ 0.03936/0.0406 (chain-streams) | 1.59 0.07504/0.0471 (torch-compile) | 1.45 0.0981/0.0676 (torch-eager) | 1.54 0.07232/0.0471 (torch-compile) | 1.83 0.04893/0.0268 (torch-compile) |
+| loop_4096 | f32 | 0.96≈ 26.9/28.1 (chain-lt) | 1.22 63.56/52.03 (torch-compile-cg) | **0.90** 52.81/58.44 (torch-compile-ro) | **0.94** 36.33/38.66 (chain-lt) | 1.04≈ 32.16/30.9 (chain-lt) |
 | loopmm_1024_8 | f32 | 1.00≈ 0.6093/0.6106 (torch-compile) | 1.20 1.11/0.9277 (torch-compile-cg) | 1.18 1.234/1.044 (torch-eager) | 1.18 0.8405/0.7127 (torch-compile-cg) | 1.26 0.6196/0.4936 (torch-compile-cg) |
 | rt_mlp2_1024 | f32 | 0.99≈ 2.554/2.575 (torch-compile) | **0.90** 4.348/4.831 (torch-compile) | 1.26 5.485/4.347 (torch-compile-ro) | 1.12 3.372/2.998 (torch-compile-cg) | 1.18 2.684/2.268 (torch-compile-cg) |
 | rt_mlp2_2048 | f32 | **0.93** 14.66/15.69 (torch-compile-cg) | **0.87** 26.39/30.45 (torch-compile-cg) | **0.90** 28.51/31.52 (torch-compile-cg) | **0.91** 19.17/21 (torch-compile) | **0.92** 15.09/16.37 (torch-compile-cg) |
 | twin_2048 | f32 | 0.97≈ 0.9203/0.9463 (torch-compile) | **0.91** 1.587/1.738 (torch-compile) | **0.90** 1.748/1.952 (torch-eager) | **0.94** 1.2/1.277 (torch-compile-cg) | 1.16 0.9686/0.8378 (torch-compile) |
-| **geomean** | | 0.992 (9) | 1.026 (9) | 1.019 (9) | 1.040 (9) | 1.183 (9) |
-| win / even / loss | | 2/6/1 | 6/0/3 | 6/0/3 | 4/2/3 | 1/1/7 |
+| **geomean** | | 0.979 (9) | 1.026 (9) | 1.019 (9) | 1.040 (9) | 1.183 (9) |
+| win / even / loss | | 1/8/0 | 6/0/3 | 6/0/3 | 4/2/3 | 1/1/7 |
 
 ## bf16 real-world reference
 
@@ -635,17 +635,17 @@ Per row and part, every leg at the row's precision, grouped by competitor family
 
 | workload | part | Mapal ms | vendor libs | torch eager | torch.compile | compile + CUDA graphs | reduce-overhead | hand Triton |
 |---|---|---:|---|---|---|---|---|---|
-| epi_4096 | rtx-5080 | 3.538 | **chain-lt 3.57 (0.99)**<br>chain-eager 3.701 (0.96)<br>chain-cutlass 3.76 (0.94) | torch-eager 3.821 (0.93) | torch-compile 3.68 (0.96) | torch-compile-cg 3.676 (0.96) | torch-compile-ro 3.663 (0.97) | triton 4.491 (0.79) |
+| epi_4096 | rtx-5080 | 3.538 | **chain-lt 3.583 (0.99)**<br>chain-eager 3.715 (0.95)<br>chain-cutlass 3.776 (0.94) | torch-eager 3.821 (0.93) | torch-compile 3.68 (0.96) | torch-compile-cg 3.676 (0.96) | torch-compile-ro 3.663 (0.97) | triton 4.491 (0.79) |
 | epi_4096 | rtx-3090 | 5.567 | chain-lt 6.666 (0.84)<br>chain-eager 6.81 (0.82)<br>chain-cutlass 6.814 (0.82) | torch-eager 6.803 (0.82) | torch-compile 6.709 (0.83) | **torch-compile-cg 6.654 (0.84)** | torch-compile-ro 6.734 (0.83) | triton 10.29 (0.54) |
 | epi_4096 | a100 | 6.618 | **chain-lt 7.27 (0.91)**<br>chain-eager 7.364 (0.90)<br>chain-cutlass 7.609 (0.87) | torch-eager 7.42 (0.89) | torch-compile 7.557 (0.88) | torch-compile-cg 7.558 (0.88) | torch-compile-ro 7.359 (0.90) | triton 7.425 (0.89) |
 | epi_4096 | rtx-4090 | 4.581 | **chain-lt 4.843 (0.95)**<br>chain-cutlass 4.905 (0.93)<br>chain-eager 4.971 (0.92) | torch-eager 5.141 (0.89) | torch-compile 4.928 (0.93) | torch-compile-cg 4.922 (0.93) | torch-compile-ro 4.924 (0.93) | triton 6.022 (0.76) |
 | epi_4096 | h100 | 4.408 | chain-lt 3.935 (1.12)<br>chain-eager 3.971 (1.11)<br>chain-cutlass 4.532 (0.97) | torch-eager 4.073 (1.08) | torch-compile 4.044 (1.09) | **torch-compile-cg 3.912 (1.13)** | torch-compile-ro 4.005 (1.10) | triton 4.583 (0.96) |
-| mm_16x2048x7168 | rtx-5080 | 0.0799 | **cublas 0.0799 (1.00)**<br>cutlass-tuned 0.3871 (0.21)<br>cutlass 0.5284 (0.15) |  |  |  |  | triton 0.1732 (0.46) |
+| mm_16x2048x7168 | rtx-5080 | 0.0816 | **cublas 0.0849 (0.96)**<br>cutlass-tuned 0.3891 (0.21)<br>cutlass 0.5293 (0.15) |  |  |  |  | triton 0.1732 (0.47) |
 | mm_16x2048x7168 | rtx-3090 | 0.0901 | **cublas 0.08755 (1.03)**<br>cutlass-tuned 0.2171 (0.42)<br>cutlass 0.7045 (0.13) |  |  |  |  | not run |
 | mm_16x2048x7168 | a100 | 0.0963 | **cublas 0.0942 (1.02)**<br>cutlass-tuned 0.3635 (0.26)<br>cutlass 1.359 (0.07) |  |  |  |  | triton 0.3727 (0.26) |
 | mm_16x2048x7168 | rtx-4090 | 0.1305 | **cublas 0.1137 (1.15)**<br>cutlass-tuned 0.3041 (0.43)<br>cutlass 1.111 (0.12) |  |  |  |  | triton 0.3328 (0.39) |
 | mm_16x2048x7168 | h100 | 0.1017 | **cublas 0.0639 (1.59)**<br>cutlass-tuned 0.2859 (0.36)<br>cutlass 0.7714 (0.13) |  |  |  |  | triton 0.2753 (0.37) |
-| mm_4096x4096x4096 | rtx-5080 | 3.818 | **cublas 3.678 (1.04)**<br>cutlass 3.735 (1.02)<br>cutlass-tuned 9.09 (0.42) |  |  |  |  | triton 4.479 (0.85) |
+| mm_4096x4096x4096 | rtx-5080 | 3.823 | **cublas 3.686 (1.04)**<br>cutlass 3.74 (1.02)<br>cutlass-tuned 9.11 (0.42) |  |  |  |  | triton 4.479 (0.85) |
 | mm_4096x4096x4096 | rtx-3090 | 7.511 | **cublas 6.804 (1.10)**<br>cutlass 7.014 (1.07)<br>cutlass-tuned 18.73 (0.40) |  |  |  |  | not run |
 | mm_4096x4096x4096 | rtx-4090 | 4.673 | **cublas 4.837 (0.97)**<br>cutlass 4.902 (0.95)<br>cutlass-tuned 13.32 (0.35) |  |  |  |  | triton 5.905 (0.79) |
 | mm_4096x4096x4096 | h100 | 4.84 | **cublas 4.134 (1.17)**<br>cutlass 4.734 (1.02)<br>cutlass-tuned 10.77 (0.45) |  |  |  |  | triton 4.99 (0.97) |
@@ -874,22 +874,22 @@ Per row and part, every leg at the row's precision, grouped by competitor family
 
 | workload | part | Mapal ms | vendor libs | torch eager | torch.compile | compile + CUDA graphs | reduce-overhead | hand Triton |
 |---|---|---:|---|---|---|---|---|---|
-| mlp2_2048 | rtx-5080 | 1.816 | **chain-lt2 1.769 (1.03)**<br>chain-streams 1.796 (1.01)<br>chain-lt 1.849 (0.98)<br>chain-eager 1.875 (0.97)<br>chain-cutlass 2.211 (0.82) | torch-eager 1.89 (0.96) | torch-compile 1.888 (0.96) | torch-compile-cg 1.89 (0.96) | torch-compile-ro 1.895 (0.96) | triton 2.456 (0.74) |
+| mlp2_2048 | rtx-5080 | 1.816 | **chain-lt2 1.782 (1.02)**<br>chain-streams 1.808 (1.00)<br>chain-lt 1.858 (0.98)<br>chain-eager 1.884 (0.96)<br>chain-cutlass 2.217 (0.82) | torch-eager 1.89 (0.96) | torch-compile 1.888 (0.96) | torch-compile-cg 1.89 (0.96) | torch-compile-ro 1.895 (0.96) | triton 2.456 (0.74) |
 | mlp2_2048 | rtx-3090 | 3.252 | chain-lt2 8.328 (0.39)<br>chain-lt 8.335 (0.39)<br>chain-streams 8.454 (0.38)<br>chain-eager 8.893 (0.37)<br>chain-cutlass 10.98 (0.30) | torch-eager 3.764 (0.86) | **torch-compile 3.694 (0.88)** | torch-compile-cg 3.735 (0.87) | torch-compile-ro 3.779 (0.86) | triton 4.202 (0.77) |
 | mlp2_2048 | a100 | 3.543 | **chain-streams 3.748 (0.95)**<br>chain-lt2 3.783 (0.94)<br>chain-eager 3.957 (0.90)<br>chain-lt 4.015 (0.88)<br>chain-cutlass 4.604 (0.77) | torch-eager 4.899 (0.72) | torch-compile 3.983 (0.89) | torch-compile-cg 3.937 (0.90) | torch-compile-ro 3.932 (0.90) | triton 3.979 (0.89) |
 | mlp2_2048 | rtx-4090 | 2.375 | **chain-cutlass 2.501 (0.95)**<br>chain-lt2 2.534 (0.94)<br>chain-streams 2.556 (0.93)<br>chain-lt 2.556 (0.93)<br>chain-eager 2.599 (0.91) | torch-eager 2.619 (0.91) | torch-compile 2.585 (0.92) | torch-compile-cg 2.578 (0.92) | torch-compile-ro 2.579 (0.92) | triton 3.039 (0.78) |
 | mlp2_2048 | h100 | 1.886 | chain-streams 1.988 (0.95)<br>chain-lt2 1.989 (0.95)<br>chain-lt 2.003 (0.94)<br>chain-eager 2.033 (0.93)<br>chain-cutlass 2.258 (0.84) | torch-eager 1.793 (1.05) | torch-compile 1.778 (1.06) | torch-compile-cg 1.706 (1.11) | **torch-compile-ro 1.687 (1.12)** | triton 2.358 (0.80) |
-| mlp_2048 | rtx-5080 | 0.8779 | **chain-lt 0.9114 (0.96)**<br>chain-eager 0.9257 (0.95)<br>chain-cutlass 1.089 (0.81) | torch-eager 0.9329 (0.94) | torch-compile 0.9523 (0.92) | torch-compile-cg 0.9574 (0.92) | torch-compile-ro 0.9564 (0.92) | triton 1.227 (0.72) |
+| mlp_2048 | rtx-5080 | 0.8779 | **chain-lt 0.9235 (0.95)**<br>chain-eager 0.9372 (0.94)<br>chain-cutlass 1.101 (0.80) | torch-eager 0.9329 (0.94) | torch-compile 0.9523 (0.92) | torch-compile-cg 0.9574 (0.92) | torch-compile-ro 0.9564 (0.92) | triton 1.227 (0.72) |
 | mlp_2048 | rtx-3090 | 1.618 | chain-lt 2.772 (0.58)<br>chain-eager 2.816 (0.57)<br>chain-cutlass 3.41 (0.47) | torch-eager 1.745 (0.93) | **torch-compile 1.728 (0.94)** | torch-compile-cg 1.908 (0.85) | torch-compile-ro 1.848 (0.88) | triton 2.186 (0.74) |
 | mlp_2048 | a100 | 1.772 | chain-lt 2.502 (0.71)<br>chain-eager 2.527 (0.70)<br>chain-cutlass 2.966 (0.60) | torch-eager 1.974 (0.90) | torch-compile 1.978 (0.90) | torch-compile-cg 1.981 (0.89) | **torch-compile-ro 1.968 (0.90)** | triton 1.991 (0.89) |
 | mlp_2048 | rtx-4090 | 1.182 | **chain-cutlass 1.251 (0.94)**<br>chain-lt 1.279 (0.92)<br>chain-eager 1.297 (0.91) | torch-eager 1.296 (0.91) | torch-compile 1.295 (0.91) | torch-compile-cg 1.293 (0.91) | torch-compile-ro 1.292 (0.91) | triton 1.522 (0.78) |
 | mlp_2048 | h100 | 0.9296 | chain-lt 0.8812 (1.05)<br>chain-eager 0.8953 (1.04)<br>chain-cutlass 1.014 (0.92) | torch-eager 0.8398 (1.11) | torch-compile 0.8438 (1.10) | torch-compile-cg 0.8406 (1.11) | **torch-compile-ro 0.8394 (1.11)** | triton 1.152 (0.81) |
-| mlp_512 | rtx-5080 | 0.03871 | **chain-lt 0.043 (0.90)**<br>chain-eager 0.0451 (0.86)<br>chain-cutlass 0.1065 (0.36) | torch-eager 0.0481 (0.80) | torch-compile 0.048 (0.81) | torch-compile-cg 0.055 (0.70) | torch-compile-ro 0.0666 (0.58) | triton 0.0564 (0.69) |
+| mlp_512 | rtx-5080 | 0.03871 | **chain-lt 0.0453 (0.85)**<br>chain-eager 0.0474 (0.82)<br>chain-cutlass 0.1094 (0.35) | torch-eager 0.0481 (0.80) | torch-compile 0.048 (0.81) | torch-compile-cg 0.055 (0.70) | torch-compile-ro 0.0666 (0.58) | triton 0.0564 (0.69) |
 | mlp_512 | rtx-3090 | 0.06864 | chain-lt 0.0522 (1.31)<br>chain-eager 0.0573 (1.20)<br>chain-cutlass 0.1249 (0.55) | torch-eager 0.0563 (1.22) | torch-compile 0.0522 (1.31) | torch-compile-cg 0.0502 (1.37) | torch-compile-ro 0.0543 (1.26) | **triton 0.044 (1.56)** |
 | mlp_512 | a100 | 0.1054 | chain-lt 0.0788 (1.34)<br>chain-eager 0.084 (1.26)<br>chain-cutlass 0.2611 (0.40) | **torch-eager 0.0666 (1.58)** | torch-compile 0.0768 (1.37) | torch-compile-cg 0.0737 (1.43) | torch-compile-ro 0.0799 (1.32) | triton 0.0768 (1.37) |
 | mlp_512 | rtx-4090 | 0.07976 | chain-lt 0.0543 (1.47)<br>chain-eager 0.0573 (1.39)<br>chain-cutlass 0.1751 (0.46) | torch-eager 0.0573 (1.39) | torch-compile 0.0502 (1.59) | **torch-compile-cg 0.0492 (1.62)** | torch-compile-ro 0.0543 (1.47) | triton 0.0604 (1.32) |
 | mlp_512 | h100 | 0.04546 | chain-lt 0.0334 (1.36)<br>chain-eager 0.0422 (1.08)<br>chain-cutlass 0.1179 (0.39) | torch-eager 0.0341 (1.33) | torch-compile 0.0315 (1.44) | **torch-compile-cg 0.0303 (1.50)** | torch-compile-ro 0.0319 (1.42) | triton 0.0538 (0.84) |
-| smlp_4096_256_1024 | rtx-5080 | 0.157 | **chain-lt 0.1556 (1.01)**<br>chain-cutlass 0.1577 (1.00)<br>chain-eager 0.1679 (0.93) | torch-eager 0.1808 (0.87) | torch-compile 0.1687 (0.93) | torch-compile-cg 0.1723 (0.91) | torch-compile-ro 0.1882 (0.83) | triton 0.1976 (0.79) |
+| smlp_4096_256_1024 | rtx-5080 | 0.157 | **chain-lt 0.157 (1.00)**<br>chain-cutlass 0.1593 (0.99)<br>chain-eager 0.1708 (0.92) | torch-eager 0.1808 (0.87) | torch-compile 0.1687 (0.93) | torch-compile-cg 0.1723 (0.91) | torch-compile-ro 0.1882 (0.83) | triton 0.1976 (0.79) |
 | smlp_4096_256_1024 | rtx-3090 | 0.2814 | chain-cutlass 0.258 (1.09)<br>chain-eager 0.2867 (0.98)<br>chain-lt 0.3389 (0.83) | torch-eager 0.3062 (0.92) | **torch-compile 0.2324 (1.21)** | torch-compile-cg 0.2324 (1.21) | torch-compile-ro 0.2775 (1.01) | triton 0.2734 (1.03) |
 | smlp_4096_256_1024 | a100 | 0.2877 | chain-eager 0.3707 (0.78)<br>chain-lt 0.4198 (0.69)<br>chain-cutlass 0.4598 (0.63) | torch-eager 0.3144 (0.92) | torch-compile 0.3451 (0.83) | torch-compile-cg 0.342 (0.84) | torch-compile-ro 0.3635 (0.79) | **triton 0.3082 (0.93)** |
 | smlp_4096_256_1024 | rtx-4090 | 0.2083 | chain-eager 0.2263 (0.92)<br>chain-cutlass 0.2632 (0.79)<br>chain-lt 0.2949 (0.71) | torch-eager 0.2417 (0.86) | torch-compile 0.1935 (1.08) | **torch-compile-cg 0.1915 (1.09)** | torch-compile-ro 0.2171 (0.96) | triton 0.2243 (0.93) |
@@ -909,17 +909,17 @@ Per row and part, every leg at the row's precision, grouped by competitor family
 
 | workload | part | Mapal ms | vendor libs | torch eager | torch.compile | compile + CUDA graphs | reduce-overhead | SDPA | hand Triton | hand CUDA |
 |---|---|---:|---|---|---|---|---|---|---|---|
-| attn_1024_64 | rtx-5080 | 0.03558 | chain-eager 0.041 (0.87) | torch-eager 0.0548 (0.65) | torch-compile 0.0466 (0.76) | torch-compile-cg 0.0514 (0.69)<br>torch-sdpa-compile-cg 0.054 (0.66) | torch-compile-ro 0.0537 (0.66) | torch-sdpa-compile 0.0567 (0.63)<br>torch-sdpa 0.0632 (0.56) | triton 0.1969 (0.18) | **chain-fused 0.0348 (1.02)** |
+| attn_1024_64 | rtx-5080 | 0.03558 | chain-eager 0.0439 (0.81) | torch-eager 0.0548 (0.65) | torch-compile 0.0466 (0.76) | torch-compile-cg 0.0514 (0.69)<br>torch-sdpa-compile-cg 0.054 (0.66) | torch-compile-ro 0.0537 (0.66) | torch-sdpa-compile 0.0567 (0.63)<br>torch-sdpa 0.0632 (0.56) | triton 0.1969 (0.18) | **chain-fused 0.0367 (0.97)** |
 | attn_1024_64 | rtx-3090 | 0.04884 | chain-eager 0.0717 (0.68) | torch-eager 0.0881 (0.55) | torch-compile 0.0625 (0.78) | torch-compile-cg 0.0573 (0.85)<br>torch-sdpa-compile-cg 0.0778 (0.63) | **torch-compile-ro 0.0461 (1.06)** | torch-sdpa 0.085 (0.57)<br>torch-sdpa-compile 0.085 (0.57) | triton 0.2273 (0.21) | chain-fused 0.0584 (0.84) |
 | attn_1024_64 | a100 | 0.06892 | chain-eager 0.1137 (0.61) | torch-eager 0.0891 (0.77) | torch-compile 0.0717 (0.96) | torch-compile-cg 0.0676 (1.02)<br>torch-sdpa-compile-cg 0.0727 (0.95) | **torch-compile-ro 0.0584 (1.18)** | torch-sdpa 0.1024 (0.67)<br>torch-sdpa-compile 0.1311 (0.53) | triton 0.3154 (0.22) | chain-fused 0.085 (0.81) |
 | attn_1024_64 | rtx-4090 | 0.04562 | chain-eager 0.0645 (0.71) | torch-eager 0.0829 (0.55) | torch-compile 0.0471 (0.97) | **torch-sdpa-compile-cg 0.042 (1.09)**<br>torch-compile-cg 0.044 (1.04) | torch-compile-ro 0.044 (1.04) | torch-sdpa-compile 0.0492 (0.93)<br>torch-sdpa 0.0727 (0.63) | triton 0.3174 (0.14) | chain-fused 0.0573 (0.80) |
 | attn_1024_64 | h100 | 0.04302 | chain-eager 0.0418 (1.03) | torch-eager 0.0656 (0.66) | torch-compile 0.0391 (1.10) | **torch-compile-cg 0.0246 (1.75)**<br>torch-sdpa-compile-cg 0.0258 (1.67) | torch-compile-ro 0.0248 (1.73) | torch-sdpa-compile 0.0396 (1.09)<br>torch-sdpa 0.0512 (0.84) | triton 0.2316 (0.19) | chain-fused 0.0359 (1.20) |
-| attn_2048_128 | rtx-5080 | 0.1131 | chain-eager 0.1393 (0.81) | torch-eager 0.1618 (0.70) | torch-compile 0.1203 (0.94) | torch-sdpa-compile-cg 0.1167 (0.97)<br>torch-compile-cg 0.1223 (0.93) | torch-compile-ro 0.1265 (0.89) | **torch-sdpa-compile 0.1141 (0.99)**<br>torch-sdpa 0.1538 (0.74) | triton 0.8353 (0.14) | chain-fused 0.127 (0.89) |
+| attn_2048_128 | rtx-5080 | 0.1131 | chain-eager 0.1417 (0.80) | torch-eager 0.1618 (0.70) | torch-compile 0.1203 (0.94) | torch-sdpa-compile-cg 0.1167 (0.97)<br>torch-compile-cg 0.1223 (0.93) | torch-compile-ro 0.1265 (0.89) | **torch-sdpa-compile 0.1141 (0.99)**<br>torch-sdpa 0.1538 (0.74) | triton 0.8353 (0.14) | chain-fused 0.1306 (0.87) |
 | attn_2048_128 | rtx-3090 | 0.2682 | chain-eager 0.2908 (0.92) | torch-eager 0.3738 (0.72) | torch-compile 0.1976 (1.36) | **torch-compile-cg 0.1802 (1.49)**<br>torch-sdpa-compile-cg 0.1802 (1.49) | torch-compile-ro 0.1853 (1.45) | torch-sdpa-compile 0.1843 (1.46)<br>torch-sdpa 0.2775 (0.97) | triton 0.9011 (0.30) | chain-fused 0.2611 (1.03) |
 | attn_2048_128 | a100 | 0.2923 | chain-eager 0.2734 (1.07) | torch-eager 0.3277 (0.89) | torch-compile 0.1997 (1.46) | torch-compile-cg 0.2089 (1.40)<br>torch-sdpa-compile-cg 0.2253 (1.30) | torch-compile-ro 0.2089 (1.40) | **torch-sdpa-compile 0.1812 (1.61)**<br>torch-sdpa 0.3011 (0.97) | triton 1.402 (0.21) | chain-fused 0.2683 (1.09) |
 | attn_2048_128 | rtx-4090 | 0.1707 | chain-eager 0.212 (0.81) | torch-eager 0.2417 (0.71) | torch-compile 0.1597 (1.07) | torch-compile-cg 0.1577 (1.08)<br>torch-sdpa-compile-cg 0.1628 (1.05) | **torch-compile-ro 0.1485 (1.15)** | torch-sdpa-compile 0.1679 (1.02)<br>torch-sdpa 0.2284 (0.75) | triton 1.264 (0.14) | chain-fused 0.2048 (0.83) |
 | attn_2048_128 | h100 | 0.1257 | chain-eager 0.1205 (1.04) | torch-eager 0.1403 (0.90) | torch-compile 0.0868 (1.45) | torch-compile-cg 0.0842 (1.49)<br>torch-sdpa-compile-cg 0.0971 (1.29) | **torch-compile-ro 0.0841 (1.49)** | torch-sdpa-compile 0.0988 (1.27)<br>torch-sdpa 0.1236 (1.02) | triton 1.089 (0.12) | chain-fused 0.1091 (1.15) |
-| attn_2048_64 | rtx-5080 | 0.07282 | chain-eager 0.1065 (0.68) | torch-eager 0.1292 (0.56) | torch-compile 0.0972 (0.75) | torch-sdpa-compile-cg 0.0966 (0.75)<br>torch-compile-cg 0.106 (0.69) | torch-compile-ro 0.0941 (0.77) | **torch-sdpa-compile 0.0938 (0.78)**<br>torch-sdpa 0.1241 (0.59) | triton 0.3434 (0.21) | chain-fused 0.0942 (0.77) |
+| attn_2048_64 | rtx-5080 | 0.07282 | chain-eager 0.1104 (0.66) | torch-eager 0.1292 (0.56) | torch-compile 0.0972 (0.75) | torch-sdpa-compile-cg 0.0966 (0.75)<br>torch-compile-cg 0.106 (0.69) | torch-compile-ro 0.0941 (0.77) | **torch-sdpa-compile 0.0938 (0.78)**<br>torch-sdpa 0.1241 (0.59) | triton 0.3434 (0.21) | chain-fused 0.0964 (0.76) |
 | attn_2048_64 | rtx-3090 | 0.1244 | chain-eager 0.2345 (0.53) | torch-eager 0.3042 (0.41) | torch-compile 0.1372 (0.91) | torch-compile-cg 0.1352 (0.92)<br>torch-sdpa-compile-cg 0.1925 (0.65) | **torch-compile-ro 0.1311 (0.95)** | torch-sdpa-compile 0.1925 (0.65)<br>torch-sdpa 0.2222 (0.56) | triton 0.3901 (0.32) | chain-fused 0.2048 (0.61) |
 | attn_2048_64 | a100 | 0.1844 | chain-eager 0.2109 (0.87) | torch-eager 0.254 (0.73) | **torch-compile 0.126 (1.46)** | torch-sdpa-compile-cg 0.1423 (1.30)<br>torch-compile-cg 0.1567 (1.18) | torch-compile-ro 0.1352 (1.36) | torch-sdpa-compile 0.1516 (1.22)<br>torch-sdpa 0.2253 (0.82) | triton 0.4659 (0.40) | chain-fused 0.2028 (0.91) |
 | attn_2048_64 | rtx-4090 | 0.1238 | chain-eager 0.1731 (0.72) | torch-eager 0.2048 (0.60) | torch-compile 0.1096 (1.13) | **torch-sdpa-compile-cg 0.1024 (1.21)**<br>torch-compile-cg 0.1075 (1.15) | torch-compile-ro 0.1075 (1.15) | torch-sdpa-compile 0.1055 (1.17)<br>torch-sdpa 0.1853 (0.67) | triton 0.6267 (0.20) | chain-fused 0.1628 (0.76) |
@@ -929,7 +929,7 @@ Per row and part, every leg at the row's precision, grouped by competitor family
 | causal_1024_256 | a100 | 53.11 |  | torch-eager 406.4 (0.13) | torch-compile 209 (0.25) | **torch-compile-cg 192.8 (0.28)** | torch-compile-ro 193.2 (0.27) |  |  |  |
 | causal_1024_256 | rtx-4090 | 33.74 |  | torch-eager 395.9 (0.09) | torch-compile 269.8 (0.13) | **torch-compile-cg 244.1 (0.14)** | torch-compile-ro 245.5 (0.14) |  |  |  |
 | causal_1024_256 | h100 | 21.44 |  | torch-eager 204.1 (0.11) | torch-compile 117.1 (0.18) | **torch-compile-cg 116.7 (0.18)** | torch-compile-ro 117.7 (0.18) |  |  |  |
-| decode_1024_256 | rtx-5080 | 8.674 | chain-nocache 23.72 (0.37) | torch-eager 51.11 (0.17) | torch-compile 48.29 (0.18) | torch-compile-cg 45.82 (0.19) | torch-compile-ro 45.88 (0.19) |  |  | **chain-cache 16.41 (0.53)** |
+| decode_1024_256 | rtx-5080 | 8.674 | chain-nocache 23.69 (0.37) | torch-eager 51.11 (0.17) | torch-compile 48.29 (0.18) | torch-compile-cg 45.82 (0.19) | torch-compile-ro 45.88 (0.19) |  |  | **chain-cache 16.48 (0.53)** |
 | decode_1024_256 | rtx-3090 | 17.58 | chain-nocache 37.71 (0.47) | torch-eager 198.1 (0.09) | torch-compile 180.2 (0.10) | torch-compile-cg 179.5 (0.10) | torch-compile-ro 179.3 (0.10) |  |  | **chain-cache 33.16 (0.53)** |
 | decode_1024_256 | a100 | 45.81 | **chain-nocache 53.39 (0.86)** | torch-eager 238.3 (0.19) | torch-compile 184.7 (0.25) | torch-compile-cg 184.6 (0.25) | torch-compile-ro 188.7 (0.24) |  |  | chain-cache 65.35 (0.70) |
 | decode_1024_256 | rtx-4090 | 21.02 | chain-nocache 57.08 (0.37) | torch-eager 213.6 (0.10) | torch-compile 221 (0.10) | torch-compile-cg 238.9 (0.09) | torch-compile-ro 239 (0.09) |  |  | **chain-cache 51.3 (0.41)** |
@@ -959,22 +959,22 @@ Per row and part, every leg at the row's precision, grouped by competitor family
 | prefill_1024_512_256 | a100 | 24.54 |  | torch-eager 201 (0.12) | torch-compile 104.6 (0.23) | **torch-compile-cg 93.03 (0.26)** | torch-compile-ro 93.24 (0.26) |  |  |  |
 | prefill_1024_512_256 | rtx-4090 | 17.04 |  | torch-eager 195.9 (0.09) | torch-compile 126 (0.14) | torch-compile-cg 121.6 (0.14) | **torch-compile-ro 121 (0.14)** |  |  |  |
 | prefill_1024_512_256 | h100 | 10.9 |  | torch-eager 102.6 (0.11) | torch-compile 57.62 (0.19) | torch-compile-cg 59.71 (0.18) | **torch-compile-ro 56.43 (0.19)** |  |  |  |
-| rowsum_2048 | rtx-5080 | 0.4533 | **chain-eager 0.4628 (0.98)**<br>chain-gemv 0.4649 (0.98) | torch-eager 0.4719 (0.96) | torch-compile 0.4855 (0.93) | torch-compile-cg 0.4883 (0.93) | torch-compile-ro 0.4892 (0.93) |  |  |  |
+| rowsum_2048 | rtx-5080 | 0.4533 | **chain-eager 0.4665 (0.97)**<br>chain-gemv 0.4688 (0.97) | torch-eager 0.4719 (0.96) | torch-compile 0.4855 (0.93) | torch-compile-cg 0.4883 (0.93) | torch-compile-ro 0.4892 (0.93) |  |  |  |
 | rowsum_2048 | rtx-3090 | 0.8261 | chain-gemv 0.8899 (0.93)<br>chain-eager 0.894 (0.92) | torch-eager 0.7885 (1.05) | **torch-compile 0.7803 (1.06)** | torch-compile-cg 0.7803 (1.06) | torch-compile-ro 0.7844 (1.05) |  |  |  |
 | rowsum_2048 | a100 | 0.9173 | chain-eager 1.268 (0.72)<br>chain-gemv 1.273 (0.72) | torch-eager 1.276 (0.72) | torch-compile 1.269 (0.72) | torch-compile-cg 1.268 (0.72) | **torch-compile-ro 1.248 (0.73)** |  |  |  |
 | rowsum_2048 | rtx-4090 | 0.6164 | chain-eager 0.6515 (0.95)<br>chain-gemv 0.6554 (0.94) | torch-eager 0.6533 (0.94) | torch-compile 0.6532 (0.94) | torch-compile-cg 0.6543 (0.94) | **torch-compile-ro 0.6513 (0.95)** |  |  |  |
 | rowsum_2048 | h100 | 0.5114 | chain-eager 0.4252 (1.20)<br>chain-gemv 0.4269 (1.20) | torch-eager 0.4214 (1.21) | torch-compile 0.4206 (1.22) | **torch-compile-cg 0.4195 (1.22)** | torch-compile-ro 0.42 (1.22) |  |  |  |
-| rowsum_4096 | rtx-5080 | 3.744 | **chain-gemv 3.604 (1.04)**<br>chain-eager 3.616 (1.04) | torch-eager 3.628 (1.03) | torch-compile 3.632 (1.03) | torch-compile-cg 3.63 (1.03) | torch-compile-ro 3.645 (1.03) |  |  |  |
+| rowsum_4096 | rtx-5080 | 3.744 | **chain-gemv 3.624 (1.03)**<br>chain-eager 3.632 (1.03) | torch-eager 3.628 (1.03) | torch-compile 3.632 (1.03) | torch-compile-cg 3.63 (1.03) | torch-compile-ro 3.645 (1.03) |  |  |  |
 | rowsum_4096 | rtx-3090 | 6.181 | **chain-eager 6.568 (0.94)**<br>chain-gemv 6.569 (0.94) | torch-eager 6.572 (0.94) | torch-compile 6.63 (0.93) | torch-compile-cg 6.625 (0.93) | torch-compile-ro 6.627 (0.93) |  |  |  |
 | rowsum_4096 | a100 | 6.746 | chain-eager 7.324 (0.92)<br>chain-gemv 7.326 (0.92) | **torch-eager 7.29 (0.93)** | torch-compile 7.608 (0.89) | torch-compile-cg 7.607 (0.89) | torch-compile-ro 7.316 (0.92) |  |  |  |
 | rowsum_4096 | rtx-4090 | 4.754 | chain-gemv 4.889 (0.97)<br>chain-eager 4.903 (0.97) | torch-eager 4.903 (0.97) | **torch-compile 4.879 (0.97)** | torch-compile-cg 4.892 (0.97) | torch-compile-ro 4.879 (0.97) |  |  |  |
 | rowsum_4096 | h100 | 4.532 | chain-eager 4.012 (1.13)<br>chain-gemv 4.019 (1.13) | torch-eager 4.03 (1.12) | torch-compile 4.009 (1.13) | torch-compile-cg 3.987 (1.14) | **torch-compile-ro 3.986 (1.14)** |  |  |  |
-| softmax_rows_2048 | rtx-5080 | 0.4631 | chain-eager 0.5018 (0.92) | torch-eager 0.5276 (0.88) | torch-compile 0.4899 (0.95) | torch-compile-cg 0.4956 (0.93) | torch-compile-ro 0.4996 (0.93) |  | triton 0.6297 (0.74) | **chain-fused 0.4895 (0.95)** |
+| softmax_rows_2048 | rtx-5080 | 0.4631 | chain-eager 0.5049 (0.92) | torch-eager 0.5276 (0.88) | **torch-compile 0.4899 (0.95)** | torch-compile-cg 0.4956 (0.93) | torch-compile-ro 0.4996 (0.93) |  | triton 0.6297 (0.74) | chain-fused 0.4937 (0.94) |
 | softmax_rows_2048 | rtx-3090 | 0.8582 | chain-eager 0.895 (0.96) | torch-eager 0.9943 (0.86) | torch-compile 0.8038 (1.07) | **torch-compile-cg 0.7455 (1.15)** | torch-compile-ro 0.7465 (1.15) |  | triton 0.8868 (0.97) | chain-fused 0.8622 (1.00) |
 | softmax_rows_2048 | a100 | 0.9513 | chain-eager 1.34 (0.71) | torch-eager 1.387 (0.69) | **torch-compile 1.002 (0.95)** | torch-compile-cg 1.278 (0.74) | torch-compile-ro 1.278 (0.74) |  | triton 1.018 (0.93) | chain-fused 1.329 (0.72) |
 | softmax_rows_2048 | rtx-4090 | 0.636 | chain-eager 0.7107 (0.89) | torch-eager 0.7434 (0.86) | torch-compile 0.6564 (0.97) | **torch-compile-cg 0.6554 (0.97)** | torch-compile-ro 0.6584 (0.97) |  | triton 0.7731 (0.82) | chain-fused 0.7004 (0.91) |
 | softmax_rows_2048 | h100 | 0.5364 | chain-eager 0.4629 (1.16) | torch-eager 0.4817 (1.11) | torch-compile 0.4575 (1.17) | **torch-compile-cg 0.4275 (1.25)** | torch-compile-ro 0.4281 (1.25) |  | triton 0.5183 (1.03) | chain-fused 0.4463 (1.20) |
-| softmax_rows_4096 | rtx-5080 | 3.804 | chain-eager 3.909 (0.97) | torch-eager 4.203 (0.91) | torch-compile 3.689 (1.03) | torch-compile-cg 3.697 (1.03) | **torch-compile-ro 3.682 (1.03)** |  | triton 4.62 (0.82) | chain-fused 3.753 (1.01) |
+| softmax_rows_4096 | rtx-5080 | 3.804 | chain-eager 3.935 (0.97) | torch-eager 4.203 (0.91) | torch-compile 3.689 (1.03) | torch-compile-cg 3.697 (1.03) | **torch-compile-ro 3.682 (1.03)** |  | triton 4.62 (0.82) | chain-fused 3.775 (1.01) |
 | softmax_rows_4096 | rtx-3090 | 6.317 | chain-eager 7.01 (0.90) | torch-eager 7.347 (0.86) | **torch-compile 6.672 (0.95)** | torch-compile-cg 6.725 (0.94) | torch-compile-ro 6.718 (0.94) |  | triton 8.032 (0.79) | chain-fused 6.9 (0.92) |
 | softmax_rows_4096 | a100 | 6.812 | chain-eager 7.609 (0.90) | torch-eager 7.809 (0.87) | torch-compile 7.645 (0.89) | torch-compile-cg 7.609 (0.90) | **torch-compile-ro 7.356 (0.93)** |  | triton 7.545 (0.90) | chain-fused 7.547 (0.90) |
 | softmax_rows_4096 | rtx-4090 | 4.84 | chain-eager 5.235 (0.92) | torch-eager 5.514 (0.88) | torch-compile 4.958 (0.98) | torch-compile-cg 4.961 (0.98) | **torch-compile-ro 4.891 (0.99)** |  | triton 6.04 (0.80) | chain-fused 5.103 (0.95) |
@@ -1219,7 +1219,7 @@ Per row and part, every leg at the row's precision, grouped by competitor family
 | convmc_8_64_56_3 | a100 | 0.2707 |  | **torch-eager 0.0881 (3.07)** | torch-compile 0.1864 (1.45) | torch-compile-cg 0.1731 (1.56) | torch-compile-ro 0.171 (1.58) |  |
 | convmc_8_64_56_3 | rtx-4090 | 0.1867 |  | **torch-eager 0.0911 (2.05)** | torch-compile 0.171 (1.09) | torch-compile-cg 0.169 (1.10) | torch-compile-ro 0.1669 (1.12) |  |
 | convmc_8_64_56_3 | h100 | 0.1193 |  | **torch-eager 0.0697 (1.71)** | torch-compile 0.1129 (1.06) | torch-compile-cg 0.1084 (1.10) | torch-compile-ro 0.1087 (1.10) |  |
-| ew_4096 | rtx-5080 | 0.08805 | chain-eager 0.5714 (0.15) | torch-eager 0.5763 (0.15) | torch-compile 0.2605 (0.34) | torch-compile-cg 0.2657 (0.33) | torch-compile-ro 0.2668 (0.33) | **chain-fused 0.2478 (0.36)** |
+| ew_4096 | rtx-5080 | 0.08805 | chain-eager 0.5718 (0.15) | torch-eager 0.5763 (0.15) | torch-compile 0.2605 (0.34) | torch-compile-cg 0.2657 (0.33) | torch-compile-ro 0.2668 (0.33) | **chain-fused 0.2491 (0.35)** |
 | ew_4096 | rtx-3090 | 0.1466 | chain-eager 0.5632 (0.26) | torch-eager 0.5632 (0.26) | **torch-compile 0.2406 (0.61)** | torch-compile-cg 0.2406 (0.61) | torch-compile-ro 0.2406 (0.61) | chain-fused 0.2406 (0.61) |
 | ew_4096 | a100 | 0.193 | chain-eager 0.3871 (0.50) | torch-eager 0.3604 (0.54) | **torch-compile 0.1567 (1.23)** | torch-compile-cg 0.1567 (1.23) | torch-compile-ro 0.1567 (1.23) | chain-fused 0.1812 (1.07) |
 | ew_4096 | rtx-4090 | 0.156 | chain-eager 0.5878 (0.27) | torch-eager 0.598 (0.26) | torch-compile 0.2651 (0.59) | torch-compile-cg 0.2632 (0.59) | torch-compile-ro 0.2611 (0.60) | **chain-fused 0.2601 (0.60)** |
@@ -1249,27 +1249,27 @@ Per row and part, every leg at the row's precision, grouped by competitor family
 
 | workload | part | Mapal ms | vendor libs | torch eager | torch.compile | compile + CUDA graphs | reduce-overhead |
 |---|---|---:|---|---|---|---|---|
-| diamond_2048 | rtx-5080 | 1.369 | **chain-lt 1.378 (0.99)**<br>chain-streams 1.395 (0.98)<br>chain-eager 1.403 (0.98)<br>chain-cutlass 1.647 (0.83) | torch-eager 1.401 (0.98) | torch-compile 1.402 (0.98) | torch-compile-cg 1.405 (0.97) | torch-compile-ro 1.417 (0.97) |
+| diamond_2048 | rtx-5080 | 1.369 | **chain-lt 1.385 (0.99)**<br>chain-streams 1.403 (0.98)<br>chain-eager 1.408 (0.97)<br>chain-cutlass 1.654 (0.83) | torch-eager 1.401 (0.98) | torch-compile 1.402 (0.98) | torch-compile-cg 1.405 (0.97) | torch-compile-ro 1.417 (0.97) |
 | diamond_2048 | rtx-3090 | 2.419 | **chain-streams 2.678 (0.90)**<br>chain-lt 2.708 (0.89)<br>chain-eager 2.724 (0.89)<br>chain-cutlass 3.168 (0.76) | torch-eager 2.759 (0.88) | torch-compile 2.747 (0.88) | torch-compile-cg 2.746 (0.88) | torch-compile-ro 2.927 (0.83) |
 | diamond_2048 | a100 | 2.701 | **chain-lt 2.939 (0.92)**<br>chain-streams 2.943 (0.92)<br>chain-eager 2.971 (0.91)<br>chain-cutlass 3.457 (0.78) | torch-eager 3.784 (0.71) | torch-compile 3.755 (0.72) | torch-compile-cg 3.089 (0.87) | torch-compile-ro 2.948 (0.92) |
 | diamond_2048 | rtx-4090 | 1.79 | **chain-cutlass 1.877 (0.95)**<br>chain-lt 1.919 (0.93)<br>chain-streams 1.934 (0.93)<br>chain-eager 1.942 (0.92) | torch-eager 1.94 (0.92) | torch-compile 1.92 (0.93) | torch-compile-cg 1.921 (0.93) | torch-compile-ro 1.936 (0.92) |
 | diamond_2048 | h100 | 1.443 | chain-lt 1.486 (0.97)<br>chain-streams 1.496 (0.96)<br>chain-eager 1.499 (0.96)<br>chain-cutlass 1.677 (0.86) | **torch-eager 1.269 (1.14)** | torch-compile 1.339 (1.08) | torch-compile-cg 1.273 (1.13) | torch-compile-ro 1.277 (1.13) |
-| fanout_2048 | rtx-5080 | 0.9136 | **chain-streams 0.9114 (1.00)**<br>chain-eager 0.9236 (0.99) | torch-eager 0.9439 (0.97) | torch-compile 0.951 (0.96) | torch-compile-cg 0.9536 (0.96) | torch-compile-ro 0.9562 (0.96) |
+| fanout_2048 | rtx-5080 | 0.9136 | **chain-streams 0.9224 (0.99)**<br>chain-eager 0.9327 (0.98) | torch-eager 0.9439 (0.97) | torch-compile 0.951 (0.96) | torch-compile-cg 0.9536 (0.96) | torch-compile-ro 0.9562 (0.96) |
 | fanout_2048 | rtx-3090 | 1.653 | **chain-streams 1.805 (0.92)**<br>chain-eager 1.84 (0.90) | torch-eager 1.876 (0.88) | torch-compile 1.857 (0.89) | torch-compile-cg 1.837 (0.90) | torch-compile-ro 1.923 (0.86) |
 | fanout_2048 | a100 | 1.809 | chain-streams 2.505 (0.72)<br>chain-eager 2.527 (0.72) | torch-eager 2.539 (0.71) | torch-compile 2.533 (0.71) | **torch-compile-cg 1.99 (0.91)** | torch-compile-ro 1.992 (0.91) |
 | fanout_2048 | rtx-4090 | 1.214 | **chain-streams 1.285 (0.94)**<br>chain-eager 1.297 (0.94) | torch-eager 1.318 (0.92) | torch-compile 1.325 (0.92) | torch-compile-cg 1.326 (0.92) | torch-compile-ro 1.297 (0.94) |
 | fanout_2048 | h100 | 0.9712 | chain-streams 0.8508 (1.14)<br>chain-eager 0.8595 (1.13) | torch-eager 0.8576 (1.13) | torch-compile 0.8476 (1.15) | torch-compile-cg 0.8459 (1.15) | **torch-compile-ro 0.8438 (1.15)** |
-| indep_2048 | rtx-5080 | 0.9372 | **chain-lt 0.9155 (1.02)**<br>chain-streams 0.9318 (1.01)<br>chain-eager 0.938 (1.00)<br>chain-cutlass 1.092 (0.86) | torch-eager 0.9327 (1.00) | torch-compile 0.94 (1.00) | torch-compile-cg 0.9432 (0.99) | torch-compile-ro 0.9564 (0.98) |
+| indep_2048 | rtx-5080 | 0.9372 | **chain-lt 0.926 (1.01)**<br>chain-streams 0.9426 (0.99)<br>chain-eager 0.9494 (0.99)<br>chain-cutlass 1.104 (0.85) | torch-eager 0.9327 (1.00) | torch-compile 0.94 (1.00) | torch-compile-cg 0.9432 (0.99) | torch-compile-ro 0.9564 (0.98) |
 | indep_2048 | rtx-3090 | 1.629 | **chain-streams 1.77 (0.92)**<br>chain-lt 1.809 (0.90)<br>chain-eager 1.817 (0.90)<br>chain-cutlass 2.075 (0.79) | torch-eager 1.86 (0.88) | torch-compile 1.841 (0.89) | torch-compile-cg 1.864 (0.87) | torch-compile-ro 1.893 (0.86) |
 | indep_2048 | a100 | 1.758 | chain-lt 1.961 (0.90)<br>chain-streams 1.962 (0.90)<br>chain-eager 1.995 (0.88)<br>chain-cutlass 2.307 (0.76) | torch-eager 2.536 (0.69) | torch-compile 1.97 (0.89) | **torch-compile-cg 1.958 (0.90)** | torch-compile-ro 1.973 (0.89) |
 | indep_2048 | rtx-4090 | 1.207 | **chain-cutlass 1.253 (0.96)**<br>chain-lt 1.283 (0.94)<br>chain-streams 1.294 (0.93)<br>chain-eager 1.302 (0.93) | torch-eager 1.305 (0.93) | torch-compile 1.284 (0.94) | torch-compile-cg 1.282 (0.94) | torch-compile-ro 1.3 (0.93) |
 | indep_2048 | h100 | 0.9733 | chain-lt 0.9438 (1.03)<br>chain-streams 0.9523 (1.02)<br>chain-eager 0.9557 (1.02)<br>chain-cutlass 1.073 (0.91) | torch-eager 0.8507 (1.14) | torch-compile 0.8459 (1.15) | **torch-compile-cg 0.8421 (1.16)** | torch-compile-ro 0.8522 (1.14) |
-| indep_512 | rtx-5080 | 0.03936 | **chain-streams 0.0365 (1.08)**<br>chain-lt 0.043 (0.92)<br>chain-eager 0.0451 (0.87)<br>chain-cutlass 0.1044 (0.38) | torch-eager 0.0496 (0.79) | torch-compile 0.0491 (0.80) | torch-compile-cg 0.0556 (0.71) | torch-compile-ro 0.0673 (0.58) |
+| indep_512 | rtx-5080 | 0.03936 | **chain-streams 0.0406 (0.97)**<br>chain-lt 0.0458 (0.86)<br>chain-eager 0.0481 (0.82)<br>chain-cutlass 0.1055 (0.37) | torch-eager 0.0496 (0.79) | torch-compile 0.0491 (0.80) | torch-compile-cg 0.0556 (0.71) | torch-compile-ro 0.0673 (0.58) |
 | indep_512 | rtx-3090 | 0.07504 | chain-streams 0.0532 (1.41)<br>chain-lt 0.0543 (1.38)<br>chain-eager 0.0573 (1.31)<br>chain-cutlass 0.126 (0.60) | torch-eager 0.0666 (1.13) | **torch-compile 0.0471 (1.59)** | torch-compile-cg 0.0471 (1.59) | torch-compile-ro 0.0553 (1.36) |
 | indep_512 | a100 | 0.0981 | chain-streams 0.0676 (1.45)<br>chain-lt 0.0778 (1.26)<br>chain-eager 0.0799 (1.23)<br>chain-cutlass 0.2447 (0.40) | **torch-eager 0.0676 (1.45)** | torch-compile 0.084 (1.17) | torch-compile-cg 0.0809 (1.21) | torch-compile-ro 0.0809 (1.21) |
 | indep_512 | rtx-4090 | 0.07232 | chain-lt 0.0553 (1.31)<br>chain-streams 0.0563 (1.28)<br>chain-eager 0.0594 (1.22)<br>chain-cutlass 0.1761 (0.41) | torch-eager 0.0614 (1.18) | **torch-compile 0.0471 (1.54)** | torch-compile-cg 0.0471 (1.54) | torch-compile-ro 0.0573 (1.26) |
 | indep_512 | h100 | 0.04893 | chain-streams 0.0311 (1.57)<br>chain-lt 0.0336 (1.46)<br>chain-eager 0.0428 (1.14)<br>chain-cutlass 0.1201 (0.41) | torch-eager 0.0419 (1.17) | **torch-compile 0.0268 (1.83)** | torch-compile-cg 0.0269 (1.82) | torch-compile-ro 0.0332 (1.47) |
-| loop_4096 | rtx-5080 | 26.9 | **chain-lt 28.51 (0.94)**<br>chain-cutlass 28.76 (0.94)<br>chain-eager 30.21 (0.89) | torch-eager 29.28 (0.92) | torch-compile 29.29 (0.92) | torch-compile-cg 29.24 (0.92) | torch-compile-ro 29.28 (0.92) |
+| loop_4096 | rtx-5080 | 26.9 | **chain-lt 28.1 (0.96)**<br>chain-eager 29.7 (0.91)<br>chain-cutlass 29.85 (0.90) | torch-eager 29.28 (0.92) | torch-compile 29.29 (0.92) | torch-compile-cg 29.24 (0.92) | torch-compile-ro 29.28 (0.92) |
 | loop_4096 | rtx-3090 | 63.56 | chain-lt 109.8 (0.58)<br>chain-eager 117.4 (0.54)<br>chain-cutlass 137.6 (0.46) | torch-eager 52.06 (1.22) | torch-compile 52.05 (1.22) | **torch-compile-cg 52.03 (1.22)** | torch-compile-ro 52.14 (1.22) |
 | loop_4096 | a100 | 52.81 | chain-eager 58.89 (0.90)<br>chain-lt 60.22 (0.88)<br>chain-cutlass 60.8 (0.87) | torch-eager 58.83 (0.90) | torch-compile 60.79 (0.87) | torch-compile-cg 60.76 (0.87) | **torch-compile-ro 58.44 (0.90)** |
 | loop_4096 | rtx-4090 | 36.33 | **chain-lt 38.66 (0.94)**<br>chain-cutlass 39.19 (0.93)<br>chain-eager 39.73 (0.91) | torch-eager 39.78 (0.91) | torch-compile 39.75 (0.91) | torch-compile-cg 39.71 (0.92) | torch-compile-ro 39.55 (0.92) |
@@ -1299,7 +1299,7 @@ Per row and part, every leg at the row's precision, grouped by competitor family
 
 ```
 python3 benches/local/matrix.py --skip 'llm_kv[xn]_' \
-  rtx-5080=.claude/raw-evidence/local-rtx-5080/gapfix-integrate/resS/results-rtx-5080.txt@d945c641,.claude/raw-evidence/local-rtx-5080/gapfix-integrate/resM/results-rtx-5080.txt@d945c641,.claude/raw-evidence/local-rtx-5080/gapfix-integrate/flyab/results-rtx-5080.txt@d450014d,.claude/raw-evidence/local-rtx-5080/gapfix-integrate/zeroab2/results-rtx-5080.txt@9abeb446 \
+  rtx-5080=.claude/raw-evidence/local-rtx-5080/gapfix-integrate/resS/results-rtx-5080.txt@d945c641,.claude/raw-evidence/local-rtx-5080/gapfix-integrate/resM/results-rtx-5080.txt@d945c641,.claude/raw-evidence/local-rtx-5080/gapfix-integrate/flyab/results-rtx-5080.txt@d450014d,.claude/raw-evidence/local-rtx-5080/gapfix-integrate/zeroab2/results-rtx-5080.txt@9abeb446,.claude/raw-evidence/local-rtx-5080/gapfix-boundary/res/chain-legs-rtx-5080.txt@81a89c02 \
   rtx-3090=.claude/raw-evidence/cross-arch/f1d3a04f/rtx-3090/results-rtx-3090-comp.txt@f1d3a04f,.claude/raw-evidence/cross-arch/f1d3a04f/rtx-3090/results-rtx-3090.txt@f1d3a04f \
   a100=.claude/raw-evidence/cross-arch/f1d3a04f/a100/results-a100-comp.txt@f1d3a04f,.claude/raw-evidence/cross-arch/f1d3a04f/a100/results-a100.txt@f1d3a04f \
   rtx-4090=.claude/raw-evidence/cross-arch/f1d3a04f/rtx-4090/results-rtx-4090-comp.txt@f1d3a04f,.claude/raw-evidence/cross-arch/f1d3a04f/rtx-4090/results-rtx-4090.txt@f1d3a04f \

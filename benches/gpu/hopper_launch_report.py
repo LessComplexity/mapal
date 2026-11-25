@@ -29,7 +29,7 @@ for line in open(sys.argv[1], errors='replace'):
         f['kernels'] = ks
         trace[m.group(1)][m.group(2)] = f
         continue
-    m = re.match(r'gemm prog=(\S+) leg=(\S+) .*med_ms=([0-9.]+)', line)
+    m = re.match(r'gemm prog=(\S+) leg=(\S+) .*?\bmed_ms=([0-9.]+)', line)
     if m:
         lib[m.group(1)][m.group(2)] = float(m.group(3))
         continue

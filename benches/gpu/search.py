@@ -121,7 +121,7 @@ def times(text):
         reps[(m[1], changed.RESULT_FACE.get(m[2], m[2]), m[3])].append(float(m[4]))
     t = {k: statistics.median(v) for k, v in reps.items()}
     passes = defaultdict(dict)
-    for m in re.finditer(r'^pass=(\d+) cell=(\S+) time leg=(\S+) .*med_ms=([\d.]+)', text, re.M):
+    for m in re.finditer(r'^pass=(\d+) cell=(\S+) time leg=(\S+) .*?\bmed_ms=([\d.]+)', text, re.M):
         passes[(m[1], m[2])][m[3]] = float(m[4])
     ratios = defaultdict(list)
     for legs in passes.values():

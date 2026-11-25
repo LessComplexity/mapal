@@ -35,7 +35,7 @@ def kernels(path):
         cell, rest = m[2], m[3]
         if 'GATE-FAILED' in rest or 'same_output=NO' in rest:
             gates.append(l.strip())
-        tm = re.match(r'time leg=(\S+) .*med_ms=([\d.]+)', rest)
+        tm = re.match(r'time leg=(\S+) .*?\bmed_ms=([\d.]+)', rest)
         if tm:
             t[cell][tm[1]].append(float(tm[2]))
     return t, gates

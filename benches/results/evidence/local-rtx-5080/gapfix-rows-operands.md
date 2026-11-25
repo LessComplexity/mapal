@@ -73,9 +73,11 @@ TIMING=0 E2E=0`). Raw: `rtx-3090/results-rtx-3090.txt`.
 | pj_m1_n4096_k4096 | stream-ld | 0.1032 → 0.1057 | 1.025 | null (spreads overlap) |
 | pj_m1_n4096_k14336 | stream-ld | 0.2899 → 0.3036 | 1.047 | the GEMV 0.284 → 0.289 ms: the hint's cost, nothing kept |
 | llm_dec_b32_l2048_bf16kv | stream-ld | 10.190 → 10.164 | 0.997 | null |
-| lsm_32_8192 | shfl-tree | 0.0481 → 0.0357 | 0.743 | win (spreads apart) |
+| lsm_32_8192 | shfl-tree | 0.0481 → 0.0466 | 0.969 | null at one pick (review fix, below): ranges overlap, the session's null 0.137 |
 | llm_dec_b32_l2048_bf16kv | iota-law | 10.325 → 10.164 | 0.984 | win (spreads apart) |
 | llm_dec_b32_l2048_bf16kv | kvec-swizzle | 10.593 → 10.164 | 0.960 | win (10.59–10.60 against 10.15–10.21): on the 3090 the scattered stores are on the scores kernel's path |
+
+**Review fix: the shfl-tree row compared two picks.** The first reading (0.0481 → 0.0357, 0.743) set the ON arm's tuned wisdom pick (candidate 3, `sites=[600b5866ec11871a:3:wisdom]`) against the OFF arm's rules pick (candidate 0: the OFF text's site key is not in the wisdom, `[53f1e1c0d837131c:0:rules]`). At one pick — the ON text forced to candidate 0 (`rules` arm, same session) against OFF — the medians are 0.0466 / 0.0481 ms (0.969, ranges 0.0454–0.0787 / 0.0416–0.0489) while the null copy of ON differs from ON by 14 %: null. The replay line is `null` (totals 169 / 82 / 16 / 23); the rung's support is the 5080's attention ABBAs (0.936 / 0.959, rules pick on both arms) and its SASS (barriers 38 → 6). The readers now pair an OFF arm with the ON text's arm at the same picks (`benches/gpu/picks.py`: `on`, else `rules`, else `pick<i>`; `probe_rungs.py` names the partner, `arm_ratio.py --pair` prints `pick-confounded`), test `BoundaryTests.test_rung_ab_reads_the_off_arm_at_its_own_picks`. The table's other rows launched the same picks on both arms (the decode's four sites candidate 0 on each, the GEMVs untabled).
 
 **C2 was mixed — the missing fact is the share of the operand the L2 keeps.** The 5080 wins are not "no reuse":
 `pj_m1_n6144_k4096` streams its 100 MiB `b` at 1.19 TB/s OFF and 1.37 TB/s ON against a 0.96 TB/s DRAM, and

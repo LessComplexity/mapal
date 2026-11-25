@@ -116,7 +116,7 @@ def load(path):
             t[(m[1], m[2])].append(float(m[3]))
             continue
         # splitk cells (default-face legs `<cell>` / `<cell>.<arm>`; `_c`/`_r`/… are other faces): med_ms per pass
-        m = re.match(r'pass=\d+ cell=(\S+) time leg=(\S+) .*med_ms=([\d.]+)', l)
+        m = re.match(r'pass=\d+ cell=(\S+) time leg=(\S+) .*?\bmed_ms=([\d.]+)', l)
         if m and (m[2] == m[1] or m[2].startswith(m[1] + '.')):
             t[(m[1], m[2][len(m[1]) + 1:] or 'on')].append(float(m[3]))
             continue

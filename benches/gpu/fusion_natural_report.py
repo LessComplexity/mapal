@@ -276,7 +276,7 @@ def attn_table(raw, er):
             for l in lines:
                 if m := re.match(r'chain_values probe=attn_(\d+) n=(\d+) leg=(\S+) .* gate=FAIL', l):
                     bad.add((f'pt_attn_{m[1]}_{m[2]}', m[3]))
-                if m := re.match(r'chain probe=attn_(\d+) n=(\d+) leg=(\S+) .*med_ms=([\d.]+)', l):
+                if m := re.match(r'chain probe=attn_(\d+) n=(\d+) leg=(\S+) .*?\bmed_ms=([\d.]+)', l):
                     if (f'pt_attn_{m[1]}_{m[2]}', m[3]) not in bad:
                         ch[(f'pt_attn_{m[1]}_{m[2]}', m[3])] = float(m[4])
                 if m := re.match(r'torch prog=(\S+) mode=(\w+) .*med_ms=([\d.]+) .*within=yes', l):

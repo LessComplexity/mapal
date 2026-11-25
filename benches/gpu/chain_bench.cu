@@ -23,10 +23,16 @@
 //   fused    ew: the three maps as one kernel (what a fusing compiler emits).
 // All math is pure FP32 (CUBLAS_COMPUTE_32F, default sgemm math: no TF32).
 //
-// Timing: legs interleaved round-robin, each repetition bracketed by cudaEvents on
-// the legacy stream (both side streams are blocking, so the brackets cover them),
-// 256 MB L2 flush before every timed repetition, 3 warmups per leg. GPU time
-// only: operands are generated on the device before the clock, as Mapal's are.
+// Timing: legs interleaved round-robin, 256 MB L2 flush before every timed
+// repetition, 3 warmups per leg; operands are generated on the device before the
+// clock, as Mapal's are. gaps-disasm H: a repetition is timed as a Mapal program
+// times itself — the flush done and the device idle, the host clock around the
+// leg's calls and a device synchronize (`med_ms`: the host enqueue of every
+// launch inside). The former bracket — cudaEvents on the legacy stream recorded
+// behind the flush (both side streams are blocking, so it covers them), the host
+// enqueue hidden under the flush's device time — runs too, after its own flush,
+// and prints beside as `dev_med_ms`; BENCH_BOUNDARY=event (a measurement flag):
+// the bracket as the time. The decode loop prints both (wall / event) as before.
 //
 // Values: Mapal's timed probe prints [0] and [last] of every output; pass them
 // (in print order) after `reps` and every leg is gated:
@@ -736,7 +742,9 @@ int main(int argc, char **argv) {
   cudaEvent_t t0, t1;
   CUDA(cudaEventCreate(&t0));
   CUDA(cudaEventCreate(&t1));
-  std::vector<std::vector<float>> ms(legs.size());
+  const char *boundary = getenv("BENCH_BOUNDARY");
+  const bool boundary_event = boundary && !strcmp(boundary, "event");
+  std::vector<std::vector<float>> ms(legs.size()), dev(legs.size());
   for (int r = 0; r < reps; ++r)
     for (size_t L = 0; L < legs.size(); ++L) {
       CUDA(cudaMemsetAsync(flush, r & 0xff, flush_bytes));
@@ -746,13 +754,23 @@ int main(int argc, char **argv) {
       CUDA(cudaEventSynchronize(t1));
       float x;
       CUDA(cudaEventElapsedTime(&x, t0, t1));
+      dev[L].push_back(x);
+      if (!boundary_event) {  // the program's boundary: flushed, the device idle, host clock to the synchronize
+        CUDA(cudaMemsetAsync(flush, r & 0xff, flush_bytes));
+        CUDA(cudaDeviceSynchronize());
+        const auto w0 = std::chrono::steady_clock::now();
+        legs[L].run();
+        CUDA(cudaDeviceSynchronize());
+        x = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - w0).count();
+      }
       ms[L].push_back(x);
     }
   for (size_t L = 0; L < legs.size(); ++L) {
-    auto v = ms[L];
+    auto v = ms[L], d = dev[L];
     std::sort(v.begin(), v.end());
-    printf("chain probe=%s n=%d leg=%s launches=%d reps=%d min_ms=%.4f med_ms=%.4f max_ms=%.4f\n", probe.c_str(), n,
-           legs[L].name, nlaunch[L], reps, v.front(), v[v.size() / 2], v.back());
+    std::sort(d.begin(), d.end());
+    printf("chain probe=%s n=%d leg=%s launches=%d reps=%d min_ms=%.4f med_ms=%.4f max_ms=%.4f dev_med_ms=%.4f\n",
+           probe.c_str(), n, legs[L].name, nlaunch[L], reps, v.front(), v[v.size() / 2], v.back(), d[d.size() / 2]);
     printf("chain_samples probe=%s n=%d leg=%s ms=", probe.c_str(), n, legs[L].name);
     for (size_t i = 0; i < ms[L].size(); ++i) printf("%s%.4f", i ? "," : "", ms[L][i]);
     printf("\n");

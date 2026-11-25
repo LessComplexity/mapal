@@ -331,16 +331,16 @@ def ingest(a):
     for m in re.finditer(r'^probe prog=(\S+) face=(\S+) arm=(\S+) rep=\d+ .*?out=\[[^\]]*iter ms=([\d.]+)', text, re.M):
         ms[(m[1], RESULT_FACE.get(m[2], m[2]), m[3])].append(float(m[4]))
     lib = defaultdict(list)
-    for m in re.finditer(r'^pass=\d+ cell=(\S+) time leg=(\S+) .*med_ms=([\d.]+)', text, re.M):
+    for m in re.finditer(r'^pass=\d+ cell=(\S+) time leg=(\S+) .*?\bmed_ms=([\d.]+)', text, re.M):
         s = re.fullmatch(r'(mm_\d+x\d+x\d+)(_x|_c|_r|_rc)?(?:\.(\S+))?', m[2])
         if s:
             face = {'_x': 'exact', '_c': 'contract', None: 'default'}.get(s[2], s[2])
             ms[(s[1], face, s[3] or 'on')].append(float(m[3]))
         else:
             lib[(m[1], m[2], nvcc)].append(float(m[3]))  # cell= carries mm_ (box_run.sh)
-    for m in re.finditer(r'^torch prog=(\S+) mode=(\S+) .*med_ms=([\d.]+)', text, re.M):
+    for m in re.finditer(r'^torch prog=(\S+) mode=(\S+) .*?\bmed_ms=([\d.]+)', text, re.M):
         lib[(m[1], f'torch-{m[2]}', tv)].append(float(m[3]))
-    for m in re.finditer(r'^chain probe=(\S+) n=(\d+) leg=(\S+) .*med_ms=([\d.]+)', text, re.M):
+    for m in re.finditer(r'^chain probe=(\S+) n=(\d+) leg=(\S+) .*?\bmed_ms=([\d.]+)', text, re.M):
         lib[(f'pt_{m[1]}_{m[2]}', f'chain-{m[3]}', nvcc)].append(float(m[4]))
     rows = []
     for (p, face, arm), v in ms.items():

@@ -78,8 +78,10 @@ could; not measured.
 each repetition is timed as a Mapal program times itself — the flush (or the fresh operands) done and the device
 idle, the host clock around the call and a synchronize. The former bracket (CUDA events behind the 256 MB flush:
 the leg's host enqueue hidden under the flush's device time) still runs every repetition and prints beside as
-`dev_med_ms`; `BENCH_BOUNDARY=event` (a measurement flag) restores it as the time. Not changed: `chain_bench.cu`,
-`mlp_bench.cu` (no loss row reads them).
+`dev_med_ms`; `BENCH_BOUNDARY=event` (a measurement flag) restores it as the time. Not changed here: `chain_bench.cu`,
+`mlp_bench.cu` ("no loss row reads them" — wrong after the merge: 16 rows take a chain leg as best, indep_512 a loss
+against one; and the readers took tile_bench's bracket. Fixed in review: integration.md § Gap-fixes merge, Review
+fixes; mlp_bench's wall fields were already at the boundary and no matrix row reads it).
 
 | leg (row) | part | event bracket ms | wall at the boundary ms | host dispatch inside |
 |---|---|---:|---:|---:|

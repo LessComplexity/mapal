@@ -405,7 +405,7 @@ unit tree); C8 `iota-law` (`elem_plan` through captures); C12 `kvec-swizzle` (50
 `lsm_32_8192` unit kernel 3.04 → 2.30 µs. $0.06.
 
 **integration — gap-fixes merge** (`integration.md` § Gap-fixes merge): the three steps on one branch (conflicts only
-in the rung lists and the replay totals: 170 / 81 / 16 / 23). The merged emission of 137 programs on seven parts is
+in the rung lists and the replay totals: 170 / 81 / 16 / 23; after the review's pick-matched 3090 shfl-tree row, 169 / 82 / 16 / 23). The merged emission of 137 programs on seven parts is
 every step's text side by side (28 kernels on the 5080 carry two steps' orthogonal changes); the integrated run found
 three interactions the steps' own runs could not see and they are fixed: C11's grouped walk with C3's ring priced
 row-major (`pj_m2048_n28672_k4096_bf16` 4.52 → 3.99 ms), `stream-ld` on a window's signal (null), and the hoisted
@@ -413,4 +413,7 @@ zero past the operand generators (cold lines, `pj_m128_n6144_k4096_tf32` 1.068) 
 (the product's own zero outside its timed region: fenced, 0.979 on the 50 programs it moves). 1549 tests + the fixes'
 binaries. Full suite with every competitor leg on the H harness: RTX 5080 column 0.978 (30 / 39 / 51) → **0.880
 (47 / 42 / 31)** — Mapal ×0.949, the best legs ×1.054 at the program's boundary (0.928 against the old event-bracket
-legs). The rented columns keep event-bracket legs until their next round. $0.41 (the steps).
+legs). The rented columns keep event-bracket legs until their next round. $0.41 (the steps). Review: chain_bench's
+legs were still event-bracketed and the readers took tile_bench's bracket (fixed, 19 chain rows re-timed: **0.878
+(46 / 44 / 30)**, indep_512 loss → even); the 3090 shfl-tree replay line compared two picks (null at one pick; readers
+pair arms by launched picks, `picks.py`).

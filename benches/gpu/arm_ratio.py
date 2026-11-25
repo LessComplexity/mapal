@@ -11,7 +11,8 @@ the clock excluded): a mismatch is printed as VALUE MISMATCH and fails the exit 
 `--pair A B` prints B/A on `iter ms` and `wall_us` per (prog, face) in each session, `*` for
 disjoint min-max ranges; over several sessions (different boxes) a sign counts only when
 the ratio is beyond 1 ± max(EPS, floor) in every session, floor = that session's largest
-|null/on - 1| on `iter ms` (rungs.py's rule with the box's own noise floor).
+|null/on - 1| on `iter ms` (rungs.py's rule with the box's own noise floor). A pair whose arms launched
+different site picks (`sites=[key:pick:src]`, picks.py) is `pick-confounded`: two changes, no sign.
 
 usage: arm_ratio.py [--pair A B]... <results-session-1> [<results-session-2>...]
        arm_ratio.py --selftest
@@ -20,6 +21,8 @@ import re
 import statistics
 import sys
 from collections import defaultdict
+
+from picks import launched, same
 
 EPS = 0.01  # rungs.py: no effect within ±1%
 ROW = re.compile(r'(probe|submit) prog=(\S+) face=(\S+) arm=(\S+) rep=\d+ (?:wall_us=(\d+) .*?)?out=\[(.*?)\]')
@@ -30,7 +33,7 @@ KEYS = ('alloc_ms', 'free_ms', 'kernel_ms', 'gen_ms', 'h2d_ms', 'd2h_ms', 'alloc
 def parse(path):
     """{(prog, face): {arm: {'iter': [], 'wall': [], 'trace': [dict], 'submit': [dict], 'out': set}}}"""
     d = defaultdict(lambda: defaultdict(lambda: {'iter': [], 'wall': [], 'trace': [], 'submit': [],
-                                                 'out': set()}))
+                                                 'out': set(), 'picks': None}))
     for l in open(path):
         m = ROW.match(l)
         if not m:
@@ -40,6 +43,8 @@ def parse(path):
         it = re.search(r'iter ms=([\d.e+-]+)', out)
         t = {k: float(v) for k, v in re.findall(r'\b(' + '|'.join(KEYS) + r')=([\d.]+)', l)}
         if kind == 'probe':
+            if a['picks'] is None:
+                a['picks'] = launched(l)
             a['out'].add(out.split('iter ms=')[0].strip())
             if it:
                 a['iter'].append(float(it[1]))
@@ -112,7 +117,12 @@ def pairs(files, ds, prs):
             if all(x is None for x in it):
                 continue
             f = lambda xs: ' '.join('-' if x is None else f"{x[0]:.4f}{'*' if x[1] else ''}" for x in xs)
-            if any(x is None for x in it):
+            pa = [(d[key].get(A) or {}).get('picks') for d in ds]
+            pb = [(d[key].get(B) or {}).get('picks') for d in ds]
+            if any(x is not None and y is not None and not same(x, y) for x, y in zip(pa, pb)):
+                sign = 'pick-confounded (' + ', '.join(f"{list(x)}/{list(y)}" for x, y in zip(pa, pb)
+                                                     if x is not None and y is not None) + ')'
+            elif any(x is None for x in it):
                 sign = 'unmeasured in a session'
             elif all(x[0] > 1 + t for x, t in zip(it, fl)):
                 sign = 'stable+ (B slower)'

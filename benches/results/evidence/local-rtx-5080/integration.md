@@ -637,9 +637,10 @@ single step is split per device kernel (`kern.py`, `kernsrc.py`) and per host fu
 Load at the start of `resS` (06:21) 5.2, of `resM` (06:33) 1.2 (1-min average; CPUs 0–7 busy 0–2 % at each boundary);
 other agents raised the load to 100–125 between about 07:10 and 07:25, during `resM`'s competitor legs. Value gates:
 41 + 96 programs and 128 px differentials pass on every arm; every follow-up A/B (below) value-gated, 0 failures.
-**Harness boundary (H):** every competitor leg is now timed as a Mapal program times itself (device idle, host clock
-around the call and its synchronize; the old event bracket kept as `dev_med_ms`); the rented columns still carry
-event-bracket legs, so the 5080 column is not comparable with them until their next round.
+**Harness boundary (H):** the torch / comp / gemm_lib / tile_bench legs are timed as a Mapal program times itself
+(device idle, host clock around the call and its synchronize; the old event bracket kept as `dev_med_ms`) — not
+chain_bench's, and the GEMM cells were read at the bracket (review, fixed: § Review fixes below; column 0.878); the
+rented columns still carry event-bracket legs, so the 5080 column is not comparable with them until their next round.
 
 | what (RTX 5080, 120 matrix rows) | before (matrix: 5fcb401b + confirmation-fixes) | gap-fixes merge |
 | --- | ---: | ---: |
@@ -700,6 +701,72 @@ best leg, new boundary):
   pick both arms: `attn_1024_64` 0.0367 → 0.0334, `attn_2048_64` 0.0820 → 0.0793, `attn_2048_128` 0.1515 → 0.1496):
   open (the spill's place in SASS unread); choice "AUTO launches the stored pick" rows doubled (the class existed
   before: the stored pick 5, launched 0).
+
+### Review fixes (harness boundary, rung picks)
+
+Raw: `.claude/raw-evidence/local-rtx-5080/gapfix-boundary/` (`res/` pass 1, `res/chain-legs-rtx-5080.txt` its chain
+lines, `abba.txt`, `abba-indep512.txt`). Local RTX 5080, quiet (load 0.3–3, CPUs 0–7 1–2 % busy, Tctl 32–37 C, bench
+lock, the merge's protocol).
+
+- **H did not reach every leg the matrix reads.** `chain_bench.cu` (16 of 127 rows take a `chain-*` leg as best) still
+  timed the CUDA-event bracket behind the 256 MB flush, the leg's host enqueue hidden; and the readers' greedy
+  `.*med_ms=` (`matrix.py` / `gap.py` `CELL`, `changed.py`, `search.py`, `plancost.py`, `integrated_report.py`,
+  `default_float_report.py`, `hopper_launch_report.py`, `fusion_natural_report.py`) took a line's last `med_ms=` —
+  tile_bench's `dev_med_ms=`, the bracket — so both GEMM cell rows compared their arms at the bracket. Fixed:
+  chain_bench times each repetition at the boundary (flushed, device idle, host clock around the leg's calls and a
+  device synchronize; `dev_med_ms` beside; `BENCH_BOUNDARY=event` the measurement flag), every reader anchors on the
+  boundary field (`\bmed_ms=`). `mlp_bench.cu` needs nothing: no matrix row reads it, and its `wall_*` fields are
+  already the host clock around the call and a synchronize from an idle device (no flush by design). Tests
+  (`test_harness.py` `BoundaryTests`, fail without the fix): each harness the matrix reads honours `BENCH_BOUNDARY`
+  and prints the bracket beside; every `med_ms=` regex in `benches/` against one line of each harness never captures
+  the bracket's value; `matrix.py` parses the boundary time.
+- **Re-timed:** the 19 stems with chain legs — pass 1 (the protocol: tune, value gates, Mapal 5 reps, chain_bench 30)
+  and per stem A B B A (Mapal on / null ×5, chain_bench, chain_bench, Mapal). The leg's host enqueue: +2.0 µs
+  (attn_1024_64 fused), +4.0 (indep_512 streams: two streams), +2.2 (mlp_512 lt); ≤ 1 % on ms-scale rows. The
+  matrix takes the chain lines of pass 1 (Mapal rows stay the merge's).
+
+| row | best chain leg: event → boundary ms | matrix ratio (best leg) before → after | ABBA: Mapal on ms, ratio at the boundary | verdict |
+|---|---|---|---|---|
+| attn_1024_64 | fused 0.0348 → 0.0368 | 1.022 (chain-fused) → 0.970 (chain-fused) | 0.0337, 0.917 | even → even |
+| attn_2048_128 | fused 0.1270 → 0.1306 | 0.992 (torch-sdpa-compile) → 0.992 (torch-sdpa-compile) | 0.1150, 1.008 | even → even |
+| attn_2048_64 | fused 0.0942 → 0.0967 | 0.776 (torch-sdpa-compile) → 0.776 (torch-sdpa-compile) | 0.0735, 0.783 | win → win |
+| decode_1024_256 | cache 16.3580 → 16.3635 | 0.528 (chain-cache) → 0.526 (chain-cache) | 8.6591, 0.529 | win → win |
+| diamond_2048 | lt 1.3834 → 1.3866 | 0.993 (chain-lt) → 0.989 (chain-lt) | 1.3701, 0.988 | even → even |
+| epi_4096 | lt 3.5830 → 3.5855 | 0.991 (chain-lt) → 0.988 (chain-lt) | 3.5377, 0.987 | even → even |
+| ew_4096 | fused 0.2478 → 0.2489 | 0.355 (chain-fused) → 0.353 (chain-fused) | 0.0874, 0.351 | win → win |
+| fanout_2048 | streams 0.9194 → 0.9224 | 1.002 (chain-streams) → 0.990 (chain-streams) | 0.9128, 0.990 | even → even |
+| indep_2048 | lt 0.9267 → 0.9288 | 1.024 (chain-lt) → 1.012 (chain-lt) | 0.9370, 1.009 | even → even |
+| indep_512 | streams 0.0365 → 0.0405 | 1.078 (chain-streams) → 0.970 (chain-streams) | 0.0422, 1.041 | loss → even |
+| loop_4096 | lt 28.1769 → 28.2214 | 0.944 (chain-lt) → 0.958 (chain-lt) | 26.9702, 0.956 | win → even |
+| mlp2_2048 | lt2 1.7883 → 1.7938 | 1.027 (chain-lt2) → 1.019 (chain-lt2) | 1.8294, 1.020 | even → even |
+| mlp_2048 | lt 0.9236 → 0.9258 | 0.963 (chain-lt) → 0.951 (chain-lt) | 0.8831, 0.954 | even → even |
+| mlp_512 | lt 0.0430 → 0.0452 | 0.900 (chain-lt) → 0.855 (chain-lt) | 0.0382, 0.843 | win → win |
+| rowsum_2048 | eager 0.4649 → 0.4673 | 0.979 (chain-eager) → 0.972 (chain-eager) | 0.4544, 0.972 | even → even |
+| rowsum_4096 | gemv 3.6270 → 3.6366 | 1.039 (chain-gemv) → 1.033 (chain-gemv) | 3.7514, 1.034 | even → even |
+| smlp_4096_256_1024 | lt 0.1556 → 0.1575 | 1.009 (chain-lt) → 1.000 (chain-lt) | 0.1585, 1.006 | even → even |
+| softmax_rows_2048 | fused 0.4915 → 0.4949 | 0.946 (chain-fused) → 0.945 (torch-compile) | 0.4642, 0.947 | win → win |
+| softmax_rows_4096 | fused 3.7862 → 3.7901 | 1.033 (torch-compile-ro) → 1.033 (torch-compile-ro) | 3.8159, 1.036 | even → even |
+| mm_16x2048x7168 (cell; reader) | — | 1.000 → 0.961 (Mapal 0.0799 → 0.0816, cuBLAS 0.0799 → 0.0849) | — | even → even |
+| mm_4096x4096x4096 (cell; reader) | — | 1.038 → 1.037 (Mapal 3.8185 → 3.8232, cuBLAS 3.6776 → 3.6857) | — | even → even |
+
+- **indep_512** (the review's 1.078): chain-streams at the boundary 0.0403–0.0406 ms in three processes (bracket 0.0365).
+  Mapal depends on its second site's pick: at the merge's picks `[6, 4]` 0.0417 (`abba-indep512.txt`, three cycles of
+  M4 M0 C C M0 M4, 30 runs) → 1.030; at `[6, 0]` 0.0433–0.0445 → 1.07–1.10; `[0, 0]` 0.0475. This session's tune
+  reverted site 2 (`confirm` pairs 0.995 / 1.025 / 1.006, against 0.876 / 0.872 / 0.996 and 0.937 / 0.620 / 0.899 in
+  the merge's two runs), so its pass-1 row reads 1.088. Open: the confirm step's three pairs decide a 7 % pick inside
+  a 40 µs program's host noise (null 5 %) — more pairs or the kernel clock (`probe_kernels`) for a program this short.
+- **Column:** 0.880 (47 / 42 / 31) → **0.878 (46 / 44 / 30)**: indep_512 loss → even, loop_4096 win → even (chain-lt
+  28.51 → 28.10 ms: the leg's session drift, same-session ABBA 0.956), mm_16x2048x7168 1.000 → 0.961 (the reader).
+  Rented columns unchanged (the readers' fix moves no rented row: their tile_bench printed no bracket).
+- **The 3090 shfl-tree row compared two picks** (`gapfix-rows-operands.md`): ON launched the wisdom's candidate 3, the
+  OFF text (keys not in the wisdom) the rules' candidate 0; at one pick 0.969 inside the session's null (0.137). The
+  replay line is `null` (totals **169 / 82 / 16 / 23**). The readers now pair an OFF arm with the ON text's arm at the
+  same picks (`benches/gpu/picks.py`: `on`, else `rules`, else `pick<i>`; `probe_rungs.py` names the partner, no
+  partner → `pick≠` out of the verdict; `arm_ratio.py --pair` prints `pick-confounded`); test
+  `BoundaryTests.test_rung_ab_reads_the_off_arm_at_its_own_picks` (fails without). The step's other 3090 rows launched
+  equal picks on both arms. Pre-existing `test_harness.py` failures, unchanged by this fix (6, the same at `81a89c02`):
+  `test_every_timed_program_has_k_over_its_longest_fold`, `test_wrapper_retrieves_then_cleans_up…` (3 subtests),
+  `test_search_plan_and_pick_on_a_stub_table`, `test_request_clock_and_retention_placement`.
 
 ### Open (attempted or not reached)
 

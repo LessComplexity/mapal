@@ -56,9 +56,9 @@ PROBE = re.compile(r'^probe prog=(\S+) face=_default arm=(\S+) rep=\d+ .*?iter m
 TORCH = re.compile(r'^torch prog=(\S+) mode=(\S+) n=\d+ min_ms=\S+ med_ms=([\d.]+) .*within=(\w+)')
 COMP = re.compile(r'^comp prog=(\S+) leg=(\S+) family=\S+ prec=\S+ n=\d+ min_ms=\S+ med_ms=([\d.]+) .*within=(\w+)')
 COMP_MISSING = re.compile(r'^comp family=(\S+) unavailable')
-GEMM = re.compile(r'^gemm prog=(\S+) leg=(\S+) .*med_ms=([\d.]+) .*within=(\w+)')
+GEMM = re.compile(r'^gemm prog=(\S+) leg=(\S+) .*?\bmed_ms=([\d.]+) .*within=(\w+)')
 CHAIN = re.compile(r'^chain probe=(\S+) ((?:\w+=\S+ )*?)leg=(\S+) .*?(?:wall_med_ms|med_ms)=([\d.]+)')
-CELL = re.compile(r'^pass=\d+ cell=(\S+) time leg=(\S+) .*med_ms=([\d.]+)')
+CELL = re.compile(r'^pass=\d+ cell=(\S+) time leg=(\S+) .*?\bmed_ms=([\d.]+)')
 CELL_LIBS = {'cublas': 'cublas', 'cutlass': 'cutlass', 'cutlass_tuned': 'cutlass-tuned'}
 STEPS = 16
 FAMILIES = [  # (key, title, workload pattern)

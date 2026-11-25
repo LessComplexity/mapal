@@ -749,5 +749,108 @@ class CompetitorTests(unittest.TestCase):
         self.assertEqual(sum(l.startswith('00000000000000aa') for l in lines), 1)
 
 
+class BoundaryTests(unittest.TestCase):
+    """gaps-disasm H: every competitor leg the matrix reads is timed at the program's boundary, and every reader takes
+    that time, never the event bracket printed beside it; a rung A/B reads its OFF arm at the ON text's own picks."""
+
+    # One line of each harness the matrix ingests: the boundary median 2.5, the event bracket 9.75 beside it.
+    LINES = (
+        "pass=1 cell=mm_16x16x16 time leg=cublas M=16 N=16 K=16 n=30 min_ms=2 med_ms=2.5 max_ms=3 dev_med_ms=9.75",
+        "time leg=cublas M=16 N=16 K=16 n=30 min_ms=2 med_ms=2.5 max_ms=3 dev_med_ms=9.75",
+        "gemm prog=pt_pj_m1_n64_k64 leg=lt algo=0/8 min_ms=2 med_ms=2.5 max_ms=3 within=yes maxdev=1e-07 "
+        "values=1,2 dev_med_ms=9.75",
+        "chain probe=attn_1024 n=64 leg=fused launches=3 reps=30 min_ms=2 med_ms=2.5 max_ms=3 dev_med_ms=9.75",
+        "torch prog=pt_attn_1024_64 mode=compile n=30 min_ms=2 med_ms=2.5 max_ms=3 within=yes maxdev=1e-07 "
+        "compile_s=0.7 peak_mb=72.0 values=1,2 dev_med_ms=9.75",
+        "comp prog=pt_attn_1024_64 leg=triton family=triton prec=f32 n=30 min_ms=2 med_ms=2.5 max_ms=3 within=yes "
+        "maxdev=1e-07 values=1,2 dev_med_ms=9.75",
+    )
+
+    def test_harnesses_time_every_matrix_leg_at_the_program_boundary(self):
+        # matrix.py's TORCH / COMP / GEMM / CHAIN / CELL lines come from these; each times a repetition at the
+        # program's boundary unless BENCH_BOUNDARY=event (a measurement flag) and prints the bracket beside.
+        for src, line in (("torch_bench.py", "torch prog="), ("gemm_lib.cu", "gemm prog="),
+                          ("chain_bench.cu", "chain probe=%s n=%d leg="), ("tile_bench.cu", "time leg=")):
+            text = (HERE / src).read_text()
+            self.assertIn("BENCH_BOUNDARY", text, src)
+            fmt = [l for l in text.splitlines() if line in l and "med_ms=" in l]
+            self.assertTrue(fmt and all("dev_med_ms=" in l or "dev_med" in text for l in fmt), src)
+        chain = (HERE / "chain_bench.cu").read_text()
+        timing = chain[chain.index("flush_bytes = 256u << 20"):chain.index("chain_samples probe=")]
+        self.assertIn("steady_clock", timing)  # the host clock around the leg's calls ...
+        self.assertIn("cudaDeviceSynchronize", timing)  # ... from an idle device to its synchronize
+        self.assertIn("dev_med_ms=", timing)
+
+    def test_every_reader_takes_the_boundary_time(self):
+        import ast
+        readers = sorted(HERE.glob("*.py")) + sorted((HERE.parent / "local").glob("*.py"))
+        checked = 0
+        for f in readers:
+            if f.name == Path(__file__).name:
+                continue
+            for node in ast.walk(ast.parse(f.read_text(), str(f))):
+                if not (isinstance(node, ast.Constant) and isinstance(node.value, str) and "med_ms=" in node.value):
+                    continue
+                try:
+                    rx = re.compile(node.value)
+                except re.error:
+                    continue
+                for line in self.LINES:
+                    m = rx.search(line)
+                    if m:
+                        checked += 1
+                        self.assertNotIn("9.75", m.groups(), f"{f.name}:{node.lineno} reads the event bracket")
+        self.assertGreater(checked, 20)
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('matrix', HERE.parent / 'local' / 'matrix.py')
+        mx = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mx)
+        with tempfile.TemporaryDirectory() as d:
+            res = Path(d) / "results.txt"
+            res.write_text("\n".join(self.LINES) + "\n")
+            _, legs, cells, _ = mx.parse(str(res))
+        self.assertEqual(cells["mm_16x16x16"]["cublas"], [2.5])
+        self.assertEqual(legs["pt_attn_1024_64"]["chain-fused"][0], 2.5)
+        self.assertEqual(legs["pt_attn_1024_64"]["torch-compile"][0], 2.5)
+        self.assertEqual(legs["pt_attn_1024_64"]["triton"][0], 2.5)
+        self.assertEqual(legs["pt_pj_m1_n64_k64"]["lt"][0], 2.5)
+
+    def test_rung_ab_reads_the_off_arm_at_its_own_picks(self):
+        # A tuned box: `on` launches the wisdom's candidate 3, the OFF text the rules' candidate 0 (its keys are
+        # not in the wisdom); `rules` is the ON text at candidate 0. The rung is null at one pick (10.05 vs 10.0),
+        # a 12 % "win" against `on` (the pick's, not the rung's).
+        rows = []
+        for r in (1, 2, 3):
+            for arm, ms, sites in (("on", 9.0, "600b5866ec11871a:3:wisdom"), ("rules", 10.0, "0000000000000000:0:forced"),
+                                   ("null", 9.1, "600b5866ec11871a:3:wisdom"), ("off-x", 10.05, "53f1e1c0d837131c:0:rules")):
+                sp = f" sites=[{sites} ]" if r == 1 else ""
+                rows.append(f"probe prog=pt_a_64 face=_default arm={arm} rep={r} wall_us=1 out=[1 iter ms={ms} ] "
+                            f"rc=0 trace_rc=0{sp}\n")
+                if r == 1:
+                    rows.append(f"probe_kernels prog=pt_a_64 face=_default arm={arm} rep=1 k ms={ms / 2}\n")
+        res = self.root / "results.txt"
+        res.write_text("".join(rows))
+        out = subprocess.run(["python3", HERE / "probe_rungs.py", res], capture_output=True, text=True,
+                             check=True).stdout
+        row = next(l for l in out.splitlines() if l.startswith("| x |"))
+        self.assertIn("| OFF | OFF |", row)  # 1.005: no effect at one pick
+        self.assertIn("1.005", row)
+        self.assertIn("(vs rules)", row)
+        ab = subprocess.run(["python3", HERE / "arm_ratio.py", "--pair", "on", "off-x", "--pair", "rules", "off-x", res],
+                            capture_output=True, text=True).stdout
+        self.assertIn("pick-confounded ([3]/[0])", next(l for l in ab.splitlines() if l.startswith("| on | off-x |")))
+        self.assertIn("| none |", next(l for l in ab.splitlines() if l.startswith("| rules | off-x |")))
+        # No ON-text arm at the OFF arm's picks: the pair judges nothing.
+        res.write_text("".join(l for l in rows if "arm=rules" not in l))
+        out = subprocess.run(["python3", HERE / "probe_rungs.py", res], capture_output=True, text=True,
+                             check=True).stdout
+        self.assertIn("a_64: pick≠", next(l for l in out.splitlines() if l.startswith("| x |")))
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+
+
 if __name__ == "__main__":
     unittest.main()
