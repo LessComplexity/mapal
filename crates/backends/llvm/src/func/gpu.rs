@@ -2598,6 +2598,11 @@ fn launch_key(l: &Launch) -> String {
         .replace(", range_chain: false", "")
         .replace(", stride_lanes: false", "")
         .replace(", carry_fwd: false", "")
+        // model-ready integration: `lanes-unroll` (a cell body's loop
+        // metadata) and ADR-0046's `math-hw` (a math builtin's unit) are
+        // never a tile kernel's text — tuned picks keep their ids.
+        .replace(", math_hw: false", "")
+        .replace(", lanes_unroll: false", "")
         .replace(", cells: 1 }", " }")
 }
 

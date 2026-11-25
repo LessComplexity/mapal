@@ -104,7 +104,7 @@ fn native(clang: &str, ll: &str, tag: &str) -> String {
 /// of arrays lowers to (clang ran > 600 s on the readable model's).
 fn array_aggregates(ll: &str) -> Vec<&str> {
     ll.lines()
-        .filter(|l| (l.contains(" = load {") || l.trim_start().starts_with("store {")))
+        .filter(|l| l.contains(" = load {") || l.trim_start().starts_with("store {"))
         .filter(|l| l.contains(" x "))
         .collect()
 }
