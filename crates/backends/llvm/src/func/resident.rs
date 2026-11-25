@@ -288,6 +288,10 @@ pub(crate) struct Cell {
     /// caching-memory `retain-cell`: the output differs from its previous
     /// trip's only in a row delta (`unchanged_plan`).
     pub retain: Option<RetainCell>,
+    /// bf16-class `device-trap`: the body checks an unproven index
+    /// (`CellSite::traps`): its device variant records the trap, and the
+    /// launch arms the next checkpoint's read of it.
+    pub trap: bool,
 }
 
 /// caching-memory `retain-cell`: a loop's cell whose output differs from its
@@ -1020,6 +1024,37 @@ impl<'a> FnEmit<'a> {
         self.device_leaf_at(body, 0)
     }
 
+    /// [`Self::device_leaf`], or (bf16-class `device-trap`, `traps`) the
+    /// same leaf whose own unproven index reads are its only unclean ops
+    /// (`trap_cell_plan` proved that much; each nested body a clean leaf).
+    fn trap_leaf(&self, body: FuncId, traps: bool) -> bool {
+        if !traps {
+            return self.device_leaf(body);
+        }
+        let Some(fd) = self.ir.func(body) else {
+            return false;
+        };
+        fd.morphisms.iter().all(|&g| {
+            let Some(x) = self.ir.morphism(g) else {
+                return false;
+            };
+            let float_mod = x.op == Operation::Mod
+                && self
+                    .ir
+                    .object(x.source)
+                    .and_then(|o| o.ty.component_ty(0).cloned())
+                    .is_some_and(|t| is_float(&t));
+            !float_mod
+                && match x.op {
+                    Operation::Call(_) => false,
+                    Operation::Map { body, .. } | Operation::Fold { body, .. } => {
+                        self.device_leaf_at(body, 1)
+                    }
+                    _ => true,
+                }
+        })
+    }
+
     fn device_leaf_at(&self, body: FuncId, depth: u32) -> bool {
         let Some(fd) = self.ir.func(body) else {
             return false;
@@ -1710,8 +1745,8 @@ impl<'a> FnEmit<'a> {
             || (nest && (!rungs.nest_cell || own()))
             || (!site.uniform.is_empty() && (!rungs.uniform || (piecewise() && !once())))
             || self.gen_law(m).is_some()
-            || !self.attrs.clean(body)
-            || !self.device_leaf(body)
+            || (site.traps.is_empty() && !self.attrs.clean(body))
+            || !self.trap_leaf(body, !site.traps.is_empty())
             || !float_cell(&elem)
         {
             return None;
@@ -1835,8 +1870,9 @@ impl<'a> FnEmit<'a> {
             nested: site.nested.clone(),
             range,
             dev: Vec::new(),
-            lanes,
-            retain,
+            lanes: if site.traps.is_empty() { lanes } else { 1 },
+            retain: if site.traps.is_empty() { retain } else { None },
+            trap: !site.traps.is_empty(),
         };
         // The output, then every operand and uniform (and an interval's start
         // and count): one 8-byte argument each.
@@ -2248,7 +2284,13 @@ impl<'a> FnEmit<'a> {
         let trip = gpu::host_rungs(self.profile, self.contract, self.gpu_arms).trip_cells;
         let once = gpu::host_rungs(self.profile, self.contract, self.gpu_arms).once_range;
         if !body && gpu::host_rungs(self.profile, self.contract, self.gpu_arms).devmap {
-            for (m, site) in self.ir.cell_plan(self.f).iter() {
+            // bf16-class `device-trap`: the maps whose only trap is an
+            // unproven index read are candidates too (checked in the kernel).
+            let traps = match self.gpu_arms.off.device_trap {
+                true => SecondaryMap::new(),
+                false => self.ir.trap_cell_plan(self.f),
+            };
+            for (m, site) in self.ir.cell_plan(self.f).iter().chain(traps.iter()) {
                 // An epilogue member (R1) runs in its site's store already.
                 // placement `trip`: a cell a loop runs every trip is a
                 // candidate whatever its size — [`Self::cell_round`] keeps it
@@ -3708,6 +3750,10 @@ impl<'a> FnEmit<'a> {
             "call void @mapal_gpu_launchv(i64 {}, i32 0, i32 {np}, ptr {args}, i32 {gx}, i32 1, i32 {block}, i32 0)",
             c.id as i64
         ));
+        // bf16-class `device-trap`: the next checkpoint reads the trap word.
+        if c.trap {
+            self.line("call void @mapal_gpu_trap_arm()");
+        }
         self.dvalid.insert(target, ());
         for t in temps {
             self.line(format!("call void @mapal_gpu_free(ptr {t})"));
@@ -3935,7 +3981,15 @@ impl<'a> FnEmit<'a> {
                 } else {
                     name
                 };
-                let mut fns = vec![(name, self.body_text_with(c.body, vals.clone(), lanes))];
+                // bf16-class `device-trap`: the body's checking variant.
+                let (name, text) = match c.trap {
+                    true => (
+                        gpu::trap_variant(&name),
+                        self.body_text_trap(c.body, vals.clone()),
+                    ),
+                    false => (name, self.body_text_with(c.body, vals.clone(), lanes)),
+                };
+                let mut fns = vec![(name, text)];
                 let caps: Vec<gpu::CapArg> = (0..c.caps.len() as u32)
                     .map(|s| {
                         if c.uniform.contains(&s) {
@@ -4097,6 +4151,31 @@ impl<'a> FnEmit<'a> {
     /// function of the IR), or `cell-law`'s device variant of it.
     fn body_text(&self, f: FuncId, vals: Vec<(u32, String)>) -> String {
         self.body_text_with(f, vals, None)
+    }
+
+    /// bf16-class `device-trap`: [`Self::body_text`]'s device variant whose
+    /// unproven index reads record the trap into the module's word and read
+    /// element 0 (`GuardFlavor::TaskBody`, the map's own topo position).
+    fn body_text_trap(&self, f: FuncId, vals: Vec<(u32, String)>) -> String {
+        let mut fe = FnEmit::new(
+            self.ir,
+            f,
+            self.fnames,
+            self.strings,
+            self.attrs,
+            self.tile_plan.is_some(),
+            self.packing,
+            self.contract,
+            self.order,
+            self.kc_nest,
+            self.move_panel,
+            self.profile,
+        );
+        fe.set_gpu_arms(self.gpu_arms);
+        fe.cell_vals = vals;
+        fe.guard_flavor = super::GuardFlavor::TaskBody(0);
+        fe.device_trap = true;
+        fe.emit()
     }
 
     /// [`Self::body_text`], or (`cell-lanes`) its lane variant.

@@ -2590,6 +2590,7 @@ fn launch_key(l: &Launch) -> String {
         // site's text).
         .replace(", finite_check: false", "")
         .replace(", narrow_window: false", "")
+        .replace(", device_trap: false", "")
         // sweep-attention-2: `stream-mma` decides a stream unit's kernel (no
         // tile site's text); `kmajor-b` changes how a candidate copies `b`,
         // not which candidate it is: its id is the arms' one (as candidate
@@ -4559,6 +4560,26 @@ fn site_fold(ir: &CategoryIr, m: MorphismId) -> (FuncId, MorphismId) {
 }
 
 /// `cell-law`'s device variant of body `name` (`FnEmit::cell_vals`).
+/// bf16-class `device-trap`: a cell body's device variant whose unproven
+/// index reads record the trap (`@dev_trap_record`) and read element 0.
+pub(crate) fn trap_variant(name: &str) -> String {
+    format!("{name}_trap")
+}
+
+/// bf16-class `device-trap`: the module's trap word (`i64::MAX`: none; else
+/// `topo << 8 | kind`, the least recorded) and the record a trap-checking
+/// body calls — the runtime reads the word at the host's next checkpoint
+/// (`mapal_gpu_trap_arm`, `mapal_gpu.c`).
+const DEVICE_TRAP: &str = "\n@mapal_dev_trap = addrspace(1) global i64 9223372036854775807, align 8\n\
+define internal void @dev_trap_record(i64 %topo, i32 %kind) {\n\
+entry:\n\
+  %k = zext i32 %kind to i64\n\
+  %t = shl i64 %topo, 8\n\
+  %v = or i64 %t, %k\n\
+  %o = atomicrmw min ptr addrspace(1) @mapal_dev_trap, i64 %v monotonic, align 8\n\
+  ret void\n\
+}\n";
+
 pub(crate) fn cell_variant(name: &str) -> String {
     format!("{name}_cell")
 }
@@ -5097,6 +5118,14 @@ pub(crate) fn device_module(
         out.push_str(l);
     }
     out.push_str(DEVICE_PREAMBLE);
+    // bf16-class `device-trap`: the trap word and its record, where a cell
+    // body checks an index.
+    if cells
+        .iter()
+        .any(|(fns, _)| fns.iter().any(|(_, t)| t.contains("@dev_trap_record(")))
+    {
+        out.push_str(DEVICE_TRAP);
+    }
     let mut md = String::new();
     for (i, k) in kernels.values().enumerate() {
         out.push('\n');

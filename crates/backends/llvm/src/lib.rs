@@ -952,6 +952,14 @@ pub struct GpuRungs {
     /// its fragments taking them as they stand. Off
     /// (`--gpu-off=narrow-window`): such a group is no stream.
     pub narrow_window: bool,
+    /// bf16-class `device-trap`: a map whose only possible trap is an index
+    /// `bounds_proof` cannot prove (`mapal_ir::CategoryIr::trap_cell_plan`:
+    /// an embedding's row through a run-time token id) may run as a device
+    /// cell — each such read checked in the kernel (out of bounds: the trap
+    /// recorded in the module's word, element 0 read), the trap raised at
+    /// the next host checkpoint (a print, the clock, a trap, the exit).
+    /// Off (`--gpu-off=device-trap`): such a map runs on the host.
+    pub device_trap: bool,
     /// flash-attention F7 (a fact arm, `mapal_ir::FactArms::finite`):
     /// `finite_plan` proves values finite. Off (`--gpu-off=finite`,
     /// `--no-finite`): nothing is, so no masked window is skipped.
@@ -1304,6 +1312,7 @@ impl GpuRungs {
         stream_numbers: true,
         finite_check: true,
         narrow_window: true,
+        device_trap: true,
         finite: true,
         unit_uniform: true,
         mma_combine: true,
@@ -1338,7 +1347,7 @@ impl GpuRungs {
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 162] = [
+    pub const NAMES: [&'static str; 163] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1469,6 +1478,7 @@ impl GpuRungs {
         "stream-numbers",
         "finite-check",
         "narrow-window",
+        "device-trap",
         "finite",
         "mma-combine",
         "split-tile",
@@ -1638,6 +1648,7 @@ impl GpuRungs {
             "stream-numbers" => &mut self.stream_numbers,
             "finite-check" => &mut self.finite_check,
             "narrow-window" => &mut self.narrow_window,
+            "device-trap" => &mut self.device_trap,
             "finite" => &mut self.finite,
             "unit-uniform" => &mut self.unit_uniform,
             "mma-combine" => &mut self.mma_combine,
@@ -2456,6 +2467,11 @@ fn emit_module(
     // `epilogue`, `devmap` and `streams` launch over n pointers: one declaration.
     if funcs.contains("@mapal_gpu_launchv(") {
         out.push_str(crate::func::gpu::LAUNCHV_DECL);
+    }
+    // bf16-class `device-trap`: a trap-checking cell's launch arms the
+    // checkpoint's read of the device's trap word.
+    if funcs.contains("@mapal_gpu_trap_arm(") {
+        out.push_str("declare void @mapal_gpu_trap_arm()\n");
     }
     // kernel-merging `calls`: a persistent kernel's cooperative launch.
     if funcs.contains("@mapal_gpu_launch_coop(") {

@@ -242,6 +242,11 @@ impl<'a> FnEmit<'a> {
         } else {
             fname
         };
+        let fname = if self.device_trap {
+            gpu::trap_variant(&fname)
+        } else {
+            fname
+        };
         let param = self
             .cell_vals
             .iter()

@@ -607,6 +607,12 @@ pub struct CellRead {
 /// cell reads alike — a loop counter, a fold's result (cpu-gpu-boundary).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CellSite {
+    /// bf16-class `device-trap` ([`CategoryIr::trap_cell_plan`]): the
+    /// body's `Index` reads `bounds_proof` cannot prove — each a run-time
+    /// check where the cell runs (an index outside its array records the
+    /// program's trap and reads element 0; the trap is raised at the next
+    /// host checkpoint, the oracle's outcome). Empty in [`CategoryIr::cell_plan`].
+    pub traps: Vec<MorphismId>,
     /// The number of cells, `len(out)`.
     pub extent: u64,
     pub reads: Vec<CellRead>,
@@ -2551,14 +2557,73 @@ impl CategoryIr {
             return out;
         };
         for &m in &fd.morphisms {
-            if let Some(site) = self.cell_site(m) {
+            if let Some(site) = self.cell_site(m, false) {
                 out.insert(m, site);
             }
         }
         out
     }
 
-    fn cell_site(&self, m: MorphismId) -> Option<CellSite> {
+    /// bf16-class `device-trap`: **the maps [`Self::cell_plan`] refuses only
+    /// for their unproven reads** — a body classifiable but for `Index`es
+    /// `bounds_proof` cannot prove (an embedding's row read through a
+    /// run-time token id), every other condition of a [`CellSite`] met, the
+    /// unproven reads in [`CellSite::traps`]. Where such a cell runs, each
+    /// of those reads checks its index: out of bounds, the program's trap is
+    /// recorded (and element 0 read) and raised at the next host
+    /// checkpoint — the oracle's outcome; in bounds, the oracle's element.
+    /// Disjoint from `cell_plan`. Stored on the graph.
+    pub fn trap_cell_plan(&self, f: FuncId) -> SecondaryMap<MorphismId, CellSite> {
+        self.fact(
+            f,
+            |s| &s.trap_cell_plan,
+            || {
+                let mut out = SecondaryMap::new();
+                let Some(fd) = self.func(f) else {
+                    return out;
+                };
+                let plain = self.cell_plan(f);
+                for &m in &fd.morphisms {
+                    if plain.contains_key(m) {
+                        continue;
+                    }
+                    if let Some(site) = self.cell_site(m, true).filter(|s| !s.traps.is_empty()) {
+                        out.insert(m, site);
+                    }
+                }
+                out
+            },
+        )
+    }
+
+    /// [`Self::body_is_classifiable`] but for the body's own unproven
+    /// `Index` reads (nested bodies classifiable): those reads, or `None`.
+    fn classifiable_but_index(&self, body: FuncId) -> Option<Vec<MorphismId>> {
+        let def = self.func(body)?;
+        let effectful = def.morphisms.iter().any(|m| {
+            matches!(
+                self.morphisms.get(*m).map(|x| x.op),
+                Some(Operation::Print { .. } | Operation::TimeMs | Operation::Read)
+            )
+        });
+        if effectful || !self.loop_structure(body).is_empty() {
+            return None;
+        }
+        let bounds = self.bounds_proof(body);
+        let mut traps = Vec::new();
+        for &m in &def.morphisms {
+            if self.morph_trap_free(m, &bounds, None, 0) {
+                continue;
+            }
+            if self.morphisms.get(m)?.op != Operation::Index {
+                return None;
+            }
+            traps.push(m);
+        }
+        Some(traps)
+    }
+
+    fn cell_site(&self, m: MorphismId, trapping: bool) -> Option<CellSite> {
         let map = self.morphisms.get(m)?;
         let Operation::Map { body, captures } = map.op else {
             return None;
@@ -2587,9 +2652,14 @@ impl CategoryIr {
                 Some(Operation::Call(_)) | None => false,
                 Some(_) => true,
             });
-        if !leaf || !self.body_is_classifiable(body) {
+        if !leaf {
             return None;
         }
+        let traps = match trapping {
+            false if self.body_is_classifiable(body) => Vec::new(),
+            false => return None,
+            true => self.classifiable_but_index(body)?,
+        };
         nested.sort_unstable();
         nested.dedup();
         let mut uniform = Vec::new();
@@ -2673,6 +2743,7 @@ impl CategoryIr {
             _ => None,
         };
         Some(CellSite {
+            traps,
             extent,
             reads,
             body,
