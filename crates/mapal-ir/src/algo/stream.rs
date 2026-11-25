@@ -30,7 +30,7 @@ use crate::algo::{
 };
 use crate::graph::{CategoryIr, FuncId, MorphismId, ObjectId, ObjectKind, Operation};
 use crate::ty::{Ty, Value};
-use crate::unit::{UnitGroup, UnitKind};
+use crate::unit::{UnitGroup, UnitKind, UnitMember};
 
 /// A value constant along the axis that a fold's or consumer's term reads,
 /// and how ([`crate::RowDep`] restricted to the group's members).
@@ -489,16 +489,22 @@ impl CategoryIr {
         // or each other are no part of the pass: they follow it, reading its
         // stored rows (a head loop's carried sum `y + attg`, its width the
         // axis's where `d = T`).
-        let consumer = ms.iter().rposition(|mb| match &mb.kind {
-            UnitKind::Tile(t) => {
-                t.k == axis
-                    && mb
-                        .reads
-                        .iter()
-                        .any(|&(s, p)| s == t.a.slot && ms[p].w == axis)
+        // prefill-integrate: a consumer's row is an axis-indexed member's
+        // (the producer's or a cell's), never another consumer's — whose
+        // row is its own columns, as wide as the axis only where `d = T`
+        // (the output projection after `P·V`: its own launch).
+        fn consumes_axis(ms: &[UnitMember], axis: u64, k: usize) -> bool {
+            match &ms[k].kind {
+                UnitKind::Tile(t) => {
+                    t.k == axis
+                        && ms[k].reads.iter().any(|&(s, p)| {
+                            s == t.a.slot && ms[p].w == axis && !consumes_axis(ms, axis, p)
+                        })
+                }
+                _ => false,
             }
-            _ => false,
-        });
+        }
+        let consumer = (0..ms.len()).rev().find(|&k| consumes_axis(ms, axis, k));
         let ms = match consumer {
             Some(c) if (c + 1..ms.len()).all(|k| ms[k].reads.iter().all(|&(_, p)| p >= c)) => {
                 &ms[..=c]
@@ -541,7 +547,13 @@ impl CategoryIr {
                     let a = mb.reads.iter().find(|&&(s, _)| s == t.a.slot);
                     let whole = mb.row_of.is_some() || along(t.a.ci, t.a.ck, t.a.base, t.a.clane);
                     match a {
-                        Some(&(_, p)) if wide(p) && whole => {}
+                        Some(&(_, p))
+                            if wide(p)
+                                && whole
+                                && matches!(
+                                    roles[p],
+                                    StreamRole::Produce | StreamRole::Cell { .. }
+                                ) => {}
                         _ => return Err("read"),
                     }
                     // Any other read is its epilogue's, of a per-row value
