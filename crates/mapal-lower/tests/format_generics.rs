@@ -266,6 +266,16 @@ fn to_rejects_the_open_pairs() {
         "L1616",
     );
     assert!(m.contains("open"), "{m}");
+    // `f64 → f32` is one rounding with no realization yet, not two.
+    assert!(
+        !m.contains("rounds twice") && m.contains("no conversion rounds"),
+        "{m}"
+    );
+    let m = message(
+        "fn main() { 0.5 -> to<f64> -> x; x -> to<bf16> -> y; }",
+        "L1616",
+    );
+    assert!(m.contains("through `f32` rounds twice"), "{m}");
     let m = message(
         "fn main() { 0.5 -> to<f32> -> x; x -> to<i32> -> y; }",
         "L1616",
@@ -346,6 +356,144 @@ fn main() { 0.5 -> to<bf16> -> a; 0.5 -> to<f16> -> b; (a, b) -> mix -> y; }",
         "L1709",
     );
     assert!(m.contains("conflicting formats"), "{m}");
+    // D3: the expected type is a determination too — an annotation that fixes
+    // a format other than the argument's (or the explicit argument's) is a
+    // conflict, never silently the argument's.
+    let same = "fn same<t: float>(x: t) -> t { x -> ret; }\n";
+    let m = message(
+        &format!("{same}fn main() {{ 0.5 -> to<bf16> -> b; b -> same -> y: f16; }}"),
+        "L1709",
+    );
+    assert!(
+        m.contains("`t` = `bf16`") && m.contains("the result `f16`"),
+        "{m}"
+    );
+    let m = message("fn main() { 0.5 -> to<bf16> -> y: f16; }", "L1709");
+    assert!(
+        m.contains("`target` = `bf16`") && m.contains("`f16`"),
+        "{m}"
+    );
+    assert_rejects(
+        "fn main() { 0.5 -> to<bf16> -> y; y -> widen<f64> -> z: f32; }",
+        "L1709",
+    );
+    // Into a fixed function's parameter, and at `-> ret`.
+    assert_rejects(
+        &format!(
+            "{same}fn take(v: f16) -> f32 {{ v -> widen<f32> -> ret; }}
+fn main() {{ 0.5 -> to<bf16> -> b; b -> same -> take -> y; }}"
+        ),
+        "L1709",
+    );
+    assert_rejects(
+        &format!(
+            "{same}fn g(x: bf16) -> f16 {{ x -> same -> ret; }}
+fn main() {{ 0.5 -> to<bf16> -> b; b -> g -> h; h -> widen<f32> -> println; }}"
+        ),
+        "L1709",
+    );
+}
+
+#[test]
+fn a_binding_annotation_states_the_values_type() {
+    // A value whose type differs from its annotation is a mismatch (L1201),
+    // never a binding relabelled with the annotation.
+    let m = message("fn main() { 0.5 -> to<bf16> -> b; b -> y: f16; }", "L1201");
+    assert!(
+        m.contains("`y` is annotated `f16`") && m.contains("`bf16`"),
+        "{m}"
+    );
+    assert_rejects(
+        "fn main() { (0.5, 4) -> fill -> xs: [f32; 4]; xs -> w: [f32; 5]; w[4] -> println; }",
+        "L1201",
+    );
+    // An annotation that is the value's type, a literal it types, a read
+    // through `_` (ADR-0048 D5), and `fill`'s count from it stay accepted.
+    lower_ok(
+        "type Wrap { _: [f32; 4], scale: f32 }
+fn main() {
+    (0.5, 4) -> fill -> xs: [f32; 4];
+    Wrap { _: xs, scale: 2.0 } -> wrapped;
+    wrapped -> plain: [f32; 4];
+    2.5 -> wide: f64;
+    xs -> same: [f32; 4];
+    plain[0] -> println;
+    wide -> println;
+    same[1] -> println;
+}",
+    );
+}
+
+#[test]
+fn every_inference_reads_the_same_expected_types() {
+    // ADR-0051 D3 for user generics as for conversions: a binding's
+    // annotation, `-> ret` (`ret.k`: its component), the function body's
+    // tail (a return position) and a fixed function's parameter.
+    let only_out = "fn only_out<c: float>(x: f32) -> c { x -> to<c> -> ret; }\n";
+    let ir = lower_ok(&format!(
+        "{STORE}{only_out}fn consume(y: [bf16; 4]) -> f32 {{ y[1] -> widen<f32> -> ret; }}
+fn two(x: f32) -> (bf16, f32) {{ x -> only_out -> ret.0; x -> ret.1; }}
+fn half(x: f32) -> f16 {{ x -> to }}
+fn tail(x: f32) -> f16 {{ x -> only_out }}
+fn mk(x: [f32; 4]) -> [bf16; 4] {{ x -> store }}
+fn main() {{
+    (0.5, 4) -> fill -> xs: [f32; 4];
+    xs -> store -> consume -> a;
+    0.5 -> two -> p;
+    0.5 -> half -> h;
+    0.5 -> tail -> t;
+    xs -> mk -> m;
+    a -> println;
+    p.0 -> widen<f32> -> println;
+    h -> widen<f32> -> println;
+    t -> widen<f32> -> println;
+    m[0] -> widen<f32> -> println;
+}}"
+    ));
+    let names = named(&ir);
+    for want in ["store<4, bf16>", "only_out<bf16>", "only_out<f16>"] {
+        assert!(names.iter().any(|n| n == want), "{want} in {names:?}");
+    }
+}
+
+#[test]
+fn a_format_is_no_array_length() {
+    // L1710 at the declaration (a function's or a type's), not a misleading
+    // L1708 at the call.
+    let m = message(
+        "fn f<c: float>(x: [f32; c]) -> f32 { x[0] -> ret; }
+fn main() { (0.5, 4) -> fill -> xs: [f32; 4]; xs -> f -> println; }",
+        "L1710",
+    );
+    assert!(
+        m.contains("`c` is a format parameter of `f` (kind `float`)")
+            && m.contains("array's length is a size"),
+        "{m}"
+    );
+    assert!(
+        !lower_diags(
+            "fn f<c: float>(x: [f32; c]) -> f32 { x[0] -> ret; }
+fn main() { (0.5, 4) -> fill -> xs: [f32; 4]; xs -> f -> println; }"
+        )
+        .iter()
+        .any(|d| d.code.0 == "L1708")
+    );
+    assert_rejects(
+        "type Holder<c: float> { x: [f32; c] }
+fn main() { 1 -> println; }",
+        "L1710",
+    );
+    assert_rejects(
+        "fn g<n>(x: [f32; n * f32]) -> f32 { x[0] -> ret; }
+fn main() { 1 -> println; }",
+        "L1710",
+    );
+    // A generic type's argument may be a format: no L1710 there.
+    lower_ok(
+        "type Pair<e: float> { a: e, b: e }
+fn first<e: float>(p: Pair<e>) -> f32 { p.a -> widen<f32> -> ret; }
+fn main() { 0.5 -> to<bf16> -> x; Pair { a: x, b: x } -> first -> println; }",
+    );
 }
 
 #[test]

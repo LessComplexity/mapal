@@ -81,3 +81,32 @@ fn dump_generated_programs() {
         put("zero", i, testgen::zero_src(p));
     }
 }
+
+/// The tile generator's operand laws draw their multipliers from the laws'
+/// fields, never from how a law line is spelled (ADR-0051 respelled its
+/// conversion; the draws, and so the generated set, stayed): the multipliers
+/// of a fixed seed's programs, digested, are the recorded ones.
+#[test]
+fn tile_law_draws_follow_the_fields_not_the_spelling() {
+    let mut digest: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut laws = 0usize;
+    for p in take(testgen::tile_prog_strategy(), 120, 9) {
+        let src = testgen::tile_src(&p, false).0;
+        for line in src.lines().filter(|l| l.contains("-> widen<f32>")) {
+            let mul = line
+                .split("(t * ")
+                .nth(1)
+                .and_then(|r| r.split(' ').next())
+                .expect("a law's multiplier");
+            for b in mul.bytes().chain([b';']) {
+                digest = (digest ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3);
+            }
+            laws += 1;
+        }
+    }
+    assert!(laws > 200, "{laws} laws");
+    assert_eq!(
+        digest, 0x7c88_cd98_34c4_7cc7,
+        "multiplier digest over {laws} laws"
+    );
+}

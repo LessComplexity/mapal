@@ -348,6 +348,9 @@ pub fn admit(verb: Verb, source: Format, target: Format) -> Result<Realize, Stri
                 return Ok(Realize::Narrow(n));
             }
             Err(match (source, target) {
+                (F64, F32) => "`to<f32>` of an `f64` is open: no conversion rounds an `f64` \
+                     to `f32` yet (ADR-0043 D2's open item)"
+                    .to_string(),
                 (F64, _) if target.is_float() => format!(
                     "`to<{target}>` of an `f64` is open: it needs one rounding, and going \
                      through `f32` rounds twice (ADR-0043 D2's open item)"

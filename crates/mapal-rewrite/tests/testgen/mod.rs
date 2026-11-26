@@ -3345,7 +3345,7 @@ pub fn tile_src(p: &TileProg, small: bool) -> (String, Vec<(u64, u64, u64)>) {
         _ => vec![("y1", "a", "b0", k, n[0]), ("y2", "a2", "b1", k2, n[0])],
     };
     let mut iotas: Vec<u64> = Vec::new();
-    let mut laws = String::new();
+    let mut laws = Laws::default();
     let mut made: Vec<&str> = Vec::new();
     let mut body = String::new();
     for &(y, a, b, kk, nn) in &prods {
@@ -3384,6 +3384,7 @@ pub fn tile_src(p: &TileProg, small: bool) -> (String, Vec<(u64, u64, u64)>) {
         .iter()
         .map(|n| format!("    {n} -> iota -> i{n};\n"))
         .collect();
+    let laws = laws.text;
     let src = format!(
         "fn main() {{\n{head}{laws}    () -> time -> t0;\n{body}    () -> time -> t1;\n    {out}[0] -> println;\n    {out}[{}] -> println;\n    \"iter ms=\" -> print;\n    t1 - t0 -> println;\n}}\n",
         cells - 1
@@ -3402,17 +3403,31 @@ fn tile_iota(iotas: &mut Vec<u64>, n: u64) -> String {
     format!("i{n}")
 }
 
+/// A tile program's operand laws: their text and the draw state the next
+/// law's multiplier is drawn from.
+#[derive(Default)]
+struct Laws {
+    text: String,
+    /// Advanced by each law's fields ([`LAW_DRAW_WIDTH`] + its iota's,
+    /// multiplier's, addend's and name's widths), never by how a law is
+    /// spelled: a spelling change keeps every draw.
+    drawn: usize,
+}
+
+/// The fixed width each law advances the draw by — the width of a law line's
+/// fixed text when the draws were set (the generated set the tests' counters
+/// were tuned on).
+const LAW_DRAW_WIDTH: usize = 57;
+
 /// `name` over the iota `it`: integers in ±3, a law per name and `key`.
-fn tile_law(laws: &mut String, key: u8, name: &str, it: String) {
-    // Each law line is one character longer since ADR-0051 spelled its
-    // conversion `widen<f32>` (was `widen_f32`): the length less one per line
-    // keeps every draw of the generated program set.
-    let drawn = laws.len() - laws.lines().count();
-    let mul = [3, 5, 11, 13][(usize::from(key) + name.len() + drawn) % 4];
-    *laws += &format!(
-        "    {it} -> map {{ t -> (t * {mul} + {add}) % 7 - 3 -> widen<f32> }} -> {name};\n",
-        add = name.len() * 2 + 1
+fn tile_law(laws: &mut Laws, key: u8, name: &str, it: String) {
+    let mul = [3, 5, 11, 13][(usize::from(key) + name.len() + laws.drawn) % 4];
+    let add = name.len() * 2 + 1;
+    laws.text += &format!(
+        "    {it} -> map {{ t -> (t * {mul} + {add}) % 7 - 3 -> widen<f32> }} -> {name};\n"
     );
+    laws.drawn +=
+        LAW_DRAW_WIDTH + it.len() + mul.to_string().len() + add.to_string().len() + name.len();
 }
 
 /// kernel-merging `zero-fold`: a program whose tile sites add into a zeroed
@@ -8757,5 +8772,193 @@ impl FormatProg {
         src.push_str("}\n");
         mapal_syntax::format_source(&src)
             .unwrap_or_else(|d| panic!("generated program does not parse: {d:?}\n{src}"))
+    }
+}
+
+// ---------------------------------------------------------------------------
+//  ADR-0051 D4: integer laws a `widen<f32>` converts (`BoundsProof::widen_range`)
+// ---------------------------------------------------------------------------
+
+/// An integer law of a map's index: `+ − ·` over the index and constants,
+/// `÷ %` by a positive constant (trap-free), constants around 2²⁴ and products
+/// that wrap past `i32`.
+#[derive(Clone, Debug)]
+pub enum IntLaw {
+    Index,
+    Const(i64),
+    Bin(Box<IntLaw>, char, Box<IntLaw>),
+}
+
+/// Constants a law draws: small, around 2²⁴ (the exactness edge of `f32`),
+/// and large enough that a product wraps.
+const LAW_CONSTS: [i64; 20] = [
+    0, 1, 2, 3, 7, 13, 57, 255, 4096, 4097, 65536, 262144, 1000003, 16777215, 16777216, 16777217,
+    33554432, 268435456, 1073741824, 2147483647,
+];
+
+/// Divisors (`÷ %`): positive, so no law traps; `16777217` / `16777218` sit on
+/// either side of the edge a `%` alone keeps.
+const LAW_DIVISORS: [i64; 10] = [
+    2, 3, 7, 101, 103, 4096, 1000003, 16777217, 16777218, 33554433,
+];
+
+/// The map's extents (`iota`): the index range the facts start from.
+const LAW_EXTENTS: [i64; 10] = [1, 2, 3, 5, 8, 33, 64, 65, 257, 4097];
+
+fn int_law_strategy() -> impl Strategy<Value = IntLaw> {
+    let leaf = prop_oneof![
+        3 => Just(IntLaw::Index),
+        2 => (0..LAW_CONSTS.len(), any::<bool>()).prop_map(|(k, neg)| {
+            let c = LAW_CONSTS[k];
+            IntLaw::Const(if neg && c != 0 { -c } else { c })
+        }),
+        1 => (0i64..300).prop_map(IntLaw::Const),
+    ];
+    leaf.prop_recursive(4, 16, 2, |inner| {
+        prop_oneof![
+            3 => (inner.clone(), prop::sample::select(vec!['+', '-', '*']), inner.clone())
+                .prop_map(|(a, op, b)| IntLaw::Bin(Box::new(a), op, Box::new(b))),
+            2 => (inner, prop::sample::select(vec!['/', '%']), 0..LAW_DIVISORS.len())
+                .prop_map(|(a, op, k)| {
+                    IntLaw::Bin(Box::new(a), op, Box::new(IntLaw::Const(LAW_DIVISORS[k])))
+                }),
+        ]
+    })
+}
+
+impl IntLaw {
+    /// The law as Mapal text over `i` (a negative constant as `(0 - c)`).
+    pub fn text(&self) -> String {
+        match self {
+            IntLaw::Index => "i".into(),
+            IntLaw::Const(c) if *c < 0 => format!("(0 - {})", -c),
+            IntLaw::Const(c) => c.to_string(),
+            IntLaw::Bin(a, op, b) => format!("({} {op} {})", a.text(), b.text()),
+        }
+    }
+
+    /// The law at `i` with `i32` arithmetic (wrapping `+ − ·`, truncating
+    /// `÷ %`) and whether an intermediate left `i32` — for coverage counters
+    /// only (the interpreter is the oracle).
+    pub fn eval(&self, i: i64) -> (i32, bool) {
+        match self {
+            IntLaw::Index => (i as i32, false),
+            IntLaw::Const(c) => (*c as i32, false),
+            IntLaw::Bin(a, op, b) => {
+                let ((x, wa), (y, wb)) = (a.eval(i), b.eval(i));
+                let (v, exact) = match op {
+                    '+' => (x.wrapping_add(y), i64::from(x) + i64::from(y)),
+                    '-' => (x.wrapping_sub(y), i64::from(x) - i64::from(y)),
+                    '*' => (x.wrapping_mul(y), i64::from(x) * i64::from(y)),
+                    '/' => (x.wrapping_div(y), i64::from(x) / i64::from(y)),
+                    _ => (x.wrapping_rem(y), i64::from(x) % i64::from(y)),
+                };
+                (v, wa || wb || i64::from(v) != exact)
+            }
+        }
+    }
+
+    /// Whether a `%` divides a dividend that wraps past `i32` at some index
+    /// in `cells` (the case ADR-0051's `%` rule exists for).
+    pub fn mod_of_wrapped(&self, cells: &[i64]) -> bool {
+        match self {
+            IntLaw::Bin(a, '%', _) => cells.iter().any(|&i| a.eval(i).1) || a.mod_of_wrapped(cells),
+            IntLaw::Bin(a, _, b) => a.mod_of_wrapped(cells) || b.mod_of_wrapped(cells),
+            _ => false,
+        }
+    }
+}
+
+/// A map over `extent -> iota` whose cells convert `law` with `widen<f32>` (or
+/// its rounding twin `to<f32>`), under a guard arm `i < c` / `i >= c` when
+/// drawn (the condition narrows the index where the conversion runs).
+#[derive(Clone, Debug)]
+pub struct WidenLawProg {
+    pub extent: i64,
+    pub law: IntLaw,
+    /// `(below, c)`: the arm `i < c` (`below`) or `i >= c`.
+    pub guard: Option<(bool, i64)>,
+}
+
+pub fn widen_law_strategy() -> impl Strategy<Value = WidenLawProg> {
+    // A third of the laws are a scaled law's remainder, `(law · k + c) % d`
+    // with `k` large: the product wraps past `i32` and only the `%` bounds
+    // the result (the shape ADR-0051's `%` rule is for).
+    let law = prop_oneof![
+        2 => int_law_strategy(),
+        1 => (int_law_strategy(), 9..LAW_CONSTS.len(), 0i64..300, 0..LAW_DIVISORS.len())
+            .prop_map(|(l, k, c, d)| {
+                let scaled = IntLaw::Bin(Box::new(l), '*', Box::new(IntLaw::Const(LAW_CONSTS[k])));
+                let shifted = IntLaw::Bin(Box::new(scaled), '+', Box::new(IntLaw::Const(c)));
+                IntLaw::Bin(Box::new(shifted), '%', Box::new(IntLaw::Const(LAW_DIVISORS[d])))
+            }),
+    ]
+    // One line of a formatted program (no line past 120 columns).
+    .prop_filter("a law fits a line", |l| l.text().len() <= 72);
+    (
+        0..LAW_EXTENTS.len(),
+        law,
+        prop::option::of((any::<bool>(), 0i64..70)),
+    )
+        .prop_map(|(e, law, guard)| WidenLawProg {
+            extent: LAW_EXTENTS[e],
+            law,
+            guard,
+        })
+}
+
+impl WidenLawProg {
+    /// The indices where the conversion runs (the guard's arm), in order.
+    pub fn cells(&self) -> Vec<i64> {
+        (0..self.extent)
+            .filter(|&i| match self.guard {
+                Some((true, c)) => i < c,
+                Some((false, c)) => i >= c,
+                None => true,
+            })
+            .collect()
+    }
+
+    /// The program converting with `verb` (`widen` or `to`), formatted: each
+    /// converted cell's sum printed (the conversion's value reaches output).
+    pub fn source(&self, verb: &str) -> String {
+        let law = self.law.text();
+        let body = match self.guard {
+            None => format!("i -> {law} -> {verb}<f32>"),
+            Some((below, c)) => {
+                let cmp = if below { "<" } else { ">=" };
+                format!("i -> (i {cmp} {c}) -> {{ -true-> {law} -> {verb}<f32>; -false-> 0.0; }}")
+            }
+        };
+        formatted(format!(
+            "fn main() {{
+    {extent} -> iota -> idx;
+    idx -> map {{ {body} }} -> converted;
+    (0.0, converted) -> fold {{ s, x -> s + x }} -> total;
+    total -> println;
+}}
+",
+            extent = self.extent
+        ))
+    }
+
+    /// The oracle twin: the law's integers over exactly the cells where the
+    /// conversion runs, their largest and smallest printed; `None` when no
+    /// cell runs it.
+    pub fn observer(&self) -> Option<String> {
+        let cells = self.cells();
+        let (first, n) = (*cells.first()?, cells.len());
+        Some(formatted(format!(
+            "fn main() {{
+    {n} -> iota -> cells;
+    cells -> map {{ j -> j + {first} -> i; {law} }} -> raw;
+    (raw[0], raw) -> fold {{ m, x -> (x > m) -> {{ -true-> x; -false-> m; }} }} -> hi;
+    (raw[0], raw) -> fold {{ m, x -> (x < m) -> {{ -true-> x; -false-> m; }} }} -> lo;
+    hi -> println;
+    lo -> println;
+}}
+",
+            law = self.law.text()
+        )))
     }
 }

@@ -334,6 +334,62 @@ fn size_exprs<'t>(ty: &'t syn::Ty, out: &mut Vec<&'t SizeExpr>) {
     }
 }
 
+/// ADR-0051 D1 (L1710): a format — a declared format parameter or a format's
+/// name — read as an array length, where only a size stands. A generic type's
+/// argument may be either (the type's declaration decides, checked where the
+/// type resolves), so only array lengths are checked here.
+pub fn check_format_lengths(
+    source: &str,
+    ty: &syn::Ty,
+    formats: &BTreeMap<String, Kind>,
+    owner: &str,
+    diags: &mut Vec<syn::Diagnostic>,
+) {
+    fn length_names(e: &SizeExpr, out: &mut Vec<syn::Name>) {
+        match &e.kind {
+            SizeKind::Int(_) => {}
+            SizeKind::Name(n) => out.push(*n),
+            SizeKind::Binary { lhs, rhs, .. } => {
+                length_names(lhs, out);
+                length_names(rhs, out);
+            }
+        }
+    }
+    match &ty.kind {
+        TyKind::Array { elem, size, .. } => {
+            if let Some(e) = size {
+                let mut found = Vec::new();
+                length_names(e, &mut found);
+                for n in found {
+                    let text = name_text(source, n);
+                    let what = match (formats.get(text), Format::from_name(text)) {
+                        (Some(k), _) => format!(
+                            "`{text}` is a format parameter of `{owner}` (kind `{}`)",
+                            k.name()
+                        ),
+                        (None, Some(_)) => format!("`{text}` is a format"),
+                        (None, None) => continue,
+                    };
+                    diags.push(diag(
+                        LCode::FormatKind,
+                        n.span,
+                        format!(
+                            "{what}, but an array's length is a size (ADR-0051 D1): \
+                             declare a size parameter — `<…, {text}>` without a kind"
+                        ),
+                    ));
+                }
+            }
+            check_format_lengths(source, elem, formats, owner, diags);
+        }
+        TyKind::Tuple(ts) => ts
+            .iter()
+            .for_each(|t| check_format_lengths(source, t, formats, owner, diags)),
+        TyKind::Dynamic(elem) => check_format_lengths(source, elem, formats, owner, diags),
+        TyKind::Generic { .. } | TyKind::Named(_) | TyKind::Error => {}
+    }
+}
+
 /// ADR-0048 D4: `e` with every size parameter of a generic type replaced by
 /// its argument at a use (`rows * columns` of `Matrix<n, 64>` is `n * 64`).
 fn subst_size(source: &str, e: &SizeExpr, by: &BTreeMap<String, SizeExpr>) -> SizeExpr {
@@ -428,6 +484,9 @@ pub fn check_decl(
         size_exprs(r, &mut exprs);
     }
     let formats = format_params(source, &fd.generics);
+    for t in fd.params.iter().map(|p| &p.ty).chain(fd.ret_ty.as_ref()) {
+        check_format_lengths(source, t, &formats, fname, diags);
+    }
     let mut used: BTreeMap<String, usize> = BTreeMap::new();
     for e in &exprs {
         names(source, e, &mut used);
@@ -817,23 +876,20 @@ pub fn infer(
         .collect();
     let unbound = |env: &SizeEnv| declared.iter().find(|d| !env.contains_key(*d)).cloned();
     let unbound_format = |env: &SizeEnv| fparams.keys().find(|d| env.format(d).is_none()).cloned();
-    if (unbound(&env).is_some() || unbound_format(&env).is_some())
-        && let (Some(r), Some(want)) = (&fd.ret_ty, expected)
-    {
+    // ADR-0051 D3: the expected type is a determination like the argument's
+    // — it completes the formats still unbound, and a format it fixes
+    // differently from the explicit prefix or the argument is a conflict
+    // (L1709), never silently the argument's.
+    if let (Some(r), Some(want)) = (&fd.ret_ty, expected) {
         let mut out_eqs = Equations::default();
         let from = format!("the result `{}`", mapal_ir::ty_label(want));
+        let needed = unbound(&env).is_some() || unbound_format(&env).is_some();
         if collect(source, types, &fparams, r, want, &from, &mut out_eqs).is_ok() {
-            // The expected type completes the rest: a format the argument
-            // already fixed keeps the argument's (the builder then reports
-            // the result's mismatch, as for a size).
-            let rest: Vec<FormatEq> = out_eqs
-                .formats
-                .into_iter()
-                .filter(|e| env.format(&e.param).is_none())
-                .collect();
-            bind_formats(fname, &rest, &mut env, &mut forigin, span)?;
-            eqs.sizes.extend(out_eqs.sizes);
-            solve(source, fname, &eqs.sizes, &mut env, &mut origin, span)?;
+            bind_formats(fname, &out_eqs.formats, &mut env, &mut forigin, span)?;
+            if needed {
+                eqs.sizes.extend(out_eqs.sizes);
+                solve(source, fname, &eqs.sizes, &mut env, &mut origin, span)?;
+            }
         }
     }
     // ADR-0051 D3: every format parameter determined, each within its kind.

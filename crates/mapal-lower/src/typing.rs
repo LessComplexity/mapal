@@ -161,6 +161,11 @@ struct Walk<'a> {
     effects: &'a crate::effects::Effects,
     /// the owner's declared (surface) return ty, for ret-write unification.
     owner_ret: Option<Ty>,
+    /// The function body's tail chain (its span): a return position.
+    fn_tail: Option<(u32, u32)>,
+    /// Walking the last stage of [`Self::fn_tail`] (ADR-0051 D3: its result
+    /// flows into the owner's output).
+    at_fn_tail: bool,
     /// union-find parent links over literal vars.
     uf: Vec<usize>,
     /// per-var state.
@@ -228,6 +233,8 @@ pub fn analyze_fn(
         size_use: SizeUse::default(),
         effects,
         owner_ret,
+        fn_tail: fd.body.tail.as_ref().map(|t| (t.span.start, t.span.end)),
+        at_fn_tail: false,
         uf: Vec::new(),
         state: Vec::new(),
         var_span: Vec::new(),
@@ -400,7 +407,7 @@ impl Walk<'_> {
         let values = match self.sizes.sites.get(&key) {
             Some(v) => Some(v.clone()),
             None => self.wty_to_ty(cur).and_then(|arg| {
-                let expected = self.expected_result(next);
+                let expected = self.expected_flow(next);
                 crate::sizes::infer(
                     self.source,
                     self.types,
@@ -474,9 +481,7 @@ impl Walk<'_> {
             self.unify_known(cur, &src.ty(), span);
         }
         let target = format_at(0).or_else(|| {
-            let want = self
-                .expected_result(next)
-                .or_else(|| self.expected_param(next));
+            let want = self.expected_flow(next);
             want.as_ref().and_then(Format::of)
         });
         match target {
@@ -503,6 +508,26 @@ impl Walk<'_> {
                 WTy::Known(t.ty())
             }
             None => WTy::Unknown,
+        }
+    }
+
+    /// ADR-0051 D3: the type a call's or a conversion's result flows into —
+    /// the next stage's annotation, the owner's output at `-> ret` (`ret.k`:
+    /// its component) or at the function body's tail, or the one parameter of
+    /// a fixed function called next. Emission reads the same sources
+    /// (`emit::Emitter::expected_flow`).
+    fn expected_flow(&mut self, next: Option<&Stage>) -> Option<Ty> {
+        if let Some(t) = self.expected_result(next) {
+            return Some(t);
+        }
+        match next.map(|s| &s.kind) {
+            None if self.at_fn_tail => self.owner_ret.clone(),
+            Some(StageKind::Ret { proj: Some((k, _)) }) => self
+                .owner_ret
+                .as_ref()
+                .and_then(|r| u32::try_from(*k).ok().and_then(|k| r.component_ty(k)))
+                .cloned(),
+            _ => self.expected_param(next),
         }
     }
 
@@ -816,9 +841,13 @@ impl Walk<'_> {
             None => seed,
         };
         let mut prev: Option<&Expr> = chain.head.as_ref();
+        let is_fn_tail = self.fn_tail == Some((chain.span.start, chain.span.end));
         for (i, stage) in chain.stages.iter().enumerate() {
             let next = chain.stages.get(i + 1);
+            let outer = self.at_fn_tail;
+            self.at_fn_tail = is_fn_tail && next.is_none();
             cur = self.stage(&stage.kind, stage.span, cur, prev, next, scope);
+            self.at_fn_tail = outer;
             prev = match &stage.kind {
                 StageKind::Expr(e) => Some(e),
                 _ => None,

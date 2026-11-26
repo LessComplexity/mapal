@@ -649,14 +649,15 @@ impl Emitter<'_> {
 
     /// D3 at a call to a generic function (emission side, authoritative): the
     /// arguments from the stage's explicit prefix (ADR-0051 D2), then the
-    /// wire's exact type (and the next stage's annotation), the instance's id
-    /// — or, when this round did not declare it, the request that makes the
-    /// next round declare it.
+    /// wire's exact type, then the type the result flows into
+    /// ([`Self::expected_flow`]) — the instance's id, or, when this round did
+    /// not declare it, the request that makes the next round declare it.
     fn generic_callee(
         &mut self,
         text: &str,
         wire: ObjectId,
         next: Option<&Stage>,
+        ctx: &ChainCtx,
         sp: syn::SourceLoc,
         args: Option<&[syn::SizeExpr]>,
     ) -> ER<(FuncId, String)> {
@@ -674,7 +675,7 @@ impl Emitter<'_> {
             None => Vec::new(),
         };
         let arg = self.tyq(wire);
-        let expected = self.expected_result(next);
+        let expected = self.expected_flow(next, ctx);
         let values = crate::sizes::infer(
             self.source,
             self.types,
@@ -721,14 +722,20 @@ impl Emitter<'_> {
         }
     }
 
-    /// ADR-0051 D3: the type a conversion's result flows into — the result's
-    /// binding annotation, the owner's output at `-> ret` (`ret.k`: its
-    /// component), or the one parameter of a fixed function called next.
-    fn expected_flow(&self, next: Option<&Stage>) -> Option<Ty> {
+    /// ADR-0051 D3: the type a call's or a conversion's result flows into —
+    /// the result's binding annotation, the owner's output at `-> ret`
+    /// (`ret.k`: its component) or at the function body's tail (a return
+    /// position, `ctx`), or the one parameter of a fixed function called next.
+    /// The typing walk reads the same sources (`typing::Walk::expected_flow`).
+    fn expected_flow(&self, next: Option<&Stage>, ctx: &ChainCtx) -> Option<Ty> {
         if let Some(t) = self.expected_result(next) {
             return Some(t);
         }
         match next.map(|s| &s.kind) {
+            None if matches!(ctx, ChainCtx::FnBodyReturn { .. } | ChainCtx::RetValue) => self
+                .fn_sigs
+                .get(&self.owner_name)
+                .and_then(|s| s.ret.clone()),
             Some(StageKind::Ret { proj: Some((k, _)) }) => self
                 .fn_sigs
                 .get(&self.owner_name)
@@ -1457,8 +1464,25 @@ impl Emitter<'_> {
                     Some(t) => self.coerce(fb, wire, t, sp)?,
                     None => wire,
                 };
-                let bty = annotated.unwrap_or_else(|| self.ty_of(fb, wire));
                 let bn = name_text(self.source, *name).to_string();
+                // An annotation states the value's type (ADR-0051 D3 reads it
+                // as a determination): a value of another type is a mismatch,
+                // never a binding relabelled with the annotation.
+                if let (Some(want), Some(annot)) = (&annotated, ty) {
+                    let have = self.ty_of(fb, wire);
+                    if &have != want {
+                        return Err(diag(
+                            LCode::TypeMismatch,
+                            annot.span,
+                            format!(
+                                "`{bn}` is annotated `{}`, but the value bound is `{}`",
+                                mapal_ir::ty_label(want),
+                                mapal_ir::ty_label(&have)
+                            ),
+                        ));
+                    }
+                }
+                let bty = annotated.unwrap_or_else(|| self.ty_of(fb, wire));
                 self.bind_new(&bn, wire, bty, mut_span.is_some());
                 Ok(Some(wire))
             }
@@ -1599,7 +1623,7 @@ impl Emitter<'_> {
                     };
                     let (fid, callee) = match self.fn_ids.get(&text) {
                         Some(&fid) => (fid, text.clone()),
-                        None => self.generic_callee(&text, wire, next, e.span, None)?,
+                        None => self.generic_callee(&text, wire, next, ctx, e.span, None)?,
                     };
                     let dest = self.lookahead_dest(next, ctx, next.is_none())?;
                     let r = self.emit_call(fb, fid, &callee, wire, dest, e.span)?;
@@ -1684,7 +1708,7 @@ impl Emitter<'_> {
                     let wire =
                         cur.ok_or_else(|| diag(LCode::HeadlessChain, e.span, "call with no arg"))?;
                     let (fid, callee) =
-                        self.generic_callee(&text, wire, next, e.span, Some(args))?;
+                        self.generic_callee(&text, wire, next, ctx, e.span, Some(args))?;
                     let dest = self.lookahead_dest(next, ctx, next.is_none())?;
                     let r = self.emit_call(fb, fid, &callee, wire, dest, e.span)?;
                     if let Some(r) = r {
@@ -3420,7 +3444,7 @@ impl Emitter<'_> {
                 ),
             ));
         }
-        let expected = self.expected_flow(next);
+        let expected = self.expected_flow(next, ctx);
         let values = crate::sizes::infer(
             crate::formats::PRELUDE,
             self.types,

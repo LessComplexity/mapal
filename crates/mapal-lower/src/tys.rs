@@ -189,6 +189,10 @@ fn check_type_sizes(
 ) {
     let tname = name_text(source, td.name);
     crate::sizes::check_generic_names(source, &td.generics, tname, globals, diags);
+    let formats = crate::sizes::format_params(source, &td.generics);
+    for f in &td.fields {
+        crate::sizes::check_format_lengths(source, &f.ty, &formats, tname, diags);
+    }
     let mut used = crate::globals::Names::default();
     used.type_decl(source, td);
     for p in td.generics.iter().filter(|p| p.is_size()) {

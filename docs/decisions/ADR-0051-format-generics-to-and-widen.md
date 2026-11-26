@@ -114,14 +114,32 @@ rounding, the exact embeddings); instances are named per D5.
   `sizes.rs` (the explicit prefix, format equations beside size equations, kinds, instance names), `tys.rs` (a
   format parameter in any type position, a generic type's format arguments), `convert.rs` (the post-seal proof of
   `widen<f32>` of an `i32`). Codes: L1708 undetermined, L1709 conflict, L1710 out of kind (or a size where a format
-  is declared, and back), L1711 unknown kind, L1712 explicit arguments on a stage that takes none, L1713 a removed
-  name; L1614 / L1616 keep `widen` / `to`.
+  is declared, and back; a format, a parameter or a name, as an array's length — at the declaration), L1711 unknown
+  kind, L1712 explicit arguments on a stage that takes none, L1713 a removed name; L1614 / L1616 keep `widen` /
+  `to`.
 - **Facts** (`mapal-ir`): `BoundsProof::widen_range(m)` — the range of the integer a `Widen` converts where it runs;
   `%` by a constant is ranged without its dividend's range (any `i32`, a wrapped product included, leaves `x % k`
   inside `(−|k|, |k|)`). The suite's host and device text is unchanged on the RTX 5080 and x86-64-v3 profiles.
 - **Readings of D4.** `to` admits the exact pairs too (rounding to nearest of a representable value is the value),
   so a generic `x -> to<cache>` stays valid at `cache = f32` (the identity) and `f64`. A float literal flowing into
   a conversion takes the target's width (an `f32` into a narrow target); an integer literal keeps `i32`.
+- **D3, the expected type (review fixes, 2026-11-27).** Every inference — a conversion's and a user generic's — reads
+  the same sources of the type a result flows into (`expected_flow`, emission and typing alike): the binding's
+  annotation, `-> ret` (`ret.k`: its component), the function body's tail (a return position), the one parameter of a
+  fixed function called next. The expected type is a determination like the argument's: a format it fixes other
+  than the explicit prefix's or the argument's is L1709, never silently the argument's. A binding's annotation states
+  the value's type: a value of another type is L1201 (before, any annotation on a computed value relabelled the
+  binding — `xs -> w: [f32; 5]` of a `[f32; 4]` was accepted). The suite's lowered IR is unchanged (505 sources).
+- **Generated-program coverage.** `testgen::widen_law_strategy`: integer laws of a map's index over `+ − ·k ÷k %k`
+  (constants around 2²⁴, products wrapping past `i32`, `(law · k + c) % d`), under a guard arm `i < c` / `i ≥ c`
+  when drawn; on the interpreter the facts' range of each conversion holds every value it converts, and `widen<f32>`
+  is admitted only where every value is within ±2²⁴ (and wherever the facts' range is) —
+  `testgen_widen::widen_f32_is_admitted_only_where_every_value_is_exact`.
+- **Editor tooling** (`mapal-lsp`, merged from `local-rtx-5080`): a declared list's format parameter is a definition
+  (`FormatParam`, the generic-parameter highlight class), its kind a primitive; `ExprKind::Generic` stages resolve the
+  callee and their arguments; `builtin_names()` lists `to` and `widen`; the removed names stay reserved
+  (`REMOVED_BUILTINS`, `removed_builtin`): shown as the builtins they were, the compiler's L1713 naming the
+  replacement. The static grammars (`editors/`) still list the removed names and not `to` / `widen`.
 - **Open (reported, not realized):** `u8` and `i64` sources (no IR conversion edge yet), an integer to a narrow
   format (one rounding; through `f32` two), `f64 → f32` / narrow and float → int (ADR-0043 D2's open item);
   inference of a conversion's target from a map body's expected element type (the body's tail has no expected
