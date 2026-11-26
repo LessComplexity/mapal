@@ -14,7 +14,7 @@
 
 <br>
 
-**A programming language where you write how data flows, and the compiler decides how it runs.**
+**Describe how data flows. Mapal places it where it runs best, on any hardware.**
 
 </div>
 
