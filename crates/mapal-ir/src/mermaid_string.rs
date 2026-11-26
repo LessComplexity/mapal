@@ -60,10 +60,45 @@ impl CategoryIr {
             Operation::LoopBack => "↩ back".into(),
             Operation::LoopExit => "exit".into(),
             Operation::Call(c) => format!("call {}", self.func(*c).map_or("?".into(), |d| d.name.clone())),
-            Operation::Map { captures: k, .. } if *k > 0 => format!("map (+{k} caps)"),
-            Operation::Fold { captures: k, .. } if *k > 0 => format!("fold (+{k} caps)"),
+            Operation::Map { captures: 0, .. } => "map over cells".into(),
+            Operation::Map { captures: k, .. } => format!("map over cells (+{k} captured)"),
+            Operation::Fold { captures: k, .. } if *k > 0 => format!("fold (+{k} captured)"),
             op => step_word(op),
         }
+    }
+
+    /// The label of the wire a body step reads from the body's own input: the binding's
+    /// name (else `cell`, the element; `captured n`) and its type, found by walking back
+    /// from `o` to a projection of the body's input.
+    pub(crate) fn body_input_wire(&self, ctx: &crate::mermaid_flow::Ctx, body: FuncId, o: ObjectId) -> Option<String> {
+        let input = self.func(body)?.input;
+        let mut stack = vec![o];
+        let mut seen = std::collections::HashSet::new();
+        while let Some(y) = stack.pop() {
+            if !seen.insert(y) {
+                continue;
+            }
+            for &m in &ctx.incoming[y] {
+                let mo = self.morphism(m)?;
+                if let Operation::Proj { index } = mo.op {
+                    if mo.source == input {
+                        let x = self.object(y)?;
+                        let arity = match &self.object(input)?.ty {
+                            crate::ty::Ty::Tuple(v) => v.len() as u32,
+                            _ => 1,
+                        };
+                        let name = x.name.clone().unwrap_or_else(|| {
+                            if index + 1 == arity { "cell".into() } else { format!("captured {}", index + 1) }
+                        });
+                        return Some(format!("{name}: {}", crate::ty::ty_label(&x.ty)));
+                    }
+                }
+                if self.object(mo.source)?.kind != ObjectKind::Constant {
+                    stack.push(mo.source);
+                }
+            }
+        }
+        None
     }
 
     /// The full string diagram as data.
@@ -248,15 +283,30 @@ impl CategoryIr {
             FlowAnchor::Object(o) => format!("f{}o{}", ctx.func_ix[&nodes[i].func], ctx.ord[o]),
             FlowAnchor::Print(_) => nodes[i].id.clone(),
         };
+        // `map over cells (uses a, b, along)`: the named values the body reads from outside.
         let site_label = |i: usize| -> String {
-            let FlowAnchor::Object(o) = nodes[i].anchor else { return "map".into() };
-            ctx.incoming[o]
+            let FlowAnchor::Object(o) = nodes[i].anchor else { return "map over cells".into() };
+            let word = ctx.incoming[o]
                 .iter()
-                .find_map(|&m| {
-                    let op = self.morphism(m).unwrap().op;
-                    matches!(op, Operation::Map { .. } | Operation::Fold { .. }).then(|| self.box_label(&op))
+                .find_map(|&m| match self.morphism(m).unwrap().op {
+                    Operation::Map { .. } => Some("map over cells"),
+                    Operation::Fold { .. } => Some("fold"),
+                    _ => None,
                 })
-                .unwrap_or_else(|| "map".into())
+                .unwrap_or("map over cells");
+            let Some(b) = nodes[i].body else { return word.into() };
+            let mut uses: Vec<String> = Vec::new();
+            for &(a, t, _) in &g.edges {
+                if nodes[t].func == b && nodes[a].func != b {
+                    if let FlowAnchor::Object(ao) = nodes[a].anchor {
+                        let n = object_short(self.object(ao).unwrap());
+                        if !uses.contains(&n) {
+                            uses.push(n);
+                        }
+                    }
+                }
+            }
+            if uses.is_empty() { word.into() } else { format!("{word} (uses {})", uses.join(", ")) }
         };
         loop {
             let mut progress = false;
@@ -357,6 +407,14 @@ impl CategoryIr {
                             d.nodes[k].obj = Some(o);
                             wire_from[i] = Some(format!("b{i}"));
                             enters[i] = Some(format!("b{i}"));
+                            // a step that reads only the body's own input (`c ->` of a map body)
+                            if srcs[i].is_empty() && ctx.is_body(n.func) && ctx.read_of(o).is_none() {
+                                if let Some(w) = self.body_input_wire(&ctx, n.func, o) {
+                                    let t = d.node(format!("ti{i}"), "in".into(), NodeKind::Terminal, sub);
+                                    d.nodes[t].obj = Some(o);
+                                    d.edge(&format!("ti{i}"), &format!("b{i}"), w, EdgeKind::Wire);
+                                }
+                            }
                         }
                         None => {
                             let k = d.node(format!("t{i}"), "in".into(), NodeKind::Terminal, sub);

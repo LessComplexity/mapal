@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import json
 import difflib
 import html
@@ -366,13 +367,52 @@ def mermaid_of(path: Path, form: str, stage: str = "rewritten") -> str:
 
 def live_url(text: str) -> str:
     """mermaid.live's editor URL for a diagram (its `#base64:` state form, URL-safe, unpadded)."""
-    state = json.dumps({"code": text, "mermaid": json.dumps({"theme": "dark"}), "autoSync": True, "updateDiagram": True},
+    state = json.dumps({"code": text, "mermaid": json.dumps({"theme": "redux-color"}), "autoSync": True, "updateDiagram": True},
                        ensure_ascii=False, separators=(",", ":"))
     return "https://mermaid.live/edit#base64:" + base64.urlsafe_b64encode(state.encode()).decode().rstrip("=")
 
 
-def mermaid_div(text: str, cls: str = "mermaid") -> str:
-    return (f'<div class="{cls}">\n{esc(text)}\n</div>\n'
+RENDERER = ROOT / "docs" / "tools" / "mermaid_render.mjs"
+SVG_CACHE = Path(os.environ.get("EXPOSITION_CACHE", Path.home() / ".cache" / "mapal-exposition")) / "mermaid"
+FRESH = False  # --fresh: ignore the cache and re-render every diagram
+
+
+def render_svgs(text: str) -> dict:
+    """The diagram as finished SVG, `dark` and `light`, laid out by the pinned mermaid (mermaid_render.mjs: mermaid.live's
+    engine, theme and font). Cached by the text and the renderer's own bytes; no layout happens in the reader's browser."""
+    key = hashlib.sha256((RENDERER.read_text() + "\0" + text).encode()).hexdigest()[:24]
+    f = SVG_CACHE / f"{key}.json"
+    if not FRESH and f.exists():
+        return json.loads(f.read_text())
+    p = subprocess.run(["node", str(RENDERER)], input=json.dumps([{"id": key, "text": text}]), capture_output=True, text=True)
+    if p.returncode:
+        raise SystemExit(f"mermaid_render.mjs failed (needs node, Chromium and network):\n{p.stderr[-800:]}")
+    svgs = json.loads(p.stdout)[key]
+    svgs["key"] = key
+    SVG_CACHE.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps(svgs))
+    return svgs
+
+
+def natural(svg: str, uid: str, key: str, theme: str) -> str:
+    """Natural size (the viewBox's pixels, no max-width shrink) and an id unique on the page."""
+    w = re.search(r'viewBox="[-\d.]+ [-\d.]+ ([\d.]+) [\d.]+"', svg).group(1)
+    svg = svg.replace('width="100%"', f'width="{w}"', 1)
+    svg = re.sub(r' style="max-width: [\d.]+px;"', "", svg, count=1)
+    return svg.replace(f"mmd-{key}", f"mmd-{key}-{theme}{uid}")
+
+
+EMBEDDED: dict = {}
+
+
+def mermaid_div(text: str, cls: str = "mdiag") -> str:
+    """A generated diagram: the finished SVG in both themes (dark shown unless the page is light), and a mermaid.live link."""
+    svgs = render_svgs(text)
+    key = svgs["key"]
+    n = EMBEDDED[key] = EMBEDDED.get(key, -1) + 1
+    uid = f"-{n}" if n else ""
+    return (f'<div class="{cls}"><div class="mdk">{natural(svgs["dark"], uid, key, "d")}</div>'
+            f'<div class="mlt">{natural(svgs["light"], uid, key, "l")}</div></div>\n'
             f'<p class="mlive"><a href="{live_url(text)}" target="_blank" rel="noopener">Open in mermaid.live</a></p>')
 
 
@@ -470,6 +510,7 @@ KINDS = {"diagrams": k_diagrams, "flow": k_flow, "gpuline": k_gpuline, "perf": k
 
 def regenerate(page: str) -> tuple[str, list[str]]:
     stale = []
+    EMBEDDED.clear()
 
     def sub(m: re.Match) -> str:
         a = attrs_of(m.group("attrs"))
@@ -500,8 +541,11 @@ def check_excerpts(page: str) -> list[str]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--check", action="store_true")
+    ap.add_argument("--fresh", action="store_true", help="ignore the SVG cache: re-render every diagram")
     ap.add_argument("--page")
     args = ap.parse_args()
+    global FRESH
+    FRESH = args.fresh
     page_path = Path(args.page).resolve() if args.page else PAGE
     page = page_path.read_text(encoding="utf-8")
     try:
