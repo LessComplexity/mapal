@@ -116,10 +116,16 @@ fn arm_launch(site: &TileSite, p: &'static TargetProfile, plan: &str) -> Option<
         bt: site.b.clane != 1,
         split: None,
     };
-    m.pad_a = crate::profile::ldmatrix_pad(m.bk) - m.bk;
+    // The pads the tile's own rule takes: `ldmatrix`'s 16-byte bank groups
+    // for a 16-bit panel, four words for a TF32 one.
+    let pad = |ld: u64| match fmt {
+        MmaFmt::Tf32 => 4,
+        _ => crate::profile::ldmatrix_pad(ld),
+    };
+    m.pad_a = pad(m.bk);
     m.pad_b = match m.bt {
         true => m.pad_a,
-        false => crate::profile::ldmatrix_pad(m.bn()) - m.bn(),
+        false => pad(m.bn()),
     };
     if st == 0 {
         // The rules' depth: as many stages as the slot's share holds.
@@ -204,7 +210,7 @@ fn arm_ns(
 /// **The model's misses on the replay, each with the term it lacks**
 /// (`benches/results/evidence/local-rtx-5080/machine-model.md`): checked —
 /// a miss that turns into a pick must leave this list.
-const REPLAY_OPEN: [&str; 13] = [
+const REPLAY_OPEN: [&str; 14] = [
     // H100 TF32 128 x 4096 x 4096, raster or not: both arms bound by the L2
     // feed at one price; the measured 12 % is the copy engine's (movers are
     // not yet priced: TMA boxes against cp.async lane copies).
@@ -214,13 +220,12 @@ const REPLAY_OPEN: [&str; 13] = [
     // its occupancy on those parts is unmeasured (the RTX 5080's curve is
     // its own), and the cut's partial adds burst at each piece's end.
     "cut-0", "cut-1", "cut-10", "cut-2", "cut-8", "cut-9",
-    // RTX 5080 2048 x 6144 x 4096 bf16: the walk priced 5 % under the ordered
-    // grid, measured 12 % over it — its zero pass and the walk's pipe
-    // efficiency (the design check's open line).
-    "walk-16",
-    // RTX 5080 512 x 512 x 2048: the ordered 32 x 64 tile's 32-deep ring is
-    // priced as a prologue the hardware hides.
-    "walk-5",
+    // RTX 5080 walks the model prices under their ordered grids but the
+    // ordered grid won (2048 x 6144 x 4096, 2048 x 8192 x 2048, 512 x 512 x
+    // 2048): the walk's own per-unit cost — its segment loop, the shared
+    // tiles' fixup — and its pipe efficiency are unpriced (the design check's
+    // open line on 2048 x 6144 x 4096).
+    "walk-16", "walk-4", "walk-5",
     // H100 TF32 warp-specialized against the S53 ring: one L2-bound price
     // for both; the TMA engine's copies (`tma_copy_ns`) and the cp.async
     // issue are the unpriced movers.
@@ -229,7 +234,7 @@ const REPLAY_OPEN: [&str; 13] = [
 
 /// The model's picks at C3 (the corpus as seeded): a floor, not a target —
 /// the rules pick 61 (`model >= rules` is ADR-0050 C6's bar).
-const MODEL_FLOOR: u64 = 39;
+const MODEL_FLOOR: u64 = 38;
 
 /// **ADR-0050 C3: `place_replay.tsv` scored** — per measured site, the
 /// measured winner (or null: within the null), the model's pick (the arm

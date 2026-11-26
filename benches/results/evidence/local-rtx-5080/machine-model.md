@@ -44,20 +44,20 @@ test switch), so no PTX/SASS differs and no A/B is owed by this step (null by co
 
 | family (sites) | model | rules |
 | --- | --- | --- |
-| walk (17: WALK_ARMS) | 12 / 2 / 1 / 2 | 13 / 2 / – / 2 |
+| walk (17: WALK_ARMS) | 11 / 3 / 1 / 2 | 13 / 2 / – / 2 |
 | cut (21: mma_cut_replay) | 11 / 6 / 3 / 1 | 18 / 2 / – / 1 |
 | c11 l2-gate (12) | 3 / 1 / 8 / 0 | 12 / 0 / – / 0 |
 | ws (4: H100 wgmma-ws) | 0 / 4 / 0 / 0 | 4 / 0 / – / 0 |
 | k-fill (4), streamk-fill (2), mma-depth (4), split-tile (2) | 12 / 0 / 0 / 0 | 12 / 0 / – / 0 |
 | plan-cost losers (2) | 1 / 0 / 1 / 0 | 2 / 0 / – / 0 |
-| **all** | **39 / 13 / 13 / 3** | **61 / 4 / – / 3** |
+| **all** | **38 / 14 / 13 / 3** | **61 / 4 / – / 3** |
 
-`model ≥ rules`: **not met** (39 against 61). The test asserts the model's floor (39) and the committed open list
-(13 misses, each with its missing term); the 13 open picks flip inside marked facts (the keep of the 4090 and the
+`model ≥ rules`: **not met** (38 against 61). The test asserts the model's floor (38) and the committed open list
+(14 misses, each with its missing term); the 13 open picks flip inside marked facts (the keep of the 4090 and the
 A100 / H100 placeholders, start timing on every part but the 5080) — the ADR's minimax at work, not a bug. Model wins
 the rules miss: walk-6 / walk-7 (the 5080's refused walks, 512 × 2048 × 2048 and its transpose).
 
-**Missing evaluator terms (what the 13 misses name):**
+**Missing evaluator terms (what the 14 misses name):**
 
 1. **Movers are not priced.** The H100 warp-specialized arms (ws-0..3, c11-7) are L2-bound at one price for TMA
    boxes and `cp.async` lane copies; the measured 3–25 % is the copy engine's. Next: a slot's panel movement priced by
@@ -66,8 +66,9 @@ the rules miss: walk-6 / walk-7 (the 5080's refused walks, 512 × 2048 × 2048 a
    wave quantization in the model, loses on the box. Only the 5080 has a measured curve; the others run on the latency
    rule (marked). Next: the `eff` probe on a rented part (C6) — the efficiency per warp tile × occupancy, and the
    cut's partial adds as a burst at each piece's end (atomics as a resource at its place, not spread).
-3. **The walk's zero pass and pipe efficiency** (walk-16; the design check's open 5080 2048 × 6144 × 4096 line) and
-   a deep ring's prologue priced where the hardware hides it (walk-5).
+3. **The walk's own per-unit cost** (walk-4 / -5 / -16: the 5080 walks the model prices under ordered grids that
+   won — its segment loop and the shared tiles' fixup, and its pipe efficiency; the design check's open
+   2048 × 6144 × 4096 line).
 
 ## plan-cost's losers
 
