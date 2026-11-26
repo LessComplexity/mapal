@@ -33,7 +33,7 @@ while :; do
     flock -u 9; echo "waiting (after the lock): $w"; sleep 30
 done
 cond start
-nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv > "$R/gpu-apps-before.csv"
+nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv | sed -E 's|, ([^,]*/)?([^/ ,]+)[^,]*, ([0-9]+ MiB)$|, \2, \3|' > "$R/gpu-apps-before.csv"
 # The GPU's P-state and clocks through the run (5 a second; sweep-runtime-2's gpu_run.sh sampling, here since
 # integration 3: the full suite and model scale run through this script) -> gpu-clocks.csv, summary gpu-clocks.txt.
 nvidia-smi --query-gpu=timestamp,pstate,clocks.sm,clocks.mem,utilization.gpu,power.draw --format=csv,noheader \

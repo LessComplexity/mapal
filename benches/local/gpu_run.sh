@@ -5,7 +5,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; G=${LOCAL_GPU:-$ROOT/target/tmp/local-gpu}
 B=${1:-$G/bundle}; REPS=${2:-30}; R=$G/results
 mkdir -p "$R"
-nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv > "$R/gpu-apps-before.csv"
+nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv | sed -E 's|, ([^,]*/)?([^/ ,]+)[^,]*, ([0-9]+ MiB)$|, \2, \3|' > "$R/gpu-apps-before.csv"
 nvidia-smi --query-gpu=utilization.gpu,clocks.sm,temperature.gpu,power.draw --format=csv >> "$R/gpu-apps-before.csv"
 # sweep-runtime-2: the GPU's P-state and clocks through the run (5 a second) — between processes the RTX 5080 drops
 # to P8 (405 MHz memory) and a program's iterations may run before it is back at P0 / P1 (15 GHz): a state the
@@ -21,7 +21,7 @@ kill $SMI 2>/dev/null
 awk -F', ' '$5 + 0 > 0 { n[$2 " sm=" $3 " mem=" $4]++ } END { for (k in n) print n[k], k }' "$R/gpu-clocks.csv" |
     sort -rn > "$R/gpu-clocks.txt"
 cp results-rtx-5080.txt evidence-rtx-5080.tsv wisdom-rtx-5080.tsv "$R/" 2>/dev/null
-nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv > "$R/gpu-apps-after.csv"
+nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv | sed -E 's|, ([^,]*/)?([^/ ,]+)[^,]*, ([0-9]+ MiB)$|, \2, \3|' > "$R/gpu-apps-after.csv"
 python3 "$ROOT/benches/local/gap.py" "$R/results-rtx-5080.txt" > "$R/gap.md"
 echo "box_run rc=$rc  $(grep -E '^probe value gate|VALIDATION' "$R/results-rtx-5080.txt" | tr '\n' ' ')  $(tail -1 "$R/evidence-rtx-5080.tsv" 2>/dev/null)"
 tail -n +1 "$R/gap.md" | head -60

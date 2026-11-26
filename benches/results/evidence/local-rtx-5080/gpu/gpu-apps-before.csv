@@ -1,4 +1,4 @@
 pid, process_name, used_gpu_memory [MiB]
-29912, /opt/docker-desktop/Docker Desktop --type=gpu-process --ozone-platform=wayland --render-node-override=/dev/dri/renderD128 --enable-crash-reporter=34a76a6f-e6a8-43b3-b0f1-485de2c3bd6e?no_channel --user-data-dir=/home/lesscomplex/.config/Docker Desktop --gpu-preferences=YAAAAAAAAAAgAQAEAAAAAAAAAAAAAGAASAAAAAAAAAABAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAMAAAAAAAAAAwAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAMAAAAAQAAAAAAAAAAAAAACAAAAAAAAAAIAAAAAAAAAA== --shared-files --field-trial-handle=3?i?5688137740989088082?1813100977689668875?262144 --enable-features=PdfUseShowSaveFilePicker --disable-features=DropInputEventsWhilePaintHolding?LocalNetworkAccessChecks?ScreenAIOCREnabled?SpareRendererForSitePerProcess?TraceSiteInstanceGetProcessCreation --variations-seed-version --pseudonymization-salt-handle=7?i?12072272142742198086?7886224839719656669?4 --trace-process-track-uuid=3190708988185955192, 23 MiB
+29912, Docker Desktop (desktop app; command line redacted), 23 MiB
 utilization.gpu [%], clocks.current.sm [MHz], temperature.gpu, power.draw [W]
 0 %, 360 MHz, 31.08, 28.63 W
