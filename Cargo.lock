@@ -451,6 +451,7 @@ dependencies = [
  "mapal-interp",
  "mapal-ir",
  "mapal-lower",
+ "mapal-place",
  "mapal-rewrite",
  "mapal-rt",
  "mapal-syntax",

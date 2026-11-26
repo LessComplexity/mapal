@@ -23,6 +23,7 @@ mod loops;
 mod math;
 mod module;
 mod narrow;
+pub(crate) mod place;
 mod profile;
 mod reuse;
 mod rules;
