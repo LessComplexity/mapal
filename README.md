@@ -519,21 +519,25 @@ syntax is reported without replacing the source. LLVM and GPU tools are not need
 
 ### Editor support
 
-Both editors get highlighting, formatting through `mapal fmt`, and a file icon. Neither is published to a
-registry, so both load from disk.
+Both editors get the language server (`mapal lsp`: go to definition, references, hover, rename,
+completion, diagnostics, semantic highlighting), highlighting, formatting through `mapal fmt`, and a file
+icon. Neither is published to a registry, so both load from disk.
 
 |                 | Neovim                                     | VS Code                                      |
 | --------------- | ------------------------------------------ | -------------------------------------------- |
-| Highlighting    | Vimscript syntax file                      | TextMate grammar                             |
+| Language server | started for `*.mapal` (`vim.lsp.enable`)   | started by the extension (languageclient)    |
+| Highlighting    | Vimscript syntax + semantic tokens         | TextMate grammar + semantic tokens           |
 | File icon       | font glyph                                 | the real SVG logo                            |
-| Formatting      | `:MapalFormat` or `gggqG`                  | **Format Document**                          |
-| Binding vs call | resolved by scanning for `fn` declarations | lexical only - `-> name;` reads as a binding |
+| Formatting      | `:MapalFormat`, `gggqG` or the server      | **Format Document**                          |
 | Details         | [`editors/nvim/`](editors/nvim/)           | [`editors/vscode/`](editors/vscode/)         |
+
+Both highlight with the same classes ([`editors/test/classes.tsv`](editors/test/classes.tsv)), and the same
+fixture tests the Vim syntax, the TextMate grammar and the server's semantic tokens.
 
 **Neovim** - with lazy.nvim:
 
 ```lua
-{ dir = "/path/to/mapal/editors/nvim", ft = "mapal" }
+{ dir = "/path/to/mapal/editors/nvim", lazy = false } -- icon at startup; starts `mapal lsp` for .mapal
 ```
 
 or without a plugin manager:
@@ -546,16 +550,18 @@ require("mapal.icon").setup()          -- optional: nvim-web-devicons / mini.ico
 **VS Code / Cursor** - build the extension and install it:
 
 ```sh
+(cd editors/vscode && npm install && npm run build)   # bundles the language client
 python3 editors/vscode/package-vsix.py
-code --install-extension editors/vscode/mapal-lang-0.2.0.vsix   # or `cursor`
+code --install-extension editors/vscode/mapal-lang-0.3.0.vsix --force   # or `cursor`
 ```
 
 Then restart. A `.mapal` file should show **Mapal** in the status bar. Copying the folder into
 `~/.vscode/extensions` does _not_ work: VS Code reads `extensions.json` as its registry and ignores unregistered
 directories silently.
 
-For formatting, install the CLI with `cargo install --path crates/mapal-cli --locked`, or point the plugins at
-your built `target/release/mapal`: set `vim.g.mapal_executable` in Neovim or `mapal.executablePath` in VS Code.
+For the language server and formatting, install the CLI with `cargo install --path crates/mapal-cli --locked`
+(or copy `target/release/mapal` onto your `PATH`), or point the plugins at your built `target/release/mapal`: set
+`vim.g.mapal_executable` in Neovim or `mapal.executablePath` in VS Code.
 Formatting uses unsaved buffer text and supports format-on-save through the editor's configuration; see the
 plugin READMEs for setup.
 

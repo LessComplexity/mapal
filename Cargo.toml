@@ -12,6 +12,7 @@ members = [
     "crates/backends/cuda",
     "crates/backends/verilog",
     "crates/mapal-cli",
+    "crates/mapal-lsp",
 ]
 
 [workspace.package]

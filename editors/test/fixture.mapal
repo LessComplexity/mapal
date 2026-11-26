@@ -1,0 +1,112 @@
+// The shared highlighting fixture: fixture.tokens.tsv holds the class of
+// every token, checked against the Vim syntax, the TextMate grammar and the
+// language server's semantic tokens. TODO: keep it a valid program.
+
+64 -> width;
+0.5 -> half;
+width * 2 -> doubled;
+
+type Matrix<rows, columns> {
+    _: [bf16; rows * columns]
+}
+
+type Pixel {
+    r: f32,
+    g: f32,
+    b: f32,
+}
+
+fn double(x: i32) -> i32 {
+    x * 2 -> ret;
+}
+
+fn shout(x: i32) {
+    x -> println;
+}
+
+// A size-generic product: the weights stay bf16, the fold admits bf16.
+fn scale<rows, columns>(m: Matrix<rows, columns>, x: [f32; columns]) -> [f32; rows] {
+    columns -> iota -> along;
+    rows -> iota -> map {
+        r -> (0.0, along) -> fold: bf16 | f32 {
+            sum, c ->
+            m[r * columns + c] -> widen_f32 -> w;
+            sum + w * x[c]
+        }
+    } -> ret;
+}
+
+fn waves(v: f32) -> f32 {
+    v -> sqrt -> root;
+    v -> sin -> s;
+    v -> cos -> c;
+    -v -> exp -> e;
+    root + s * c + e -> ret;
+}
+
+fn classify(n: i32) -> i32 {
+    n -> {
+        -0-> 10;
+        -42-> 20;
+        -_-> n -> double;
+    } -> ret;
+}
+
+fn brighter(p: Pixel) -> Pixel {
+    Pixel {
+        r: p.r + half,
+        g: p.g,
+        b: p.b,
+    } -> ret;
+}
+
+fn main() {
+    "weights.bin" -> read -> weights: Matrix<4, 8>;
+    (1.0, 8) -> fill -> ones;
+    (weights, ones) -> scale -> scaled;
+    scaled[0] -> to_bf16 -> narrow;
+    narrow -> widen_f64 -> wide;
+    wide -> println;
+    () -> time -> start;
+    5 -> a;
+    a -> shout;
+    a -> double -> b;
+    "less\t\"yes\"\n" -> print;
+    (a < b) -> {
+        -true-> a;
+        -false-> b;
+    } -> smaller;
+    smaller -> println;
+    16 -> iota -> map {
+        t -> t * width
+    } -> arr;
+    (arr, arr) -> zip -> pairs;
+    arr -> enumerate -> indexed;
+    pairs[1].0 + indexed[2].1 -> println;
+    mut total: i32 <- 0;
+    mut counts: [i32; 4] <- [0, 0, 0, 0];
+    loop {
+        (total < 3) -> {
+            -true-> {
+                counts[total] <- total;
+                total + 1 -> total;
+                -> loop;
+            }
+            -false-> (total, counts) -> finished;
+        }
+    }
+    finished.0 -> seq {
+        -> + doubled
+            -> println;
+    }
+    (finished.1[2] == 2 && !false || true) -> println;
+    Pixel {
+        r: 0.25,
+        g: 1.0,
+        b: 2.5,
+    } -> brighter -> lit;
+    lit.r -> waves -> println;
+    7 -> classify -> println;
+    () -> time -> stop;
+    stop - start -> println;
+}

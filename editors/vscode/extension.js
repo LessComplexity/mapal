@@ -80,11 +80,69 @@ function createProvider(vscode) {
   };
 }
 
-function activate(context) {
-  const vscode = require("vscode");
-  context.subscriptions.push(vscode.languages.registerDocumentFormattingEditProvider(
-    { language: "mapal" }, createProvider(vscode),
-  ));
+// The language server: `<mapal.executablePath> lsp` over stdio.
+function serverOptions(executable) {
+  return { command: executable, args: ["lsp"], transport: 0 /* TransportKind.stdio */ };
 }
 
-module.exports = { activate, createProvider, formatText };
+function clientOptions() {
+  return {
+    documentSelector: [
+      { scheme: "file", language: "mapal" },
+      { scheme: "untitled", language: "mapal" },
+    ],
+  };
+}
+
+let client;
+let cliFormatter;
+
+function registerCliFormatter(vscode, context) {
+  cliFormatter = vscode.languages.registerDocumentFormattingEditProvider(
+    { language: "mapal" }, createProvider(vscode),
+  );
+  context.subscriptions.push(cliFormatter);
+}
+
+async function startServer(vscode, context) {
+  const config = vscode.workspace.getConfiguration("mapal");
+  const executable = config.get("executablePath", "mapal");
+  // Required here, not at the top: the formatter tests load this file without VS Code.
+  const { LanguageClient } = require("vscode-languageclient/node");
+  const next = new LanguageClient("mapal", "Mapal", serverOptions(executable), clientOptions());
+  try {
+    await next.start();
+  } catch (error) {
+    vscode.window.showWarningMessage(
+      `Mapal: the language server did not start (${error.message}). Highlighting and formatting `
+      + `still work; check that \`${executable} lsp\` runs (setting mapal.executablePath).`,
+    );
+    return false;
+  }
+  client = next;
+  context.subscriptions.push({ dispose: () => client && client.stop() });
+  // One formatting provider at a time: the server's replaces the CLI fallback.
+  if (cliFormatter) {
+    cliFormatter.dispose();
+    cliFormatter = undefined;
+  }
+  return true;
+}
+
+async function activate(context) {
+  const vscode = require("vscode");
+  context.subscriptions.push(vscode.commands.registerCommand("mapal.restartServer", async () => {
+    if (client) await client.restart();
+    else if (await startServer(vscode, context)) vscode.window.showInformationMessage("Mapal: language server started");
+  }));
+  const enabled = vscode.workspace.getConfiguration("mapal").get("server.enabled", true);
+  // The server formats too (the same mapal-syntax formatter as `mapal fmt`); the CLI
+  // formatter is the fallback, so there is one formatting provider either way.
+  if (!enabled || !(await startServer(vscode, context))) registerCliFormatter(vscode, context);
+}
+
+function deactivate() {
+  return client ? client.stop() : undefined;
+}
+
+module.exports = { activate, deactivate, createProvider, formatText, serverOptions, clientOptions };

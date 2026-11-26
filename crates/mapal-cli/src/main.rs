@@ -21,8 +21,9 @@ use mapal_syntax::{Diagnostic, LineIndex, Severity};
 
 mod fmt;
 
-const USAGE: &str = "usage: mapal <build|run|dump-ir|test|fmt> <file.mapal> [options]
+const USAGE: &str = "usage: mapal <build|run|dump-ir|test|fmt|lsp> <file.mapal> [options]
   fmt      [--check | --stdout] <files... | ->  format source (use fmt --help for modes)
+  lsp                                     the language server, over stdin/stdout (editors start it)
   build    [-o <exe>] [--emit-only]       emit <exe>.ll (+ .dev.ll/.ptx on a GPU profile) and link
   run      [--interp [--weakest | --bound]] [--budget N]  compile and execute (--interp: the oracle;
            --bound: the output with each float printed as its composed default-face bound)
@@ -72,6 +73,23 @@ fn main() -> ExitCode {
     if args.peek().is_some_and(|arg| arg == "fmt") {
         args.next();
         return ExitCode::from(fmt::run(args).unwrap_or_else(|code| code));
+    }
+    if args.peek().is_some_and(|arg| arg == "lsp") {
+        args.next();
+        // Editors pass `--stdio`; stdio is the only transport.
+        if let Some(extra) = args.find(|a| a != "--stdio") {
+            eprintln!(
+                "mapal lsp: unknown argument `{extra}` (the server speaks over stdin/stdout)"
+            );
+            return ExitCode::from(2);
+        }
+        return match mapal_lsp::run_stdio() {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("mapal lsp: {e}");
+                ExitCode::from(1)
+            }
+        };
     }
     let code = match parse_args(args) {
         Ok(a) => match a.cmd.as_str() {
