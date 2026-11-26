@@ -948,8 +948,46 @@ pub(crate) enum Combine {
     Atomic { s: u64 },
     /// S63 `streamk`: `ctas` blocks, each walking `iters` consecutive units
     /// of the `tiles × panels` iteration space; a tile's pieces add into the
-    /// zeroed output by `atomicrmw fadd`.
-    StreamK { ctas: u64, iters: u64 },
+    /// zeroed output by `atomicrmw fadd`. ADR-0050 C5 hybrid: `whole` blocks
+    /// before them each fold one whole tile of the raster order (the whole
+    /// waves, tiles `0..whole`), the `ctas` walking the tail's units after
+    /// them — one launch of `whole + ctas` blocks (0: the plain walk).
+    StreamK { ctas: u64, iters: u64, whole: u64 },
+}
+
+/// ADR-0050 C5: **the bytes the zero pass of launch `l` clears** — the
+/// whole output, or a hybrid's prefix where its whole pieces store (the
+/// 16-bit warp tile): its walked tiles are the raster order's first
+/// `tiles − whole` ([`Kernel::segment`]), whose rows span the first
+/// `h·⌈tail / (gx·h)⌉` tile rows (the whole tiles' blocks store over
+/// whatever lies there).
+pub(crate) fn zero_bytes(site: &TileSite, l: &Launch) -> u64 {
+    let all = site.rows * site.c * elem_bytes_of(&site.elem);
+    let Combine::StreamK { whole, .. } = l.combine else {
+        return all;
+    };
+    // The 16-bit warp tile's whole pieces store (`mma_walk_store`); the FMA
+    // tile's every piece adds (`store_o`), so its whole output is zeroed.
+    let bm = match l.mma {
+        Some(m) if m.fmt != MmaFmt::Tf32 => m.bm(),
+        _ => return all,
+    };
+    if whole == 0 || bm == 0 || l.gx == 0 {
+        return all;
+    }
+    let tiles = l.gx * (site.rows / bm);
+    let h = l.raster.max(1);
+    let rows = (bm * h * (tiles - whole).div_ceil(l.gx * h)).min(site.rows);
+    rows * site.c * elem_bytes_of(&site.elem)
+}
+
+/// ADR-0050 C5: a hybrid stream-K launch's host-line tag (`+<whole>`: the
+/// whole-tile blocks ahead of the walk; empty for the plain walk).
+pub(crate) fn hybrid_tag(whole: u64) -> String {
+    match whole {
+        0 => String::new(),
+        w => format!("+{w}"),
+    }
 }
 
 impl Combine {
@@ -995,7 +1033,13 @@ pub(crate) fn launch(
     contract: bool,
     arms: crate::GpuArms,
 ) -> Launch {
-    launch_split(site, profile, contract, arms, 1, false)
+    let l = launch_split(site, profile, contract, arms, 1, false);
+    // ADR-0050 C4 `machine-place`: the ordered kernel every host use of
+    // this launch names is the placed one.
+    match l.rungs.machine_place {
+        true => crate::place::placed_for(site, profile, contract, arms, Combine::None, l),
+        false => l,
+    }
 }
 
 /// [`launch`] for the kernel that folds `split` partitions (site-geometry
@@ -1841,8 +1885,14 @@ fn plan_line(
         Combine::None => ("none", 1, 0, 0),
         Combine::Workspace { s } => ("splitk", s, 0, 0),
         Combine::Atomic { s } => ("atomic", s, 0, 0),
-        Combine::StreamK { ctas, iters } => ("streamk", 1, ctas, iters),
+        Combine::StreamK { ctas, iters, .. } => ("streamk", 1, ctas, iters),
     };
+    // ADR-0050 C5: a hybrid's whole-tile blocks ahead of its walk.
+    if let Combine::StreamK { whole, .. } = combine
+        && whole > 0
+    {
+        f += &format!(" whole={whole}");
+    }
     // sweep-gemm-2: which rule walks a stream-K site (intent.py) — the class
     // that ships `streamk`, `k-fill`'s full tile, or `streamk-price`.
     if let Some(w) = walk {
@@ -1933,7 +1983,25 @@ const KERNEL_RUNGS: [&str; 49] = [
 ];
 
 /// [`launch`] with the fold's realization chosen under `order` (ADR-0040 D4).
+/// ADR-0050 C4 `machine-place`: the machine model's pick
+/// ([`crate::place::placed`]), the rules' launch its incumbent.
 pub(crate) fn launch_in(
+    site: &TileSite,
+    profile: &TargetProfile,
+    contract: bool,
+    arms: crate::GpuArms,
+    order: Order,
+) -> Launch {
+    let l = crate::place::rules(|| launch_in_rules(site, profile, contract, arms, order));
+    match l.rungs.machine_place {
+        true => crate::place::placed(site, profile, contract, arms, order, l),
+        false => l,
+    }
+}
+
+/// [`launch_in`]'s rule chain (the OFF arm of `machine-place`, its
+/// incumbent).
+pub(crate) fn launch_in_rules(
     site: &TileSite,
     profile: &TargetProfile,
     contract: bool,
@@ -2029,6 +2097,7 @@ fn k_fill(
     let c = Combine::StreamK {
         ctas: (tiles * panels).div_ceil(iters),
         iters,
+        whole: 0,
     };
     // The launch fills the part: the filled class's index width (`idx32`,
     // `contract && filled`) — the walk over a tile count that is no power of
@@ -2073,7 +2142,7 @@ impl Cand {
             Combine::None => "none".into(),
             Combine::Atomic { s } => format!("atomic{s}"),
             Combine::Workspace { s } => format!("splitk{s}"),
-            Combine::StreamK { ctas, iters } => format!("streamk{ctas}x{iters}"),
+            Combine::StreamK { ctas, iters, .. } => format!("streamk{ctas}x{iters}"),
         }
     }
 }
@@ -2151,6 +2220,7 @@ pub(crate) fn plan_cands(
         combos.push(Combine::StreamK {
             ctas: (blocks * panels).div_ceil(iters),
             iters,
+            whole: 0,
         });
     }
     let mut seen = Vec::new();
@@ -2208,7 +2278,7 @@ pub(crate) fn plan_shape(site: &TileSite, l: &Launch, c: Combine, gpu: &Gpu) -> 
         Combine::None => (tiles, site.k, 1, PlanComb::None),
         Combine::Atomic { s } => (tiles * s, site.k / s, s, PlanComb::Atomic),
         Combine::Workspace { s } => (tiles * s, site.k / s, s, PlanComb::Workspace),
-        Combine::StreamK { ctas, iters } => (ctas, iters * bk, 1, PlanComb::StreamK),
+        Combine::StreamK { ctas, iters, .. } => (ctas, iters * bk, 1, PlanComb::StreamK),
     };
     PlanShape {
         rows: site.rows,
@@ -2348,6 +2418,13 @@ fn resized(
     combine: Combine,
 ) -> Launch {
     let r = resized_rules(site, profile, contract, arms, l, combine);
+    // ADR-0050 C4 `machine-place`: the kernel of realization `combine` runs
+    // the machine model's best schedule of it (the pick, or the best
+    // ordered one for the ordered kernel beside it).
+    let r = match r.rungs.machine_place {
+        true => crate::place::placed_for(site, profile, contract, arms, combine, r),
+        false => r,
+    };
     crate::place::probe(site, profile, contract, arms, r)
 }
 
@@ -2562,7 +2639,9 @@ pub(crate) fn site_cands(
         axes: "rules".into(),
     }];
     let cap = usize::try_from(arms.site_cands).unwrap_or(usize::MAX);
-    if cap <= 1 {
+    // ADR-0050 C4: a placed site's table is its pick (a run-time
+    // confirmation among the search's top is C6's).
+    if cap <= 1 || base.rungs.machine_place {
         return out;
     }
     // `bank-plan` is the one axis rung the kernel text reads beyond the
@@ -2852,8 +2931,10 @@ fn recipe(site: &TileSite, l: &Launch, (id, rid): (u64, u64), epi: bool) -> (Str
         Combine::Atomic { s } => (bytes_o, 0, l.gx, l.gy * s, 0, 0),
         // sweep-runtime-2 `streamk-epi`: the sums and the tiles' tickets in
         // a workspace the runtime zeroes (`ws` without a reduce kernel).
-        Combine::StreamK { ctas, .. } if epi => (0, ticket_bytes(site, l), ctas, 1, 0, 0),
-        Combine::StreamK { ctas, .. } => (bytes_o, 0, ctas, 1, 0, 0),
+        Combine::StreamK { ctas, whole, .. } if epi => {
+            (0, ticket_bytes(site, l), whole + ctas, 1, 0, 0)
+        }
+        Combine::StreamK { ctas, whole, .. } => (zero_bytes(site, l), 0, whole + ctas, 1, 0, 0),
         Combine::Workspace { s } => (0, s * bytes_o, l.gx, l.gy * s, cgx, cblock),
     };
     let text = format!(
@@ -2868,9 +2949,12 @@ fn recipe(site: &TileSite, l: &Launch, (id, rid): (u64, u64), epi: bool) -> (Str
 /// of sums a block (a shared tile's slot is its first block,
 /// [`Kernel::ticket_split`]; 16-byte aligned), then one `i32` ticket a slot.
 pub(crate) fn ticket_bytes(site: &TileSite, l: &Launch) -> u64 {
-    let Combine::StreamK { ctas, .. } = l.combine else {
+    // ADR-0050 C5 hybrid: a slot a block of the launch (a whole tile's
+    // block never takes its slot).
+    let Combine::StreamK { ctas, whole, .. } = l.combine else {
         unreachable!("a stream-K launch")
     };
+    let ctas = whole + ctas;
     // bf16 tensor-tile `mma-walk`: or the tensor tile.
     let (bm, bn) = match (l.tiled, l.mma) {
         (Some(g), _) => (g.bm(), g.bn()),
@@ -3390,7 +3474,11 @@ pub(crate) fn mma_walk(
     if !arms.on.get("mma-walk") && !price.pays(gpu, rate) {
         return None;
     }
-    let c = Combine::StreamK { ctas, iters };
+    let c = Combine::StreamK {
+        ctas,
+        iters,
+        whole: 0,
+    };
     let walk = Launch {
         mma: Some(w),
         gx: site.c / bn,
@@ -3728,7 +3816,11 @@ fn combine(
             }
         };
         if pays {
-            return Combine::StreamK { ctas, iters };
+            return Combine::StreamK {
+                ctas,
+                iters,
+                whole: 0,
+            };
         }
     }
     if rungs.splitk_atomic && atomic && l.raster == 1 && s_at > 1 {
@@ -5931,6 +6023,10 @@ fn kernel_text(
         k.out += &pick;
         k.out.push('\n');
     }
+    // ADR-0050 D8: the machine model's schedule, price, terms and open flips.
+    if l.rungs.machine_place {
+        k.out += &crate::place::place_line(site, profile, contract, arms, combine);
+    }
     match (l.wgmma, l.mma, l.tiled) {
         (Some(w), _, _) if w.ws => k.wgmma_ws(name, w),
         (Some(w), _, _) => k.wgmma(name, w),
@@ -6052,6 +6148,10 @@ fn kernel<'s>(
             Combine::StreamK { iters, .. } => Some(iters),
             _ => None,
         },
+        whole: match combine {
+            Combine::StreamK { whole, .. } => whole,
+            _ => 0,
+        },
         ticket: epi.is_some() && matches!(combine, Combine::StreamK { .. }),
         part: false,
         p0: None,
@@ -6093,7 +6193,7 @@ fn max_index(site: &TileSite, l: &Launch, combine: Combine) -> u64 {
         _ => 1,
     };
     let walk = match combine {
-        Combine::StreamK { ctas, iters } => ctas * iters,
+        Combine::StreamK { ctas, iters, whole } => ctas * iters + whole * site.k,
         _ => 0,
     };
     let cells = (site.rows * site.c).max(l.gx * l.gy * l.block * l.cells) * slabs;
@@ -6529,6 +6629,139 @@ pub(crate) fn panel_excess(
     [lds_a, lds_b, st_a, st_b]
 }
 
+/// ADR-0050 C4: **the FMA tile emitter's declared constraints** on tile `g`
+/// of `site` under `rungs` (what [`Kernel::tiled`] assumes): every copy of
+/// a panel whole — each operand's lane map moves its `bm·bk` / `bk·bn`
+/// elements in whole loads a thread ([`lane_maps`]) —, a streamed panel
+/// (`cp.async`) never narrows `a` and narrows `b` only where `narrow-async`
+/// streams it, the k-major read on a warp at least a wavefront wide, a
+/// whole-file tile at least its counted registers. `Err`: the first broken.
+pub(crate) fn fma_constraints(
+    site: &TileSite,
+    g: &GpuTile,
+    rungs: &crate::GpuRungs,
+) -> Result<(), &'static str> {
+    let e = elem_bytes_of(&site.elem);
+    let (bm, bn, bk, threads) = (g.bm(), g.bn(), g.bk, g.threads());
+    if threads == 0 || bk == 0 {
+        return Err("an empty tile");
+    }
+    let streamed = g.stages >= 2;
+    if streamed && site.a.narrow.is_some() {
+        return Err("a narrow `a` panel is register-staged");
+    }
+    if streamed && site.b.narrow.is_some() && !narrow_streams(site, rungs) {
+        return Err("a narrow `b` panel streams only under narrow-async");
+    }
+    if g.kmajor && g.tx < GPU_WAVEFRONT_BYTES / GPU_VEC_BYTES {
+        return Err("the k-major read needs a wavefront-wide warp row");
+    }
+    if g.held > 0 && g.held < crate::profile::fma_held_regs(g.tm, g.tn, e) {
+        return Err("held registers below the counted footprint");
+    }
+    let kvb = rungs.kmajor_b && kvec_b(site, g);
+    let [(am, an), (bmap, bnn)] = lane_maps(site, g, g.kmajor, kvb);
+    let unit = |m: LaneMap| match m {
+        LaneMap::RowMajor { unit, .. } | LaneMap::Split { unit, .. } => unit,
+        LaneMap::ColMajor { .. } => 1,
+    };
+    if an == 0 || an * threads * unit(am) != bm * bk {
+        return Err("`a`'s panel copies are not whole loads a thread");
+    }
+    if bnn == 0 || bnn * threads * unit(bmap) != bk * bn {
+        return Err("`b`'s panel copies are not whole loads a thread");
+    }
+    Ok(())
+}
+
+/// ADR-0050 C4: whether the FMA tile streams a panel of `site` through
+/// `cp.async` (a narrow `a` is register-staged; a narrow `b` streams only
+/// under `narrow-async`).
+pub(crate) fn fma_streams(site: &TileSite, rungs: &crate::GpuRungs) -> bool {
+    site.a.narrow.is_none() && (site.b.narrow.is_none() || narrow_streams(site, rungs))
+}
+
+/// ADR-0050 C4: **the FMA tile's layout by the bank model** (dominance: no
+/// evaluator term reads a pad, so the search takes the emitter's own
+/// conflict-free choice) — a k-major `a` panel's least worst-excess pad
+/// ([`kmajor_pad`]); a register-staged vector `a`'s row lanes and pad
+/// ([`TargetProfile::gpu_tile_sync_a`]: [`conflict_free_pad`] over its copy
+/// map); otherwise none.
+pub(crate) fn fma_layout(
+    site: &TileSite,
+    profile: &TargetProfile,
+    g: GpuTile,
+    rungs: &crate::GpuRungs,
+) -> GpuTile {
+    let g = GpuTile {
+        pad_a: 0,
+        a_row_lanes: 0,
+        ..g
+    };
+    if g.kmajor {
+        return GpuTile {
+            pad_a: kmajor_pad(site, &g, rungs),
+            ..g
+        };
+    }
+    if g.stages < 2 && vector_a(site) {
+        return profile.gpu_tile_sync_a(g, &site.elem);
+    }
+    g
+}
+
+/// ADR-0050 C4: one kernel's text as a device module of its own (the
+/// preamble, its loop metadata) — what the post-lowering gate assembles.
+pub(crate) fn kernel_module(text: &str) -> String {
+    let mut out = String::from(DEVICE_PREAMBLE);
+    out.push('\n');
+    if text.contains("!@LOOP@") {
+        out.push_str(&text.replace("!@LOOP@", "!0"));
+        out.push_str("!0 = distinct !{!0, !1}\n!1 = !{!\"llvm.loop.unroll.full\"}\n");
+    } else {
+        out.push_str(text);
+    }
+    out
+}
+
+/// FNV-1a of a text (the gate's scratch names).
+pub(crate) fn fnv_text(t: &str) -> u64 {
+    t.bytes().fold(0xcbf29ce484222325u64, |h, b| {
+        (h ^ b as u64).wrapping_mul(0x100000001b3)
+    })
+}
+
+/// ADR-0050 C4: the panel widths a 16-bit tensor tile of `fmt` stages
+/// `site`'s operands at ([`mma16_layout`]), `None` where it cannot.
+pub(crate) fn mma_widths(site: &TileSite, fmt: MmaFmt) -> Option<(u64, u64)> {
+    mma16_layout(site, fmt)
+}
+
+/// ADR-0050 C4 **post-lowering gate**: the kernel text launch `l` lowers to
+/// (its realization `l.combine`), or `Err` with the emitter's refusal —
+/// emitted under [`crate::place::forced`], so every launch the emitter
+/// derives inside is `l`.
+pub(crate) fn lowered_text(
+    site: &TileSite,
+    profile: &TargetProfile,
+    contract: bool,
+    arms: crate::GpuArms,
+    l: &Launch,
+) -> Result<String, String> {
+    let name = kernel_name(kernel_id(site, profile, contract));
+    crate::place::forced(l, || {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            kernel_text(&name, site, profile, contract, arms, false, None, l.combine)
+        }))
+        .map_err(|e| {
+            e.downcast_ref::<String>()
+                .cloned()
+                .or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string()))
+                .unwrap_or_else(|| "the emitter refused".into())
+        })
+    })
+}
+
 /// per-site-choice A2: the k-major `a` panel's row pad — the least, in
 /// 16-byte steps under 32 words, that minimises the worst excess of its
 /// fragment read and copy write ([`panel_excess`]); `b` does not move.
@@ -6586,6 +6819,9 @@ struct Kernel<'s> {
     terms: u64,
     /// S63 `streamk`: the units of the `tiles × panels` space one block walks.
     streamk: Option<u64>,
+    /// ADR-0050 C5 hybrid: the blocks before the walk, each one whole tile
+    /// ([`Combine::StreamK`]'s `whole`; 0: the plain walk).
+    whole: u64,
     /// sweep-runtime-2 `streamk-epi`: a stream-K kernel of an epilogue group
     /// — its partials add into the workspace `%w` (the sums, then one `i32`
     /// ticket a tile), and the CTA that completes a tile evaluates the
@@ -11461,13 +11697,54 @@ impl Kernel<'_> {
         let (gx, h) = self.raster;
         let total = gx * self.gy_out * panels;
         let cta = self.sreg("ctaid.x");
-        let start = self.op("mul", &cta, iters);
-        let end0 = self.op("add", &start, iters);
+        let (start, end0, limit) = match self.whole {
+            0 => {
+                let start = self.op("mul", &cta, iters);
+                let end0 = self.op("add", &start, iters);
+                (start, end0, total.to_string())
+            }
+            // ADR-0050 C5 hybrid: the walk takes the raster order's first
+            // `tail = tiles − whole` tiles (units `[0, tail·P)`, so the zero
+            // pass is the output's prefix those tiles' rows span), the whole
+            // waves the rest: block `cta < whole` folds tile `tail + cta`
+            // whole, a later one walks `iters` units from `(cta − whole)·
+            // iters`, never past `tail·P`.
+            whole => {
+                let tail = total / panels - whole;
+                let ordered = self.tmp();
+                self.line(format!("{ordered} = icmp ult {ix} {cta}, {whole}"));
+                let past = self.tmp();
+                self.line(format!(
+                    "{past} = select i1 {ordered}, {ix} {whole}, {ix} {cta}"
+                ));
+                let t0 = self.tmp();
+                self.line(format!("{t0} = sub {ix} {past}, {whole}"));
+                let walk = self.op("mul", &t0, iters);
+                let tile = self.plus(cta.clone(), tail);
+                let own = self.op("mul", &tile, panels);
+                let start = self.tmp();
+                self.line(format!(
+                    "{start} = select i1 {ordered}, {ix} {own}, {ix} {walk}"
+                ));
+                let step = self.tmp();
+                self.line(format!(
+                    "{step} = select i1 {ordered}, {ix} {panels}, {ix} {iters}"
+                ));
+                let end0 = self.tmp();
+                self.line(format!("{end0} = add {ix} {start}, {step}"));
+                let limit = self.tmp();
+                self.line(format!(
+                    "{limit} = select i1 {ordered}, {ix} {total}, {ix} {}",
+                    tail * panels
+                ));
+                (start, end0, limit)
+            }
+        };
         let past = self.tmp();
-        self.line(format!("{past} = icmp ult {ix} {end0}, {total}"));
+        self.line(format!("{past} = icmp ult {ix} {end0}, {limit}"));
         let end = self.tmp();
         self.line(format!(
-            "{end} = select i1 {past}, {ix} {end0}, {ix} {total}"
+            "{end} = select i1 {past}, {ix} {end0}, {ix} {limit}"
         ));
         self.line("br label %seg");
         self.out.push_str("seg:\n");
@@ -11526,16 +11803,45 @@ impl Kernel<'_> {
         let ix = self.idx;
         let iters = self.streamk.expect("a stream-K kernel");
         let first = self.op("mul", &sg.tile, panels);
-        let c0 = self.op("udiv", &first, iters);
-        let lastu = self.plus(first, panels - 1);
-        let c1 = self.op("udiv", &lastu, iters);
+        let (c0, c1) = match self.whole {
+            0 => {
+                let c0 = self.op("udiv", &first, iters);
+                let lastu = self.plus(first, panels - 1);
+                (c0, self.op("udiv", &lastu, iters))
+            }
+            // ADR-0050 C5 hybrid: tile `t ≥ tail` is block `t − tail`'s
+            // alone; a walked tile's blocks count from `whole` over the
+            // walk's units `[0, tail·P)` ([`Kernel::segment`]).
+            whole => {
+                let tail = self.raster.0 * self.gy_out - whole;
+                let ordered = self.tmp();
+                self.line(format!("{ordered} = icmp uge {ix} {}, {tail}", sg.tile));
+                let own0 = self.tmp();
+                self.line(format!(
+                    "{own0} = select i1 {ordered}, {ix} {}, {ix} {tail}",
+                    sg.tile
+                ));
+                let own = self.tmp();
+                self.line(format!("{own} = sub {ix} {own0}, {tail}"));
+                let q0 = self.op("udiv", &first, iters);
+                let w0 = self.plus(q0, whole);
+                let lastu = self.plus(first.clone(), panels - 1);
+                let q1 = self.op("udiv", &lastu, iters);
+                let w1 = self.plus(q1, whole);
+                let (c0, c1) = (self.tmp(), self.tmp());
+                self.line(format!("{c0} = select i1 {ordered}, {ix} {own}, {ix} {w0}"));
+                self.line(format!("{c1} = select i1 {ordered}, {ix} {own}, {ix} {w1}"));
+                (c0, c1)
+            }
+        };
         let shared = self.tmp();
         self.line(format!("{shared} = sub {ix} {c1}, {c0}"));
         let whole = self.tmp();
         self.line(format!("{whole} = icmp eq {ix} {c1}, {c0}"));
         let base = self.op("mul", &c0, bm * bn);
         self.line(format!("br i1 {whole}, label %st_whole, label %st_part"));
-        let ctas = (self.raster.0 * self.gy_out * panels).div_ceil(iters);
+        let units = self.raster.0 * self.gy_out * panels - self.whole * panels;
+        let ctas = self.whole + units.div_ceil(iters);
         TicketSplit {
             base,
             slot: c0,
@@ -11961,9 +12267,18 @@ impl<'a> FnEmit<'a> {
                     );
                     Some(("atomic", geom, format!(" ; splitk={s} atomic")))
                 }
-                Combine::StreamK { ctas, iters } if combined => {
-                    let geom = format!("i32 {ctas}, i32 1, i32 {}, i32 {}", l.block, l.smem);
-                    Some(("streamk", geom, format!(" ; streamk={ctas}x{iters}")))
+                Combine::StreamK { ctas, iters, whole } if combined => {
+                    let geom = format!(
+                        "i32 {}, i32 1, i32 {}, i32 {}",
+                        whole + ctas,
+                        l.block,
+                        l.smem
+                    );
+                    Some((
+                        "streamk",
+                        geom,
+                        format!(" ; streamk={ctas}x{iters}{}", hybrid_tag(whole)),
+                    ))
                 }
                 _ => None,
             };
@@ -11972,7 +12287,10 @@ impl<'a> FnEmit<'a> {
                 // kernel-merging `zero-fold`: an earlier kernel zeroed it.
                 let zero = match plan.zeroed.contains_key(m) {
                     true => String::new(),
-                    false => format!("call void @mapal_gpu_zero(i64 {{o}}, i64 {bytes_o})\n  "),
+                    false => format!(
+                        "call void @mapal_gpu_zero(i64 {{o}}, i64 {})\n  ",
+                        zero_bytes(site, &l)
+                    ),
                 };
                 self.emit_site_resident(source, target, &[site.a.slot, site.b.slot], None, |ops, o| {
                     format!(
@@ -12409,11 +12727,15 @@ impl<'a> FnEmit<'a> {
                     lc.block,
                     lc.smem
                 ),
-                Some(Combine::StreamK { ctas, iters }) => format!(
-                    "call void @mapal_gpu_zero(i64 {o}, i64 {bytes_o})\n  \
+                Some(Combine::StreamK { ctas, iters, whole }) => format!(
+                    "call void @mapal_gpu_zero(i64 {o}, i64 {})\n  \
                      call void @mapal_gpu_launch(i64 {id}, i64 {a}, i64 {b}, i64 {o}, \
-                     i32 {ctas}, i32 1, i32 {}, i32 {}) ; streamk={ctas}x{iters}",
-                    lc.block, lc.smem
+                     i32 {}, i32 1, i32 {}, i32 {}) ; streamk={ctas}x{iters}{}",
+                    zero_bytes(one, &lc),
+                    whole + ctas,
+                    lc.block,
+                    lc.smem,
+                    hybrid_tag(whole)
                 ),
                 Some(Combine::Workspace { s }) => {
                     let (rgx, rblock) = cell_grid(one.rows * one.c);
@@ -13007,6 +13329,7 @@ mod tests {
                             atomic: false,
                             terms: 1,
                             streamk: None,
+                            whole: 0,
                             ticket: false,
                             part: false,
                             p0: None,
@@ -14210,7 +14533,7 @@ mod tests {
                         let parts_ = c.splits();
                         assert!(parts_ == 1 || blocks * parts_ <= lo.wave(g), "{c:?}");
                         assert!(k.is_multiple_of(parts_ * unit), "{c:?}");
-                        if let Combine::StreamK { ctas, iters } = c {
+                        if let Combine::StreamK { ctas, iters, .. } = c {
                             assert!(ctas <= wave && ctas * iters >= blocks * (k / unit));
                         }
                     }
@@ -14597,6 +14920,7 @@ mod tests {
         let c = Combine::StreamK {
             ctas: (blocks * panels).div_ceil(iters),
             iters,
+            whole: 0,
         };
         let text = kernel_text("k", &s, &RTX_5090, true, arms, None, false, None, c);
         assert!(text.contains("seg:\n") && text.contains("segl:\n") && text.contains("exit:\n"));

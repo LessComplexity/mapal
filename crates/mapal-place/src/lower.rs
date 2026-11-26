@@ -35,6 +35,10 @@ pub struct Declared {
     /// the useful `2·bm·bn·bk` times the passes a split realization takes
     /// (0: the useful flops).
     pub work: f64,
+    /// A walked piece that is its tile's whole fold stores (no zero pass
+    /// under it): a hybrid's zero pass is then the walked tiles' rows only;
+    /// `false`, every piece adds into the zeroed output.
+    pub whole_stores: bool,
 }
 
 impl Declared {
@@ -99,4 +103,35 @@ pub trait Lowering {
     fn slots(&self, m: &Machine, s: &Site, op: OpId, swap: bool) -> Vec<Schedule>;
     /// Every declared constraint checked, the counts given.
     fn declare(&self, m: &Machine, s: &Site, x: &Schedule) -> Result<Declared, Refusal>;
+
+    /// **The slot space as coordinates** for the search's branch and bound
+    /// (D5): their count, coordinate 0 the operation (0: no coordinates —
+    /// [`Self::slots`] enumerates the space).
+    fn dims(&self) -> usize {
+        0
+    }
+    /// Coordinate `i`'s values given `pre` (the coordinates before it): the
+    /// site's facts applied (an operand's stored layout and format are the
+    /// site's, not choices) and dominance (a coordinate no evaluator term
+    /// reads takes the one value the lowering's own rule gives: a layout's
+    /// pad by the bank model).
+    fn search_domain(&self, _m: &Machine, _s: &Site, _i: usize, _pre: &[u64]) -> Vec<u64> {
+        Vec::new()
+    }
+    /// The schedule at complete point `pre` (`None`: no tile of the
+    /// lowering).
+    fn point(&self, _m: &Machine, _s: &Site, _pre: &[u64], _swap: bool) -> Option<Schedule> {
+        None
+    }
+    /// The slot tile `(bm, bn)` prefix `pre` fixes, once it does (the
+    /// search's bound reads it).
+    fn tile_of(&self, _pre: &[u64], _swap: bool) -> Option<(u64, u64)> {
+        None
+    }
+    /// The slot's lanes and its accumulator chains a lane, once prefix
+    /// `pre` fixes them (the search bounds the compute at the efficiency
+    /// the most slots its lanes allow a unit reach).
+    fn lanes_of(&self, _pre: &[u64], _swap: bool) -> Option<(u64, u64)> {
+        None
+    }
 }

@@ -440,6 +440,9 @@ pub fn rungs(g: &Gpu, wps: u64, face: Face) -> GpuRungs {
         fit_first: false,
         l2_window: false,
         plan_cost: false,
+        // ADR-0050 C4: the machine model's search, off until C6 confirms it
+        // (its ON arm, `--gpu-on=machine-place`, measures it).
+        machine_place: false,
         retain_delta: false,
         rowfold_layout: false,
         streams: false,

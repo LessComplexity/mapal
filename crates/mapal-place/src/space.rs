@@ -100,13 +100,20 @@ pub fn traversals(
                     out.push(Traversal::Walk { h, ctas, iters });
                 }
             }
+            // The hybrid's whole waves are the footprint's own (`occ` slots a
+            // unit: the waves the dispatch runs), its tail walked over them.
             let whole = tiles / w * w;
-            if has(TravKind::Hybrid) && whole > 0 && whole < tiles {
+            if has(TravKind::Hybrid) && u == occ && whole > 0 && whole < tiles {
                 let (ctas, iters) = walk_grid((tiles - whole) * panels, w);
-                out.push(Traversal::Hybrid { h: 1, ctas, iters });
+                for &h in &heights {
+                    out.push(Traversal::Hybrid { h, ctas, iters });
+                }
             }
         }
     }
+    // A walk at a smaller occupancy can land on the same grid: once.
+    let mut seen = std::collections::HashSet::new();
+    out.retain(|t| seen.insert(*t));
     if has(TravKind::Persistent) && m.dispatch.rr_jitter.is_some() {
         for u in 1..=occ {
             out.push(Traversal::Persistent {

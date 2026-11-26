@@ -1215,6 +1215,13 @@ pub struct GpuRungs {
     /// (a 512-row one-row projection: 6 warps an SM). Off
     /// (`--gpu-off=fly-unroll`): every lane loop `NAIVE_UNROLL`.
     pub fly_unroll: bool,
+    /// ADR-0050 C4 `machine-place`: a tile site's launch is the machine
+    /// model's search ([`crate::place::placed`]: the schedule the one
+    /// evaluator prices lowest over every lowering's space, through the
+    /// post-lowering gate, kept to the rules' launch within the model's
+    /// error band), lowered by `launch_of`. Off (the default until ADR-0050
+    /// C6 confirms it): the rule chain.
+    pub machine_place: bool,
 }
 
 impl GpuRungs {
@@ -1387,11 +1394,14 @@ impl GpuRungs {
         carry_fwd: true,
         lanes_unroll: true,
         fly_unroll: true,
+        // ADR-0050 C4: `machine-place` replaces the rule chain, so it is no
+        // rung of it — off in "every rung on" too; on only by its own arm.
+        machine_place: false,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 167] = [
+    pub const NAMES: [&'static str; 168] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -1558,6 +1568,7 @@ impl GpuRungs {
         "lanes-unroll",
         "mma-walk",
         "fly-unroll",
+        "machine-place",
         "cand-made",
     ];
 
@@ -1731,6 +1742,7 @@ impl GpuRungs {
             "carry-fwd" => &mut self.carry_fwd,
             "lanes-unroll" => &mut self.lanes_unroll,
             "fly-unroll" => &mut self.fly_unroll,
+            "machine-place" => &mut self.machine_place,
             _ => return None,
         })
     }
@@ -1821,6 +1833,18 @@ pub struct GpuArms {
     /// `threads` a block; 0 = any) where they fit, the price aside. `None` =
     /// derive.
     pub stream_force: Option<(u64, u64, u64, u64, u64)>,
+    /// ADR-0050 C4 `--place-gate=ptxas`: `machine-place`'s post-lowering
+    /// gate also assembles each candidate (`llc`, `ptxas -v` where present)
+    /// and refuses a spill or registers above the file. Off: the gate lowers
+    /// the kernel only (an emission never depends on the tools present).
+    pub place_gate: bool,
+    /// ADR-0050 C5 measurement arms of `machine-place` (the `--splitk=<S>`
+    /// precedent): `--place-trav=<ordered|split|walk|hybrid>` keeps only
+    /// that traversal kind (0: every kind); `--place-tile` keeps the rules'
+    /// slot schedule, so only the traversal varies (the A/B of a walk, a
+    /// hybrid and the ordered grid on one tile).
+    pub place_trav: u8,
+    pub place_tile: bool,
 }
 
 /// [`GpuArms::site_cands`]'s default (design B1).
@@ -1845,6 +1869,9 @@ impl Default for GpuArms {
             calls_force: false,
             row_slices_s: 0,
             stream_force: None,
+            place_gate: false,
+            place_trav: 0,
+            place_tile: false,
         }
     }
 }
