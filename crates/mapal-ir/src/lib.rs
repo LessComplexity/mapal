@@ -33,6 +33,7 @@ mod graph;
 mod loc;
 pub mod math;
 mod mermaid;
+mod mermaid_flow;
 pub mod narrow;
 pub mod read;
 mod residence;
@@ -64,6 +65,7 @@ pub use graph::{
 pub use loc::SourceLoc;
 pub use math::MathFn;
 pub use mermaid::lint_mermaid;
+pub use mermaid_flow::{FlowAnchor, FlowGraph};
 pub use residence::{Residence, ResidencePlan};
 pub use ty::{MAX_TY_DEPTH, NarrowFloat, Ty, Value, ty_contains_token, ty_label};
 pub use unit::{RowMap, UnitGroup, UnitKind, UnitMember, UnitPlan, out_rows};

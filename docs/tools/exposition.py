@@ -16,11 +16,12 @@ Kinds (attributes in brackets are optional):
     derive   file [target] [scale]          static and rewrite reports + the kernels the placement chose
     gpus     file [targets] [scale]         the same kernel under several GPU profiles (compile only)
     ptxmix   file [target] [scale]          PTX instruction mix of the emitted module + the inner-loop excerpt
-    graph    file                            operation counts of the graph: as lowered, after rewriting
+    graph    file [short] [mermaid=1]        operation counts of the graph: as lowered, after rewriting; mermaid=1 adds the flow
+                                             view and the full `--mermaid` graph (a zoom box, collapsed)
     syntax   file                            token classes the language server reports
     llama    [target]                        kernel kinds of the whole Llama-3.2-1B emission
     chart    name                            an inline SVG chart (light and dark variants), ids made unique
-    flow     file                            a mermaid flowchart of the program's dataflow (docs/tools/flow_diagram.py)
+    flow     file                            the flow view of the compiler's own graph: `mapal dump-ir --stage=rewritten --mermaid=flow`
     gpuline  file [target] [scale]          one plain sentence on the kernel the compiler made (compile only)
     perf     name=families|samples|cpu|ttft  the Performance section's charts and line, drawn by docs/tools/perf_charts.py
                                              from matrix.json, full-model.json and earlier-readme-results.md
@@ -294,7 +295,10 @@ def k_graph(a: dict) -> str:
         if lo[1].get(op) or rw[1].get(op):
             lines.append(f"{op:<18} lowered {lo[1].get(op, 0):>4}   rewritten {rw[1].get(op, 0):>4}")
     lines.append(f"all operations     lowered {sum(lo[1].values()):>4}   rewritten {sum(rw[1].values()):>4}")
-    return pre("\n".join(lines), label=f"The graph <span>mapal dump-ir --stage=lowered|rewritten {esc(Path(a['file']).name)}</span>")
+    out = pre("\n".join(lines), label=f"The graph <span>mapal dump-ir --stage=lowered|rewritten {esc(Path(a['file']).name)}</span>")
+    if a.get("mermaid"):
+        out += "\n" + flow_block(a) + "\n" + full_graph_block(a)
+    return out
 
 
 def k_syntax(a: dict) -> str:
@@ -349,11 +353,37 @@ def k_perf(a: dict) -> str:
     return perf_charts.KINDS[a["name"]](a)
 
 
-def k_flow(a: dict) -> str:
-    sys.path.insert(0, str(Path(__file__).parent))
-    import flow_diagram
+def mermaid_of(path: Path, form: str, stage: str = "rewritten") -> str:
+    """The compiler's own Mermaid text for the graph: `form` is `flow` or `full`."""
+    flag = "--mermaid=flow" if form == "flow" else "--mermaid"
+    return sh([exe(), "dump-ir", path.name, f"--stage={stage}", flag], cwd=path.parent).stdout.rstrip("\n")
 
-    return '<div class="mermaid">\n' + flow_diagram.mermaid(ROOT / a["file"]) + "\n</div>"
+
+def mermaid_div(text: str, cls: str = "mermaid") -> str:
+    return f'<div class="{cls}">\n{esc(text)}\n</div>'
+
+
+def flow_block(a: dict) -> str:
+    p = ROOT / a["file"]
+    cmd = f"mapal dump-ir --stage=rewritten --mermaid=flow {p.name}"
+    return (f'<div class="io-h">The flow <span>{esc(cmd)}</span></div>\n'
+            + mermaid_div(mermaid_of(p, "flow")))
+
+
+def k_flow(a: dict) -> str:
+    return flow_block(a)
+
+
+def full_graph_block(a: dict) -> str:
+    p = ROOT / a["file"]
+    cmd = f"mapal dump-ir --stage=rewritten --mermaid {p.name}"
+    text = mermaid_of(p, "full")
+    nodes = len(re.findall(r"\(\(", text))
+    return (f'<details class="gfull"><summary>The full graph, every object and operation ({nodes} nodes)</summary>\n'
+            f'<div class="io-h">The full graph <span>{esc(cmd)}</span></div>\n'
+            f'<div class="zoombox"><div class="zbar"><button type="button" data-z="out" aria-label="Zoom out">&minus;</button>'
+            f'<button type="button" data-z="in" aria-label="Zoom in">+</button><button type="button" data-z="fit">Fit</button></div>\n'
+            + mermaid_div(text) + "\n</div></details>")
 
 
 def k_gpuline(a: dict) -> str:

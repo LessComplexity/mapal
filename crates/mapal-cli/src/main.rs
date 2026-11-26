@@ -28,6 +28,8 @@ const USAGE: &str = "usage: mapal <build|run|dump-ir|test|fmt|lsp> <file.mapal> 
   run      [--interp [--weakest | --bound]] [--budget N]  compile and execute (--interp: the oracle;
            --bound: the output with each float printed as its composed default-face bound)
   dump-ir  [--stage=lowered|rewritten|llvm|device]
+           [--mermaid[=full|flow]]        the graph as Mermaid (lowered or rewritten; default rewritten):
+                                          full = every object, flow = the named values and what they read
   test     [--budget N] [--timeout SECS]  the fixed face (or --exact) vs the oracle, byte for byte
            [--weakest]                    vs the exact face within the composed bound (ADR-0041 D5;
                                           implied where a product admits a reduced member)
@@ -59,6 +61,8 @@ struct Args {
     budget: u64,
     timeout: u64,
     stage: String,
+    /// `dump-ir --mermaid[=full|flow]`: the graph as Mermaid text.
+    mermaid: Option<String>,
     rewrite: bool,
     /// ADR-0048 D3: compile-time evaluation (`static_plan` roots embedded).
     static_eval: bool,
@@ -125,6 +129,7 @@ fn parse_args(mut it: impl Iterator<Item = String>) -> Res<Args> {
         budget: 100_000_000,
         timeout: 60,
         stage: "llvm".into(),
+        mermaid: None,
         rewrite: true,
         static_eval: std::env::var("MAPAL_STATIC").map_or(true, |v| v != "off"),
         verbose: false,
@@ -158,6 +163,8 @@ fn parse_args(mut it: impl Iterator<Item = String>) -> Res<Args> {
             "--static=off" => a.static_eval = false,
             "--static=on" => a.static_eval = true,
             "-v" => a.verbose = true,
+            "--mermaid" => a.mermaid = Some("full".into()),
+            _ if s.starts_with("--mermaid=") => a.mermaid = Some(s["--mermaid=".len()..].into()),
             _ if s.starts_with("--stage=") => a.stage = s["--stage=".len()..].into(),
             _ if !s.starts_with('-') && a.file.is_empty() => a.file = s,
             _ => return Err(usage(&format!("unknown argument `{s}`"))),
@@ -591,6 +598,19 @@ fn bound_shape(bounds: &[mapal_interp::Bound]) -> String {
 
 fn dump_ir(a: &Args) -> Res<u8> {
     let ir = frontend(a)?;
+    if let Some(kind) = &a.mermaid {
+        let ir = match a.stage.as_str() {
+            "lowered" => ir,
+            "rewritten" | "llvm" => rewritten(a, ir),
+            s => return Err(usage(&format!("--mermaid draws the lowered or rewritten graph, not `{s}`"))),
+        };
+        match kind.as_str() {
+            "full" => print!("{}", ir.to_mermaid()),
+            "flow" => print!("{}", ir.to_mermaid_flow()),
+            k => return Err(usage(&format!("unknown mermaid form `{k}` (full|flow)"))),
+        }
+        return Ok(0);
+    }
     match a.stage.as_str() {
         "lowered" => println!("{ir:#?}"),
         "rewritten" => println!("{:#?}", rewritten(a, ir)),
