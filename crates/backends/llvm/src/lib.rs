@@ -24,6 +24,8 @@ mod math;
 mod module;
 mod narrow;
 pub(crate) mod place;
+#[cfg(test)]
+mod place_replay;
 mod profile;
 mod reuse;
 mod rules;
