@@ -1315,7 +1315,7 @@ the 33 flow kernels each carry several steps (130 steps in all)</code></pre></di
     <div><b>Attention and softmax</b><p>Leads: a chain of steps runs together and saves the launches between them. Trails a memory-efficient attention kernel on long f32 prefill, which skips masked blocks.</p></div>
     <div><b>Convolution and FIR</b><p>Leads on every GPU. The one loss is the TF32 multi-channel convolution, against a tensor-core library.</p></div>
     <div><b>Fan-in / fan-out chains</b><p>About even. Merging launches only pays where the phases are short.</p></div>
-    <div><b>Matrix products</b><p>The weak class. Matrix-vector shapes are limited by bytes in flight, and on the H100 the TF32 products do not use its TMA and warp-specialised pipeline yet.</p></div>
+    <div><b>Matrix products</b><p>The weak class. Matrix-vector shapes are limited by how many bytes the kernel keeps in flight, and the H100’s TF32 products trail cuBLAS by 1.3–3×; why is still open (cuBLAS’s own kernels were not captured).</p></div>
     <div><b>LLM layers</b><p>Ahead in f32. Behind in bf16 where <code>torch.compile</code> with CUDA graphs replays many small kernels without launch gaps.</p></div>
     <div><b>MLP chains</b><p>About even with the best chain of library calls: the time is in the matrix products.</p></div>
   </div>
