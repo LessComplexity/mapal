@@ -19,7 +19,7 @@
 <!--toc:start-->
 
 - [Philosophy](#philosophy)
-- [Example: Llama-3.2-1B](#example-llama-32-1b)
+- [Example](#example)
 - [Syntax](#syntax)
 - [Current results](#current-results)
   - [The full model](#the-full-model)
@@ -80,16 +80,11 @@ What follows from it:
 
 ---
 
-## Example: Llama-3.2-1B
+## Example
 
-[`examples/llama.mapal`](examples/llama.mapal) is Llama-3.2-1B-Instruct in 403 lines, written to be read: the
-checkpoint's weights are one `read`, and one `forward` runs the whole prompt and then each generated token through
-the 16 layers. Excerpts, unedited.
-
-RMSNorm, for any number of tokens:
+RMSNorm, one of the steps of a transformer, for any number of tokens:
 
 ```flow
-// RMSNorm of each vector: x / sqrt(mean(x^2) + epsilon), times a learned gain per feature.
 fn rms_norm<tokens>(x: [f32; tokens * hidden_size], gain: [bf16; hidden_size]) -> [f32; tokens * hidden_size] {
     hidden_size -> iota -> features;
     hidden_size -> widen_f32 -> width;
@@ -107,134 +102,9 @@ fn rms_norm<tokens>(x: [f32; tokens * hidden_size], gain: [bf16; hidden_size]) -
 }
 ```
 
-One decoder layer, as a flow from the hidden state to the next hidden state and the updated key/value cache:
-
-```flow
-// One decoder layer over the chunk: attention with a residual connection, then the feed-forward block with
-// a residual connection. The chunk's keys and values enter the cache before its queries attend.
-fn decoder_layer<tokens>(
-    hidden: [f32; tokens * hidden_size],
-    weights: DecoderLayerWeights,
-    layer: i32,
-    cache: KeyValueCache,
-    positions: [i32; tokens],
-) -> ([f32; tokens * hidden_size], KeyValueCache) {
-    (hidden, weights.attention_norm) -> rms_norm -> normed;
-    (weights.query, normed) -> project -> query: [f32; tokens * query_size];
-    (weights.key, normed) -> project -> key: [f32; tokens * key_value_size];
-    (weights.value, normed) -> project -> value: [f32; tokens * key_value_size];
-    (query, positions) -> rotate -> rotated_query;
-    (key, positions) -> rotate -> rotated_key;
-    (cache.keys, rotated_key, layer, positions[0]) -> write_rows -> keys;
-    (cache.values, value, layer, positions[0]) -> write_rows -> values;
-    KeyValueCache {
-        keys: keys,
-        values: values,
-    } -> updated_cache;
-    (rotated_query, positions, updated_cache, layer) -> attend -> attended;
-    (weights.output, attended) -> project -> attention_output: [f32; tokens * hidden_size];
-    (hidden, attention_output) -> add -> after_attention;
-    (after_attention, weights.feed_forward_norm) -> rms_norm -> normed_again;
-    (normed_again, weights) -> feed_forward -> feed_forward_output;
-    (after_attention, feed_forward_output) -> add -> ret.0;
-    updated_cache -> ret.1;
-}
-```
-
-<details>
-<summary>Attention (<code>attend</code>): grouped-query, causal, softmax as three maps and two folds</summary>
-
-```flow
-// Causal grouped-query attention over layer `layer`'s cached keys and values: each token's query head h reads
-// key/value head h / 4 of every cached position up to its own, scores are scaled by 1 / sqrt(head_size),
-// softmax over each head's scores, and the result is the weighted sum of the cached values.
-fn attend<tokens>(
-    query: [f32; tokens * query_size],
-    positions: [i32; tokens],
-    cache: KeyValueCache,
-    layer: i32,
-) -> [f32; tokens * query_size] {
-    head_size -> iota -> dimensions;
-    context_length -> iota -> past_positions;
-    head_size -> widen_f32 -> sqrt -> scale_root;
-    tokens * query_heads * context_length -> iota -> map {
-        cell ->
-        cell / context_length -> token_head;
-        cell % context_length -> past;
-        token_head / query_heads -> t;
-        token_head % query_heads / heads_per_key_value_head -> key_value_head;
-        (past <= positions[t]) -> {
-            -true-> {
-                (layer * context_length + past) * key_value_heads + key_value_head -> key_row;
-                (0.0, dimensions) -> fold {
-                    sum, d -> sum + query[token_head * head_size + d] * cache.keys[key_row * head_size + d]
-                } -> dot;
-                dot / scale_root
-            }
-            -false-> -1000000000.0;
-        }
-    } -> scores;
-    tokens * query_heads -> iota -> token_heads;
-    token_heads -> map {
-        token_head -> (-1000000000.0, past_positions) -> fold {
-            best, past -> (best, scores[token_head * context_length + past]) -> larger
-        }
-    } -> row_maximum;
-    tokens * query_heads * context_length -> iota -> map {
-        cell -> scores[cell] - row_maximum[cell / context_length] -> exp
-    } -> exponentials;
-    token_heads -> map {
-        token_head -> (0.0, past_positions) -> fold {
-            sum, past -> sum + exponentials[token_head * context_length + past]
-        }
-    } -> row_total;
-    tokens * query_size -> iota -> map {
-        cell ->
-        cell / head_size -> token_head;
-        cell % head_size -> d;
-        token_head % query_heads / heads_per_key_value_head -> key_value_head;
-        (0.0, past_positions) -> fold {
-            sum, past ->
-            (layer * context_length + past) * key_value_heads + key_value_head -> value_row;
-            sum + exponentials[token_head * context_length + past] * cache.values[value_row * head_size + d]
-        } -> weighted;
-        weighted / row_total[token_head]
-    } -> ret;
-}
-```
-
-</details>
-
-Greedy decoding, inside `main`: each step feeds the last token back through the same `forward`:
-
-```flow
-    // Each later token: feed the previous one at the next position.
-    mut token: i32 <- first_token;
-    mut cache: KeyValueCache <- prefilled.1;
-    mut position: i32 <- prompt_length;
-    loop {
-        (position < prompt_length + generated_tokens - 1) -> {
-            -true-> {
-                [token] -> ids;
-                (ids, position, model, cache) -> forward -> stepped;
-                stepped.0 -> most_likely_token -> token;
-                stepped.1 -> cache;
-                () -> time -> now;
-                token -> print;
-                " " -> print;
-                stepped.0[token] -> print;
-                " " -> print;
-                now - submitted -> println;
-                position + 1 -> position;
-                -> loop;
-            }
-            -false-> position -> last_position;
-        }
-    }
-```
-
-The compiler turns the folds in `project` into tiled matrix products, streams the attention, keeps the cache on
-the GPU and writes each step's new rows in place, and merges what it can into kernels. None of it is in the source.
+No threads, tiles or kernels in the source: the compiler derives that every `map` cell is independent, how the `fold`
+combines, and where each value lives. The whole Llama-3.2-1B is one readable file,
+[`examples/llama.mapal`](examples/llama.mapal) (403 lines).
 
 ---
 
