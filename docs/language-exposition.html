@@ -155,6 +155,18 @@
   .tabs button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
   .pane[hidden]{display:none}
   .pane>p{margin:0 0 8px}
+  /* diagram blocks break out of the prose column: up to the viewport minus margins, centered, natural size, scrolling inside */
+  :root{--wide:min(calc(100vw - 48px),1600px)}
+  .mermaid,.chart,.equation,.zoombox,.dtabs,.walk{box-sizing:border-box;width:var(--wide);max-width:none;position:relative;left:50%;transform:translateX(-50%)}
+  :is(.walk,.dtabs,.equation,.zoombox,.chart) :is(.mermaid,.chart,.zoombox,.equation,.dtabs){width:auto;left:0;transform:none}
+  .tabs:has(>.tab){box-sizing:border-box;width:var(--wide);max-width:none;position:relative;left:50%;transform:translateX(-50%)}
+  .tabs>.tab{flex:0 0 100%;min-width:0}
+  .tab>.chart{width:auto;left:0;transform:none}
+  .becomes .dtabs{left:calc(50% - 22px)}
+  .dtabs{margin:10px 0}
+  .dtabs .dcap{margin:0 0 6px}
+  .dtabs .mermaid{text-align:left}
+  .chart svg{max-width:1280px;margin:0 auto}
   /* tables, callouts, details */
   .callout{border:1px solid var(--line);border-left:4px solid var(--accent);background:var(--accent-soft);border-radius:0 10px 10px 0;padding:12px 18px;margin:16px 0}
   .callout.fact{border-left-color:var(--fact);background:var(--fact-soft)}
@@ -340,31 +352,71 @@ pre.hl-lines .ln::before{counter-increment:ln;content:counter(ln);display:inline
 <div class="io"><div class="io-h">Output <span>mapal run --target=zen3 dense.mapal (native CPU run)</span></div><pre class="out"><code>3136
 0</code></pre></div>
 <!-- exposition:gen end --></div></div>
-    <div class="step"><div class="arrow">2</div><div><p style="margin:0 0 4px">The flow you wrote, as the compiler's own graph holds it:</p>
-<!-- exposition:gen id=hero-flow kind=flow file=docs/exposition/dense.mapal begin -->
-<div class="io-h">The flow <span>mapal dump-ir --stage=rewritten --mermaid=flow dense.mapal</span></div>
+    <div class="step"><div class="arrow">2</div><div><p style="margin:0 0 4px">The flow you wrote, as the compiler's own graph holds it, drawn in the two standard notations for it:</p>
+<!-- exposition:gen id=hero-flow kind=diagrams file=docs/exposition/dense.mapal begin -->
+<div class="dtabs"><div class="tabs" role="tablist" aria-label="How to draw the graph"><button type="button" role="tab" id="hero-flow-t0" aria-selected="true" aria-controls="hero-flow-p0">Category diagram</button><button type="button" role="tab" id="hero-flow-t1" aria-selected="false" aria-controls="hero-flow-p1" tabindex="-1">String diagram</button></div>
+<div class="pane" id="hero-flow-p0" role="tabpanel" aria-labelledby="hero-flow-t0"><p class="dcap">Objects are nodes and steps are arrows, as the spec draws a category: a product is one pairing from Γ, the context the function runs in.</p>
+<div class="io-h">The condensed form <span>mapal dump-ir --stage=rewritten --mermaid=category,condensed dense.mapal</span></div>
 <div class="mermaid">
 flowchart LR
-    f0o11["a: [f32; 4096] ← read #quot;dense-a.bin#quot;"]
-    f0o15["b: [f32; 4096] ← read #quot;dense-b.bin#quot;"]
-    f0o16["along: [i32; 64]"]
-    subgraph s0o19["out = map over cells"]
-        f2o1["result: f32"]
-        f2o14["row: i32"]
-        f2o16["column: i32"]
-        f2o18["dot: f32 · fold"]
+    f0o11(("a: [f32; 4096]"))
+    f0o15(("b: [f32; 4096]"))
+    f0o16(("along: [i32; 64]"))
+    f0o19(("out: [f32; 4096]"))
+    p0m0(("println"))
+    p0m1(("println"))
+    g0(("Γ = io"))
+    pr3(["[f32; 4096] × [f32; 4096] × [i32; 64]"])
+    subgraph f2["map body of out"]
+        f2o1(("ret: f32"))
+        f2o14(("row: i32"))
+        f2o16(("column: i32"))
+        f2o18(("dot: f32"))
+        g2(("Γ = ([i32; 64], [f32; 4096], [f32; 4096], i32)"))
+        pr9(["Γ × i32 × i32"])
     end
-    p0m0(["println"])
-    p0m1(["println"])
-    f0o11 -- "a[row * n + k]" --&gt; f2o18
-    f0o15 -- "b[k * n + column]" --&gt; f2o18
-    f0o16 -- "fold" --&gt; f2o18
-    s0o19 -- "out[0]" --&gt; p0m0
-    s0o19 -- "out[n * n - 1]" --&gt; p0m1
-    f2o14 -- "fold" --&gt; f2o18
-    f2o16 -- "fold" --&gt; f2o18
+    g0 -- "read #quot;dense-a.bin#quot;" --&gt; f0o11
+    g0 -- "read #quot;dense-b.bin#quot;" --&gt; f0o15
+    g0 -- "iota" --&gt; f0o16
+    g0 -- "⟨a, b, along⟩" --&gt; pr3
+    pr3 -- "Map (+3 caps)" --&gt; f0o19
+    f0o19 -- "out[0]" --&gt; p0m0
+    f0o19 -- "out[n * n - 1]" --&gt; p0m1
     f2o18 -- "+ · guard" --&gt; f2o1
+    g2 -- "÷" --&gt; f2o14
+    g2 -- "mod" --&gt; f2o16
+    g2 -- "⟨Γ, row, column⟩" --&gt; pr9
+    pr9 -- "a[row * n + k] ; b[k * n + column] ; fold" --&gt; f2o18
 </div>
+</div><div class="pane" id="hero-flow-p1" role="tabpanel" aria-labelledby="hero-flow-t1" hidden><p class="dcap">Steps are boxes and values are wires: a product is just several wires entering one box, and a value read twice splits at a Δ.</p>
+<div class="io-h">The condensed form <span>mapal dump-ir --stage=rewritten --mermaid=string,condensed dense.mapal</span></div>
+<div class="mermaid">
+flowchart LR
+    b0["read #quot;dense-a.bin#quot;"]
+    b1["read #quot;dense-b.bin#quot;"]
+    b2["iota"]
+    p0m0["out[0] · println"]
+    p0m1["out[n * n - 1] · println"]
+    d3(("Δ out"))
+    subgraph f0o19["map (+3 caps)"]
+        b6["+ · guard"]
+        b7["÷"]
+        b8["mod"]
+        b9["a[row * n + k] ; b[k * n + column] ; fold"]
+        x6(("ret"))
+    end
+    b0 -- "① a: [f32; 4096]" --&gt; b9
+    b1 -- "② b: [f32; 4096]" --&gt; b9
+    b2 -- "③ along: [i32; 64]" --&gt; b9
+    f0o19 -- "out: [f32; 4096]" --&gt; d3
+    d3 -- "out" --&gt; p0m0
+    d3 -- "out" --&gt; p0m1
+    b6 -- "ret: f32" --&gt; x6
+    b7 -- "④ row: i32" --&gt; b9
+    b8 -- "⑤ column: i32" --&gt; b9
+    b9 -- "dot: f32" --&gt; b6
+</div>
+</div></div>
 <!-- exposition:gen end --></div></div>
     <div class="step"><div class="arrow">3</div><div>
 <!-- exposition:gen id=hero-line kind=gpuline file=docs/exposition/dense.mapal target=rtx-5080 scale=n=2048 begin -->
@@ -2269,6 +2321,315 @@ flowchart LR
     end
 </div>
 </div></details>
+<details class="gfull"><summary>The full category diagram, every object and operation</summary>
+<div class="io-h">The full category diagram <span>mapal dump-ir --stage=rewritten --mermaid=category dense.mapal</span></div>
+<div class="zoombox"><div class="zbar"><button type="button" data-z="out" aria-label="Zoom out">&minus;</button><button type="button" data-z="in" aria-label="Zoom in">+</button><button type="button" data-z="fit">Fit</button></div>
+<div class="mermaid">
+flowchart LR
+    subgraph f0["fn main"]
+        f0o0(("Γ = io"))
+        f0o1(("ret: io"))
+        f0o2(("#quot;dense-a.bin#quot;: str"))
+        f0o3(("#quot;dense-b.bin#quot;: str"))
+        f0o4(("64: i32"))
+        f0o5(("4096: i32"))
+        f0o6(("0: i32"))
+        f0o7(("4095: i32"))
+        f0o8(["io × str"])
+        f0o9(("(io, [f32; 4096])"))
+        f0o10(("io"))
+        f0o11(("a: [f32; 4096]"))
+        f0o12(["io × str"])
+        f0o13(("(io, [f32; 4096])"))
+        f0o14(("io"))
+        f0o15(("b: [f32; 4096]"))
+        f0o16(("along: [i32; 64]"))
+        f0o17(("[i32; 4096]"))
+        f0o18(["[i32; 64] × [f32; 4096] × [f32; 4096] × [i32; 4096]"])
+        f0o19(("out: [f32; 4096]"))
+        f0o20(["[f32; 4096] × i32"])
+        f0o21(("f32"))
+        f0o22(["io × f32"])
+        f0o23(("io"))
+        f0o24(["[f32; 4096] × i32"])
+        f0o25(("f32"))
+        f0o26(["io × f32"])
+        f0o27(("io"))
+        subgraph f2["map body of out"]
+            f2o0(("Γ = ([i32; 64], [f32; 4096], [f32; 4096], i32)"))
+            f2o1(("ret: f32"))
+            f2o2(("64: i32"))
+            f2o3(("64: i32"))
+            f2o4(("0.0: f32"))
+            f2o5(("1.0: f32"))
+            f2o6(("0.0: f32"))
+            f2o7(("1.0: f32"))
+            f2o8(("0.0: f32"))
+            f2o9(("[i32; 64]"))
+            f2o10(("[f32; 4096]"))
+            f2o11(("[f32; 4096]"))
+            f2o12(("i32"))
+            f2o13(["i32 × i32"])
+            f2o14(("row: i32"))
+            f2o15(["i32 × i32"])
+            f2o16(("column: i32"))
+            f2o17(["[f32; 4096] × i32 × [f32; 4096] × i32 × f32 × [i32; 64]"])
+            f2o18(("dot: f32"))
+            f2o19(["f32 × f32"])
+            f2o20(("f32"))
+            f2o21(["f32 × f32"])
+            f2o22(("bool"))
+            f2o23(["f32 × f32"])
+            f2o24(("f32"))
+            f2o25(["f32 × f32 × bool"])
+            subgraph f1["fold body of dot"]
+                f1o0(("Γ = ([f32; 4096], i32, [f32; 4096], i32, f32, i32)"))
+                f1o1(("ret: f32"))
+                f1o2(("64: i32"))
+                f1o3(("64: i32"))
+                f1o4(("[f32; 4096]"))
+                f1o5(("i32"))
+                f1o6(("[f32; 4096]"))
+                f1o7(("i32"))
+                f1o8(("f32"))
+                f1o9(("i32"))
+                f1o10(["i32 × i32"])
+                f1o11(("i32"))
+                f1o12(["i32 × i32"])
+                f1o13(("i32"))
+                f1o14(["[f32; 4096] × i32"])
+                f1o15(("f32"))
+                f1o16(["i32 × i32"])
+                f1o17(("i32"))
+                f1o18(["i32 × i32"])
+                f1o19(("i32"))
+                f1o20(["[f32; 4096] × i32"])
+                f1o21(("f32"))
+                f1o22(["f32 × f32"])
+                f1o23(("f32"))
+                f1o24(["f32 × f32"])
+            end
+        end
+    end
+    f0o0 -- "⟨Γ, #quot;dense-a.bin#quot;⟩" --&gt; f0o8
+    f0o8 -- "Read" --&gt; f0o9
+    f0o9 -- "π₁" --&gt; f0o10
+    f0o9 -- "π₂" --&gt; f0o11
+    f0o0 -- "⟨io, #quot;dense-b.bin#quot;⟩" --&gt; f0o12
+    f0o12 -- "Read" --&gt; f0o13
+    f0o13 -- "π₁" --&gt; f0o14
+    f0o13 -- "π₂" --&gt; f0o15
+    f0o4 -- "Iota" --&gt; f0o16
+    f0o5 -- "Iota" --&gt; f0o17
+    f0o0 -- "⟨along, a, b, [i32; 4096]⟩" --&gt; f0o18
+    f0o18 -- "Map (+3 caps)" --&gt; f0o19
+    f0o0 -- "⟨out, 0⟩" --&gt; f0o20
+    f0o20 -- "Index" --&gt; f0o21
+    f0o0 -- "⟨io, f32⟩" --&gt; f0o22
+    f0o22 -- "Println" --&gt; f0o23
+    f0o0 -- "⟨out, 4095⟩" --&gt; f0o24
+    f0o24 -- "Index" --&gt; f0o25
+    f0o0 -- "⟨io, f32⟩" --&gt; f0o26
+    f0o26 -- "Println" --&gt; f0o27
+    f0o27 -- "Output" --&gt; f0o1
+    f1o0 -- "π₁" --&gt; f1o4
+    f1o0 -- "π₂" --&gt; f1o5
+    f1o0 -- "π₃" --&gt; f1o6
+    f1o0 -- "π₄" --&gt; f1o7
+    f1o0 -- "π₅" --&gt; f1o8
+    f1o0 -- "π₆" --&gt; f1o9
+    f1o0 -- "⟨i32, 64⟩" --&gt; f1o10
+    f1o10 -- "Mul" --&gt; f1o11
+    f1o0 -- "⟨i32, i32⟩" --&gt; f1o12
+    f1o12 -- "Add" --&gt; f1o13
+    f1o0 -- "⟨[f32; 4096], i32⟩" --&gt; f1o14
+    f1o14 -- "Index" --&gt; f1o15
+    f1o0 -- "⟨i32, 64⟩" --&gt; f1o16
+    f1o16 -- "Mul" --&gt; f1o17
+    f1o0 -- "⟨i32, i32⟩" --&gt; f1o18
+    f1o18 -- "Add" --&gt; f1o19
+    f1o0 -- "⟨[f32; 4096], i32⟩" --&gt; f1o20
+    f1o20 -- "Index" --&gt; f1o21
+    f1o0 -- "⟨f32, f32⟩" --&gt; f1o22
+    f1o22 -- "Mul" --&gt; f1o23
+    f1o0 -- "⟨f32, f32⟩" --&gt; f1o24
+    f1o24 -- "Add" --&gt; f1o1
+    f2o0 -- "π₁" --&gt; f2o9
+    f2o0 -- "π₂" --&gt; f2o10
+    f2o0 -- "π₃" --&gt; f2o11
+    f2o0 -- "π₄" --&gt; f2o12
+    f2o0 -- "⟨i32, 64⟩" --&gt; f2o13
+    f2o13 -- "Div" --&gt; f2o14
+    f2o0 -- "⟨i32, 64⟩" --&gt; f2o15
+    f2o15 -- "Mod" --&gt; f2o16
+    f2o0 -- "⟨[f32; 4096], row, [f32; 4096], column, 0.0, [i32; 64]⟩" --&gt; f2o17
+    f2o17 -- "Fold (+4 caps)" --&gt; f2o18
+    f2o0 -- "⟨dot, 1.0⟩" --&gt; f2o19
+    f2o19 -- "Add" --&gt; f2o20
+    f2o0 -- "⟨f32, 0.0⟩" --&gt; f2o21
+    f2o21 -- "Gt" --&gt; f2o22
+    f2o0 -- "⟨dot, 1.0⟩" --&gt; f2o23
+    f2o23 -- "Add" --&gt; f2o24
+    f2o0 -- "⟨f32, 0.0, bool⟩" --&gt; f2o25
+    f2o25 -- "Phi" --&gt; f2o1
+</div>
+</div></details>
+<details class="gfull"><summary>The full string diagram, every object and operation</summary>
+<div class="io-h">The full string diagram <span>mapal dump-ir --stage=rewritten --mermaid=string dense.mapal</span></div>
+<div class="zoombox"><div class="zbar"><button type="button" data-z="out" aria-label="Zoom out">&minus;</button><button type="button" data-z="in" aria-label="Zoom in">+</button><button type="button" data-z="fit">Fit</button></div>
+<div class="mermaid">
+flowchart LR
+    subgraph f0["fn main"]
+        m2["read"]
+        m3["π₁"]
+        m4["π₂"]
+        m7["read"]
+        m8["π₁"]
+        m9["π₂"]
+        m10["iota"]
+        m11["iota"]
+        m19["index"]
+        m22["println"]
+        m25["index"]
+        m28["println"]
+        ti0(("in"))
+        to0(("ret"))
+        t0o2(("•"))
+        t0o3(("•"))
+        t0o4(("•"))
+        t0o5(("•"))
+        t0o6(("•"))
+        t0o7(("•"))
+        d0o9(("Δ (io, [f32; 4096])"))
+        d0o13(("Δ (io, [f32; 4096])"))
+        d0o19(("Δ out"))
+        subgraph m16["map (+3 caps)"]
+            m60["π₁"]
+            m61["π₂"]
+            m62["π₃"]
+            m63["π₄"]
+            m66["÷"]
+            m69["mod"]
+            m79["+"]
+            m82["#gt;"]
+            m85["+"]
+            m89["guard"]
+            ti2(("in"))
+            to2(("ret"))
+            d2o0(("Δ ([i32; 64], [f32; 4096], [f32; 4096], i32)"))
+            t2o2(("•"))
+            t2o3(("•"))
+            t2o4(("•"))
+            t2o5(("•"))
+            t2o6(("•"))
+            t2o7(("•"))
+            t2o8(("•"))
+            d2o12(("Δ i32"))
+            d2o18(("Δ dot"))
+            subgraph m76["fold (+4 caps)"]
+                m30["π₁"]
+                m31["π₂"]
+                m32["π₃"]
+                m33["π₄"]
+                m34["π₅"]
+                m35["π₆"]
+                m38["×"]
+                m41["+"]
+                m44["index"]
+                m47["×"]
+                m50["+"]
+                m53["index"]
+                m56["×"]
+                m59["+"]
+                ti1(("in"))
+                to1(("ret"))
+                d1o0(("Δ ([f32; 4096], i32, [f32; 4096], i32, f32, i32)"))
+                t1o2(("•"))
+                t1o3(("•"))
+                d1o9(("Δ i32"))
+            end
+        end
+    end
+    ti0 -- "① io" --&gt; m2
+    ti1 -- "([f32; 4096], i32, [f32; 4096], i32, f32, i32)" --&gt; d1o0
+    d1o0 -- "([f32; 4096], i32, [f32; 4096], i32, f32, i32)" --&gt; m30
+    d1o0 -- "([f32; 4096], i32, [f32; 4096], i32, f32, i32)" --&gt; m31
+    d1o0 -- "([f32; 4096], i32, [f32; 4096], i32, f32, i32)" --&gt; m32
+    d1o0 -- "([f32; 4096], i32, [f32; 4096], i32, f32, i32)" --&gt; m33
+    d1o0 -- "([f32; 4096], i32, [f32; 4096], i32, f32, i32)" --&gt; m34
+    d1o0 -- "([f32; 4096], i32, [f32; 4096], i32, f32, i32)" --&gt; m35
+    m59 -- "ret: f32" --&gt; to1
+    ti2 -- "([i32; 64], [f32; 4096], [f32; 4096], i32)" --&gt; d2o0
+    d2o0 -- "([i32; 64], [f32; 4096], [f32; 4096], i32)" --&gt; m60
+    d2o0 -- "([i32; 64], [f32; 4096], [f32; 4096], i32)" --&gt; m61
+    d2o0 -- "([i32; 64], [f32; 4096], [f32; 4096], i32)" --&gt; m62
+    d2o0 -- "([i32; 64], [f32; 4096], [f32; 4096], i32)" --&gt; m63
+    m89 -- "ret: f32" --&gt; to2
+    t0o2 -- "② #quot;dense-a.bin#quot;" --&gt; m2
+    t0o3 -- "② #quot;dense-b.bin#quot;" --&gt; m7
+    t0o4 -- "64" --&gt; m10
+    t0o5 -- "4096" --&gt; m11
+    t0o6 -- "② 0" --&gt; m19
+    t0o7 -- "② 4095" --&gt; m25
+    m2 -- "(io, [f32; 4096])" --&gt; d0o9
+    d0o9 -- "(io, [f32; 4096])" --&gt; m3
+    d0o9 -- "(io, [f32; 4096])" --&gt; m4
+    m3 -- "① io" --&gt; m7
+    m4 -- "② a: [f32; 4096]" --&gt; m16
+    m7 -- "(io, [f32; 4096])" --&gt; d0o13
+    d0o13 -- "(io, [f32; 4096])" --&gt; m8
+    d0o13 -- "(io, [f32; 4096])" --&gt; m9
+    m8 -- "① io" --&gt; m22
+    m9 -- "③ b: [f32; 4096]" --&gt; m16
+    m10 -- "① along: [i32; 64]" --&gt; m16
+    m11 -- "④ [i32; 4096]" --&gt; m16
+    m16 -- "out: [f32; 4096]" --&gt; d0o19
+    d0o19 -- "① out" --&gt; m19
+    d0o19 -- "① out" --&gt; m25
+    m19 -- "② f32" --&gt; m22
+    m22 -- "① io" --&gt; m28
+    m25 -- "② f32" --&gt; m28
+    m28 -- "io" --&gt; to0
+    t1o2 -- "② 64" --&gt; m38
+    t1o3 -- "② 64" --&gt; m47
+    m30 -- "① [f32; 4096]" --&gt; m44
+    m31 -- "① i32" --&gt; m38
+    m32 -- "① [f32; 4096]" --&gt; m53
+    m33 -- "② i32" --&gt; m50
+    m34 -- "① f32" --&gt; m59
+    m35 -- "i32" --&gt; d1o9
+    d1o9 -- "② i32" --&gt; m41
+    d1o9 -- "① i32" --&gt; m47
+    m38 -- "① i32" --&gt; m41
+    m41 -- "② i32" --&gt; m44
+    m44 -- "① f32" --&gt; m56
+    m47 -- "① i32" --&gt; m50
+    m50 -- "② i32" --&gt; m53
+    m53 -- "② f32" --&gt; m56
+    m56 -- "② f32" --&gt; m59
+    t2o2 -- "② 64" --&gt; m66
+    t2o3 -- "② 64" --&gt; m69
+    t2o4 -- "⑤ 0.0" --&gt; m76
+    t2o5 -- "② 1.0" --&gt; m79
+    t2o6 -- "② 0.0" --&gt; m82
+    t2o7 -- "② 1.0" --&gt; m85
+    t2o8 -- "② 0.0" --&gt; m89
+    m60 -- "⑥ [i32; 64]" --&gt; m76
+    m61 -- "① [f32; 4096]" --&gt; m76
+    m62 -- "③ [f32; 4096]" --&gt; m76
+    m63 -- "i32" --&gt; d2o12
+    d2o12 -- "① i32" --&gt; m66
+    d2o12 -- "① i32" --&gt; m69
+    m66 -- "② row: i32" --&gt; m76
+    m69 -- "④ column: i32" --&gt; m76
+    m76 -- "dot: f32" --&gt; d2o18
+    d2o18 -- "① dot" --&gt; m79
+    d2o18 -- "① dot" --&gt; m85
+    m79 -- "① f32" --&gt; m82
+    m82 -- "③ bool" --&gt; m89
+    m85 -- "① f32" --&gt; m89
+</div>
+</div></details>
 <!-- exposition:gen end -->
     </div>
     <div class="pane" id="wp3" role="tabpanel" aria-labelledby="wt3" hidden><p>Facts deduced from the graph decide the kernel: a matrix product with a bias and a ReLU is one tile site with an epilogue.</p>
@@ -3912,7 +4273,7 @@ flowchart LR
     if(!window.mermaid) return;
     var cs=getComputedStyle(root), v=function(n){ return cs.getPropertyValue(n).trim(); };
     // the page's own tokens: node, box and line colors follow the theme (no grey fill on the dark page)
-    mermaid.initialize({startOnLoad:false,theme:"base",securityLevel:"loose",flowchart:{curve:"basis"},themeVariables:{
+    mermaid.initialize({startOnLoad:false,theme:"base",securityLevel:"loose",flowchart:{curve:"basis",useMaxWidth:false},sequence:{useMaxWidth:false},state:{useMaxWidth:false},er:{useMaxWidth:false},class:{useMaxWidth:false},themeVariables:{
       background:v("--card"),primaryColor:v("--chip-bg"),primaryTextColor:v("--ink"),primaryBorderColor:v("--accent"),
       secondaryColor:v("--accent-soft"),tertiaryColor:v("--card"),lineColor:v("--muted"),textColor:v("--ink"),
       mainBkg:v("--chip-bg"),nodeBorder:v("--accent"),clusterBkg:v("--accent-soft"),clusterBorder:v("--line"),
@@ -4012,6 +4373,13 @@ flowchart LR
   function pick(b){ cb.forEach(function(x){ x.setAttribute("aria-pressed",x===b?"true":"false"); }); cn.innerHTML=notes[b.getAttribute("data-k")]; }
   cb.forEach(function(b){ b.addEventListener("click",function(){ pick(b); }); }); pick(cb[0]);
 
+  // ---- diagram tabs (the hero's category / string switch)
+  document.querySelectorAll(".dtabs").forEach(function(box){
+    var bt=[].slice.call(box.querySelectorAll("[role=tab]")), bp=bt.map(function(t){ return document.getElementById(t.getAttribute("aria-controls")); });
+    function pickTab(i,focus){ bt.forEach(function(t,k){ t.setAttribute("aria-selected",k===i?"true":"false"); t.tabIndex=k===i?0:-1; bp[k].hidden=k!==i; }); if(focus) bt[i].focus(); renderMermaid(false); }
+    bt.forEach(function(t,k){ t.addEventListener("click",function(){ pickTab(k); }); t.addEventListener("keydown",function(e){
+      if(e.key==="ArrowRight"){ pickTab((k+1)%bt.length,true); e.preventDefault(); } else if(e.key==="ArrowLeft"){ pickTab((k+bt.length-1)%bt.length,true); e.preventDefault(); } }); });
+  });
   // ---- artifacts walk (tabs)
   var tabs=[].slice.call(document.querySelectorAll("#walk [role=tab]")), panes=tabs.map(function(t){ return document.getElementById(t.getAttribute("aria-controls")); }), cur=0, wc=document.getElementById("wcount");
   function showTab(i,focus){ cur=Math.max(0,Math.min(tabs.length-1,i));

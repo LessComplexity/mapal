@@ -1,0 +1,10 @@
+flowchart LR
+    subgraph f0["fn f"]
+        f0o1(("ret: i32"))
+        g0(("Γ = i32"))
+    end
+    subgraph f1["fn main"]
+        p1m0(("print"))
+        p1m1(("println"))
+    end
+    g0 -- "× · +" --> f0o1

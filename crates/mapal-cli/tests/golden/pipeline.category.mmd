@@ -1,0 +1,30 @@
+flowchart LR
+    subgraph f0["fn f"]
+        f0o0(("Γ = i32"))
+        f0o1(("ret: i32"))
+        f0o2(("2: i32"))
+        f0o3(("5: i32"))
+        f0o4(["i32 × i32"])
+        f0o5(("i32"))
+        f0o6(["i32 × i32"])
+    end
+    subgraph f1["fn main"]
+        f1o0(("Γ = io"))
+        f1o1(("ret: io"))
+        f1o2(("10: i32"))
+        f1o3(("#quot;f(10) = #quot;: str"))
+        f1o4(("25: i32"))
+        f1o5(["io × str"])
+        f1o6(("io"))
+        f1o7(["io × i32"])
+        f1o8(("io"))
+    end
+    f0o0 -- "⟨Γ, 2⟩" --> f0o4
+    f0o4 -- "Mul" --> f0o5
+    f0o0 -- "⟨i32, 5⟩" --> f0o6
+    f0o6 -- "Add" --> f0o1
+    f1o0 -- "⟨Γ, #quot;f(10) = #quot;⟩" --> f1o5
+    f1o5 -- "Print" --> f1o6
+    f1o0 -- "⟨io, 25⟩" --> f1o7
+    f1o7 -- "Println" --> f1o8
+    f1o8 -- "Output" --> f1o1

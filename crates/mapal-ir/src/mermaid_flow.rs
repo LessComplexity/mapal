@@ -41,7 +41,7 @@ pub struct FlowGraph {
 }
 
 /// Plumbing morphisms carry no step of their own.
-fn is_plumbing(op: &Operation) -> bool {
+pub(crate) fn is_plumbing(op: &Operation) -> bool {
     matches!(
         op,
         Operation::Pair { .. }
@@ -54,7 +54,7 @@ fn is_plumbing(op: &Operation) -> bool {
 }
 
 /// The plain word for a step.
-fn step_word(op: &Operation) -> String {
+pub(crate) fn step_word(op: &Operation) -> String {
     match op {
         Operation::Add => "+".into(),
         Operation::Sub => "−".into(),
@@ -154,27 +154,27 @@ impl FlowGraph {
     }
 }
 
-struct Node {
-    anchor: FlowAnchor,
-    func: FuncId,
-    id: String,
-    label: String,
+pub(crate) struct Node {
+    pub(crate) anchor: FlowAnchor,
+    pub(crate) func: FuncId,
+    pub(crate) id: String,
+    pub(crate) label: String,
     /// The body drawn inside this node (a subgraph) when it is a site result.
-    body: Option<FuncId>,
+    pub(crate) body: Option<FuncId>,
 }
 
-struct Ctx<'a> {
+pub(crate) struct Ctx<'a> {
     ir: &'a CategoryIr,
-    func_ix: HashMap<FuncId, usize>,
+    pub(crate) func_ix: HashMap<FuncId, usize>,
     /// Object ordinal within its function (the full dump's `f{i}o{j}`).
-    ord: SecondaryMap<ObjectId, usize>,
-    incoming: SecondaryMap<ObjectId, Vec<MorphismId>>,
+    pub(crate) ord: SecondaryMap<ObjectId, usize>,
+    pub(crate) incoming: SecondaryMap<ObjectId, Vec<MorphismId>>,
     /// Body function -> the `Map` / `Fold` morphisms that use it.
-    sites: HashMap<FuncId, Vec<MorphismId>>,
+    pub(crate) sites: HashMap<FuncId, Vec<MorphismId>>,
 }
 
 impl Ctx<'_> {
-    fn is_body(&self, f: FuncId) -> bool {
+    pub(crate) fn is_body(&self, f: FuncId) -> bool {
         self.ir
             .func(f)
             .is_some_and(|d| d.kind != FuncKind::Named)
@@ -188,7 +188,7 @@ impl Ctx<'_> {
     }
 
     /// The incoming `Read` of a file-read array: `Proj 1` of a `Read` result.
-    fn read_of(&self, o: ObjectId) -> Option<MorphismId> {
+    pub(crate) fn read_of(&self, o: ObjectId) -> Option<MorphismId> {
         for &m in self.incoming.get(o)? {
             let mo = self.ir.morphism(m)?;
             if mo.op == (Operation::Proj { index: 1 }) {
@@ -281,7 +281,7 @@ impl CategoryIr {
         out
     }
 
-    fn flow_ctx(&self) -> Ctx<'_> {
+    pub(crate) fn flow_ctx(&self) -> Ctx<'_> {
         let func_ix: HashMap<FuncId, usize> =
             self.funcs().enumerate().map(|(i, (f, _))| (f, i)).collect();
         let mut ord = SecondaryMap::new();
@@ -313,7 +313,7 @@ impl CategoryIr {
         }
     }
 
-    fn build_flow(&self) -> (Vec<Node>, FlowGraph) {
+    pub(crate) fn build_flow(&self) -> (Vec<Node>, FlowGraph) {
         let ctx = self.flow_ctx();
         // Pass 1: which objects are plain drawn values (before site results).
         let mut nodes: Vec<Node> = Vec::new();
@@ -574,7 +574,7 @@ impl CategoryIr {
         out
     }
 
-    fn objects_of(&self, f: FuncId) -> Vec<ObjectId> {
+    pub(crate) fn objects_of(&self, f: FuncId) -> Vec<ObjectId> {
         self.objects()
             .filter(|&(o, _)| self.try_owner(o) == Some(f))
             .map(|(o, _)| o)
@@ -602,7 +602,7 @@ impl CategoryIr {
     }
 
     /// The file a `Read` names, when its path operand is a literal.
-    fn read_file(&self, ctx: &Ctx, read: MorphismId) -> Option<String> {
+    pub(crate) fn read_file(&self, ctx: &Ctx, read: MorphismId) -> Option<String> {
         let src = self.morphism(read)?.source;
         for &p in &ctx.incoming[src] {
             let pm = self.morphism(p)?;

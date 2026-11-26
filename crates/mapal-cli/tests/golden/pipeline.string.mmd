@@ -1,0 +1,30 @@
+flowchart LR
+    subgraph f0["fn f"]
+        m2["×"]
+        m5["+"]
+        ti0(("in"))
+        to0(("ret"))
+        t0o2(("•"))
+        t0o3(("•"))
+    end
+    subgraph f1["fn main"]
+        m8["print"]
+        m11["println"]
+        ti1(("in"))
+        to1(("ret"))
+        t1o2(("•"))
+        x1o2(("∅"))
+        t1o3(("•"))
+        t1o4(("•"))
+    end
+    ti0 -- "① i32" --> m2
+    m5 -- "ret: i32" --> to0
+    ti1 -- "① io" --> m8
+    t0o2 -- "② 2" --> m2
+    t0o3 -- "② 5" --> m5
+    m2 -- "① i32" --> m5
+    t1o2 -- "10" --> x1o2
+    t1o3 -- "② #quot;f(10) = #quot;" --> m8
+    t1o4 -- "② 25" --> m11
+    m8 -- "① io" --> m11
+    m11 -- "io" --> to1

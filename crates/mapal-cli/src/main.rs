@@ -28,8 +28,12 @@ const USAGE: &str = "usage: mapal <build|run|dump-ir|test|fmt|lsp> <file.mapal> 
   run      [--interp [--weakest | --bound]] [--budget N]  compile and execute (--interp: the oracle;
            --bound: the output with each float printed as its composed default-face bound)
   dump-ir  [--stage=lowered|rewritten|llvm|device]
-           [--mermaid[=full|flow]]        the graph as Mermaid (lowered or rewritten; default rewritten):
-                                          full = every object, flow = the named values and what they read
+           [--mermaid[=full|flow|category|string][,condensed]]
+                                          the graph as Mermaid (lowered or rewritten; default rewritten):
+                                          full = every object, flow = the named values and what they read;
+                                          category = commutative-diagram style (objects, pairings from Γ, arrows),
+                                          string = string-diagram style (steps are boxes, values are wires);
+                                          ,condensed keeps only the named values and labels collapsed chains
   test     [--budget N] [--timeout SECS]  the fixed face (or --exact) vs the oracle, byte for byte
            [--weakest]                    vs the exact face within the composed bound (ADR-0041 D5;
                                           implied where a product admits a reduced member)
@@ -604,14 +608,32 @@ fn dump_ir(a: &Args) -> Res<u8> {
             "rewritten" | "llvm" => rewritten(a, ir),
             s => return Err(usage(&format!("--mermaid draws the lowered or rewritten graph, not `{s}`"))),
         };
-        match kind.as_str() {
-            "full" => print!("{}", ir.to_mermaid()),
-            "flow" => match std::fs::read_to_string(&a.file) {
-                Ok(src) => print!("{}", ir.to_mermaid_flow_src(&src)),
-                Err(_) => print!("{}", ir.to_mermaid_flow()),
+        let (form, condensed) = match kind.split_once(',') {
+            Some((f, "condensed")) => (f, true),
+            Some((_, c)) => return Err(usage(&format!("unknown mermaid option `{c}` (condensed)"))),
+            None => (kind.as_str(), false),
+        };
+        let src = std::fs::read_to_string(&a.file).ok();
+        let text = match (form, condensed) {
+            ("full", false) => ir.to_mermaid(),
+            ("flow", false) => match &src {
+                Some(src) => ir.to_mermaid_flow_src(src),
+                None => ir.to_mermaid_flow(),
             },
-            k => return Err(usage(&format!("unknown mermaid form `{k}` (full|flow)"))),
-        }
+            ("category", false) => ir.to_mermaid_category(),
+            ("string", false) => ir.to_mermaid_string(),
+            ("category", true) => match &src {
+                Some(src) => ir.to_mermaid_category_condensed_src(src),
+                None => ir.to_mermaid_category_condensed(),
+            },
+            ("string", true) => match &src {
+                Some(src) => ir.to_mermaid_string_condensed_src(src),
+                None => ir.to_mermaid_string_condensed(),
+            },
+            ("full" | "flow", true) => return Err(usage("`condensed` goes with category or string (flow is already condensed)")),
+            (k, _) => return Err(usage(&format!("unknown mermaid form `{k}` (full|flow|category|string)"))),
+        };
+        print!("{text}");
         return Ok(0);
     }
     match a.stage.as_str() {

@@ -88,7 +88,7 @@ impl CategoryIr {
 }
 
 /// The text inside a node, before quoting/escaping (DESIGN §14).
-fn node_label(obj: &crate::graph::Object) -> String {
+pub(crate) fn node_label(obj: &crate::graph::Object) -> String {
     let ty = ty_label(&obj.ty);
     let base = match (&obj.value, obj.kind, &obj.name) {
         // Constants: `value: ty`.
@@ -107,7 +107,7 @@ fn node_label(obj: &crate::graph::Object) -> String {
 }
 
 /// A constant value rendered for a label; `Str` is escaped + truncated (20).
-fn value_label(v: &Value) -> String {
+pub(crate) fn value_label(v: &Value) -> String {
     match v {
         Value::I32(x) => x.to_string(),
         Value::I64(x) => x.to_string(),
@@ -128,7 +128,7 @@ fn value_label(v: &Value) -> String {
 }
 
 /// The edge label for an operation (DESIGN §14).
-fn edge_label(op: &Operation) -> String {
+pub(crate) fn edge_label(op: &Operation) -> String {
     match op {
         Operation::Pair { slot, arity } => format!("Pair {slot}/{arity}"),
         Operation::Proj { index } => format!("Proj {index}"),
