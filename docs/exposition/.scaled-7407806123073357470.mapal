@@ -1,0 +1,23 @@
+// Three steps over every sample: scale, shift, clip below zero. Each `map` says its cells are independent.
+1048576 -> samples;
+
+fn main() {
+    "signal.bin" -> read -> signal: [f32; samples];
+    signal -> map {
+        v -> v * 0.25
+    } -> scaled;
+    scaled -> map {
+        v -> v - 100.0
+    } -> shifted;
+    shifted -> map {
+        v -> (v > 0.0) -> {
+            -true-> v;
+            -false-> 0.0;
+        }
+    } -> clipped;
+    (0.0, clipped) -> fold {
+        sum, v -> sum + v
+    } -> total;
+    clipped[samples - 1] -> println;
+    total -> println;
+}

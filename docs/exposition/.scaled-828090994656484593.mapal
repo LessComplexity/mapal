@@ -1,0 +1,11 @@
+// The length of a vector: a fold says how values combine, not in which order.
+268435456 -> length;
+
+fn main() {
+    "vector.bin" -> read -> v: [f32; length];
+    (0.0, v) -> fold {
+        sum, x -> sum + x * x
+    } -> squares;
+    squares -> sqrt -> norm;
+    norm -> println;
+}

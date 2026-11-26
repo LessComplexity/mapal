@@ -95,6 +95,17 @@
   .claims>div{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
   .claims b{display:block;color:var(--accent);font-size:19px;margin-bottom:4px}
   .claims p{margin:0;font-size:17px}
+  .tabs>input{position:absolute;opacity:0;pointer-events:none}
+  .tabs>label{display:inline-block;margin:0 8px 0 0;padding:6px 16px;border:1px solid var(--line);border-radius:999px;background:var(--card);cursor:pointer;font-weight:600}
+  #llmc-f32:checked~label[for=llmc-f32],#llmc-bf16:checked~label[for=llmc-bf16]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+  #llmc-f32:focus-visible~label[for=llmc-f32],#llmc-bf16:focus-visible~label[for=llmc-bf16]{outline:2px solid var(--accent);outline-offset:2px}
+  #llmc-f32:checked~.tab-bf16,#llmc-bf16:checked~.tab-f32{display:none}
+  .classes{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .classes p{font-size:16px}
+  p.line{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 16px;margin:10px 0}
+  h3.sub{margin-top:34px}
+  details.more{margin:14px 0;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px 16px}
+  details.more>summary{cursor:pointer;font-weight:600;color:var(--accent)}
   /* philosophy */
   .ideas{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:18px 0}
   .idea{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
@@ -285,25 +296,20 @@ pre.hl-lines .ln::before{counter-increment:ln;content:counter(ln);display:inline
   <p class="kicker">A language exposition</p>
   <div class="herogrid">
     <div>
-      <h1>Say what depends on what. The compiler finds the kernel.</h1>
-      <p class="lede">A Mapal program is dataflow: values, and the steps that make them. It never says how to loop, tile, fuse or where to keep data. Those are derived, from facts about the program and about the machine.</p>
+      <h1>Describe how data flows. Mapal places it where it runs best.</h1>
+      <p class="lede">A Mapal program states each value and what it is made from — never threads, kernels or where data lives. The compiler matches that flow to the machine in front of it and places every step where it runs best: on CPUs and NVIDIA GPUs today, and on any hardware by design.</p>
       <p>On the right: a dense layer. Below it, what it became. Every number on this page was produced by the real compiler when the page was built.</p>
       <div class="ctas"><a class="btn primary" href="#demos">See more programs</a><a class="btn" href="#performance">Performance</a><a class="btn" href="#architecture">How it works</a></div>
     </div>
     <div>
       <!-- mapal:hl begin id=hero-src src=docs/exposition/dense.mapal show=inline title="A dense layer" --><figure class="hl-demo" id="hero-src"><pre class="hl" id="hero-src-src"><code><span class="mp-comment">// A dense layer: a matrix product, a bias and a ReLU. What to compute, not how.</span>
-<span class="mp-number">2048</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">n</span><span class="mp-punctuation">;</span>
+<span class="mp-number">64</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">n</span><span class="mp-punctuation">;</span>
 
 <span class="mp-keyword">fn</span> <span class="mp-function-declaration">main</span><span class="mp-punctuation">(</span><span class="mp-punctuation">)</span> <span class="mp-punctuation">{</span>
-    <span class="mp-global">n</span> <span class="mp-operator">*</span> <span class="mp-global">n</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">iota</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">cells</span><span class="mp-punctuation">;</span>
+    <span class="mp-string">"dense-a.bin"</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">read</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">a</span><span class="mp-punctuation">:</span> <span class="mp-punctuation">[</span><span class="mp-primitive">f32</span><span class="mp-punctuation">;</span> <span class="mp-global">n</span> <span class="mp-operator">*</span> <span class="mp-global">n</span><span class="mp-punctuation">]</span><span class="mp-punctuation">;</span>
+    <span class="mp-string">"dense-b.bin"</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">read</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">b</span><span class="mp-punctuation">:</span> <span class="mp-punctuation">[</span><span class="mp-primitive">f32</span><span class="mp-punctuation">;</span> <span class="mp-global">n</span> <span class="mp-operator">*</span> <span class="mp-global">n</span><span class="mp-punctuation">]</span><span class="mp-punctuation">;</span>
     <span class="mp-global">n</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">iota</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">along</span><span class="mp-punctuation">;</span>
-    <span class="mp-variable">cells</span> <span class="mp-arrow">-&gt;</span> <span class="mp-keyword">map</span> <span class="mp-punctuation">{</span>
-        <span class="mp-parameter-declaration">c</span> <span class="mp-arrow">-&gt;</span> <span class="mp-punctuation">(</span><span class="mp-parameter">c</span> <span class="mp-operator">*</span> <span class="mp-number">7</span> <span class="mp-operator">+</span> <span class="mp-number">13</span><span class="mp-punctuation">)</span> <span class="mp-operator">%</span> <span class="mp-number">101</span> <span class="mp-operator">-</span> <span class="mp-number">50</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">widen_f32</span>
-    <span class="mp-punctuation">}</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">a</span><span class="mp-punctuation">;</span>
-    <span class="mp-variable">cells</span> <span class="mp-arrow">-&gt;</span> <span class="mp-keyword">map</span> <span class="mp-punctuation">{</span>
-        <span class="mp-parameter-declaration">c</span> <span class="mp-arrow">-&gt;</span> <span class="mp-punctuation">(</span><span class="mp-parameter">c</span> <span class="mp-operator">*</span> <span class="mp-number">5</span> <span class="mp-operator">+</span> <span class="mp-number">3</span><span class="mp-punctuation">)</span> <span class="mp-operator">%</span> <span class="mp-number">97</span> <span class="mp-operator">-</span> <span class="mp-number">48</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">widen_f32</span>
-    <span class="mp-punctuation">}</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">b</span><span class="mp-punctuation">;</span>
-    <span class="mp-variable">cells</span> <span class="mp-arrow">-&gt;</span> <span class="mp-keyword">map</span> <span class="mp-punctuation">{</span>
+    <span class="mp-global">n</span> <span class="mp-operator">*</span> <span class="mp-global">n</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">iota</span> <span class="mp-arrow">-&gt;</span> <span class="mp-keyword">map</span> <span class="mp-punctuation">{</span>
         <span class="mp-parameter-declaration">c</span> <span class="mp-arrow">-&gt;</span>
         <span class="mp-parameter">c</span> <span class="mp-operator">/</span> <span class="mp-global">n</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">row</span><span class="mp-punctuation">;</span>
         <span class="mp-parameter">c</span> <span class="mp-operator">%</span> <span class="mp-global">n</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">column</span><span class="mp-punctuation">;</span>
@@ -317,37 +323,64 @@ pre.hl-lines .ln::before{counter-increment:ln;content:counter(ln);display:inline
     <span class="mp-punctuation">}</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">out</span><span class="mp-punctuation">;</span>
     <span class="mp-variable">out</span><span class="mp-punctuation">[</span><span class="mp-number">0</span><span class="mp-punctuation">]</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">println</span><span class="mp-punctuation">;</span>
     <span class="mp-variable">out</span><span class="mp-punctuation">[</span><span class="mp-global">n</span> <span class="mp-operator">*</span> <span class="mp-global">n</span> <span class="mp-operator">-</span> <span class="mp-number">1</span><span class="mp-punctuation">]</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">println</span><span class="mp-punctuation">;</span>
-<span class="mp-punctuation">}</span></code></pre><figcaption><span>A dense layer — <a href="exposition/dense.mapal"><code>docs/exposition/dense.mapal</code></a>, 27 lines</span><button type="button" class="hl-copy" data-copy="hero-src-src" data-eol="1">Copy</button></figcaption></figure><!-- mapal:hl end -->
+<span class="mp-punctuation">}</span></code></pre><figcaption><span>A dense layer — <a href="exposition/dense.mapal"><code>docs/exposition/dense.mapal</code></a>, 22 lines</span><button type="button" class="hl-copy" data-copy="hero-src-src" data-eol="1">Copy</button></figcaption></figure><!-- mapal:hl end -->
     </div>
   </div>
   <h2 class="kicker" style="margin-top:34px">What it becomes</h2>
   <div class="becomes">
-    <div class="step"><div class="arrow">↓</div><div><p style="margin:0 0 4px">The compiler reads the source as a graph of values and keeps what it can prove about it.</p>
+    <div class="step"><div class="arrow">1</div><div><p style="margin:0 0 4px">It runs and prints two numbers: the first and the last cell of the result, a matrix product of two matrices read from files, plus one, with negatives set to zero.</p>
+<!-- exposition:gen id=hero-out kind=run file=docs/exposition/dense.mapal cpu=1 begin -->
+<div class="io"><div class="io-h">Output <span>mapal run --target=zen3 dense.mapal (native CPU run)</span></div><pre class="out"><code>3136
+0</code></pre></div>
+<!-- exposition:gen end --></div></div>
+    <div class="step"><div class="arrow">2</div><div><p style="margin:0 0 4px">The flow you wrote, drawn from the program's own names:</p>
+<!-- exposition:gen id=hero-flow kind=flow file=docs/exposition/dense.mapal begin -->
+<div class="mermaid">
+flowchart LR
+  a["a · read from file"]
+  b["b · read from file"]
+  along["along · a count"]
+  subgraph out["out = map over n * n cells"]
+    dot["dot · fold"]
+    out_value["guard · a choice between two values"]
+  end
+  prints(["prints"])
+  along --> dot
+  a --> dot
+  b --> dot
+  dot --> out_value
+  out --> prints
+</div>
+<!-- exposition:gen end --></div></div>
+    <div class="step"><div class="arrow">3</div><div>
+<!-- exposition:gen id=hero-line kind=gpuline file=docs/exposition/dense.mapal target=rtx-5080 scale=n=2048 begin -->
+<p>At the full size the compiler turned the whole computation into one GPU kernel, computing the product in 8 × 16 tiles (compile only, for an RTX 5080). The same source also runs on the CPU, as the output above.</p>
+<!-- exposition:gen end --></div></div>
+  </div>
+  <details class="more"><summary>Show the compiler output</summary>
+    <p class="muted small">For readers who want the facts behind those two lines: the graph the compiler built (operation counts, before and after its rewrites), the kernel it chose for an RTX 5080 at 2048 by 2048, and the instructions it emitted.</p>
 <!-- exposition:gen id=hero-graph kind=graph file=docs/exposition/dense.mapal short=1 begin -->
-<div class="io"><div class="io-h">The graph <span>mapal dump-ir --stage=lowered|rewritten dense.mapal</span></div><pre class="out"><code>values (objects)   lowered  107   rewritten  104
-Map                lowered    3   rewritten    3
+<div class="io"><div class="io-h">The graph <span>mapal dump-ir --stage=lowered|rewritten dense.mapal</span></div><pre class="out"><code>values (objects)   lowered   85   rewritten   82
+Map                lowered    1   rewritten    1
 Fold               lowered    1   rewritten    1
 Index              lowered    4   rewritten    4
 Phi                lowered    1   rewritten    1
-all operations     lowered  112   rewritten  108</code></pre></div>
-<!-- exposition:gen end --></div></div>
-    <div class="step"><div class="arrow">↓</div><div><p style="margin:0 0 4px">For a GPU it picks a kernel and a tile from the facts. Compile-only output for an RTX 5080, with the sizes as written (2048 by 2048):</p>
-<!-- exposition:gen id=hero-facts kind=derive file=docs/exposition/dense.mapal target=rtx-5080 begin -->
-<div class="io"><div class="io-h">What the compiler derived <span>mapal build --emit-only --target=rtx-5080</span></div><pre class="out"><code>compile-time evaluation: 0 values embedded as constants, 7 left to compute at run time
-rewriting: 2 rounds, 2 ConstFold, 1 Dce
-3 device kernel(s):
-kind=tile rows=2048 c=2048 k=2048 grid=16x16 block=128 tile=8x16 bk=16 stages=1 smem=16640
-kind=gen
-kind=gen</code></pre></div>
+all operations     lowered   94   rewritten   90</code></pre></div>
 <!-- exposition:gen end -->
-<!-- exposition:gen id=hero-ptx kind=ptxmix file=docs/exposition/dense.mapal target=rtx-5080 begin -->
+<!-- exposition:gen id=hero-facts kind=derive file=docs/exposition/dense.mapal target=rtx-5080 scale=n=2048 begin -->
+<div class="io"><div class="io-h">What the compiler derived <span>mapal build --emit-only --target=rtx-5080, sizes scaled: n=2048</span></div><pre class="out"><code>compile-time evaluation: 0 values embedded as constants, 2 left to compute at run time
+rewriting: 2 rounds, 2 ConstFold, 1 Dce
+1 device kernel(s):
+kind=tile rows=2048 c=2048 k=2048 grid=16x16 block=128 tile=8x16 bk=16 stages=1 smem=16640</code></pre></div>
+<!-- exposition:gen end -->
+<!-- exposition:gen id=hero-ptx kind=ptxmix file=docs/exposition/dense.mapal target=rtx-5080 scale=n=2048 begin -->
 <div class="io"><div class="io-h">Generated code <span>the emitted PTX for rtx-5080</span></div><pre class="out"><code>  2048  fused multiply-adds            e.g. fma.rn.f32
     16  global loads                   e.g. ld.global.nc.v2.b64
-    34  global stores                  e.g. st.global.v4.b32
+    32  global stores                  e.g. st.global.v4.b32
     96  shared-memory loads            e.g. ld.shared.v4.b32
     20  shared-memory stores           e.g. st.shared.b32
      2  barriers                       e.g. bar.sync
-  2719  instructions in the module
+  2671  instructions in the module
 
 the first fused multiply-adds, as emitted:
     fma.rn.f32 	%r65, %r41, %r49, %r2733;
@@ -356,18 +389,13 @@ the first fused multiply-adds, as emitted:
     fma.rn.f32 	%r68, %r41, %r52, %r2730;
     fma.rn.f32 	%r69, %r41, %r53, %r2729;
     fma.rn.f32 	%r70, %r41, %r54, %r2728;</code></pre></div>
-<!-- exposition:gen end --></div></div>
-    <div class="step"><div class="arrow">↓</div><div><p style="margin:0 0 4px">The same source also runs on the CPU. First and last value of the 2048 by 2048 result:</p>
-<!-- exposition:gen id=hero-out kind=run file=docs/exposition/dense.mapal cpu=1 begin -->
-<div class="io"><div class="io-h">Output <span>mapal run --target=zen3 dense.mapal (native CPU run)</span></div><pre class="out"><code>11
-13755</code></pre></div>
-<!-- exposition:gen end --></div></div>
-  </div>
+<!-- exposition:gen end -->
+  </details>
 </div></section>
 
 <section class="band" id="demos"><div class="wrap">
   <h2><span class="no">1</span>Programs, and what the compiler makes of them</h2>
-  <p class="lede">Eight small programs and a piece of a language model. Each shows the code, its real output, and what the compiler derived. Outputs come from the reference interpreter (the oracle) and carry the bound the language proves for each float.</p>
+  <p class="lede">Eight small programs and a piece of a language model. Each shows the code, its real output, and what the compiler derived. Their inputs are small files read at run time (<code>docs/exposition/data/</code>), so the compiler cannot just compute the answer; two keep constants on purpose. Outputs come from the reference interpreter (the oracle) and carry the bound the language proves for each float.</p>
 
   <article class="demo" id="demo-pipeline">
     <h3>Three steps over every sample</h3>
@@ -377,9 +405,7 @@ the first fused multiply-adds, as emitted:
 <span class="mp-number">1024</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">samples</span><span class="mp-punctuation">;</span>
 
 <span class="mp-keyword">fn</span> <span class="mp-function-declaration">main</span><span class="mp-punctuation">(</span><span class="mp-punctuation">)</span> <span class="mp-punctuation">{</span>
-    <span class="mp-global">samples</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">iota</span> <span class="mp-arrow">-&gt;</span> <span class="mp-keyword">map</span> <span class="mp-punctuation">{</span>
-        <span class="mp-parameter-declaration">i</span> <span class="mp-arrow">-&gt;</span> <span class="mp-parameter">i</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">widen_f32</span>
-    <span class="mp-punctuation">}</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">signal</span><span class="mp-punctuation">;</span>
+    <span class="mp-string">"signal.bin"</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">read</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">signal</span><span class="mp-punctuation">:</span> <span class="mp-punctuation">[</span><span class="mp-primitive">f32</span><span class="mp-punctuation">;</span> <span class="mp-global">samples</span><span class="mp-punctuation">]</span><span class="mp-punctuation">;</span>
     <span class="mp-variable">signal</span> <span class="mp-arrow">-&gt;</span> <span class="mp-keyword">map</span> <span class="mp-punctuation">{</span>
         <span class="mp-parameter-declaration">v</span> <span class="mp-arrow">-&gt;</span> <span class="mp-parameter">v</span> <span class="mp-operator">*</span> <span class="mp-float">0.25</span>
     <span class="mp-punctuation">}</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">scaled</span><span class="mp-punctuation">;</span>
@@ -397,20 +423,19 @@ the first fused multiply-adds, as emitted:
     <span class="mp-punctuation">}</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">total</span><span class="mp-punctuation">;</span>
     <span class="mp-variable">clipped</span><span class="mp-punctuation">[</span><span class="mp-global">samples</span> <span class="mp-operator">-</span> <span class="mp-number">1</span><span class="mp-punctuation">]</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">println</span><span class="mp-punctuation">;</span>
     <span class="mp-variable">total</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">println</span><span class="mp-punctuation">;</span>
-<span class="mp-punctuation">}</span></code></pre><figcaption><span>pipeline — <a href="exposition/pipeline.mapal"><code>docs/exposition/pipeline.mapal</code></a>, 25 lines</span><button type="button" class="hl-copy" data-copy="demo-pipeline-src-src" data-eol="1">Copy</button></figcaption></figure><!-- mapal:hl end -->
+<span class="mp-punctuation">}</span></code></pre><figcaption><span>pipeline — <a href="exposition/pipeline.mapal"><code>docs/exposition/pipeline.mapal</code></a>, 23 lines</span><button type="button" class="hl-copy" data-copy="demo-pipeline-src-src" data-eol="1">Copy</button></figcaption></figure><!-- mapal:hl end -->
     </div><div>
 <!-- exposition:gen id=out-pipeline kind=run file=docs/exposition/pipeline.mapal begin -->
 <div class="io"><div class="io-h">Output <span>mapal run --interp pipeline.mapal; ± is the composed bound, <code>--bound</code></span></div><pre class="out"><code>155.75   ± 4.91e-05
 48594   ± 21.2</code></pre></div>
 <!-- exposition:gen end -->
 <!-- exposition:gen id=derive-pipeline kind=derive file=docs/exposition/pipeline.mapal begin -->
-<div class="io"><div class="io-h">What the compiler derived <span>mapal build --emit-only --target=rtx-5080</span></div><pre class="out"><code>compile-time evaluation: 2 values embedded as constants, 0 left to compute at run time
-rewriting: 1 rounds, nothing to change
+<div class="io"><div class="io-h">What the compiler derived <span>mapal build --emit-only --target=rtx-5080</span></div><pre class="out"><code>compile-time evaluation: 0 values embedded as constants, 0 left to compute at run time
+rewriting: 3 rounds, 4 MapFusion
 no device kernel: nothing here is placed on the device</code></pre></div>
 <!-- exposition:gen end -->
     </div></div>
-    <div class="derives"><p>No input is read at run time, so the whole answer is known before the program runs: the compiler evaluates the maps and the sum itself and embeds the result (the report counts the embedded values).</p>
-    <p>Values that do depend on the machine are never folded: see the <a href="#demo-read">file demo</a>.</p></div>
+    <div class="derives"><p>The signal comes from a file, so nothing is known before the run and nothing is folded (the report counts zero embedded values). It is also one pass over data that arrives in host memory: copying it to a GPU would cost more than computing it where it is, so no device kernel is made. The attention demo below does far more work per byte and does get one.</p></div>
   </article>
 
   <article class="demo" id="demo-norm">
@@ -421,26 +446,24 @@ no device kernel: nothing here is placed on the device</code></pre></div>
 <span class="mp-number">4096</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">length</span><span class="mp-punctuation">;</span>
 
 <span class="mp-keyword">fn</span> <span class="mp-function-declaration">main</span><span class="mp-punctuation">(</span><span class="mp-punctuation">)</span> <span class="mp-punctuation">{</span>
-    <span class="mp-global">length</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">iota</span> <span class="mp-arrow">-&gt;</span> <span class="mp-keyword">map</span> <span class="mp-punctuation">{</span>
-        <span class="mp-parameter-declaration">i</span> <span class="mp-arrow">-&gt;</span> <span class="mp-parameter">i</span> <span class="mp-operator">%</span> <span class="mp-number">10</span> <span class="mp-operator">-</span> <span class="mp-number">5</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">widen_f32</span>
-    <span class="mp-punctuation">}</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">v</span><span class="mp-punctuation">;</span>
+    <span class="mp-string">"vector.bin"</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">read</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">v</span><span class="mp-punctuation">:</span> <span class="mp-punctuation">[</span><span class="mp-primitive">f32</span><span class="mp-punctuation">;</span> <span class="mp-global">length</span><span class="mp-punctuation">]</span><span class="mp-punctuation">;</span>
     <span class="mp-punctuation">(</span><span class="mp-float">0.0</span><span class="mp-punctuation">,</span> <span class="mp-variable">v</span><span class="mp-punctuation">)</span> <span class="mp-arrow">-&gt;</span> <span class="mp-keyword">fold</span> <span class="mp-punctuation">{</span>
         <span class="mp-parameter-declaration">sum</span><span class="mp-punctuation">,</span> <span class="mp-parameter-declaration">x</span> <span class="mp-arrow">-&gt;</span> <span class="mp-parameter">sum</span> <span class="mp-operator">+</span> <span class="mp-parameter">x</span> <span class="mp-operator">*</span> <span class="mp-parameter">x</span>
     <span class="mp-punctuation">}</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">squares</span><span class="mp-punctuation">;</span>
     <span class="mp-variable">squares</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">sqrt</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">norm</span><span class="mp-punctuation">;</span>
     <span class="mp-variable">norm</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">println</span><span class="mp-punctuation">;</span>
-<span class="mp-punctuation">}</span></code></pre><figcaption><span>norm — <a href="exposition/norm.mapal"><code>docs/exposition/norm.mapal</code></a>, 13 lines</span><button type="button" class="hl-copy" data-copy="demo-norm-src-src" data-eol="1">Copy</button></figcaption></figure><!-- mapal:hl end -->
+<span class="mp-punctuation">}</span></code></pre><figcaption><span>norm — <a href="exposition/norm.mapal"><code>docs/exposition/norm.mapal</code></a>, 11 lines</span><button type="button" class="hl-copy" data-copy="demo-norm-src-src" data-eol="1">Copy</button></figcaption></figure><!-- mapal:hl end -->
     </div><div>
 <!-- exposition:gen id=out-norm kind=run file=docs/exposition/norm.mapal begin -->
 <div class="io"><div class="io-h">Output <span>mapal run --interp norm.mapal; ± is the composed bound, <code>--bound</code></span></div><pre class="out"><code>186.60118   ± 0.0457</code></pre></div>
 <!-- exposition:gen end -->
 <!-- exposition:gen id=derive-norm kind=derive file=docs/exposition/norm.mapal begin -->
-<div class="io"><div class="io-h">What the compiler derived <span>mapal build --emit-only --target=rtx-5080</span></div><pre class="out"><code>compile-time evaluation: 1 values embedded as constants, 0 left to compute at run time
+<div class="io"><div class="io-h">What the compiler derived <span>mapal build --emit-only --target=rtx-5080</span></div><pre class="out"><code>compile-time evaluation: 0 values embedded as constants, 0 left to compute at run time
 rewriting: 1 rounds, nothing to change
 no device kernel: nothing here is placed on the device</code></pre></div>
 <!-- exposition:gen end -->
     </div></div>
-    <div class="derives"><p>Correctness is the flow plus a stated bound, not bit-identity: the result carries a proven error bound (the <code>±</code>), and inside it the compiler orders the sum however is fastest for the target.</p></div>
+    <div class="derives"><p>The vector is read from a file, so the sum is computed at run time; like the signal above it is a single pass over host data and stays on the CPU. Correctness is the flow plus a stated bound, not bit-identity: the result carries a proven error bound (the <code>±</code>), and inside it the compiler orders the sum however is fastest for the target.</p></div>
   </article>
 
   <article class="demo" id="demo-softmax">
@@ -487,7 +510,7 @@ rewriting: 1 rounds, nothing to change
 no device kernel: nothing here is placed on the device</code></pre></div>
 <!-- exposition:gen end -->
     </div></div>
-    <div class="derives"><p><code>softmax&lt;n&gt;</code> works for any length: the size <code>n</code> is inferred at the call and stays in the type, so every fact sees the exact extent. Four numbers is so small that most of its values are embedded as constants at compile time, as the report shows.</p></div>
+    <div class="derives"><p><code>softmax&lt;n&gt;</code> works for any length: the size <code>n</code> is inferred at the call and stays in the type, so every fact sees the exact extent. This demo keeps its four numbers written in the source on purpose: with no run-time input the compiler computes the whole answer itself and embeds it as constants, as the report shows. The other demos read their inputs from files in <code>docs/exposition/data/</code>, so their reports show real work.</p></div>
   </article>
 
   <article class="demo" id="demo-attention">
@@ -500,15 +523,9 @@ no device kernel: nothing here is placed on the device</code></pre></div>
 
 <span class="mp-keyword">fn</span> <span class="mp-function-declaration">main</span><span class="mp-punctuation">(</span><span class="mp-punctuation">)</span> <span class="mp-punctuation">{</span>
     <span class="mp-global">tokens</span> <span class="mp-operator">*</span> <span class="mp-global">width</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">iota</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">cells</span><span class="mp-punctuation">;</span>
-    <span class="mp-variable">cells</span> <span class="mp-arrow">-&gt;</span> <span class="mp-keyword">map</span> <span class="mp-punctuation">{</span>
-        <span class="mp-parameter-declaration">c</span> <span class="mp-arrow">-&gt;</span> <span class="mp-punctuation">(</span><span class="mp-parameter">c</span> <span class="mp-operator">*</span> <span class="mp-number">7</span> <span class="mp-operator">+</span> <span class="mp-number">13</span><span class="mp-punctuation">)</span> <span class="mp-operator">%</span> <span class="mp-number">11</span> <span class="mp-operator">-</span> <span class="mp-number">5</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">widen_f32</span>
-    <span class="mp-punctuation">}</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">query</span><span class="mp-punctuation">;</span>
-    <span class="mp-variable">cells</span> <span class="mp-arrow">-&gt;</span> <span class="mp-keyword">map</span> <span class="mp-punctuation">{</span>
-        <span class="mp-parameter-declaration">c</span> <span class="mp-arrow">-&gt;</span> <span class="mp-punctuation">(</span><span class="mp-parameter">c</span> <span class="mp-operator">*</span> <span class="mp-number">5</span> <span class="mp-operator">+</span> <span class="mp-number">3</span><span class="mp-punctuation">)</span> <span class="mp-operator">%</span> <span class="mp-number">13</span> <span class="mp-operator">-</span> <span class="mp-number">6</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">widen_f32</span>
-    <span class="mp-punctuation">}</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">key</span><span class="mp-punctuation">;</span>
-    <span class="mp-variable">cells</span> <span class="mp-arrow">-&gt;</span> <span class="mp-keyword">map</span> <span class="mp-punctuation">{</span>
-        <span class="mp-parameter-declaration">c</span> <span class="mp-arrow">-&gt;</span> <span class="mp-punctuation">(</span><span class="mp-parameter">c</span> <span class="mp-operator">*</span> <span class="mp-number">3</span> <span class="mp-operator">+</span> <span class="mp-number">1</span><span class="mp-punctuation">)</span> <span class="mp-operator">%</span> <span class="mp-number">7</span> <span class="mp-operator">-</span> <span class="mp-number">3</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">widen_f32</span>
-    <span class="mp-punctuation">}</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">value</span><span class="mp-punctuation">;</span>
+    <span class="mp-string">"query.bin"</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">read</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">query</span><span class="mp-punctuation">:</span> <span class="mp-punctuation">[</span><span class="mp-primitive">f32</span><span class="mp-punctuation">;</span> <span class="mp-global">tokens</span> <span class="mp-operator">*</span> <span class="mp-global">width</span><span class="mp-punctuation">]</span><span class="mp-punctuation">;</span>
+    <span class="mp-string">"key.bin"</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">read</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">key</span><span class="mp-punctuation">:</span> <span class="mp-punctuation">[</span><span class="mp-primitive">f32</span><span class="mp-punctuation">;</span> <span class="mp-global">tokens</span> <span class="mp-operator">*</span> <span class="mp-global">width</span><span class="mp-punctuation">]</span><span class="mp-punctuation">;</span>
+    <span class="mp-string">"value.bin"</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">read</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">value</span><span class="mp-punctuation">:</span> <span class="mp-punctuation">[</span><span class="mp-primitive">f32</span><span class="mp-punctuation">;</span> <span class="mp-global">tokens</span> <span class="mp-operator">*</span> <span class="mp-global">width</span><span class="mp-punctuation">]</span><span class="mp-punctuation">;</span>
     <span class="mp-global">width</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">iota</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">dims</span><span class="mp-punctuation">;</span>
     <span class="mp-global">tokens</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">iota</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">positions</span><span class="mp-punctuation">;</span>
     <span class="mp-global">width</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">widen_f32</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">sqrt</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">scale</span><span class="mp-punctuation">;</span>
@@ -552,19 +569,16 @@ no device kernel: nothing here is placed on the device</code></pre></div>
     <span class="mp-punctuation">}</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">checksum</span><span class="mp-punctuation">;</span>
     <span class="mp-variable">out</span><span class="mp-punctuation">[</span><span class="mp-number">0</span><span class="mp-punctuation">]</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">println</span><span class="mp-punctuation">;</span>
     <span class="mp-variable">checksum</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">println</span><span class="mp-punctuation">;</span>
-<span class="mp-punctuation">}</span></code></pre><figcaption><span>attention — <a href="exposition/attention.mapal"><code>docs/exposition/attention.mapal</code></a>, 59 lines</span><button type="button" class="hl-copy" data-copy="demo-attention-src-src" data-eol="1">Copy</button></figcaption></figure><!-- mapal:hl end -->
+<span class="mp-punctuation">}</span></code></pre><figcaption><span>attention — <a href="exposition/attention.mapal"><code>docs/exposition/attention.mapal</code></a>, 53 lines</span><button type="button" class="hl-copy" data-copy="demo-attention-src-src" data-eol="1">Copy</button></figcaption></figure><!-- mapal:hl end -->
     </div><div>
 <!-- exposition:gen id=out-attention kind=run file=docs/exposition/attention.mapal begin -->
 <div class="io"><div class="io-h">Output <span>mapal run --interp attention.mapal; ± is the composed bound, <code>--bound</code></span></div><pre class="out"><code>1.9652196   ± 3.81e-05
 5.6616716   ± 0.00292</code></pre></div>
 <!-- exposition:gen end -->
 <!-- exposition:gen id=derive-attention kind=derive file=docs/exposition/attention.mapal scale=tokens=4096,width=64 begin -->
-<div class="io"><div class="io-h">What the compiler derived <span>mapal build --emit-only --target=rtx-5080, sizes scaled: tokens=4096,width=64</span></div><pre class="out"><code>compile-time evaluation: 1 values embedded as constants, 15 left to compute at run time
+<div class="io"><div class="io-h">What the compiler derived <span>mapal build --emit-only --target=rtx-5080, sizes scaled: tokens=4096,width=64</span></div><pre class="out"><code>compile-time evaluation: 1 values embedded as constants, 5 left to compute at run time
 rewriting: 2 rounds, 8 ConstFold, 4 Dce
-4 device kernel(s):
-kind=gen
-kind=gen
-kind=gen
+1 device kernel(s):
 kind=flow rows=4096 steps=5 grid=1024 block=128 smem=43552 windows=128</code></pre></div>
 <!-- exposition:gen end -->
     </div></div>
@@ -580,12 +594,7 @@ kind=flow rows=4096 steps=5 grid=1024 block=128 smem=43552 windows=128</code></p
 <span class="mp-number">100</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">steps</span><span class="mp-punctuation">;</span>
 
 <span class="mp-keyword">fn</span> <span class="mp-function-declaration">main</span><span class="mp-punctuation">(</span><span class="mp-punctuation">)</span> <span class="mp-punctuation">{</span>
-    <span class="mp-global">points</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">iota</span> <span class="mp-arrow">-&gt;</span> <span class="mp-keyword">map</span> <span class="mp-punctuation">{</span>
-        <span class="mp-parameter-declaration">i</span> <span class="mp-arrow">-&gt;</span> <span class="mp-punctuation">(</span><span class="mp-parameter">i</span> <span class="mp-operator">==</span> <span class="mp-global">points</span> <span class="mp-operator">/</span> <span class="mp-number">2</span><span class="mp-punctuation">)</span> <span class="mp-arrow">-&gt;</span> <span class="mp-punctuation">{</span>
-            <span class="mp-guard">-</span><span class="mp-guard-bool">true</span><span class="mp-guard">-&gt;</span> <span class="mp-float">100.0</span><span class="mp-punctuation">;</span>
-            <span class="mp-guard">-</span><span class="mp-guard-bool">false</span><span class="mp-guard">-&gt;</span> <span class="mp-float">0.0</span><span class="mp-punctuation">;</span>
-        <span class="mp-punctuation">}</span>
-    <span class="mp-punctuation">}</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">start</span><span class="mp-punctuation">;</span>
+    <span class="mp-string">"rod.bin"</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">read</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">start</span><span class="mp-punctuation">:</span> <span class="mp-punctuation">[</span><span class="mp-primitive">f32</span><span class="mp-punctuation">;</span> <span class="mp-global">points</span><span class="mp-punctuation">]</span><span class="mp-punctuation">;</span>
     <span class="mp-keyword">mut</span> <span class="mp-binding">u</span><span class="mp-punctuation">:</span> <span class="mp-punctuation">[</span><span class="mp-primitive">f32</span><span class="mp-punctuation">;</span> <span class="mp-global">points</span><span class="mp-punctuation">]</span> <span class="mp-arrow">&lt;-</span> <span class="mp-variable">start</span><span class="mp-punctuation">;</span>
     <span class="mp-keyword">mut</span> <span class="mp-binding">step</span><span class="mp-punctuation">:</span> <span class="mp-primitive">i32</span> <span class="mp-arrow">&lt;-</span> <span class="mp-number">0</span><span class="mp-punctuation">;</span>
     <span class="mp-keyword">loop</span> <span class="mp-punctuation">{</span>
@@ -605,17 +614,16 @@ kind=flow rows=4096 steps=5 grid=1024 block=128 smem=43552 windows=128</code></p
     <span class="mp-punctuation">}</span>
     <span class="mp-variable">final</span><span class="mp-punctuation">[</span><span class="mp-global">points</span> <span class="mp-operator">/</span> <span class="mp-number">2</span><span class="mp-punctuation">]</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">println</span><span class="mp-punctuation">;</span>
     <span class="mp-variable">final</span><span class="mp-punctuation">[</span><span class="mp-global">points</span> <span class="mp-operator">/</span> <span class="mp-number">2</span> <span class="mp-operator">+</span> <span class="mp-number">8</span><span class="mp-punctuation">]</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">println</span><span class="mp-punctuation">;</span>
-<span class="mp-punctuation">}</span></code></pre><figcaption><span>heat — <a href="exposition/loop.mapal"><code>docs/exposition/loop.mapal</code></a>, 31 lines</span><button type="button" class="hl-copy" data-copy="demo-loop-src-src" data-eol="1">Copy</button></figcaption></figure><!-- mapal:hl end -->
+<span class="mp-punctuation">}</span></code></pre><figcaption><span>heat — <a href="exposition/loop.mapal"><code>docs/exposition/loop.mapal</code></a>, 26 lines</span><button type="button" class="hl-copy" data-copy="demo-loop-src-src" data-eol="1">Copy</button></figcaption></figure><!-- mapal:hl end -->
     </div><div>
 <!-- exposition:gen id=out-loop kind=run file=docs/exposition/loop.mapal begin -->
 <div class="io"><div class="io-h">Output <span>mapal run --interp loop.mapal; ± is the composed bound, <code>--bound</code></span></div><pre class="out"><code>5.6348486   ± 0.000121
 2.9786952   ± 6.22e-05</code></pre></div>
 <!-- exposition:gen end -->
 <!-- exposition:gen id=derive-loop kind=derive file=docs/exposition/loop.mapal scale=points=4194304 begin -->
-<div class="io"><div class="io-h">What the compiler derived <span>mapal build --emit-only --target=rtx-5080, sizes scaled: points=4194304</span></div><pre class="out"><code>compile-time evaluation: 3 values embedded as constants, 3 left to compute at run time
+<div class="io"><div class="io-h">What the compiler derived <span>mapal build --emit-only --target=rtx-5080, sizes scaled: points=4194304</span></div><pre class="out"><code>compile-time evaluation: 2 values embedded as constants, 1 left to compute at run time
 rewriting: 2 rounds, 1 Cse
-2 device kernel(s):
-kind=gen
+1 device kernel(s):
 kind=cell work=1</code></pre></div>
 <!-- exposition:gen end -->
     </div></div>
@@ -654,7 +662,7 @@ rewriting: 2 rounds, 2 ConstFold
 no device kernel: nothing here is placed on the device</code></pre></div>
 <!-- exposition:gen end -->
     </div></div>
-    <div class="derives"><p>Each call is instantiated with its own extent, 4 and 1000; the compiler checks the sizes, not a type.</p></div>
+    <div class="derives"><p>Each call is instantiated with its own extent, 4 and 1000; the compiler checks the sizes, not a type. Its inputs are constants here, so the report shows them computed at compile time.</p></div>
   </article>
 
   <article class="demo" id="demo-read">
@@ -702,14 +710,8 @@ no device kernel: nothing here is placed on the device</code></pre></div>
 <span class="mp-number">16</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">columns</span><span class="mp-punctuation">;</span>
 
 <span class="mp-keyword">fn</span> <span class="mp-function-declaration">main</span><span class="mp-punctuation">(</span><span class="mp-punctuation">)</span> <span class="mp-punctuation">{</span>
-    <span class="mp-global">rows</span> <span class="mp-operator">*</span> <span class="mp-global">columns</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">iota</span> <span class="mp-arrow">-&gt;</span> <span class="mp-keyword">map</span> <span class="mp-punctuation">{</span>
-        <span class="mp-parameter-declaration">c</span> <span class="mp-arrow">-&gt;</span> <span class="mp-punctuation">(</span><span class="mp-parameter">c</span> <span class="mp-operator">*</span> <span class="mp-number">11</span> <span class="mp-operator">+</span> <span class="mp-number">57</span><span class="mp-punctuation">)</span> <span class="mp-operator">%</span> <span class="mp-number">103</span> <span class="mp-operator">-</span> <span class="mp-number">51</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">widen_f32</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">v</span><span class="mp-punctuation">;</span>
-        <span class="mp-variable">v</span> <span class="mp-operator">/</span> <span class="mp-float">64.0</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">to_bf16</span>
-    <span class="mp-punctuation">}</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">weight</span><span class="mp-punctuation">;</span>
-    <span class="mp-global">tokens</span> <span class="mp-operator">*</span> <span class="mp-global">columns</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">iota</span> <span class="mp-arrow">-&gt;</span> <span class="mp-keyword">map</span> <span class="mp-punctuation">{</span>
-        <span class="mp-parameter-declaration">c</span> <span class="mp-arrow">-&gt;</span> <span class="mp-punctuation">(</span><span class="mp-parameter">c</span> <span class="mp-operator">*</span> <span class="mp-number">7</span> <span class="mp-operator">+</span> <span class="mp-number">13</span><span class="mp-punctuation">)</span> <span class="mp-operator">%</span> <span class="mp-number">101</span> <span class="mp-operator">-</span> <span class="mp-number">50</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">widen_f32</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">v</span><span class="mp-punctuation">;</span>
-        <span class="mp-variable">v</span> <span class="mp-operator">/</span> <span class="mp-float">8.0</span>
-    <span class="mp-punctuation">}</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">x</span><span class="mp-punctuation">;</span>
+    <span class="mp-string">"weight.bin"</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">read</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">weight</span><span class="mp-punctuation">:</span> <span class="mp-punctuation">[</span><span class="mp-primitive">bf16</span><span class="mp-punctuation">;</span> <span class="mp-global">rows</span> <span class="mp-operator">*</span> <span class="mp-global">columns</span><span class="mp-punctuation">]</span><span class="mp-punctuation">;</span>
+    <span class="mp-string">"activations.bin"</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">read</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">x</span><span class="mp-punctuation">:</span> <span class="mp-punctuation">[</span><span class="mp-primitive">f32</span><span class="mp-punctuation">;</span> <span class="mp-global">tokens</span> <span class="mp-operator">*</span> <span class="mp-global">columns</span><span class="mp-punctuation">]</span><span class="mp-punctuation">;</span>
     <span class="mp-global">columns</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">iota</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">along</span><span class="mp-punctuation">;</span>
     <span class="mp-global">tokens</span> <span class="mp-operator">*</span> <span class="mp-global">rows</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">iota</span> <span class="mp-arrow">-&gt;</span> <span class="mp-keyword">map</span> <span class="mp-punctuation">{</span>
         <span class="mp-parameter-declaration">cell</span> <span class="mp-arrow">-&gt;</span>
@@ -725,7 +727,7 @@ no device kernel: nothing here is placed on the device</code></pre></div>
     <span class="mp-punctuation">}</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">checksum</span><span class="mp-punctuation">;</span>
     <span class="mp-variable">out</span><span class="mp-punctuation">[</span><span class="mp-number">0</span><span class="mp-punctuation">]</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">println</span><span class="mp-punctuation">;</span>
     <span class="mp-variable">checksum</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">println</span><span class="mp-punctuation">;</span>
-<span class="mp-punctuation">}</span></code></pre><figcaption><span>projection — <a href="exposition/projection.mapal"><code>docs/exposition/projection.mapal</code></a>, 30 lines</span><button type="button" class="hl-copy" data-copy="demo-gpus-src-src" data-eol="1">Copy</button></figcaption></figure><!-- mapal:hl end -->
+<span class="mp-punctuation">}</span></code></pre><figcaption><span>projection — <a href="exposition/projection.mapal"><code>docs/exposition/projection.mapal</code></a>, 24 lines</span><button type="button" class="hl-copy" data-copy="demo-gpus-src-src" data-eol="1">Copy</button></figcaption></figure><!-- mapal:hl end -->
     </div><div>
 <!-- exposition:gen id=out-gpus kind=run file=docs/exposition/projection.mapal begin -->
 <div class="io"><div class="io-h">Output <span>mapal run --interp projection.mapal; ± is the composed bound, <code>--bound</code></span></div><pre class="out"><code>1.9277344   ± 7.81e-06
@@ -733,7 +735,7 @@ no device kernel: nothing here is placed on the device</code></pre></div>
 <!-- exposition:gen end -->
     </div></div>
 <!-- exposition:gen id=derive-gpus kind=gpus file=docs/exposition/projection.mapal scale=tokens=128,rows=4096,columns=4096 begin -->
-<div class="io"><div class="io-h">One source, three machines <span>mapal build --emit-only --target=&lt;profile&gt;, sizes scaled: tokens=128,rows=4096,columns=4096</span></div><div class="tablewrap"><table class="gputab"><thead><tr><th>profile</th><th>kind</th><th>op</th><th>grid</th><th>block</th><th>bk</th><th>stages</th><th>smem</th><th>blocks per sm</th></tr></thead><tbody><tr><th scope='row'>rtx-5080</th><td>mma</td><td>m16n8k16.bf16</td><td>64x2</td><td>256</td><td>64</td><td>2</td><td>36864</td><td>2</td></tr><tr><th scope='row'>rtx-3090</th><td>mma</td><td>m16n8k16.bf16</td><td>64x2</td><td>256</td><td>64</td><td>2</td><td>36864</td><td>2</td></tr><tr><th scope='row'>h100</th><td>wgmma</td><td>m64n32k16.bf16</td><td>128x2</td><td>256</td><td>256</td><td>4</td><td>196704</td><td>1</td></tr></tbody></table></div></div>
+<div class="io"><div class="io-h">One source, three machines <span>mapal build --emit-only --target=&lt;profile&gt;, sizes scaled: tokens=128,rows=4096,columns=4096</span></div><div class="tablewrap"><table class="gputab"><thead><tr><th>profile</th><th>kind</th><th>op</th><th>grid</th><th>block</th><th>bk</th><th>stages</th><th>smem</th><th>blocks per sm</th></tr></thead><tbody><tr><th scope='row'>rtx-5080</th><td>mma</td><td>m16n8k16.bf16</td><td>64x2</td><td>256</td><td>32</td><td>3</td><td>46080</td><td>2</td></tr><tr><th scope='row'>rtx-3090</th><td>mma</td><td>m16n8k16.bf16</td><td>64x2</td><td>256</td><td>32</td><td>3</td><td>46080</td><td>2</td></tr><tr><th scope='row'>h100</th><td>wgmma</td><td>m64n32k16.bf16</td><td>128x2</td><td>256</td><td>256</td><td>2</td><td>163888</td><td>1</td></tr></tbody></table></div></div>
 <!-- exposition:gen end -->
     <div class="derives"><p>The source is identical. The matrix instruction, tile, pipeline depth and shared memory differ because the machines' physical properties differ, not because of a branch on the chip's name. Where a rule loses on some part, the project treats it as a missing hardware property to add.</p></div>
   </article>
@@ -775,7 +777,767 @@ the 33 flow kernels each carry several steps (130 steps in all)</code></pre></di
 
 <section class="band" id="performance"><div class="wrap">
   <h2><span class="no">2</span>Performance</h2>
-  <p class="lede">Llama-3.2-1B in the readable source above, against the fastest of gpt-fast, vLLM, SGLang, TensorRT-LLM, llama.cpp and Hugging Face on five NVIDIA GPUs, each at the same precision. A bar below 1.0 means Mapal is faster.</p>
+  <p class="lede">Where Mapal is faster and where it is slower, by kind of problem, each against the best library or compiler at the same precision. Blue is Mapal faster, red slower. Every chart is drawn from the repository's measurement files when the page is built.</p>
+
+  <h3 class="sub">On GPUs: six kinds of problem</h3>
+  <p>Five NVIDIA GPUs, 119 programs timed on every one. Against cuBLAS, cuBLASLt, CUTLASS, PyTorch eager and <code>torch.compile</code>, FlashAttention, Triton and hand-written CUDA.</p>
+<!-- exposition:gen id=perf-families kind=perf name=families begin -->
+<div class="chart chart-light"><svg xmlns="http://www.w3.org/2000/svg" width="920" height="510" viewBox="0 0 920 510" role="img" aria-labelledby="perf-families-light-t perf-families-light-d">
+<title id="perf-families-light-t">Mapal against the best library or compiler, by kind of problem</title>
+<desc id="perf-families-light-d">Geomean of Mapal time divided by the fastest same-precision competitor's time, per problem class and GPU, with the number of programs faster, even and slower.</desc>
+<style>text { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; } .num { font-variant-numeric: tabular-nums; }</style>
+<rect width="920" height="510" rx="10" fill="#fcfcfb"/>
+<text x="28.0" y="38.0" font-size="17" font-weight="600" fill="#0b0b0b" text-anchor="start">Mapal against the best library or compiler, by kind of problem</text>
+<text x="28.0" y="60.0" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="start">Each cell: the geomean of Mapal's time ÷ the fastest competitor's, and below it the programs faster · even · slower (119 programs timed on every GPU).</text>
+<text x="339.4" y="90.0" font-size="12.5" font-weight="600" fill="#0b0b0b" text-anchor="middle">RTX 5080</text>
+<text x="462.2" y="90.0" font-size="12.5" font-weight="600" fill="#0b0b0b" text-anchor="middle">RTX 3090</text>
+<text x="585.0" y="90.0" font-size="12.5" font-weight="600" fill="#0b0b0b" text-anchor="middle">A100</text>
+<text x="707.8" y="90.0" font-size="12.5" font-weight="600" fill="#0b0b0b" text-anchor="middle">RTX 4090</text>
+<text x="830.6" y="90.0" font-size="12.5" font-weight="600" fill="#0b0b0b" text-anchor="middle">H100</text>
+<text x="28.0" y="125.0" font-size="13.5" font-weight="600" fill="#0b0b0b" text-anchor="start">Attention and softmax</text>
+<text x="28.0" y="141.0" font-size="11.5" font-weight="400" fill="#898781" text-anchor="start">14 programs</text>
+<rect x="279.5" y="101.5" width="119.8" height="51.0" rx="5" fill="#6990c5"/>
+<text x="339.4" y="126.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">0.64</text>
+<text x="339.4" y="142.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">9 · 5 · 0</text>
+<rect x="402.3" y="101.5" width="119.8" height="51.0" rx="5" fill="#2863af"/>
+<text x="462.2" y="126.0" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle" class="num">0.52</text>
+<text x="462.2" y="142.0" font-size="11.5" font-weight="500" fill="#ffffff" text-anchor="middle" class="num">9 · 0 · 5</text>
+<rect x="525.1" y="101.5" width="119.8" height="51.0" rx="5" fill="#648dc3"/>
+<text x="585.0" y="126.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">0.63</text>
+<text x="585.0" y="142.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">12 · 0 · 2</text>
+<rect x="647.9" y="101.5" width="119.8" height="51.0" rx="5" fill="#6d93c6"/>
+<text x="707.8" y="126.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">0.65</text>
+<text x="707.8" y="142.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">12 · 2 · 0</text>
+<rect x="770.7" y="101.5" width="119.8" height="51.0" rx="5" fill="#a8bdd8"/>
+<text x="830.6" y="126.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">0.79</text>
+<text x="830.6" y="142.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">5 · 1 · 8</text>
+<text x="28.0" y="179.0" font-size="13.5" font-weight="600" fill="#0b0b0b" text-anchor="start">Convolution and FIR</text>
+<text x="28.0" y="195.0" font-size="11.5" font-weight="400" fill="#898781" text-anchor="start">7 programs</text>
+<rect x="279.5" y="155.5" width="119.8" height="51.0" rx="5" fill="#1c5cab"/>
+<text x="339.4" y="180.0" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle" class="num">0.49</text>
+<text x="339.4" y="196.0" font-size="11.5" font-weight="500" fill="#ffffff" text-anchor="middle" class="num">6 · 0 · 1</text>
+<rect x="402.3" y="155.5" width="119.8" height="51.0" rx="5" fill="#82a2cd"/>
+<text x="462.2" y="180.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">0.70</text>
+<text x="462.2" y="196.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">5 · 0 · 2</text>
+<rect x="525.1" y="155.5" width="119.8" height="51.0" rx="5" fill="#dee3e7"/>
+<text x="585.0" y="180.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">0.94</text>
+<text x="585.0" y="196.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">4 · 1 · 2</text>
+<rect x="647.9" y="155.5" width="119.8" height="51.0" rx="5" fill="#6c93c6"/>
+<text x="707.8" y="180.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">0.65</text>
+<text x="707.8" y="196.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">5 · 0 · 2</text>
+<rect x="770.7" y="155.5" width="119.8" height="51.0" rx="5" fill="#aec1da"/>
+<text x="830.6" y="180.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">0.80</text>
+<text x="830.6" y="196.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">4 · 0 · 3</text>
+<text x="28.0" y="233.0" font-size="13.5" font-weight="600" fill="#0b0b0b" text-anchor="start">Fan-in / fan-out chains</text>
+<text x="28.0" y="249.0" font-size="11.5" font-weight="400" fill="#898781" text-anchor="start">9 programs</text>
+<rect x="279.5" y="209.5" width="119.8" height="51.0" rx="5" fill="#e9ebea"/>
+<text x="339.4" y="234.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">0.98</text>
+<text x="339.4" y="250.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">1 · 8 · 0</text>
+<rect x="402.3" y="209.5" width="119.8" height="51.0" rx="5" fill="#ede7e3"/>
+<text x="462.2" y="234.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">1.03</text>
+<text x="462.2" y="250.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">0 · 7 · 2</text>
+<rect x="525.1" y="209.5" width="119.8" height="51.0" rx="5" fill="#e9eaea"/>
+<text x="585.0" y="234.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">0.98</text>
+<text x="585.0" y="250.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">6 · 0 · 3</text>
+<rect x="647.9" y="209.5" width="119.8" height="51.0" rx="5" fill="#e2e6e9"/>
+<text x="707.8" y="234.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">0.96</text>
+<text x="707.8" y="250.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">5 · 2 · 2</text>
+<rect x="770.7" y="209.5" width="119.8" height="51.0" rx="5" fill="#e7d3cf"/>
+<text x="830.6" y="234.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">1.11</text>
+<text x="830.6" y="250.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">0 · 1 · 8</text>
+<text x="28.0" y="287.0" font-size="13.5" font-weight="600" fill="#0b0b0b" text-anchor="start">Matrix products</text>
+<text x="28.0" y="303.0" font-size="11.5" font-weight="400" fill="#898781" text-anchor="start">46 programs</text>
+<rect x="279.5" y="263.5" width="119.8" height="51.0" rx="5" fill="#d7dee6"/>
+<text x="339.4" y="288.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">0.92</text>
+<text x="339.4" y="304.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">13 · 18 · 15</text>
+<rect x="402.3" y="263.5" width="119.8" height="51.0" rx="5" fill="#ece2df"/>
+<text x="462.2" y="288.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">1.05</text>
+<text x="462.2" y="304.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">7 · 17 · 22</text>
+<rect x="525.1" y="263.5" width="119.8" height="51.0" rx="5" fill="#e2c7c2"/>
+<text x="585.0" y="288.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">1.16</text>
+<text x="585.0" y="304.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">14 · 8 · 24</text>
+<rect x="647.9" y="263.5" width="119.8" height="51.0" rx="5" fill="#dbe1e7"/>
+<text x="707.8" y="288.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">0.93</text>
+<text x="707.8" y="304.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">13 · 14 · 19</text>
+<rect x="770.7" y="263.5" width="119.8" height="51.0" rx="5" fill="#cf9992"/>
+<text x="830.6" y="288.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">1.38</text>
+<text x="830.6" y="304.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">2 · 5 · 39</text>
+<text x="28.0" y="341.0" font-size="13.5" font-weight="600" fill="#0b0b0b" text-anchor="start">LLM layers</text>
+<text x="28.0" y="357.0" font-size="11.5" font-weight="400" fill="#898781" text-anchor="start">37 programs</text>
+<rect x="279.5" y="317.5" width="119.8" height="51.0" rx="5" fill="#ececeb"/>
+<text x="339.4" y="342.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">0.99</text>
+<text x="339.4" y="358.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">16 · 7 · 14</text>
+<rect x="402.3" y="317.5" width="119.8" height="51.0" rx="5" fill="#e7e9ea"/>
+<text x="462.2" y="342.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">0.97</text>
+<text x="462.2" y="358.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">18 · 5 · 14</text>
+<rect x="525.1" y="317.5" width="119.8" height="51.0" rx="5" fill="#efebe8"/>
+<text x="585.0" y="342.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">1.01</text>
+<text x="585.0" y="358.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">18 · 2 · 17</text>
+<rect x="647.9" y="317.5" width="119.8" height="51.0" rx="5" fill="#ebe1dd"/>
+<text x="707.8" y="342.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">1.05</text>
+<text x="707.8" y="358.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">10 · 6 · 21</text>
+<rect x="770.7" y="317.5" width="119.8" height="51.0" rx="5" fill="#e8eaea"/>
+<text x="830.6" y="342.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">0.98</text>
+<text x="830.6" y="358.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">19 · 1 · 17</text>
+<text x="28.0" y="395.0" font-size="13.5" font-weight="600" fill="#0b0b0b" text-anchor="start">MLP chains</text>
+<text x="28.0" y="411.0" font-size="11.5" font-weight="400" fill="#898781" text-anchor="start">6 programs</text>
+<rect x="279.5" y="371.5" width="119.8" height="51.0" rx="5" fill="#e8e9ea"/>
+<text x="339.4" y="396.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">0.97</text>
+<text x="339.4" y="412.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">1 · 5 · 0</text>
+<rect x="402.3" y="371.5" width="119.8" height="51.0" rx="5" fill="#e8d7d2"/>
+<text x="462.2" y="396.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">1.09</text>
+<text x="462.2" y="412.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">0 · 1 · 5</text>
+<rect x="525.1" y="371.5" width="119.8" height="51.0" rx="5" fill="#eadbd7"/>
+<text x="585.0" y="396.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">1.08</text>
+<text x="585.0" y="412.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">3 · 0 · 3</text>
+<rect x="647.9" y="371.5" width="119.8" height="51.0" rx="5" fill="#dee3e8"/>
+<text x="707.8" y="396.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">0.95</text>
+<text x="707.8" y="412.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">4 · 0 · 2</text>
+<rect x="770.7" y="371.5" width="119.8" height="51.0" rx="5" fill="#d7aca6"/>
+<text x="830.6" y="396.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">1.28</text>
+<text x="830.6" y="412.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">0 · 0 · 6</text>
+<rect x="278.0" y="448.0" width="10.8" height="10.0" rx="0" fill="#205fac"/>
+<rect x="288.2" y="448.0" width="10.8" height="10.0" rx="0" fill="#2964af"/>
+<rect x="298.5" y="448.0" width="10.8" height="10.0" rx="0" fill="#3169b1"/>
+<rect x="308.7" y="448.0" width="10.8" height="10.0" rx="0" fill="#386eb4"/>
+<rect x="318.9" y="448.0" width="10.8" height="10.0" rx="0" fill="#3f72b6"/>
+<rect x="329.2" y="448.0" width="10.8" height="10.0" rx="0" fill="#4677b9"/>
+<rect x="339.4" y="448.0" width="10.8" height="10.0" rx="0" fill="#4d7cbb"/>
+<rect x="349.6" y="448.0" width="10.8" height="10.0" rx="0" fill="#5481bd"/>
+<rect x="359.9" y="448.0" width="10.8" height="10.0" rx="0" fill="#5b86c0"/>
+<rect x="370.1" y="448.0" width="10.8" height="10.0" rx="0" fill="#628bc2"/>
+<rect x="380.3" y="448.0" width="10.8" height="10.0" rx="0" fill="#6890c4"/>
+<rect x="390.6" y="448.0" width="10.8" height="10.0" rx="0" fill="#6f95c7"/>
+<rect x="400.8" y="448.0" width="10.8" height="10.0" rx="0" fill="#7699c9"/>
+<rect x="411.0" y="448.0" width="10.8" height="10.0" rx="0" fill="#7d9ecb"/>
+<rect x="421.3" y="448.0" width="10.8" height="10.0" rx="0" fill="#84a3cd"/>
+<rect x="431.5" y="448.0" width="10.8" height="10.0" rx="0" fill="#8aa8cf"/>
+<rect x="441.7" y="448.0" width="10.8" height="10.0" rx="0" fill="#91add2"/>
+<rect x="452.0" y="448.0" width="10.8" height="10.0" rx="0" fill="#98b2d4"/>
+<rect x="462.2" y="448.0" width="10.8" height="10.0" rx="0" fill="#9fb7d6"/>
+<rect x="472.4" y="448.0" width="10.8" height="10.0" rx="0" fill="#a6bcd8"/>
+<rect x="482.7" y="448.0" width="10.8" height="10.0" rx="0" fill="#adc0da"/>
+<rect x="492.9" y="448.0" width="10.8" height="10.0" rx="0" fill="#b4c5dc"/>
+<rect x="503.1" y="448.0" width="10.8" height="10.0" rx="0" fill="#bbcade"/>
+<rect x="513.4" y="448.0" width="10.8" height="10.0" rx="0" fill="#c2cfe0"/>
+<rect x="523.6" y="448.0" width="10.8" height="10.0" rx="0" fill="#c9d4e2"/>
+<rect x="533.8" y="448.0" width="10.8" height="10.0" rx="0" fill="#d0d9e4"/>
+<rect x="544.1" y="448.0" width="10.8" height="10.0" rx="0" fill="#d7dee6"/>
+<rect x="554.3" y="448.0" width="10.8" height="10.0" rx="0" fill="#dee3e7"/>
+<rect x="564.5" y="448.0" width="10.8" height="10.0" rx="0" fill="#e5e8e9"/>
+<rect x="574.8" y="448.0" width="10.8" height="10.0" rx="0" fill="#ecedeb"/>
+<rect x="585.0" y="448.0" width="10.8" height="10.0" rx="0" fill="#efece9"/>
+<rect x="595.2" y="448.0" width="10.8" height="10.0" rx="0" fill="#ede6e2"/>
+<rect x="605.5" y="448.0" width="10.8" height="10.0" rx="0" fill="#ebdfdb"/>
+<rect x="615.7" y="448.0" width="10.8" height="10.0" rx="0" fill="#e9d9d5"/>
+<rect x="625.9" y="448.0" width="10.8" height="10.0" rx="0" fill="#e7d3ce"/>
+<rect x="636.2" y="448.0" width="10.8" height="10.0" rx="0" fill="#e4cdc8"/>
+<rect x="646.4" y="448.0" width="10.8" height="10.0" rx="0" fill="#e2c7c1"/>
+<rect x="656.6" y="448.0" width="10.8" height="10.0" rx="0" fill="#e0c0bb"/>
+<rect x="666.9" y="448.0" width="10.8" height="10.0" rx="0" fill="#ddbab4"/>
+<rect x="677.1" y="448.0" width="10.8" height="10.0" rx="0" fill="#dbb4ae"/>
+<rect x="687.3" y="448.0" width="10.8" height="10.0" rx="0" fill="#d8aea8"/>
+<rect x="697.6" y="448.0" width="10.8" height="10.0" rx="0" fill="#d6a8a1"/>
+<rect x="707.8" y="448.0" width="10.8" height="10.0" rx="0" fill="#d3a29b"/>
+<rect x="718.0" y="448.0" width="10.8" height="10.0" rx="0" fill="#d19c95"/>
+<rect x="728.3" y="448.0" width="10.8" height="10.0" rx="0" fill="#ce968f"/>
+<rect x="738.5" y="448.0" width="10.8" height="10.0" rx="0" fill="#cb9089"/>
+<rect x="748.7" y="448.0" width="10.8" height="10.0" rx="0" fill="#c88982"/>
+<rect x="759.0" y="448.0" width="10.8" height="10.0" rx="0" fill="#c6837c"/>
+<rect x="769.2" y="448.0" width="10.8" height="10.0" rx="0" fill="#c37d76"/>
+<rect x="779.4" y="448.0" width="10.8" height="10.0" rx="0" fill="#c07770"/>
+<rect x="789.7" y="448.0" width="10.8" height="10.0" rx="0" fill="#bd716a"/>
+<rect x="799.9" y="448.0" width="10.8" height="10.0" rx="0" fill="#ba6b64"/>
+<rect x="810.1" y="448.0" width="10.8" height="10.0" rx="0" fill="#b7655e"/>
+<rect x="820.4" y="448.0" width="10.8" height="10.0" rx="0" fill="#b45f58"/>
+<rect x="830.6" y="448.0" width="10.8" height="10.0" rx="0" fill="#b05852"/>
+<rect x="840.8" y="448.0" width="10.8" height="10.0" rx="0" fill="#ad524c"/>
+<rect x="851.1" y="448.0" width="10.8" height="10.0" rx="0" fill="#aa4c47"/>
+<rect x="861.3" y="448.0" width="10.8" height="10.0" rx="0" fill="#a74541"/>
+<rect x="871.5" y="448.0" width="10.8" height="10.0" rx="0" fill="#a33f3b"/>
+<rect x="881.8" y="448.0" width="10.8" height="10.0" rx="0" fill="#a03835"/>
+<text x="278.0" y="472.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.5</text>
+<text x="407.6" y="472.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.67</text>
+<text x="486.2" y="472.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.8</text>
+<text x="585.0" y="472.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1</text>
+<text x="683.8" y="472.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1.25</text>
+<text x="764.6" y="472.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1.5</text>
+<text x="892.0" y="472.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">2</text>
+<text x="28.0" y="457.0" font-size="11.5" font-weight="400" fill="#52514e" text-anchor="start">Mapal faster ← → slower</text>
+<text x="28.0" y="492.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">Even: within 5% or the run-to-run variation. Data: benches/results/evidence/matrix.json.</text>
+</svg></div>
+<div class="chart chart-dark"><svg xmlns="http://www.w3.org/2000/svg" width="920" height="510" viewBox="0 0 920 510" role="img" aria-labelledby="perf-families-dark-t perf-families-dark-d">
+<title id="perf-families-dark-t">Mapal against the best library or compiler, by kind of problem</title>
+<desc id="perf-families-dark-d">Geomean of Mapal time divided by the fastest same-precision competitor's time, per problem class and GPU, with the number of programs faster, even and slower.</desc>
+<style>text { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; } .num { font-variant-numeric: tabular-nums; }</style>
+<rect width="920" height="510" rx="10" fill="#1a1a19"/>
+<text x="28.0" y="38.0" font-size="17" font-weight="600" fill="#f0efec" text-anchor="start">Mapal against the best library or compiler, by kind of problem</text>
+<text x="28.0" y="60.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">Each cell: the geomean of Mapal's time ÷ the fastest competitor's, and below it the programs faster · even · slower (119 programs timed on every GPU).</text>
+<text x="339.4" y="90.0" font-size="12.5" font-weight="600" fill="#f0efec" text-anchor="middle">RTX 5080</text>
+<text x="462.2" y="90.0" font-size="12.5" font-weight="600" fill="#f0efec" text-anchor="middle">RTX 3090</text>
+<text x="585.0" y="90.0" font-size="12.5" font-weight="600" fill="#f0efec" text-anchor="middle">A100</text>
+<text x="707.8" y="90.0" font-size="12.5" font-weight="600" fill="#f0efec" text-anchor="middle">RTX 4090</text>
+<text x="830.6" y="90.0" font-size="12.5" font-weight="600" fill="#f0efec" text-anchor="middle">H100</text>
+<text x="28.0" y="125.0" font-size="13.5" font-weight="600" fill="#f0efec" text-anchor="start">Attention and softmax</text>
+<text x="28.0" y="141.0" font-size="11.5" font-weight="400" fill="#898781" text-anchor="start">14 programs</text>
+<rect x="279.5" y="101.5" width="119.8" height="51.0" rx="5" fill="#5b7ea7"/>
+<text x="339.4" y="126.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">0.64</text>
+<text x="339.4" y="142.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">9 · 5 · 0</text>
+<rect x="402.3" y="101.5" width="119.8" height="51.0" rx="5" fill="#6ba1e2"/>
+<text x="462.2" y="126.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">0.52</text>
+<text x="462.2" y="142.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">9 · 0 · 5</text>
+<rect x="525.1" y="101.5" width="119.8" height="51.0" rx="5" fill="#5c81ac"/>
+<text x="585.0" y="126.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">0.63</text>
+<text x="585.0" y="142.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">12 · 0 · 2</text>
+<rect x="647.9" y="101.5" width="119.8" height="51.0" rx="5" fill="#5a7ca4"/>
+<text x="707.8" y="126.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">0.65</text>
+<text x="707.8" y="142.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">12 · 2 · 0</text>
+<rect x="770.7" y="101.5" width="119.8" height="51.0" rx="5" fill="#4b5c6f"/>
+<text x="830.6" y="126.0" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle" class="num">0.79</text>
+<text x="830.6" y="142.0" font-size="11.5" font-weight="500" fill="#ffffff" text-anchor="middle" class="num">5 · 1 · 8</text>
+<text x="28.0" y="179.0" font-size="13.5" font-weight="600" fill="#f0efec" text-anchor="start">Convolution and FIR</text>
+<text x="28.0" y="195.0" font-size="11.5" font-weight="400" fill="#898781" text-anchor="start">7 programs</text>
+<rect x="279.5" y="155.5" width="119.8" height="51.0" rx="5" fill="#6da7ec"/>
+<text x="339.4" y="180.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">0.49</text>
+<text x="339.4" y="196.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">6 · 0 · 1</text>
+<rect x="402.3" y="155.5" width="119.8" height="51.0" rx="5" fill="#557090"/>
+<text x="462.2" y="180.0" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle" class="num">0.70</text>
+<text x="462.2" y="196.0" font-size="11.5" font-weight="500" fill="#ffffff" text-anchor="middle" class="num">5 · 0 · 2</text>
+<rect x="525.1" y="155.5" width="119.8" height="51.0" rx="5" fill="#3d4143"/>
+<text x="585.0" y="180.0" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle" class="num">0.94</text>
+<text x="585.0" y="196.0" font-size="11.5" font-weight="500" fill="#ffffff" text-anchor="middle" class="num">4 · 1 · 2</text>
+<rect x="647.9" y="155.5" width="119.8" height="51.0" rx="5" fill="#5a7ca4"/>
+<text x="707.8" y="180.0" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="middle" class="num">0.65</text>
+<text x="707.8" y="196.0" font-size="11.5" font-weight="500" fill="#0b0b0b" text-anchor="middle" class="num">5 · 0 · 2</text>
+<rect x="770.7" y="155.5" width="119.8" height="51.0" rx="5" fill="#49596a"/>
+<text x="830.6" y="180.0" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle" class="num">0.80</text>
+<text x="830.6" y="196.0" font-size="11.5" font-weight="500" fill="#ffffff" text-anchor="middle" class="num">4 · 0 · 3</text>
+<text x="28.0" y="233.0" font-size="13.5" font-weight="600" fill="#f0efec" text-anchor="start">Fan-in / fan-out chains</text>
+<text x="28.0" y="249.0" font-size="11.5" font-weight="400" fill="#898781" text-anchor="start">9 programs</text>
+<rect x="279.5" y="209.5" width="119.8" height="51.0" rx="5" fill="#3a3b3a"/>
+<text x="339.4" y="234.0" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle" class="num">0.98</text>
+<text x="339.4" y="250.0" font-size="11.5" font-weight="500" fill="#ffffff" text-anchor="middle" class="num">1 · 8 · 0</text>
+<rect x="402.3" y="209.5" width="119.8" height="51.0" rx="5" fill="#3f3b38"/>
+<text x="462.2" y="234.0" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle" class="num">1.03</text>
+<text x="462.2" y="250.0" font-size="11.5" font-weight="500" fill="#ffffff" text-anchor="middle" class="num">0 · 7 · 2</text>
+<rect x="525.1" y="209.5" width="119.8" height="51.0" rx="5" fill="#3a3b3a"/>
+<text x="585.0" y="234.0" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle" class="num">0.98</text>
+<text x="585.0" y="250.0" font-size="11.5" font-weight="500" fill="#ffffff" text-anchor="middle" class="num">6 · 0 · 3</text>
+<rect x="647.9" y="209.5" width="119.8" height="51.0" rx="5" fill="#3c3f3f"/>
+<text x="707.8" y="234.0" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle" class="num">0.96</text>
+<text x="707.8" y="250.0" font-size="11.5" font-weight="500" fill="#ffffff" text-anchor="middle" class="num">5 · 2 · 2</text>
+<rect x="770.7" y="209.5" width="119.8" height="51.0" rx="5" fill="#504340"/>
+<text x="830.6" y="234.0" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle" class="num">1.11</text>
+<text x="830.6" y="250.0" font-size="11.5" font-weight="500" fill="#ffffff" text-anchor="middle" class="num">0 · 1 · 8</text>
+<text x="28.0" y="287.0" font-size="13.5" font-weight="600" fill="#f0efec" text-anchor="start">Matrix products</text>
+<text x="28.0" y="303.0" font-size="11.5" font-weight="400" fill="#898781" text-anchor="start">46 programs</text>
+<rect x="279.5" y="263.5" width="119.8" height="51.0" rx="5" fill="#3e4448"/>
+<text x="339.4" y="288.0" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle" class="num">0.92</text>
+<text x="339.4" y="304.0" font-size="11.5" font-weight="500" fill="#ffffff" text-anchor="middle" class="num">13 · 18 · 15</text>
+<rect x="402.3" y="263.5" width="119.8" height="51.0" rx="5" fill="#433d3a"/>
+<text x="462.2" y="288.0" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle" class="num">1.05</text>
+<text x="462.2" y="304.0" font-size="11.5" font-weight="500" fill="#ffffff" text-anchor="middle" class="num">7 · 17 · 22</text>
+<rect x="525.1" y="263.5" width="119.8" height="51.0" rx="5" fill="#5b4845"/>
+<text x="585.0" y="288.0" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle" class="num">1.16</text>
+<text x="585.0" y="304.0" font-size="11.5" font-weight="500" fill="#ffffff" text-anchor="middle" class="num">14 · 8 · 24</text>
+<rect x="647.9" y="263.5" width="119.8" height="51.0" rx="5" fill="#3d4245"/>
+<text x="707.8" y="288.0" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle" class="num">0.93</text>
+<text x="707.8" y="304.0" font-size="11.5" font-weight="500" fill="#ffffff" text-anchor="middle" class="num">13 · 14 · 19</text>
+<rect x="770.7" y="263.5" width="119.8" height="51.0" rx="5" fill="#855b58"/>
+<text x="830.6" y="288.0" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle" class="num">1.38</text>
+<text x="830.6" y="304.0" font-size="11.5" font-weight="500" fill="#ffffff" text-anchor="middle" class="num">2 · 5 · 39</text>
+<text x="28.0" y="341.0" font-size="13.5" font-weight="600" fill="#f0efec" text-anchor="start">LLM layers</text>
+<text x="28.0" y="357.0" font-size="11.5" font-weight="400" fill="#898781" text-anchor="start">37 programs</text>
+<rect x="279.5" y="317.5" width="119.8" height="51.0" rx="5" fill="#393a38"/>
+<text x="339.4" y="342.0" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle" class="num">0.99</text>
+<text x="339.4" y="358.0" font-size="11.5" font-weight="500" fill="#ffffff" text-anchor="middle" class="num">16 · 7 · 14</text>
+<rect x="402.3" y="317.5" width="119.8" height="51.0" rx="5" fill="#3a3c3c"/>
+<text x="462.2" y="342.0" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle" class="num">0.97</text>
+<text x="462.2" y="358.0" font-size="11.5" font-weight="500" fill="#ffffff" text-anchor="middle" class="num">18 · 5 · 14</text>
+<rect x="525.1" y="317.5" width="119.8" height="51.0" rx="5" fill="#3b3936"/>
+<text x="585.0" y="342.0" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle" class="num">1.01</text>
+<text x="585.0" y="358.0" font-size="11.5" font-weight="500" fill="#ffffff" text-anchor="middle" class="num">18 · 2 · 17</text>
+<rect x="647.9" y="317.5" width="119.8" height="51.0" rx="5" fill="#443e3a"/>
+<text x="707.8" y="342.0" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle" class="num">1.05</text>
+<text x="707.8" y="358.0" font-size="11.5" font-weight="500" fill="#ffffff" text-anchor="middle" class="num">10 · 6 · 21</text>
+<rect x="770.7" y="317.5" width="119.8" height="51.0" rx="5" fill="#3a3c3b"/>
+<text x="830.6" y="342.0" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle" class="num">0.98</text>
+<text x="830.6" y="358.0" font-size="11.5" font-weight="500" fill="#ffffff" text-anchor="middle" class="num">19 · 1 · 17</text>
+<text x="28.0" y="395.0" font-size="13.5" font-weight="600" fill="#f0efec" text-anchor="start">MLP chains</text>
+<text x="28.0" y="411.0" font-size="11.5" font-weight="400" fill="#898781" text-anchor="start">6 programs</text>
+<rect x="279.5" y="371.5" width="119.8" height="51.0" rx="5" fill="#3a3c3b"/>
+<text x="339.4" y="396.0" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle" class="num">0.97</text>
+<text x="339.4" y="412.0" font-size="11.5" font-weight="500" fill="#ffffff" text-anchor="middle" class="num">1 · 5 · 0</text>
+<rect x="402.3" y="371.5" width="119.8" height="51.0" rx="5" fill="#4d423e"/>
+<text x="462.2" y="396.0" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle" class="num">1.09</text>
+<text x="462.2" y="412.0" font-size="11.5" font-weight="500" fill="#ffffff" text-anchor="middle" class="num">0 · 1 · 5</text>
+<rect x="525.1" y="371.5" width="119.8" height="51.0" rx="5" fill="#49403d"/>
+<text x="585.0" y="396.0" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle" class="num">1.08</text>
+<text x="585.0" y="412.0" font-size="11.5" font-weight="500" fill="#ffffff" text-anchor="middle" class="num">3 · 0 · 3</text>
+<rect x="647.9" y="371.5" width="119.8" height="51.0" rx="5" fill="#3d4142"/>
+<text x="707.8" y="396.0" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle" class="num">0.95</text>
+<text x="707.8" y="412.0" font-size="11.5" font-weight="500" fill="#ffffff" text-anchor="middle" class="num">4 · 0 · 2</text>
+<rect x="770.7" y="371.5" width="119.8" height="51.0" rx="5" fill="#735350"/>
+<text x="830.6" y="396.0" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle" class="num">1.28</text>
+<text x="830.6" y="412.0" font-size="11.5" font-weight="500" fill="#ffffff" text-anchor="middle" class="num">0 · 0 · 6</text>
+<rect x="278.0" y="448.0" width="10.8" height="10.0" rx="0" fill="#6ca5e9"/>
+<rect x="288.2" y="448.0" width="10.8" height="10.0" rx="0" fill="#6aa1e2"/>
+<rect x="298.5" y="448.0" width="10.8" height="10.0" rx="0" fill="#699ddb"/>
+<rect x="308.7" y="448.0" width="10.8" height="10.0" rx="0" fill="#6799d5"/>
+<rect x="318.9" y="448.0" width="10.8" height="10.0" rx="0" fill="#6595ce"/>
+<rect x="329.2" y="448.0" width="10.8" height="10.0" rx="0" fill="#6492c8"/>
+<rect x="339.4" y="448.0" width="10.8" height="10.0" rx="0" fill="#628ec1"/>
+<rect x="349.6" y="448.0" width="10.8" height="10.0" rx="0" fill="#608abb"/>
+<rect x="359.9" y="448.0" width="10.8" height="10.0" rx="0" fill="#5f86b4"/>
+<rect x="370.1" y="448.0" width="10.8" height="10.0" rx="0" fill="#5d82ae"/>
+<rect x="380.3" y="448.0" width="10.8" height="10.0" rx="0" fill="#5b7ea8"/>
+<rect x="390.6" y="448.0" width="10.8" height="10.0" rx="0" fill="#597ba1"/>
+<rect x="400.8" y="448.0" width="10.8" height="10.0" rx="0" fill="#58779b"/>
+<rect x="411.0" y="448.0" width="10.8" height="10.0" rx="0" fill="#567395"/>
+<rect x="421.3" y="448.0" width="10.8" height="10.0" rx="0" fill="#54708f"/>
+<rect x="431.5" y="448.0" width="10.8" height="10.0" rx="0" fill="#526c89"/>
+<rect x="441.7" y="448.0" width="10.8" height="10.0" rx="0" fill="#516883"/>
+<rect x="452.0" y="448.0" width="10.8" height="10.0" rx="0" fill="#4f647d"/>
+<rect x="462.2" y="448.0" width="10.8" height="10.0" rx="0" fill="#4d6177"/>
+<rect x="472.4" y="448.0" width="10.8" height="10.0" rx="0" fill="#4b5d71"/>
+<rect x="482.7" y="448.0" width="10.8" height="10.0" rx="0" fill="#495a6b"/>
+<rect x="492.9" y="448.0" width="10.8" height="10.0" rx="0" fill="#485665"/>
+<rect x="503.1" y="448.0" width="10.8" height="10.0" rx="0" fill="#46525f"/>
+<rect x="513.4" y="448.0" width="10.8" height="10.0" rx="0" fill="#444f59"/>
+<rect x="523.6" y="448.0" width="10.8" height="10.0" rx="0" fill="#424b54"/>
+<rect x="533.8" y="448.0" width="10.8" height="10.0" rx="0" fill="#40484e"/>
+<rect x="544.1" y="448.0" width="10.8" height="10.0" rx="0" fill="#3f4448"/>
+<rect x="554.3" y="448.0" width="10.8" height="10.0" rx="0" fill="#3d4143"/>
+<rect x="564.5" y="448.0" width="10.8" height="10.0" rx="0" fill="#3b3d3d"/>
+<rect x="574.8" y="448.0" width="10.8" height="10.0" rx="0" fill="#393a38"/>
+<rect x="585.0" y="448.0" width="10.8" height="10.0" rx="0" fill="#3b3936"/>
+<rect x="595.2" y="448.0" width="10.8" height="10.0" rx="0" fill="#403c39"/>
+<rect x="605.5" y="448.0" width="10.8" height="10.0" rx="0" fill="#453e3b"/>
+<rect x="615.7" y="448.0" width="10.8" height="10.0" rx="0" fill="#4b413d"/>
+<rect x="625.9" y="448.0" width="10.8" height="10.0" rx="0" fill="#504340"/>
+<rect x="636.2" y="448.0" width="10.8" height="10.0" rx="0" fill="#564642"/>
+<rect x="646.4" y="448.0" width="10.8" height="10.0" rx="0" fill="#5b4845"/>
+<rect x="656.6" y="448.0" width="10.8" height="10.0" rx="0" fill="#604b47"/>
+<rect x="666.9" y="448.0" width="10.8" height="10.0" rx="0" fill="#664d4a"/>
+<rect x="677.1" y="448.0" width="10.8" height="10.0" rx="0" fill="#6c504c"/>
+<rect x="687.3" y="448.0" width="10.8" height="10.0" rx="0" fill="#71524f"/>
+<rect x="697.6" y="448.0" width="10.8" height="10.0" rx="0" fill="#775551"/>
+<rect x="707.8" y="448.0" width="10.8" height="10.0" rx="0" fill="#7c5754"/>
+<rect x="718.0" y="448.0" width="10.8" height="10.0" rx="0" fill="#825a56"/>
+<rect x="728.3" y="448.0" width="10.8" height="10.0" rx="0" fill="#885c59"/>
+<rect x="738.5" y="448.0" width="10.8" height="10.0" rx="0" fill="#8d5f5c"/>
+<rect x="748.7" y="448.0" width="10.8" height="10.0" rx="0" fill="#93625e"/>
+<rect x="759.0" y="448.0" width="10.8" height="10.0" rx="0" fill="#996461"/>
+<rect x="769.2" y="448.0" width="10.8" height="10.0" rx="0" fill="#9f6763"/>
+<rect x="779.4" y="448.0" width="10.8" height="10.0" rx="0" fill="#a56966"/>
+<rect x="789.7" y="448.0" width="10.8" height="10.0" rx="0" fill="#ab6c69"/>
+<rect x="799.9" y="448.0" width="10.8" height="10.0" rx="0" fill="#b06e6b"/>
+<rect x="810.1" y="448.0" width="10.8" height="10.0" rx="0" fill="#b6716e"/>
+<rect x="820.4" y="448.0" width="10.8" height="10.0" rx="0" fill="#bc7370"/>
+<rect x="830.6" y="448.0" width="10.8" height="10.0" rx="0" fill="#c27673"/>
+<rect x="840.8" y="448.0" width="10.8" height="10.0" rx="0" fill="#c87876"/>
+<rect x="851.1" y="448.0" width="10.8" height="10.0" rx="0" fill="#cf7b79"/>
+<rect x="861.3" y="448.0" width="10.8" height="10.0" rx="0" fill="#d57e7b"/>
+<rect x="871.5" y="448.0" width="10.8" height="10.0" rx="0" fill="#db807e"/>
+<rect x="881.8" y="448.0" width="10.8" height="10.0" rx="0" fill="#e18381"/>
+<text x="278.0" y="472.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.5</text>
+<text x="407.6" y="472.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.67</text>
+<text x="486.2" y="472.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.8</text>
+<text x="585.0" y="472.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1</text>
+<text x="683.8" y="472.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1.25</text>
+<text x="764.6" y="472.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1.5</text>
+<text x="892.0" y="472.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">2</text>
+<text x="28.0" y="457.0" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start">Mapal faster ← → slower</text>
+<text x="28.0" y="492.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">Even: within 5% or the run-to-run variation. Data: benches/results/evidence/matrix.json.</text>
+</svg></div>
+<!-- exposition:gen end -->
+<!-- exposition:gen id=perf-samples kind=perf name=samples begin -->
+<div class="chart chart-light"><svg xmlns="http://www.w3.org/2000/svg" width="920" height="448" viewBox="0 0 920 448" role="img" aria-labelledby="perf-samples-light-t perf-samples-light-d">
+<title id="perf-samples-light-t">Six named programs, five GPUs</title>
+<desc id="perf-samples-light-d">Mapal time divided by the fastest competitor's time for six programs, one mark per GPU.</desc>
+<style>text { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; } .num { font-variant-numeric: tabular-nums; }</style>
+<rect width="920" height="448" rx="10" fill="#fcfcfb"/>
+<text x="28.0" y="38.0" font-size="17" font-weight="600" fill="#0b0b0b" text-anchor="start">Six named programs, five GPUs</text>
+<text x="28.0" y="60.0" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="start">Mapal ÷ the fastest competitor, one dot per GPU (large: RTX 5080); left of 1: Mapal faster.</text>
+<text x="28.0" y="117.0" font-size="13.5" font-weight="600" fill="#0b0b0b" text-anchor="start">Causal attention</text>
+<text x="28.0" y="133.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">causal_1024_256</text>
+<line x1="349.7" y1="119.0" x2="448.8" y2="119.0" stroke="#e1e0d9" stroke-width="3"/>
+<circle cx="430.4" cy="119.0" r="7" fill="#2a78d6" stroke="#0b0b0b" stroke-width="1.5"/>
+<circle cx="349.7" cy="119.0" r="4.5" fill="#2a78d6"/>
+<circle cx="437.7" cy="119.0" r="4.5" fill="#2a78d6"/>
+<circle cx="448.8" cy="119.0" r="4.5" fill="#2a78d6"/>
+<circle cx="397.3" cy="119.0" r="4.5" fill="#2a78d6"/>
+<text x="678.0" y="117.0" font-size="12.5" font-weight="600" fill="#0b0b0b" text-anchor="start" class="num">0.30 on the RTX 5080</text>
+<text x="678.0" y="133.0" font-size="11.5" font-weight="400" fill="#52514e" text-anchor="start">vs torch.compile + CUDA graphs</text>
+<text x="28.0" y="167.0" font-size="13.5" font-weight="600" fill="#0b0b0b" text-anchor="start">FIR filter, 4M samples</text>
+<text x="28.0" y="183.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">fir_4194304_16</text>
+<line x1="472.4" y1="169.0" x2="515.1" y2="169.0" stroke="#e1e0d9" stroke-width="3"/>
+<circle cx="472.4" cy="169.0" r="7" fill="#2a78d6" stroke="#0b0b0b" stroke-width="1.5"/>
+<circle cx="508.5" cy="169.0" r="4.5" fill="#2a78d6"/>
+<circle cx="515.1" cy="169.0" r="4.5" fill="#2a78d6"/>
+<circle cx="497.0" cy="169.0" r="4.5" fill="#2a78d6"/>
+<circle cx="499.4" cy="169.0" r="4.5" fill="#2a78d6"/>
+<text x="678.0" y="167.0" font-size="12.5" font-weight="600" fill="#0b0b0b" text-anchor="start" class="num">0.42 on the RTX 5080</text>
+<text x="678.0" y="183.0" font-size="11.5" font-weight="400" fill="#52514e" text-anchor="start">vs PyTorch eager</text>
+<text x="28.0" y="217.0" font-size="13.5" font-weight="600" fill="#0b0b0b" text-anchor="start">MLP chain, 2048</text>
+<text x="28.0" y="233.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">mlp_2048</text>
+<line x1="560.9" y1="219.0" x2="590.3" y2="219.0" stroke="#e1e0d9" stroke-width="3"/>
+<circle cx="571.6" cy="219.0" r="7" fill="#898781" stroke="#0b0b0b" stroke-width="1.5"/>
+<circle cx="581.7" cy="219.0" r="4.5" fill="#898781"/>
+<circle cx="560.9" cy="219.0" r="4.5" fill="#2a78d6"/>
+<circle cx="569.7" cy="219.0" r="4.5" fill="#2a78d6"/>
+<circle cx="590.3" cy="219.0" r="4.5" fill="#e34948"/>
+<text x="678.0" y="217.0" font-size="12.5" font-weight="600" fill="#0b0b0b" text-anchor="start" class="num">0.95 on the RTX 5080</text>
+<text x="678.0" y="233.0" font-size="11.5" font-weight="400" fill="#52514e" text-anchor="start">vs cuBLASLt chain</text>
+<text x="28.0" y="267.0" font-size="13.5" font-weight="600" fill="#0b0b0b" text-anchor="start">Matrix product, 2048 rows</text>
+<text x="28.0" y="283.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">pj_m2048_n4096_k4096</text>
+<line x1="560.5" y1="269.0" x2="591.9" y2="269.0" stroke="#e1e0d9" stroke-width="3"/>
+<circle cx="580.1" cy="269.0" r="7" fill="#898781" stroke="#0b0b0b" stroke-width="1.5"/>
+<circle cx="575.4" cy="269.0" r="4.5" fill="#898781"/>
+<circle cx="560.5" cy="269.0" r="4.5" fill="#2a78d6"/>
+<circle cx="573.9" cy="269.0" r="4.5" fill="#898781"/>
+<circle cx="591.9" cy="269.0" r="4.5" fill="#e34948"/>
+<text x="678.0" y="267.0" font-size="12.5" font-weight="600" fill="#0b0b0b" text-anchor="start" class="num">1.02 on the RTX 5080</text>
+<text x="678.0" y="283.0" font-size="11.5" font-weight="400" fill="#52514e" text-anchor="start">vs cuBLASLt</text>
+<text x="28.0" y="317.0" font-size="13.5" font-weight="600" fill="#0b0b0b" text-anchor="start">Matrix-vector product</text>
+<text x="28.0" y="333.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">pj_m1_n4096_k4096</text>
+<line x1="567.4" y1="319.0" x2="622.2" y2="319.0" stroke="#e1e0d9" stroke-width="3"/>
+<circle cx="606.1" cy="319.0" r="7" fill="#e34948" stroke="#0b0b0b" stroke-width="1.5"/>
+<circle cx="584.5" cy="319.0" r="4.5" fill="#e34948"/>
+<circle cx="567.4" cy="319.0" r="4.5" fill="#2a78d6"/>
+<circle cx="595.9" cy="319.0" r="4.5" fill="#e34948"/>
+<circle cx="622.2" cy="319.0" r="4.5" fill="#e34948"/>
+<text x="678.0" y="317.0" font-size="12.5" font-weight="600" fill="#0b0b0b" text-anchor="start" class="num">1.26 on the RTX 5080</text>
+<text x="678.0" y="333.0" font-size="11.5" font-weight="400" fill="#52514e" text-anchor="start">vs cuBLASLt</text>
+<text x="28.0" y="367.0" font-size="13.5" font-weight="600" fill="#0b0b0b" text-anchor="start">LLM decode layer, batch 32, bf16 weights</text>
+<text x="28.0" y="383.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">llm_dec_b32_l2048_bf16w</text>
+<line x1="589.5" y1="369.0" x2="648.3" y2="369.0" stroke="#e1e0d9" stroke-width="3"/>
+<circle cx="638.0" cy="369.0" r="7" fill="#e34948" stroke="#0b0b0b" stroke-width="1.5"/>
+<circle cx="615.7" cy="369.0" r="4.5" fill="#e34948"/>
+<circle cx="612.8" cy="369.0" r="4.5" fill="#e34948"/>
+<circle cx="648.3" cy="369.0" r="4.5" fill="#e34948"/>
+<circle cx="589.5" cy="369.0" r="4.5" fill="#e34948"/>
+<text x="678.0" y="367.0" font-size="12.5" font-weight="600" fill="#0b0b0b" text-anchor="start" class="num">1.64 on the RTX 5080</text>
+<text x="678.0" y="383.0" font-size="11.5" font-weight="400" fill="#52514e" text-anchor="start">vs torch.compile (bf16)</text>
+<line x1="298.0" y1="88.0" x2="298.0" y2="394.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="298.0" y="410.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.1</text>
+<line x1="382.2" y1="88.0" x2="382.2" y2="394.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="382.2" y="410.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.2</text>
+<line x1="493.6" y1="88.0" x2="493.6" y2="394.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="493.6" y="410.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.5</text>
+<line x1="577.8" y1="88.0" x2="577.8" y2="394.0" stroke="#c3c2b7" stroke-width="1.5"/>
+<text x="577.8" y="410.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1</text>
+<line x1="662.0" y1="88.0" x2="662.0" y2="394.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="662.0" y="410.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">2</text>
+<text x="28.0" y="430.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">Blue: faster; grey: even; red: slower. Each against the fastest library or compiler at the same precision, on that GPU. Data: matrix.json.</text>
+</svg></div>
+<div class="chart chart-dark"><svg xmlns="http://www.w3.org/2000/svg" width="920" height="448" viewBox="0 0 920 448" role="img" aria-labelledby="perf-samples-dark-t perf-samples-dark-d">
+<title id="perf-samples-dark-t">Six named programs, five GPUs</title>
+<desc id="perf-samples-dark-d">Mapal time divided by the fastest competitor's time for six programs, one mark per GPU.</desc>
+<style>text { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; } .num { font-variant-numeric: tabular-nums; }</style>
+<rect width="920" height="448" rx="10" fill="#1a1a19"/>
+<text x="28.0" y="38.0" font-size="17" font-weight="600" fill="#f0efec" text-anchor="start">Six named programs, five GPUs</text>
+<text x="28.0" y="60.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">Mapal ÷ the fastest competitor, one dot per GPU (large: RTX 5080); left of 1: Mapal faster.</text>
+<text x="28.0" y="117.0" font-size="13.5" font-weight="600" fill="#f0efec" text-anchor="start">Causal attention</text>
+<text x="28.0" y="133.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">causal_1024_256</text>
+<line x1="349.7" y1="119.0" x2="448.8" y2="119.0" stroke="#2c2c2a" stroke-width="3"/>
+<circle cx="430.4" cy="119.0" r="7" fill="#3987e5" stroke="#f0efec" stroke-width="1.5"/>
+<circle cx="349.7" cy="119.0" r="4.5" fill="#3987e5"/>
+<circle cx="437.7" cy="119.0" r="4.5" fill="#3987e5"/>
+<circle cx="448.8" cy="119.0" r="4.5" fill="#3987e5"/>
+<circle cx="397.3" cy="119.0" r="4.5" fill="#3987e5"/>
+<text x="678.0" y="117.0" font-size="12.5" font-weight="600" fill="#f0efec" text-anchor="start" class="num">0.30 on the RTX 5080</text>
+<text x="678.0" y="133.0" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start">vs torch.compile + CUDA graphs</text>
+<text x="28.0" y="167.0" font-size="13.5" font-weight="600" fill="#f0efec" text-anchor="start">FIR filter, 4M samples</text>
+<text x="28.0" y="183.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">fir_4194304_16</text>
+<line x1="472.4" y1="169.0" x2="515.1" y2="169.0" stroke="#2c2c2a" stroke-width="3"/>
+<circle cx="472.4" cy="169.0" r="7" fill="#3987e5" stroke="#f0efec" stroke-width="1.5"/>
+<circle cx="508.5" cy="169.0" r="4.5" fill="#3987e5"/>
+<circle cx="515.1" cy="169.0" r="4.5" fill="#3987e5"/>
+<circle cx="497.0" cy="169.0" r="4.5" fill="#3987e5"/>
+<circle cx="499.4" cy="169.0" r="4.5" fill="#3987e5"/>
+<text x="678.0" y="167.0" font-size="12.5" font-weight="600" fill="#f0efec" text-anchor="start" class="num">0.42 on the RTX 5080</text>
+<text x="678.0" y="183.0" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start">vs PyTorch eager</text>
+<text x="28.0" y="217.0" font-size="13.5" font-weight="600" fill="#f0efec" text-anchor="start">MLP chain, 2048</text>
+<text x="28.0" y="233.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">mlp_2048</text>
+<line x1="560.9" y1="219.0" x2="590.3" y2="219.0" stroke="#2c2c2a" stroke-width="3"/>
+<circle cx="571.6" cy="219.0" r="7" fill="#898781" stroke="#f0efec" stroke-width="1.5"/>
+<circle cx="581.7" cy="219.0" r="4.5" fill="#898781"/>
+<circle cx="560.9" cy="219.0" r="4.5" fill="#3987e5"/>
+<circle cx="569.7" cy="219.0" r="4.5" fill="#3987e5"/>
+<circle cx="590.3" cy="219.0" r="4.5" fill="#e66767"/>
+<text x="678.0" y="217.0" font-size="12.5" font-weight="600" fill="#f0efec" text-anchor="start" class="num">0.95 on the RTX 5080</text>
+<text x="678.0" y="233.0" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start">vs cuBLASLt chain</text>
+<text x="28.0" y="267.0" font-size="13.5" font-weight="600" fill="#f0efec" text-anchor="start">Matrix product, 2048 rows</text>
+<text x="28.0" y="283.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">pj_m2048_n4096_k4096</text>
+<line x1="560.5" y1="269.0" x2="591.9" y2="269.0" stroke="#2c2c2a" stroke-width="3"/>
+<circle cx="580.1" cy="269.0" r="7" fill="#898781" stroke="#f0efec" stroke-width="1.5"/>
+<circle cx="575.4" cy="269.0" r="4.5" fill="#898781"/>
+<circle cx="560.5" cy="269.0" r="4.5" fill="#3987e5"/>
+<circle cx="573.9" cy="269.0" r="4.5" fill="#898781"/>
+<circle cx="591.9" cy="269.0" r="4.5" fill="#e66767"/>
+<text x="678.0" y="267.0" font-size="12.5" font-weight="600" fill="#f0efec" text-anchor="start" class="num">1.02 on the RTX 5080</text>
+<text x="678.0" y="283.0" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start">vs cuBLASLt</text>
+<text x="28.0" y="317.0" font-size="13.5" font-weight="600" fill="#f0efec" text-anchor="start">Matrix-vector product</text>
+<text x="28.0" y="333.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">pj_m1_n4096_k4096</text>
+<line x1="567.4" y1="319.0" x2="622.2" y2="319.0" stroke="#2c2c2a" stroke-width="3"/>
+<circle cx="606.1" cy="319.0" r="7" fill="#e66767" stroke="#f0efec" stroke-width="1.5"/>
+<circle cx="584.5" cy="319.0" r="4.5" fill="#e66767"/>
+<circle cx="567.4" cy="319.0" r="4.5" fill="#3987e5"/>
+<circle cx="595.9" cy="319.0" r="4.5" fill="#e66767"/>
+<circle cx="622.2" cy="319.0" r="4.5" fill="#e66767"/>
+<text x="678.0" y="317.0" font-size="12.5" font-weight="600" fill="#f0efec" text-anchor="start" class="num">1.26 on the RTX 5080</text>
+<text x="678.0" y="333.0" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start">vs cuBLASLt</text>
+<text x="28.0" y="367.0" font-size="13.5" font-weight="600" fill="#f0efec" text-anchor="start">LLM decode layer, batch 32, bf16 weights</text>
+<text x="28.0" y="383.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">llm_dec_b32_l2048_bf16w</text>
+<line x1="589.5" y1="369.0" x2="648.3" y2="369.0" stroke="#2c2c2a" stroke-width="3"/>
+<circle cx="638.0" cy="369.0" r="7" fill="#e66767" stroke="#f0efec" stroke-width="1.5"/>
+<circle cx="615.7" cy="369.0" r="4.5" fill="#e66767"/>
+<circle cx="612.8" cy="369.0" r="4.5" fill="#e66767"/>
+<circle cx="648.3" cy="369.0" r="4.5" fill="#e66767"/>
+<circle cx="589.5" cy="369.0" r="4.5" fill="#e66767"/>
+<text x="678.0" y="367.0" font-size="12.5" font-weight="600" fill="#f0efec" text-anchor="start" class="num">1.64 on the RTX 5080</text>
+<text x="678.0" y="383.0" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start">vs torch.compile (bf16)</text>
+<line x1="298.0" y1="88.0" x2="298.0" y2="394.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="298.0" y="410.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.1</text>
+<line x1="382.2" y1="88.0" x2="382.2" y2="394.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="382.2" y="410.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.2</text>
+<line x1="493.6" y1="88.0" x2="493.6" y2="394.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="493.6" y="410.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.5</text>
+<line x1="577.8" y1="88.0" x2="577.8" y2="394.0" stroke="#383835" stroke-width="1.5"/>
+<text x="577.8" y="410.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1</text>
+<line x1="662.0" y1="88.0" x2="662.0" y2="394.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="662.0" y="410.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">2</text>
+<text x="28.0" y="430.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">Blue: faster; grey: even; red: slower. Each against the fastest library or compiler at the same precision, on that GPU. Data: matrix.json.</text>
+</svg></div>
+<!-- exposition:gen end -->
+  <div class="claims classes">
+    <div><b>Attention and softmax</b><p>Leads: a chain of steps runs together and saves the launches between them. Trails a memory-efficient attention kernel on long f32 prefill, which skips masked blocks.</p></div>
+    <div><b>Convolution and FIR</b><p>Leads on every GPU. The one loss is the TF32 multi-channel convolution, against a tensor-core library.</p></div>
+    <div><b>Fan-in / fan-out chains</b><p>About even. Merging launches only pays where the phases are short.</p></div>
+    <div><b>Matrix products</b><p>The weak class. Matrix-vector shapes are limited by bytes in flight, and on the H100 the TF32 products do not use its TMA and warp-specialised pipeline yet.</p></div>
+    <div><b>LLM layers</b><p>Ahead in f32. Behind in bf16 where <code>torch.compile</code> with CUDA graphs replays many small kernels without launch gaps.</p></div>
+    <div><b>MLP chains</b><p>About even with the best chain of library calls: the time is in the matrix products.</p></div>
+  </div>
+<!-- exposition:gen id=chart-suite kind=chart name=suite-gpus begin -->
+<div class="chart chart-dark"><svg xmlns="http://www.w3.org/2000/svg" width="920" height="402" viewBox="0 0 920 402" role="img" aria-labelledby="suite-gpus-dark-t suite-gpus-dark-d">
+<title id="suite-gpus-dark-t">Kernel and layer suite: Mapal against the fastest same-precision competitor</title>
+<desc id="suite-gpus-dark-d">Geometric mean of Mapal time divided by the fastest competitor's time, per GPU: RTX 5080 0.876; RTX 3090 0.920; A100 1.006; RTX 4090 0.911; H100 1.101</desc>
+<style>text { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; } .num { font-variant-numeric: tabular-nums; }</style>
+<rect width="920" height="402" rx="10" fill="#1a1a19"/>
+<text x="28.0" y="38.0" font-size="17" font-weight="600" fill="#f0efec" text-anchor="start">Kernel and layer suite: Mapal against the fastest same-precision competitor</text>
+<text x="28.0" y="60.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">Geomean of Mapal time ÷ the fastest competitor's time over the 119 programs timed on every GPU, at the program boundary. Below 1: Mapal faster.</text>
+<text x="28.0" y="78.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">Each program against competitors of its own precision: cuBLAS(Lt), CUTLASS, PyTorch eager / compiled, Triton, FlashAttention, FlashInfer, Liger.</text>
+<rect x="28.0" y="95.0" width="10.0" height="10.0" rx="2" fill="#3987e5"/>
+<text x="43.0" y="104.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="start">Mapal faster</text>
+<rect x="142.0" y="95.0" width="10.0" height="10.0" rx="2" fill="#898781"/>
+<text x="157.0" y="104.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="start">within 5%</text>
+<rect x="235.0" y="95.0" width="10.0" height="10.0" rx="2" fill="#e66767"/>
+<text x="250.0" y="104.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="start">Mapal slower</text>
+<text x="892.0" y="126.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">programs faster / even / slower</text>
+<line x1="148.0" y1="136.0" x2="148.0" y2="306.0" stroke="#2c2c2a" stroke-width="1"/>
+<line x1="283.7" y1="136.0" x2="283.7" y2="306.0" stroke="#2c2c2a" stroke-width="1"/>
+<line x1="405.0" y1="136.0" x2="405.0" y2="306.0" stroke="#383835" stroke-width="1"/>
+<line x1="514.8" y1="136.0" x2="514.8" y2="306.0" stroke="#2c2c2a" stroke-width="1"/>
+<line x1="662.0" y1="136.0" x2="662.0" y2="306.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="28.0" y="158.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">RTX 5080</text>
+<path d="M405.0,146.0 H257.1 A4,4 0 0 0 253.1,150.0 V156.0 A4,4 0 0 0 257.1,160.0 H405.0 Z" fill="#3987e5"/>
+<text x="247.1" y="158.0" font-size="12" font-weight="600" fill="#f0efec" text-anchor="end" class="num">0.876</text>
+<text x="892.0" y="158.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="end" class="num">46 / 44 / 30</text>
+<text x="28.0" y="192.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">RTX 3090</text>
+<path d="M405.0,180.0 H313.5 A4,4 0 0 0 309.5,184.0 V190.0 A4,4 0 0 0 313.5,194.0 H405.0 Z" fill="#3987e5"/>
+<text x="303.5" y="192.0" font-size="12" font-weight="600" fill="#f0efec" text-anchor="end" class="num">0.920</text>
+<text x="892.0" y="192.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="end" class="num">39 / 30 / 51</text>
+<text x="28.0" y="226.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">A100</text>
+<path d="M405.0,214.0 H407.5 A4,4 0 0 1 411.5,218.0 V224.0 A4,4 0 0 1 407.5,228.0 H405.0 Z" fill="#898781"/>
+<text x="417.5" y="226.0" font-size="12" font-weight="600" fill="#f0efec" text-anchor="start" class="num">1.006</text>
+<text x="892.0" y="226.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="end" class="num">57 / 11 / 51</text>
+<text x="28.0" y="260.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">RTX 4090</text>
+<path d="M405.0,248.0 H301.8 A4,4 0 0 0 297.8,252.0 V258.0 A4,4 0 0 0 301.8,262.0 H405.0 Z" fill="#3987e5"/>
+<text x="291.8" y="260.0" font-size="12" font-weight="600" fill="#f0efec" text-anchor="end" class="num">0.911</text>
+<text x="892.0" y="260.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="end" class="num">49 / 25 / 46</text>
+<text x="28.0" y="294.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">H100</text>
+<path d="M405.0,282.0 H512.3 A4,4 0 0 1 516.3,286.0 V292.0 A4,4 0 0 1 512.3,296.0 H405.0 Z" fill="#e66767"/>
+<text x="522.3" y="294.0" font-size="12" font-weight="600" fill="#f0efec" text-anchor="start" class="num">1.101</text>
+<text x="892.0" y="294.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="end" class="num">30 / 8 / 82</text>
+<text x="148.0" y="324.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.8</text>
+<text x="283.7" y="324.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.9</text>
+<text x="405.0" y="324.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1</text>
+<text x="514.8" y="324.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1.1</text>
+<text x="662.0" y="324.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1.25</text>
+<text x="148.0" y="342.0" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start">← Mapal faster</text>
+<text x="662.0" y="342.0" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="end">Mapal slower →</text>
+<text x="28.0" y="368.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">Builds: RTX 5080 81a89c02, 9abeb446, d450014d, d945c641; RTX 3090 b8429388; A100 b8429388; RTX 4090 b8429388; H100 b8429388.</text>
+<text x="28.0" y="384.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">Data: benches/results/evidence/matrix.json (2026-11-26); even = within 5% or the row's own noise; counts over every row the GPU timed (120 / 120 / 119 / 120 / 120).</text>
+</svg></div>
+<div class="chart chart-light"><svg xmlns="http://www.w3.org/2000/svg" width="920" height="402" viewBox="0 0 920 402" role="img" aria-labelledby="suite-gpus-light-t suite-gpus-light-d">
+<title id="suite-gpus-light-t">Kernel and layer suite: Mapal against the fastest same-precision competitor</title>
+<desc id="suite-gpus-light-d">Geometric mean of Mapal time divided by the fastest competitor's time, per GPU: RTX 5080 0.876; RTX 3090 0.920; A100 1.006; RTX 4090 0.911; H100 1.101</desc>
+<style>text { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; } .num { font-variant-numeric: tabular-nums; }</style>
+<rect width="920" height="402" rx="10" fill="#fcfcfb"/>
+<text x="28.0" y="38.0" font-size="17" font-weight="600" fill="#0b0b0b" text-anchor="start">Kernel and layer suite: Mapal against the fastest same-precision competitor</text>
+<text x="28.0" y="60.0" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="start">Geomean of Mapal time ÷ the fastest competitor's time over the 119 programs timed on every GPU, at the program boundary. Below 1: Mapal faster.</text>
+<text x="28.0" y="78.0" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="start">Each program against competitors of its own precision: cuBLAS(Lt), CUTLASS, PyTorch eager / compiled, Triton, FlashAttention, FlashInfer, Liger.</text>
+<rect x="28.0" y="95.0" width="10.0" height="10.0" rx="2" fill="#2a78d6"/>
+<text x="43.0" y="104.0" font-size="12" font-weight="400" fill="#52514e" text-anchor="start">Mapal faster</text>
+<rect x="142.0" y="95.0" width="10.0" height="10.0" rx="2" fill="#898781"/>
+<text x="157.0" y="104.0" font-size="12" font-weight="400" fill="#52514e" text-anchor="start">within 5%</text>
+<rect x="235.0" y="95.0" width="10.0" height="10.0" rx="2" fill="#e34948"/>
+<text x="250.0" y="104.0" font-size="12" font-weight="400" fill="#52514e" text-anchor="start">Mapal slower</text>
+<text x="892.0" y="126.0" font-size="12" font-weight="400" fill="#52514e" text-anchor="end">programs faster / even / slower</text>
+<line x1="148.0" y1="136.0" x2="148.0" y2="306.0" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="283.7" y1="136.0" x2="283.7" y2="306.0" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="405.0" y1="136.0" x2="405.0" y2="306.0" stroke="#c3c2b7" stroke-width="1"/>
+<line x1="514.8" y1="136.0" x2="514.8" y2="306.0" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="662.0" y1="136.0" x2="662.0" y2="306.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="28.0" y="158.0" font-size="13" font-weight="600" fill="#0b0b0b" text-anchor="start">RTX 5080</text>
+<path d="M405.0,146.0 H257.1 A4,4 0 0 0 253.1,150.0 V156.0 A4,4 0 0 0 257.1,160.0 H405.0 Z" fill="#2a78d6"/>
+<text x="247.1" y="158.0" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="end" class="num">0.876</text>
+<text x="892.0" y="158.0" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="end" class="num">46 / 44 / 30</text>
+<text x="28.0" y="192.0" font-size="13" font-weight="600" fill="#0b0b0b" text-anchor="start">RTX 3090</text>
+<path d="M405.0,180.0 H313.5 A4,4 0 0 0 309.5,184.0 V190.0 A4,4 0 0 0 313.5,194.0 H405.0 Z" fill="#2a78d6"/>
+<text x="303.5" y="192.0" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="end" class="num">0.920</text>
+<text x="892.0" y="192.0" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="end" class="num">39 / 30 / 51</text>
+<text x="28.0" y="226.0" font-size="13" font-weight="600" fill="#0b0b0b" text-anchor="start">A100</text>
+<path d="M405.0,214.0 H407.5 A4,4 0 0 1 411.5,218.0 V224.0 A4,4 0 0 1 407.5,228.0 H405.0 Z" fill="#898781"/>
+<text x="417.5" y="226.0" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="start" class="num">1.006</text>
+<text x="892.0" y="226.0" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="end" class="num">57 / 11 / 51</text>
+<text x="28.0" y="260.0" font-size="13" font-weight="600" fill="#0b0b0b" text-anchor="start">RTX 4090</text>
+<path d="M405.0,248.0 H301.8 A4,4 0 0 0 297.8,252.0 V258.0 A4,4 0 0 0 301.8,262.0 H405.0 Z" fill="#2a78d6"/>
+<text x="291.8" y="260.0" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="end" class="num">0.911</text>
+<text x="892.0" y="260.0" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="end" class="num">49 / 25 / 46</text>
+<text x="28.0" y="294.0" font-size="13" font-weight="600" fill="#0b0b0b" text-anchor="start">H100</text>
+<path d="M405.0,282.0 H512.3 A4,4 0 0 1 516.3,286.0 V292.0 A4,4 0 0 1 512.3,296.0 H405.0 Z" fill="#e34948"/>
+<text x="522.3" y="294.0" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="start" class="num">1.101</text>
+<text x="892.0" y="294.0" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="end" class="num">30 / 8 / 82</text>
+<text x="148.0" y="324.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.8</text>
+<text x="283.7" y="324.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.9</text>
+<text x="405.0" y="324.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1</text>
+<text x="514.8" y="324.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1.1</text>
+<text x="662.0" y="324.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1.25</text>
+<text x="148.0" y="342.0" font-size="11.5" font-weight="400" fill="#52514e" text-anchor="start">← Mapal faster</text>
+<text x="662.0" y="342.0" font-size="11.5" font-weight="400" fill="#52514e" text-anchor="end">Mapal slower →</text>
+<text x="28.0" y="368.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">Builds: RTX 5080 81a89c02, 9abeb446, d450014d, d945c641; RTX 3090 b8429388; A100 b8429388; RTX 4090 b8429388; H100 b8429388.</text>
+<text x="28.0" y="384.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">Data: benches/results/evidence/matrix.json (2026-11-26); even = within 5% or the row's own noise; counts over every row the GPU timed (120 / 120 / 119 / 120 / 120).</text>
+</svg></div>
+<!-- exposition:gen end -->
+  <p>The same suite, all programs: faster than the best on average on three of the five GPUs.</p>
+
+  <h3 class="sub">On CPUs: against NumPy</h3>
+  <p>An earlier measurement on an Apple M4 Pro, kept in <a href="performance/earlier-readme-results.md"><code>docs/performance/earlier-readme-results.md</code></a> with the i9-14900F tables and the OpenBLAS comparison. Mapal wins the streaming shapes by a wide margin and trails on a plain sum and on small matrices; against OpenBLAS on the i9 it ties at best.</p>
+<!-- exposition:gen id=perf-cpu kind=perf name=cpu begin -->
+<div class="chart chart-light"><svg xmlns="http://www.w3.org/2000/svg" width="920" height="458" viewBox="0 0 920 458" role="img" aria-labelledby="perf-cpu-light-t perf-cpu-light-d">
+<title id="perf-cpu-light-t">CPU: Mapal against NumPy</title>
+<desc id="perf-cpu-light-d">Mapal time divided by NumPy's time on an Apple M4 Pro, per workload.</desc>
+<style>text { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; } .num { font-variant-numeric: tabular-nums; }</style>
+<rect width="920" height="458" rx="10" fill="#fcfcfb"/>
+<text x="28.0" y="38.0" font-size="17" font-weight="600" fill="#0b0b0b" text-anchor="start">CPU: Mapal against NumPy</text>
+<text x="28.0" y="60.0" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="start">Mapal's time ÷ NumPy's, log scale; left of 1: Mapal faster. Apple M4 Pro, an earlier measurement.</text>
+<text x="28.0" y="100.0" font-size="11.5" font-weight="600" fill="#898781" text-anchor="start">against NumPy</text>
+<text x="28.0" y="127.5" font-size="13" font-weight="400" fill="#0b0b0b" text-anchor="start">Matrix multiply f32, N = 1024</text>
+<path d="M521.6,115.0 H522.8 A4,4 0 0 1 526.8,119.0 V127.0 A4,4 0 0 1 522.8,131.0 H521.6 Z" fill="#e34948"/>
+<text x="688.0" y="127.5" font-size="12" font-weight="500" fill="#0b0b0b" text-anchor="start" class="num">0.72 vs 0.67 ms  ·  1.07× slower</text>
+<text x="28.0" y="157.5" font-size="13" font-weight="400" fill="#0b0b0b" text-anchor="start">Matrix multiply f32, N = 2048</text>
+<path d="M521.6,145.0 H521.4 A4,4 0 0 0 517.4,149.0 V157.0 A4,4 0 0 0 521.4,161.0 H521.6 Z" fill="#2a78d6"/>
+<text x="688.0" y="157.5" font-size="12" font-weight="500" fill="#0b0b0b" text-anchor="start" class="num">5.03 vs 5.33 ms  ·  1.06× faster</text>
+<text x="28.0" y="187.5" font-size="13" font-weight="400" fill="#0b0b0b" text-anchor="start">Matrix multiply f32, N = 4096</text>
+<path d="M521.6,175.0 H516.2 A4,4 0 0 0 512.2,179.0 V187.0 A4,4 0 0 0 516.2,191.0 H521.6 Z" fill="#2a78d6"/>
+<text x="688.0" y="187.5" font-size="12" font-weight="500" fill="#0b0b0b" text-anchor="start" class="num">38.7 vs 44.1 ms  ·  1.14× faster</text>
+<text x="28.0" y="214.0" font-size="11.5" font-weight="600" fill="#898781" text-anchor="start">against single-thread NumPy</text>
+<text x="28.0" y="241.5" font-size="13" font-weight="400" fill="#0b0b0b" text-anchor="start">FIR filter, 1M</text>
+<path d="M521.6,229.0 H302.1 A4,4 0 0 0 298.1,233.0 V241.0 A4,4 0 0 0 302.1,245.0 H521.6 Z" fill="#2a78d6"/>
+<text x="688.0" y="241.5" font-size="12" font-weight="500" fill="#0b0b0b" text-anchor="start" class="num">0.289 vs 6.35 ms  ·  22× faster</text>
+<text x="28.0" y="271.5" font-size="13" font-weight="400" fill="#0b0b0b" text-anchor="start">conv2d 3×3, 1024²</text>
+<path d="M521.6,259.0 H306.4 A4,4 0 0 0 302.4,263.0 V271.0 A4,4 0 0 0 306.4,275.0 H521.6 Z" fill="#2a78d6"/>
+<text x="688.0" y="271.5" font-size="12" font-weight="500" fill="#0b0b0b" text-anchor="start" class="num">0.083 vs 1.72 ms  ·  20.7× faster</text>
+<text x="28.0" y="301.5" font-size="13" font-weight="400" fill="#0b0b0b" text-anchor="start">saxpy, 1M</text>
+<path d="M521.6,289.0 H454.1 A4,4 0 0 0 450.1,293.0 V301.0 A4,4 0 0 0 454.1,305.0 H521.6 Z" fill="#2a78d6"/>
+<text x="688.0" y="301.5" font-size="12" font-weight="500" fill="#0b0b0b" text-anchor="start" class="num">0.067 vs 0.18 ms  ·  2.69× faster</text>
+<text x="28.0" y="331.5" font-size="13" font-weight="400" fill="#0b0b0b" text-anchor="start">sum reduction, 1M</text>
+<path d="M521.6,319.0 H635.6 A4,4 0 0 1 639.6,323.0 V331.0 A4,4 0 0 1 635.6,335.0 H521.6 Z" fill="#e34948"/>
+<text x="688.0" y="331.5" font-size="12" font-weight="500" fill="#0b0b0b" text-anchor="start" class="num">0.562 vs 0.11 ms  ·  5.11× slower</text>
+<text x="28.0" y="361.5" font-size="13" font-weight="400" fill="#0b0b0b" text-anchor="start">transpose, 1024²</text>
+<path d="M521.6,349.0 H385.5 A4,4 0 0 0 381.5,353.0 V361.0 A4,4 0 0 0 385.5,365.0 H521.6 Z" fill="#2a78d6"/>
+<text x="688.0" y="361.5" font-size="12" font-weight="500" fill="#0b0b0b" text-anchor="start" class="num">0.124 vs 0.86 ms  ·  6.94× faster</text>
+<text x="28.0" y="391.5" font-size="13" font-weight="400" fill="#0b0b0b" text-anchor="start">gather x[idx[i]], 1M</text>
+<path d="M521.6,379.0 H325.1 A4,4 0 0 0 321.1,383.0 V391.0 A4,4 0 0 0 325.1,395.0 H521.6 Z" fill="#2a78d6"/>
+<text x="688.0" y="391.5" font-size="12" font-weight="500" fill="#0b0b0b" text-anchor="start" class="num">0.137 vs 2.19 ms  ·  16× faster</text>
+<line x1="304.9" y1="84.0" x2="304.9" y2="402.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="304.9" y="418.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.05</text>
+<line x1="355.1" y1="84.0" x2="355.1" y2="402.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="355.1" y="418.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.1</text>
+<line x1="421.3" y1="84.0" x2="421.3" y2="402.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="421.3" y="418.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.25</text>
+<line x1="471.5" y1="84.0" x2="471.5" y2="402.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="471.5" y="418.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.5</text>
+<line x1="521.6" y1="84.0" x2="521.6" y2="402.0" stroke="#c3c2b7" stroke-width="1.5"/>
+<text x="521.6" y="418.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1</text>
+<line x1="571.7" y1="84.0" x2="571.7" y2="402.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="571.7" y="418.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">2</text>
+<line x1="621.9" y1="84.0" x2="621.9" y2="402.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="621.9" y="418.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">4</text>
+<text x="28.0" y="440.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">Source: docs/performance/earlier-readme-results.md (the README's CPU tables until 2026-11-25, 92420a89); Mapal threaded, 'FMA on' column.</text>
+</svg></div>
+<div class="chart chart-dark"><svg xmlns="http://www.w3.org/2000/svg" width="920" height="458" viewBox="0 0 920 458" role="img" aria-labelledby="perf-cpu-dark-t perf-cpu-dark-d">
+<title id="perf-cpu-dark-t">CPU: Mapal against NumPy</title>
+<desc id="perf-cpu-dark-d">Mapal time divided by NumPy's time on an Apple M4 Pro, per workload.</desc>
+<style>text { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; } .num { font-variant-numeric: tabular-nums; }</style>
+<rect width="920" height="458" rx="10" fill="#1a1a19"/>
+<text x="28.0" y="38.0" font-size="17" font-weight="600" fill="#f0efec" text-anchor="start">CPU: Mapal against NumPy</text>
+<text x="28.0" y="60.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">Mapal's time ÷ NumPy's, log scale; left of 1: Mapal faster. Apple M4 Pro, an earlier measurement.</text>
+<text x="28.0" y="100.0" font-size="11.5" font-weight="600" fill="#898781" text-anchor="start">against NumPy</text>
+<text x="28.0" y="127.5" font-size="13" font-weight="400" fill="#f0efec" text-anchor="start">Matrix multiply f32, N = 1024</text>
+<path d="M521.6,115.0 H522.8 A4,4 0 0 1 526.8,119.0 V127.0 A4,4 0 0 1 522.8,131.0 H521.6 Z" fill="#e66767"/>
+<text x="688.0" y="127.5" font-size="12" font-weight="500" fill="#f0efec" text-anchor="start" class="num">0.72 vs 0.67 ms  ·  1.07× slower</text>
+<text x="28.0" y="157.5" font-size="13" font-weight="400" fill="#f0efec" text-anchor="start">Matrix multiply f32, N = 2048</text>
+<path d="M521.6,145.0 H521.4 A4,4 0 0 0 517.4,149.0 V157.0 A4,4 0 0 0 521.4,161.0 H521.6 Z" fill="#3987e5"/>
+<text x="688.0" y="157.5" font-size="12" font-weight="500" fill="#f0efec" text-anchor="start" class="num">5.03 vs 5.33 ms  ·  1.06× faster</text>
+<text x="28.0" y="187.5" font-size="13" font-weight="400" fill="#f0efec" text-anchor="start">Matrix multiply f32, N = 4096</text>
+<path d="M521.6,175.0 H516.2 A4,4 0 0 0 512.2,179.0 V187.0 A4,4 0 0 0 516.2,191.0 H521.6 Z" fill="#3987e5"/>
+<text x="688.0" y="187.5" font-size="12" font-weight="500" fill="#f0efec" text-anchor="start" class="num">38.7 vs 44.1 ms  ·  1.14× faster</text>
+<text x="28.0" y="214.0" font-size="11.5" font-weight="600" fill="#898781" text-anchor="start">against single-thread NumPy</text>
+<text x="28.0" y="241.5" font-size="13" font-weight="400" fill="#f0efec" text-anchor="start">FIR filter, 1M</text>
+<path d="M521.6,229.0 H302.1 A4,4 0 0 0 298.1,233.0 V241.0 A4,4 0 0 0 302.1,245.0 H521.6 Z" fill="#3987e5"/>
+<text x="688.0" y="241.5" font-size="12" font-weight="500" fill="#f0efec" text-anchor="start" class="num">0.289 vs 6.35 ms  ·  22× faster</text>
+<text x="28.0" y="271.5" font-size="13" font-weight="400" fill="#f0efec" text-anchor="start">conv2d 3×3, 1024²</text>
+<path d="M521.6,259.0 H306.4 A4,4 0 0 0 302.4,263.0 V271.0 A4,4 0 0 0 306.4,275.0 H521.6 Z" fill="#3987e5"/>
+<text x="688.0" y="271.5" font-size="12" font-weight="500" fill="#f0efec" text-anchor="start" class="num">0.083 vs 1.72 ms  ·  20.7× faster</text>
+<text x="28.0" y="301.5" font-size="13" font-weight="400" fill="#f0efec" text-anchor="start">saxpy, 1M</text>
+<path d="M521.6,289.0 H454.1 A4,4 0 0 0 450.1,293.0 V301.0 A4,4 0 0 0 454.1,305.0 H521.6 Z" fill="#3987e5"/>
+<text x="688.0" y="301.5" font-size="12" font-weight="500" fill="#f0efec" text-anchor="start" class="num">0.067 vs 0.18 ms  ·  2.69× faster</text>
+<text x="28.0" y="331.5" font-size="13" font-weight="400" fill="#f0efec" text-anchor="start">sum reduction, 1M</text>
+<path d="M521.6,319.0 H635.6 A4,4 0 0 1 639.6,323.0 V331.0 A4,4 0 0 1 635.6,335.0 H521.6 Z" fill="#e66767"/>
+<text x="688.0" y="331.5" font-size="12" font-weight="500" fill="#f0efec" text-anchor="start" class="num">0.562 vs 0.11 ms  ·  5.11× slower</text>
+<text x="28.0" y="361.5" font-size="13" font-weight="400" fill="#f0efec" text-anchor="start">transpose, 1024²</text>
+<path d="M521.6,349.0 H385.5 A4,4 0 0 0 381.5,353.0 V361.0 A4,4 0 0 0 385.5,365.0 H521.6 Z" fill="#3987e5"/>
+<text x="688.0" y="361.5" font-size="12" font-weight="500" fill="#f0efec" text-anchor="start" class="num">0.124 vs 0.86 ms  ·  6.94× faster</text>
+<text x="28.0" y="391.5" font-size="13" font-weight="400" fill="#f0efec" text-anchor="start">gather x[idx[i]], 1M</text>
+<path d="M521.6,379.0 H325.1 A4,4 0 0 0 321.1,383.0 V391.0 A4,4 0 0 0 325.1,395.0 H521.6 Z" fill="#3987e5"/>
+<text x="688.0" y="391.5" font-size="12" font-weight="500" fill="#f0efec" text-anchor="start" class="num">0.137 vs 2.19 ms  ·  16× faster</text>
+<line x1="304.9" y1="84.0" x2="304.9" y2="402.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="304.9" y="418.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.05</text>
+<line x1="355.1" y1="84.0" x2="355.1" y2="402.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="355.1" y="418.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.1</text>
+<line x1="421.3" y1="84.0" x2="421.3" y2="402.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="421.3" y="418.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.25</text>
+<line x1="471.5" y1="84.0" x2="471.5" y2="402.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="471.5" y="418.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.5</text>
+<line x1="521.6" y1="84.0" x2="521.6" y2="402.0" stroke="#383835" stroke-width="1.5"/>
+<text x="521.6" y="418.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1</text>
+<line x1="571.7" y1="84.0" x2="571.7" y2="402.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="571.7" y="418.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">2</text>
+<line x1="621.9" y1="84.0" x2="621.9" y2="402.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="621.9" y="418.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">4</text>
+<text x="28.0" y="440.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">Source: docs/performance/earlier-readme-results.md (the README's CPU tables until 2026-11-25, 92420a89); Mapal threaded, 'FMA on' column.</text>
+</svg></div>
+<!-- exposition:gen end -->
+
+  <h3 class="sub">One whole model: Llama-3.2-1B</h3>
+  <p>The readable source above against the fastest of gpt-fast, vLLM, SGLang, TensorRT-LLM, llama.cpp and Hugging Face on five GPUs, each at the same precision. A bar below 1.0 means Mapal is faster.</p>
+  <div class="tabs">
+    <input type="radio" name="llmc" id="llmc-f32" checked><label for="llmc-f32">f32 class</label>
+    <input type="radio" name="llmc" id="llmc-bf16"><label for="llmc-bf16">bf16 class</label>
+    <div class="tab tab-f32">
 <!-- exposition:gen id=chart-f32 kind=chart name=llm-f32 begin -->
 <div class="chart chart-dark"><svg xmlns="http://www.w3.org/2000/svg" width="920" height="618" viewBox="0 0 920 618" role="img" aria-labelledby="llm-f32-dark-t llm-f32-dark-d">
 <title id="llm-f32-dark-t">Llama-3.2-1B, f32 class: Mapal against the fastest f32 engine</title>
@@ -962,6 +1724,8 @@ the 33 flow kernels each carry several steps (130 steps in all)</code></pre></di
 <text x="28.0" y="600.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">Builds b8429388 / 9be9886d. Data: benches/results/evidence/full-model.json (every engine, prompts 128 / 512 / 2048).</text>
 </svg></div>
 <!-- exposition:gen end -->
+    </div>
+    <div class="tab tab-bf16">
 <!-- exposition:gen id=chart-bf16 kind=chart name=llm-bf16 begin -->
 <div class="chart chart-dark"><svg xmlns="http://www.w3.org/2000/svg" width="920" height="618" viewBox="0 0 920 618" role="img" aria-labelledby="llm-bf16-dark-t llm-bf16-dark-d">
 <title id="llm-bf16-dark-t">Llama-3.2-1B, bf16 class: Mapal against the fastest bf16 engine</title>
@@ -1148,115 +1912,17 @@ the 33 flow kernels each carry several steps (130 steps in all)</code></pre></di
 <text x="28.0" y="600.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">Builds b8429388 / 9be9886d. Data: benches/results/evidence/full-model.json (every engine, prompts 128 / 512 / 2048).</text>
 </svg></div>
 <!-- exposition:gen end -->
+<!-- exposition:gen id=perf-ttft kind=perf name=ttft begin -->
+<p class="line">After the 16-bit warpgroup tiles (<code>wgmma</code>), on another H100 against gpt-fast on the same box, the bf16 time to first token at 128 / 512 / 2048 tokens is <b>0.75 / 1.25 / 1.58</b> of gpt-fast's (2.7 / 5.6 / 18.11 ms against 3.58 / 4.47 / 11.45 ms): ahead for short prompts, behind for long ones. <span class="muted">Source: full-model.json, H100 <code>reruns</code>.</span></p>
+<!-- exposition:gen end -->
+    </div>
+  </div>
   <div class="claims">
     <div><b>Full precision (f32)</b><p>The fastest on all five GPUs at generating text, and for prompts of 512 tokens or more.</p></div>
     <div><b>Half precision (bf16)</b><p>Mostly still behind the fastest engine: within 5–15% on the RTX 5080, further behind on the others. On the H100 it is faster for short prompts. Work is in progress.</p></div>
     <div><b>Memory</b><p>2.7–3.5 GB of GPU memory, level with the leanest engines and far below the serving engines.</p></div>
   </div>
-  <p>Across 119 kernels and model layers (matrix products, attention, convolution, reductions and more), Mapal is faster on average than the best library or compiler on three of the five GPUs.</p>
-<!-- exposition:gen id=chart-suite kind=chart name=suite-gpus begin -->
-<div class="chart chart-dark"><svg xmlns="http://www.w3.org/2000/svg" width="920" height="402" viewBox="0 0 920 402" role="img" aria-labelledby="suite-gpus-dark-t suite-gpus-dark-d">
-<title id="suite-gpus-dark-t">Kernel and layer suite: Mapal against the fastest same-precision competitor</title>
-<desc id="suite-gpus-dark-d">Geometric mean of Mapal time divided by the fastest competitor's time, per GPU: RTX 5080 0.876; RTX 3090 0.920; A100 1.006; RTX 4090 0.911; H100 1.101</desc>
-<style>text { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; } .num { font-variant-numeric: tabular-nums; }</style>
-<rect width="920" height="402" rx="10" fill="#1a1a19"/>
-<text x="28.0" y="38.0" font-size="17" font-weight="600" fill="#f0efec" text-anchor="start">Kernel and layer suite: Mapal against the fastest same-precision competitor</text>
-<text x="28.0" y="60.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">Geomean of Mapal time ÷ the fastest competitor's time over the 119 programs timed on every GPU, at the program boundary. Below 1: Mapal faster.</text>
-<text x="28.0" y="78.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">Each program against competitors of its own precision: cuBLAS(Lt), CUTLASS, PyTorch eager / compiled, Triton, FlashAttention, FlashInfer, Liger.</text>
-<rect x="28.0" y="95.0" width="10.0" height="10.0" rx="2" fill="#3987e5"/>
-<text x="43.0" y="104.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="start">Mapal faster</text>
-<rect x="142.0" y="95.0" width="10.0" height="10.0" rx="2" fill="#898781"/>
-<text x="157.0" y="104.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="start">within 5%</text>
-<rect x="235.0" y="95.0" width="10.0" height="10.0" rx="2" fill="#e66767"/>
-<text x="250.0" y="104.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="start">Mapal slower</text>
-<text x="892.0" y="126.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">programs faster / even / slower</text>
-<line x1="148.0" y1="136.0" x2="148.0" y2="306.0" stroke="#2c2c2a" stroke-width="1"/>
-<line x1="283.7" y1="136.0" x2="283.7" y2="306.0" stroke="#2c2c2a" stroke-width="1"/>
-<line x1="405.0" y1="136.0" x2="405.0" y2="306.0" stroke="#383835" stroke-width="1"/>
-<line x1="514.8" y1="136.0" x2="514.8" y2="306.0" stroke="#2c2c2a" stroke-width="1"/>
-<line x1="662.0" y1="136.0" x2="662.0" y2="306.0" stroke="#2c2c2a" stroke-width="1"/>
-<text x="28.0" y="158.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">RTX 5080</text>
-<path d="M405.0,146.0 H257.1 A4,4 0 0 0 253.1,150.0 V156.0 A4,4 0 0 0 257.1,160.0 H405.0 Z" fill="#3987e5"/>
-<text x="247.1" y="158.0" font-size="12" font-weight="600" fill="#f0efec" text-anchor="end" class="num">0.876</text>
-<text x="892.0" y="158.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="end" class="num">46 / 44 / 30</text>
-<text x="28.0" y="192.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">RTX 3090</text>
-<path d="M405.0,180.0 H313.5 A4,4 0 0 0 309.5,184.0 V190.0 A4,4 0 0 0 313.5,194.0 H405.0 Z" fill="#3987e5"/>
-<text x="303.5" y="192.0" font-size="12" font-weight="600" fill="#f0efec" text-anchor="end" class="num">0.920</text>
-<text x="892.0" y="192.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="end" class="num">39 / 30 / 51</text>
-<text x="28.0" y="226.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">A100</text>
-<path d="M405.0,214.0 H407.5 A4,4 0 0 1 411.5,218.0 V224.0 A4,4 0 0 1 407.5,228.0 H405.0 Z" fill="#898781"/>
-<text x="417.5" y="226.0" font-size="12" font-weight="600" fill="#f0efec" text-anchor="start" class="num">1.006</text>
-<text x="892.0" y="226.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="end" class="num">57 / 11 / 51</text>
-<text x="28.0" y="260.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">RTX 4090</text>
-<path d="M405.0,248.0 H301.8 A4,4 0 0 0 297.8,252.0 V258.0 A4,4 0 0 0 301.8,262.0 H405.0 Z" fill="#3987e5"/>
-<text x="291.8" y="260.0" font-size="12" font-weight="600" fill="#f0efec" text-anchor="end" class="num">0.911</text>
-<text x="892.0" y="260.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="end" class="num">49 / 25 / 46</text>
-<text x="28.0" y="294.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">H100</text>
-<path d="M405.0,282.0 H512.3 A4,4 0 0 1 516.3,286.0 V292.0 A4,4 0 0 1 512.3,296.0 H405.0 Z" fill="#e66767"/>
-<text x="522.3" y="294.0" font-size="12" font-weight="600" fill="#f0efec" text-anchor="start" class="num">1.101</text>
-<text x="892.0" y="294.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="end" class="num">30 / 8 / 82</text>
-<text x="148.0" y="324.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.8</text>
-<text x="283.7" y="324.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.9</text>
-<text x="405.0" y="324.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1</text>
-<text x="514.8" y="324.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1.1</text>
-<text x="662.0" y="324.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1.25</text>
-<text x="148.0" y="342.0" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="start">← Mapal faster</text>
-<text x="662.0" y="342.0" font-size="11.5" font-weight="400" fill="#c3c2b7" text-anchor="end">Mapal slower →</text>
-<text x="28.0" y="368.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">Builds: RTX 5080 81a89c02, 9abeb446, d450014d, d945c641; RTX 3090 b8429388; A100 b8429388; RTX 4090 b8429388; H100 b8429388.</text>
-<text x="28.0" y="384.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">Data: benches/results/evidence/matrix.json (2026-11-26); even = within 5% or the row's own noise; counts over every row the GPU timed (120 / 120 / 119 / 120 / 120).</text>
-</svg></div>
-<div class="chart chart-light"><svg xmlns="http://www.w3.org/2000/svg" width="920" height="402" viewBox="0 0 920 402" role="img" aria-labelledby="suite-gpus-light-t suite-gpus-light-d">
-<title id="suite-gpus-light-t">Kernel and layer suite: Mapal against the fastest same-precision competitor</title>
-<desc id="suite-gpus-light-d">Geometric mean of Mapal time divided by the fastest competitor's time, per GPU: RTX 5080 0.876; RTX 3090 0.920; A100 1.006; RTX 4090 0.911; H100 1.101</desc>
-<style>text { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; } .num { font-variant-numeric: tabular-nums; }</style>
-<rect width="920" height="402" rx="10" fill="#fcfcfb"/>
-<text x="28.0" y="38.0" font-size="17" font-weight="600" fill="#0b0b0b" text-anchor="start">Kernel and layer suite: Mapal against the fastest same-precision competitor</text>
-<text x="28.0" y="60.0" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="start">Geomean of Mapal time ÷ the fastest competitor's time over the 119 programs timed on every GPU, at the program boundary. Below 1: Mapal faster.</text>
-<text x="28.0" y="78.0" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="start">Each program against competitors of its own precision: cuBLAS(Lt), CUTLASS, PyTorch eager / compiled, Triton, FlashAttention, FlashInfer, Liger.</text>
-<rect x="28.0" y="95.0" width="10.0" height="10.0" rx="2" fill="#2a78d6"/>
-<text x="43.0" y="104.0" font-size="12" font-weight="400" fill="#52514e" text-anchor="start">Mapal faster</text>
-<rect x="142.0" y="95.0" width="10.0" height="10.0" rx="2" fill="#898781"/>
-<text x="157.0" y="104.0" font-size="12" font-weight="400" fill="#52514e" text-anchor="start">within 5%</text>
-<rect x="235.0" y="95.0" width="10.0" height="10.0" rx="2" fill="#e34948"/>
-<text x="250.0" y="104.0" font-size="12" font-weight="400" fill="#52514e" text-anchor="start">Mapal slower</text>
-<text x="892.0" y="126.0" font-size="12" font-weight="400" fill="#52514e" text-anchor="end">programs faster / even / slower</text>
-<line x1="148.0" y1="136.0" x2="148.0" y2="306.0" stroke="#e1e0d9" stroke-width="1"/>
-<line x1="283.7" y1="136.0" x2="283.7" y2="306.0" stroke="#e1e0d9" stroke-width="1"/>
-<line x1="405.0" y1="136.0" x2="405.0" y2="306.0" stroke="#c3c2b7" stroke-width="1"/>
-<line x1="514.8" y1="136.0" x2="514.8" y2="306.0" stroke="#e1e0d9" stroke-width="1"/>
-<line x1="662.0" y1="136.0" x2="662.0" y2="306.0" stroke="#e1e0d9" stroke-width="1"/>
-<text x="28.0" y="158.0" font-size="13" font-weight="600" fill="#0b0b0b" text-anchor="start">RTX 5080</text>
-<path d="M405.0,146.0 H257.1 A4,4 0 0 0 253.1,150.0 V156.0 A4,4 0 0 0 257.1,160.0 H405.0 Z" fill="#2a78d6"/>
-<text x="247.1" y="158.0" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="end" class="num">0.876</text>
-<text x="892.0" y="158.0" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="end" class="num">46 / 44 / 30</text>
-<text x="28.0" y="192.0" font-size="13" font-weight="600" fill="#0b0b0b" text-anchor="start">RTX 3090</text>
-<path d="M405.0,180.0 H313.5 A4,4 0 0 0 309.5,184.0 V190.0 A4,4 0 0 0 313.5,194.0 H405.0 Z" fill="#2a78d6"/>
-<text x="303.5" y="192.0" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="end" class="num">0.920</text>
-<text x="892.0" y="192.0" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="end" class="num">39 / 30 / 51</text>
-<text x="28.0" y="226.0" font-size="13" font-weight="600" fill="#0b0b0b" text-anchor="start">A100</text>
-<path d="M405.0,214.0 H407.5 A4,4 0 0 1 411.5,218.0 V224.0 A4,4 0 0 1 407.5,228.0 H405.0 Z" fill="#898781"/>
-<text x="417.5" y="226.0" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="start" class="num">1.006</text>
-<text x="892.0" y="226.0" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="end" class="num">57 / 11 / 51</text>
-<text x="28.0" y="260.0" font-size="13" font-weight="600" fill="#0b0b0b" text-anchor="start">RTX 4090</text>
-<path d="M405.0,248.0 H301.8 A4,4 0 0 0 297.8,252.0 V258.0 A4,4 0 0 0 301.8,262.0 H405.0 Z" fill="#2a78d6"/>
-<text x="291.8" y="260.0" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="end" class="num">0.911</text>
-<text x="892.0" y="260.0" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="end" class="num">49 / 25 / 46</text>
-<text x="28.0" y="294.0" font-size="13" font-weight="600" fill="#0b0b0b" text-anchor="start">H100</text>
-<path d="M405.0,282.0 H512.3 A4,4 0 0 1 516.3,286.0 V292.0 A4,4 0 0 1 512.3,296.0 H405.0 Z" fill="#e34948"/>
-<text x="522.3" y="294.0" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="start" class="num">1.101</text>
-<text x="892.0" y="294.0" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="end" class="num">30 / 8 / 82</text>
-<text x="148.0" y="324.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.8</text>
-<text x="283.7" y="324.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.9</text>
-<text x="405.0" y="324.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1</text>
-<text x="514.8" y="324.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1.1</text>
-<text x="662.0" y="324.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1.25</text>
-<text x="148.0" y="342.0" font-size="11.5" font-weight="400" fill="#52514e" text-anchor="start">← Mapal faster</text>
-<text x="662.0" y="342.0" font-size="11.5" font-weight="400" fill="#52514e" text-anchor="end">Mapal slower →</text>
-<text x="28.0" y="368.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">Builds: RTX 5080 81a89c02, 9abeb446, d450014d, d945c641; RTX 3090 b8429388; A100 b8429388; RTX 4090 b8429388; H100 b8429388.</text>
-<text x="28.0" y="384.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">Data: benches/results/evidence/matrix.json (2026-11-26); even = within 5% or the row's own noise; counts over every row the GPU timed (120 / 120 / 119 / 120 / 120).</text>
-</svg></div>
-<!-- exposition:gen end -->
-  <p>All numbers, how they were measured, and every engine: <a href="performance/results.md"><code>docs/performance/results.md</code></a>. The charts are the repository's own files; they are not redrawn here.</p>
+  <p>All numbers, how they were measured, and every engine: <a href="performance/results.md"><code>docs/performance/results.md</code></a>.</p>
 </div></section>
 
 <section class="band" id="philosophy"><div class="wrap">
@@ -1341,18 +2007,13 @@ the 33 flow kernels each carry several steps (130 steps in all)</code></pre></di
     </div>
     <div class="pane" id="wp0" role="tabpanel" aria-labelledby="wt0"><p>Text, as written. <code>mapal fmt</code> owns its layout.</p>
       <!-- mapal:hl begin id=walk-src src=docs/exposition/dense.mapal show=inline title="the source" --><figure class="hl-demo" id="walk-src"><pre class="hl" id="walk-src-src"><code><span class="mp-comment">// A dense layer: a matrix product, a bias and a ReLU. What to compute, not how.</span>
-<span class="mp-number">2048</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">n</span><span class="mp-punctuation">;</span>
+<span class="mp-number">64</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">n</span><span class="mp-punctuation">;</span>
 
 <span class="mp-keyword">fn</span> <span class="mp-function-declaration">main</span><span class="mp-punctuation">(</span><span class="mp-punctuation">)</span> <span class="mp-punctuation">{</span>
-    <span class="mp-global">n</span> <span class="mp-operator">*</span> <span class="mp-global">n</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">iota</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">cells</span><span class="mp-punctuation">;</span>
+    <span class="mp-string">"dense-a.bin"</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">read</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">a</span><span class="mp-punctuation">:</span> <span class="mp-punctuation">[</span><span class="mp-primitive">f32</span><span class="mp-punctuation">;</span> <span class="mp-global">n</span> <span class="mp-operator">*</span> <span class="mp-global">n</span><span class="mp-punctuation">]</span><span class="mp-punctuation">;</span>
+    <span class="mp-string">"dense-b.bin"</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">read</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">b</span><span class="mp-punctuation">:</span> <span class="mp-punctuation">[</span><span class="mp-primitive">f32</span><span class="mp-punctuation">;</span> <span class="mp-global">n</span> <span class="mp-operator">*</span> <span class="mp-global">n</span><span class="mp-punctuation">]</span><span class="mp-punctuation">;</span>
     <span class="mp-global">n</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">iota</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">along</span><span class="mp-punctuation">;</span>
-    <span class="mp-variable">cells</span> <span class="mp-arrow">-&gt;</span> <span class="mp-keyword">map</span> <span class="mp-punctuation">{</span>
-        <span class="mp-parameter-declaration">c</span> <span class="mp-arrow">-&gt;</span> <span class="mp-punctuation">(</span><span class="mp-parameter">c</span> <span class="mp-operator">*</span> <span class="mp-number">7</span> <span class="mp-operator">+</span> <span class="mp-number">13</span><span class="mp-punctuation">)</span> <span class="mp-operator">%</span> <span class="mp-number">101</span> <span class="mp-operator">-</span> <span class="mp-number">50</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">widen_f32</span>
-    <span class="mp-punctuation">}</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">a</span><span class="mp-punctuation">;</span>
-    <span class="mp-variable">cells</span> <span class="mp-arrow">-&gt;</span> <span class="mp-keyword">map</span> <span class="mp-punctuation">{</span>
-        <span class="mp-parameter-declaration">c</span> <span class="mp-arrow">-&gt;</span> <span class="mp-punctuation">(</span><span class="mp-parameter">c</span> <span class="mp-operator">*</span> <span class="mp-number">5</span> <span class="mp-operator">+</span> <span class="mp-number">3</span><span class="mp-punctuation">)</span> <span class="mp-operator">%</span> <span class="mp-number">97</span> <span class="mp-operator">-</span> <span class="mp-number">48</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">widen_f32</span>
-    <span class="mp-punctuation">}</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">b</span><span class="mp-punctuation">;</span>
-    <span class="mp-variable">cells</span> <span class="mp-arrow">-&gt;</span> <span class="mp-keyword">map</span> <span class="mp-punctuation">{</span>
+    <span class="mp-global">n</span> <span class="mp-operator">*</span> <span class="mp-global">n</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">iota</span> <span class="mp-arrow">-&gt;</span> <span class="mp-keyword">map</span> <span class="mp-punctuation">{</span>
         <span class="mp-parameter-declaration">c</span> <span class="mp-arrow">-&gt;</span>
         <span class="mp-parameter">c</span> <span class="mp-operator">/</span> <span class="mp-global">n</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">row</span><span class="mp-punctuation">;</span>
         <span class="mp-parameter">c</span> <span class="mp-operator">%</span> <span class="mp-global">n</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">column</span><span class="mp-punctuation">;</span>
@@ -1366,51 +2027,48 @@ the 33 flow kernels each carry several steps (130 steps in all)</code></pre></di
     <span class="mp-punctuation">}</span> <span class="mp-arrow">-&gt;</span> <span class="mp-binding">out</span><span class="mp-punctuation">;</span>
     <span class="mp-variable">out</span><span class="mp-punctuation">[</span><span class="mp-number">0</span><span class="mp-punctuation">]</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">println</span><span class="mp-punctuation">;</span>
     <span class="mp-variable">out</span><span class="mp-punctuation">[</span><span class="mp-global">n</span> <span class="mp-operator">*</span> <span class="mp-global">n</span> <span class="mp-operator">-</span> <span class="mp-number">1</span><span class="mp-punctuation">]</span> <span class="mp-arrow">-&gt;</span> <span class="mp-builtin">println</span><span class="mp-punctuation">;</span>
-<span class="mp-punctuation">}</span></code></pre><figcaption><span>the source — <a href="exposition/dense.mapal"><code>docs/exposition/dense.mapal</code></a>, 27 lines</span><button type="button" class="hl-copy" data-copy="walk-src-src" data-eol="1">Copy</button></figcaption></figure><!-- mapal:hl end -->
+<span class="mp-punctuation">}</span></code></pre><figcaption><span>the source — <a href="exposition/dense.mapal"><code>docs/exposition/dense.mapal</code></a>, 22 lines</span><button type="button" class="hl-copy" data-copy="walk-src-src" data-eol="1">Copy</button></figcaption></figure><!-- mapal:hl end -->
     </div>
     <div class="pane" id="wp1" role="tabpanel" aria-labelledby="wt1" hidden><p>The parser keeps a thin tree; the language server classes every token, which is what colors the code on this page.</p>
 <!-- exposition:gen id=walk-syntax kind=syntax file=docs/exposition/dense.mapal begin -->
-<div class="io"><div class="io-h">Syntax <span>mapal lsp (semantic tokens)</span></div><pre class="out"><code>168 tokens, every one classed by the language server:
-45 punctuation, 24 arrow, 22 operator, 12 variable, 11 number, 9 binding, 9 global, 7 parameter</code></pre></div>
+<div class="io"><div class="io-h">Syntax <span>mapal lsp (semantic tokens)</span></div><pre class="out"><code>146 tokens, every one classed by the language server:
+44 punctuation, 19 arrow, 16 operator, 13 global, 9 variable, 8 binding, 6 builtin, 5 parameter</code></pre></div>
 <!-- exposition:gen end -->
     </div>
     <div class="pane" id="wp2" role="tabpanel" aria-labelledby="wt2" hidden><p>Lowering turns the tree into one dataflow graph where every value has one producer. Rewriting then makes it smaller; the counts are real.</p>
 <!-- exposition:gen id=walk-graph kind=graph file=docs/exposition/dense.mapal begin -->
-<div class="io"><div class="io-h">The graph <span>mapal dump-ir --stage=lowered|rewritten dense.mapal</span></div><pre class="out"><code>values (objects)   lowered  107   rewritten  104
-Map                lowered    3   rewritten    3
+<div class="io"><div class="io-h">The graph <span>mapal dump-ir --stage=lowered|rewritten dense.mapal</span></div><pre class="out"><code>values (objects)   lowered   85   rewritten   82
+Map                lowered    1   rewritten    1
 Fold               lowered    1   rewritten    1
 Iota               lowered    2   rewritten    2
 Index              lowered    4   rewritten    4
-Add                lowered    7   rewritten    7
-Mul                lowered    5   rewritten    5
+Add                lowered    5   rewritten    5
+Mul                lowered    3   rewritten    3
 Div                lowered    1   rewritten    1
-Mod                lowered    3   rewritten    3
+Mod                lowered    1   rewritten    1
 Gt                 lowered    1   rewritten    1
 Phi                lowered    1   rewritten    1
-Widen              lowered    2   rewritten    2
 Print              lowered    2   rewritten    2
-all operations     lowered  112   rewritten  108</code></pre></div>
+all operations     lowered   94   rewritten   90</code></pre></div>
 <!-- exposition:gen end -->
     </div>
     <div class="pane" id="wp3" role="tabpanel" aria-labelledby="wt3" hidden><p>Facts deduced from the graph decide the kernel: a matrix product with a bias and a ReLU is one tile site with an epilogue.</p>
-<!-- exposition:gen id=walk-facts kind=derive file=docs/exposition/dense.mapal target=rtx-5080 begin -->
-<div class="io"><div class="io-h">What the compiler derived <span>mapal build --emit-only --target=rtx-5080</span></div><pre class="out"><code>compile-time evaluation: 0 values embedded as constants, 7 left to compute at run time
+<!-- exposition:gen id=walk-facts kind=derive file=docs/exposition/dense.mapal target=rtx-5080 scale=n=2048 begin -->
+<div class="io"><div class="io-h">What the compiler derived <span>mapal build --emit-only --target=rtx-5080, sizes scaled: n=2048</span></div><pre class="out"><code>compile-time evaluation: 0 values embedded as constants, 2 left to compute at run time
 rewriting: 2 rounds, 2 ConstFold, 1 Dce
-3 device kernel(s):
-kind=tile rows=2048 c=2048 k=2048 grid=16x16 block=128 tile=8x16 bk=16 stages=1 smem=16640
-kind=gen
-kind=gen</code></pre></div>
+1 device kernel(s):
+kind=tile rows=2048 c=2048 k=2048 grid=16x16 block=128 tile=8x16 bk=16 stages=1 smem=16640</code></pre></div>
 <!-- exposition:gen end -->
     </div>
     <div class="pane" id="wp4" role="tabpanel" aria-labelledby="wt4" hidden><p>LLVM IR, then PTX. LLVM derives the schedule; Mapal only emits code it can.</p>
-<!-- exposition:gen id=walk-ptx kind=ptxmix file=docs/exposition/dense.mapal target=rtx-5080 begin -->
+<!-- exposition:gen id=walk-ptx kind=ptxmix file=docs/exposition/dense.mapal target=rtx-5080 scale=n=2048 begin -->
 <div class="io"><div class="io-h">Generated code <span>the emitted PTX for rtx-5080</span></div><pre class="out"><code>  2048  fused multiply-adds            e.g. fma.rn.f32
     16  global loads                   e.g. ld.global.nc.v2.b64
-    34  global stores                  e.g. st.global.v4.b32
+    32  global stores                  e.g. st.global.v4.b32
     96  shared-memory loads            e.g. ld.shared.v4.b32
     20  shared-memory stores           e.g. st.shared.b32
      2  barriers                       e.g. bar.sync
-  2719  instructions in the module
+  2671  instructions in the module
 
 the first fused multiply-adds, as emitted:
     fma.rn.f32 	%r65, %r41, %r49, %r2733;
@@ -1423,8 +2081,8 @@ the first fused multiply-adds, as emitted:
     </div>
     <div class="pane" id="wp5" role="tabpanel" aria-labelledby="wt5" hidden><p>Run natively on the CPU for this page (the GPU build is the same source).</p>
 <!-- exposition:gen id=walk-out kind=run file=docs/exposition/dense.mapal cpu=1 begin -->
-<div class="io"><div class="io-h">Output <span>mapal run --target=zen3 dense.mapal (native CPU run)</span></div><pre class="out"><code>11
-13755</code></pre></div>
+<div class="io"><div class="io-h">Output <span>mapal run --target=zen3 dense.mapal (native CPU run)</span></div><pre class="out"><code>3136
+0</code></pre></div>
 <!-- exposition:gen end -->
     </div>
     <div class="ctrl"><button type="button" id="wprev">Back</button><button type="button" id="wnext">Next stage</button><span class="count" id="wcount">Stage 1 of 6</span></div>

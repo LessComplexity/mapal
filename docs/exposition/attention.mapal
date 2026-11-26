@@ -4,15 +4,9 @@
 
 fn main() {
     tokens * width -> iota -> cells;
-    cells -> map {
-        c -> (c * 7 + 13) % 11 - 5 -> widen_f32
-    } -> query;
-    cells -> map {
-        c -> (c * 5 + 3) % 13 - 6 -> widen_f32
-    } -> key;
-    cells -> map {
-        c -> (c * 3 + 1) % 7 - 3 -> widen_f32
-    } -> value;
+    "query.bin" -> read -> query: [f32; tokens * width];
+    "key.bin" -> read -> key: [f32; tokens * width];
+    "value.bin" -> read -> value: [f32; tokens * width];
     width -> iota -> dims;
     tokens -> iota -> positions;
     width -> widen_f32 -> sqrt -> scale;

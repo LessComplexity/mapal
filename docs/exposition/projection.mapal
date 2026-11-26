@@ -4,14 +4,8 @@
 16 -> columns;
 
 fn main() {
-    rows * columns -> iota -> map {
-        c -> (c * 11 + 57) % 103 - 51 -> widen_f32 -> v;
-        v / 64.0 -> to_bf16
-    } -> weight;
-    tokens * columns -> iota -> map {
-        c -> (c * 7 + 13) % 101 - 50 -> widen_f32 -> v;
-        v / 8.0
-    } -> x;
+    "weight.bin" -> read -> weight: [bf16; rows * columns];
+    "activations.bin" -> read -> x: [f32; tokens * columns];
     columns -> iota -> along;
     tokens * rows -> iota -> map {
         cell ->

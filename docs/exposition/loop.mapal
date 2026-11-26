@@ -3,12 +3,7 @@
 100 -> steps;
 
 fn main() {
-    points -> iota -> map {
-        i -> (i == points / 2) -> {
-            -true-> 100.0;
-            -false-> 0.0;
-        }
-    } -> start;
+    "rod.bin" -> read -> start: [f32; points];
     mut u: [f32; points] <- start;
     mut step: i32 <- 0;
     loop {

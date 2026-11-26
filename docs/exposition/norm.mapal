@@ -2,9 +2,7 @@
 4096 -> length;
 
 fn main() {
-    length -> iota -> map {
-        i -> i % 10 - 5 -> widen_f32
-    } -> v;
+    "vector.bin" -> read -> v: [f32; length];
     (0.0, v) -> fold {
         sum, x -> sum + x * x
     } -> squares;

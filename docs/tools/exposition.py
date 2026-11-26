@@ -20,6 +20,10 @@ Kinds (attributes in brackets are optional):
     syntax   file                            token classes the language server reports
     llama    [target]                        kernel kinds of the whole Llama-3.2-1B emission
     chart    name                            an inline SVG chart (light and dark variants), ids made unique
+    flow     file                            a mermaid flowchart of the program's dataflow (docs/tools/flow_diagram.py)
+    gpuline  file [target] [scale]          one plain sentence on the kernel the compiler made (compile only)
+    perf     name=families|samples|cpu|ttft  the Performance section's charts and line, drawn by docs/tools/perf_charts.py
+                                             from matrix.json, full-model.json and earlier-readme-results.md
 
 `scale` rewrites leading `N -> name;` lines (the program's sizes) before the run or the compile, so a demo can
 show real output at a size the interpreter finishes and the kernels at the size where a GPU matters.
@@ -46,6 +50,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PAGE = ROOT / "docs" / "language-exposition.html"
+DATA = ROOT / "docs" / "exposition" / "data"  # the demos' input files (docs/exposition/make_data.py)
 CHARTS = ROOT / "benches" / "results" / "charts"
 REGION = re.compile(r"<!-- exposition:gen (?P<attrs>.*?) begin -->(?P<body>.*?)<!-- exposition:gen end -->", re.S)
 ATTR = re.compile(r'(\w+)=(?:"([^"]*)"|(\S+))')
@@ -62,7 +67,8 @@ def exe() -> str:
 
 
 def sh(args: list[str], cwd: Path | None = None, ok: bool = False) -> subprocess.CompletedProcess:
-    p = subprocess.run(args, cwd=cwd, capture_output=True, text=True)
+    env = dict(os.environ, MAPAL_DATA_DIR=str(DATA))
+    p = subprocess.run(args, cwd=cwd, capture_output=True, text=True, env=env)
     if p.returncode != 0 and not ok:
         raise SystemExit(f"failed: {' '.join(args)}\n{p.stderr[-800:]}")
     return p
@@ -336,7 +342,35 @@ def k_chart(a: dict) -> str:
     return "\n".join(out)
 
 
-KINDS = {"run": k_run, "derive": k_derive, "gpus": k_gpus, "ptxmix": k_ptxmix, "graph": k_graph,
+def k_perf(a: dict) -> str:
+    sys.path.insert(0, str(Path(__file__).parent))
+    import perf_charts
+
+    return perf_charts.KINDS[a["name"]](a)
+
+
+def k_flow(a: dict) -> str:
+    sys.path.insert(0, str(Path(__file__).parent))
+    import flow_diagram
+
+    return '<div class="mermaid">\n' + flow_diagram.mermaid(ROOT / a["file"]) + "\n</div>"
+
+
+def k_gpuline(a: dict) -> str:
+    """One plain sentence on what the compiler did with the program at the sizes given by `scale`."""
+    target = a.get("target", "rtx-5080")
+    ks = kernels(emit(a["file"], target, a.get("scale"))["dev"])
+    tiles = [k for k in ks if k.get("kind") in ("tile", "mma")]
+    if not tiles:
+        return "<p>At this size the compiler keeps the program on the CPU.</p>"
+    t = tiles[0]
+    n = len(ks)
+    return (f"<p>At the full size the compiler turned the whole computation into {'one GPU kernel' if n == 1 else f'{n} GPU kernels'}, "
+            f"computing the product in {t['tm']} × {t['tn']} tiles (compile only, for an RTX 5080). "
+            f"The same source also runs on the CPU, as the output above.</p>")
+
+
+KINDS = {"flow": k_flow, "gpuline": k_gpuline, "perf": k_perf, "run": k_run, "derive": k_derive, "gpus": k_gpus, "ptxmix": k_ptxmix, "graph": k_graph,
          "syntax": k_syntax, "llama": k_llama, "chart": k_chart}
 
 
