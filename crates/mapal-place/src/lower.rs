@@ -31,6 +31,10 @@ pub struct Declared {
     pub chains: u64,
     /// Groups a slot issues the operation from (consumers).
     pub groups: u64,
+    /// The operation's work a slot issues per trip, in flops at its rate:
+    /// the useful `2·bm·bn·bk` times the passes a split realization takes
+    /// (0: the useful flops).
+    pub work: f64,
 }
 
 impl Declared {

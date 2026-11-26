@@ -214,7 +214,61 @@ pub struct Gpu {
     /// What the SM executes, as properties ([`Caps`]): no rule compares a
     /// version.
     pub caps: Caps,
+    /// ADR-0050: the placement facts this part measured beyond its
+    /// [`DeviceCost`] and the provenance of every value of the profile
+    /// ([`PlaceFacts`]) — what `place::machine_of` translates.
+    pub place: &'static PlaceFacts,
 }
+
+/// **ADR-0050: the placement facts of a part beyond its [`DeviceCost`], and
+/// the provenance of the profile's values** — each value's source next to the
+/// value: `prov` names a field ([`DeviceCost::NAMES`], or `bar_cycles` /
+/// `fp32_lanes`) and where its number comes from. A field the list does not
+/// name is a device-query attribute where it is one (queried), else unlabeled
+/// (nominal, visibly). The machine's translation (`place::machine_of`) reads
+/// these and marks every derived or nominal value; nothing here is borrowed
+/// from another part as if measured.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PlaceFacts {
+    pub prov: &'static [(&'static str, mapal_place::Src)],
+    /// The start timing of a grid's slots past its first wave (`None`:
+    /// unmeasured — the evaluator takes both at its bounds).
+    pub start: Option<(mapal_place::Start, &'static str)>,
+    /// The L2's keep for a walk's rotated pattern and for a strided one,
+    /// bytes (0: unmeasured — the cyclic keep, marked).
+    pub keep_rotated: u64,
+    pub keep_strided: u64,
+    /// The L2's hit fraction against reuse distance ÷ cyclic keep, both per
+    /// mille.
+    pub hit_curve: &'static [(u64, u64)],
+    /// The L2's loaded latency, ns (0: unmeasured).
+    pub lat_l2_ns: u64,
+    /// Measured efficiency points: `(operation, chains a lane, groups a
+    /// scheduler × 1000, achieved fraction of the row's rate per mille)`.
+    pub eff: &'static [(&'static str, u64, u64, u64)],
+    /// Measured dependent-issue latencies: `(operation, unit clocks × 10)`.
+    pub latency: &'static [(&'static str, u64)],
+    /// The SM clock under sustained load, kHz, measured by clock64 over
+    /// %globaltimer (0: unmeasured — the profile's `clock_khz`). Read by the
+    /// placement model only: the rules keep the profile's clock.
+    pub clock_khz: u64,
+    /// The cite of the efficiency, latency and clock probes.
+    pub cite: &'static str,
+}
+
+/// No placement facts beyond the profile's.
+pub const PLACE_NONE: PlaceFacts = PlaceFacts {
+    prov: &[],
+    start: None,
+    keep_rotated: 0,
+    keep_strided: 0,
+    hit_curve: &[],
+    lat_l2_ns: 0,
+    eff: &[],
+    latency: &[],
+    clock_khz: 0,
+    cite: "",
+};
 
 /// **The instructions an SM executes, described by what they move and the
 /// geometry they compute** (hardware-properties). Read by the realizations
@@ -5796,6 +5850,431 @@ pub const CUDA_ADA: TargetProfile = TargetProfile {
     ..GENERIC
 };
 
+use mapal_place::Src;
+
+/// A measured value's cite (the profile's comment carries the detail).
+const fn m(c: &'static str) -> Src {
+    Src::Measured(c)
+}
+/// A Mapal kernel's fitted or achieved rate: kept as a replay line, never
+/// read by the placement evaluator (ADR-0050 D2, "fits").
+const FIT: Src = Src::Derived("fit of a Mapal kernel (replay only)");
+const DATASHEET: Src = Src::Declared("datasheet");
+
+/// ADR-0050 provenance of [`CUDA_ADA`]'s values: the 4070 Ti's datasheet; the
+/// barrier and matrix rates are other parts' (marked).
+pub const PLACE_CUDA_ADA: PlaceFacts = PlaceFacts {
+    prov: &[
+        ("fp32_lanes", DATASHEET),
+        (
+            "clock_khz",
+            Src::Declared("datasheet boost (not a sustained clock)"),
+        ),
+        ("bar_cycles", Src::Derived("the RTX 4090's sm_89 barrier")),
+        (
+            "mma_tf32_per_clk",
+            Src::Derived("datasheet dense TF32 over sms x boost"),
+        ),
+        (
+            "mma_half_per_clk",
+            Src::Derived("datasheet dense FP16/f32 over sms x boost"),
+        ),
+    ],
+    ..PLACE_NONE
+};
+
+/// ADR-0050 provenance of [`RTX_4090`]'s values.
+pub const PLACE_RTX_4090: PlaceFacts = PlaceFacts {
+    prov: &[
+        ("flops_per_ns", FIT),
+        ("bytes_per_ns", FIT),
+        ("launch_ns", FIT),
+        ("eff_max_pm", FIT),
+        ("eff_half", FIT),
+        ("issue_ns", m("plan-cost E1 (c) empty-kernel launches")),
+        ("gap_ns", m("plan-cost E1 (a) device gap")),
+        ("zero_ns", m("plan-cost E1 (c) memset 1 MB")),
+        ("atomic_ops_per_ns", m("plan-cost E1 (c) f32 RED")),
+        ("l2_bytes_per_ns", m("plan-cost E1 (c) L2-resident read")),
+        ("dram_bytes_per_ns", m("plan-cost E1 (c) 2 GB __ldcg")),
+        ("lat_ns", m("calib.cu bw loaded latency, B-bw-rtx-4090.tsv")),
+        ("lsu_ipc_pm", m("calib B lds, B-lds-rtx-4090.tsv")),
+        ("gsync_ns", m("cross-arch calib.cu gsync")),
+        ("dep_launch_ns", m("cross-arch calib.cu gsync")),
+        ("coop_launch_ns", m("cross-arch calib.cu gsync")),
+        ("sm_bytes_per_ns", m("cross-arch calib.cu bw sms=1")),
+        ("coop_body_cycles", m("calib.cu body, 5fcb401b")),
+        ("fly_bytes_per_sm", m("calib.cu bw fly, 60f0f8ce")),
+        ("fp32_lanes", DATASHEET),
+        (
+            "clock_khz",
+            m("E1 header under load (a 250 W box sustained 1.955 GHz)"),
+        ),
+        ("bar_cycles", m("calib.cu bar 57.2 cycles, 5fcb401b")),
+        (
+            "mma_tf32_per_clk",
+            Src::Derived("datasheet dense TF32 over sms x boost"),
+        ),
+        (
+            "mma_half_per_clk",
+            Src::Derived("datasheet dense FP16/f32 over sms x boost"),
+        ),
+    ],
+    lat_l2_ns: 240,
+    cite: "plan-cost v2 calib B (L2 loaded latency 240 ns)",
+    ..PLACE_NONE
+};
+
+/// ADR-0050 provenance of [`H100`]'s values (SXM, cross-arch box).
+pub const PLACE_H100: PlaceFacts = PlaceFacts {
+    prov: &[
+        ("l2_bytes_per_ns", m("cross-arch calib.cu bw")),
+        ("dram_bytes_per_ns", m("cross-arch calib.cu bw")),
+        ("gsync_ns", m("cross-arch calib.cu gsync")),
+        ("dep_launch_ns", m("cross-arch calib.cu gsync")),
+        ("pdl_launch_ns", m("cross-arch calib.cu gsync")),
+        ("coop_launch_ns", m("cross-arch calib.cu gsync")),
+        ("sm_bytes_per_ns", m("cross-arch calib.cu bw sms=1")),
+        ("fly_bytes_per_sm", m("calib.cu bw fly, 60f0f8ce")),
+        ("tma_copy_ns", m("tma_calib.cu, h100-s1")),
+        ("lat_ns", m("calib.cu bw loaded latency, calib-h100.txt")),
+        ("coop_body_cycles", m("calib.cu body, 5fcb401b")),
+        (
+            "l2_keep_bytes",
+            Src::Nominal("half the L2: the keep lies below l2keep.cu's first point (open)"),
+        ),
+        ("fp32_lanes", DATASHEET),
+        ("clock_khz", m("calib.cu ffma peak under load")),
+        ("bar_cycles", m("calib.cu bar 41.8 cycles, 5fcb401b")),
+        ("mma_tf32_per_clk", m("calib.cu matrix, calib-h100.txt")),
+        ("mma_half_per_clk", m("calib.cu matrix, calib-h100.txt")),
+        ("wgmma_tf32_per_clk", m("calib.cu matrix wgmma m64n256k8")),
+        ("wgmma_half_per_clk", m("calib.cu matrix wgmma m64n256k16")),
+    ],
+    ..PLACE_NONE
+};
+
+/// ADR-0050 provenance of [`H100_PCIE`]'s values: its rates ran on an SXM
+/// box; its SM's barrier and matrix rates are the SXM part's (marked).
+pub const PLACE_H100_PCIE: PlaceFacts = PlaceFacts {
+    prov: &[
+        ("flops_per_ns", FIT),
+        ("bytes_per_ns", FIT),
+        (
+            "launch_ns",
+            m("s62 run2 results-h100-pcie (all-device iter / sites)"),
+        ),
+        ("fp32_lanes", DATASHEET),
+        (
+            "clock_khz",
+            Src::Declared("datasheet boost (not a sustained clock)"),
+        ),
+        (
+            "bar_cycles",
+            Src::Derived("the H100 SXM's measured barrier: the same SM"),
+        ),
+        (
+            "mma_tf32_per_clk",
+            Src::Derived("the H100 SXM's measured rate: the same SM"),
+        ),
+        (
+            "mma_half_per_clk",
+            Src::Derived("the H100 SXM's measured rate: the same SM"),
+        ),
+        (
+            "wgmma_tf32_per_clk",
+            Src::Derived("the H100 SXM's measured rate: the same SM"),
+        ),
+        (
+            "wgmma_half_per_clk",
+            Src::Derived("the H100 SXM's measured rate: the same SM"),
+        ),
+    ],
+    ..PLACE_NONE
+};
+
+/// ADR-0050 provenance of [`RTX_5090`]'s values.
+pub const PLACE_RTX_5090: PlaceFacts = PlaceFacts {
+    prov: &[
+        ("flops_per_ns", FIT),
+        ("bytes_per_ns", FIT),
+        ("launch_ns", FIT),
+        ("eff_max_pm", FIT),
+        ("eff_half", FIT),
+        ("issue_ns", m("plan-cost E1 (c) empty-kernel launches")),
+        ("gap_ns", m("plan-cost E1 (a) device gap")),
+        ("zero_ns", m("plan-cost E1 (c) memset 1 MB")),
+        ("atomic_ops_per_ns", m("plan-cost E1 (c) f32 RED")),
+        ("l2_bytes_per_ns", m("plan-cost E1 (c) L2-resident read")),
+        ("dram_bytes_per_ns", m("plan-cost E1 (c) 2 GB __ldcg")),
+        ("lat_ns", m("calib.cu bw loaded latency, B-bw-rtx-5090.tsv")),
+        ("lsu_ipc_pm", m("calib B lds, B-lds-rtx-5090.tsv")),
+        ("fly_bytes_per_sm", m("calib.cu bw fly, B-bw-rtx-5090.tsv")),
+        ("fp32_lanes", DATASHEET),
+        ("clock_khz", m("E1 header under load")),
+        (
+            "bar_cycles",
+            Src::Derived("the RTX 5080's measured barrier: the same SM design"),
+        ),
+        (
+            "mma_tf32_per_clk",
+            Src::Derived("datasheet dense TF32 over sms x boost"),
+        ),
+        (
+            "mma_half_per_clk",
+            Src::Derived("datasheet dense FP16/f32 over sms x boost"),
+        ),
+    ],
+    lat_l2_ns: 290,
+    cite: "plan-cost v2 calib B (L2 loaded latency 290 ns)",
+    ..PLACE_NONE
+};
+
+/// ADR-0050 provenance of [`RTX_5080`]'s values (the local part).
+pub const PLACE_RTX_5080_PROV: &[(&str, Src)] = &[
+    ("flops_per_ns", FIT),
+    ("bytes_per_ns", FIT),
+    ("launch_ns", FIT),
+    (
+        "eff_max_pm",
+        Src::Derived("the RTX 5090's fit (replay only)"),
+    ),
+    ("eff_half", Src::Derived("the RTX 5090's fit (replay only)")),
+    ("split_cell_ps", FIT),
+    ("issue_ns", m("calib/E1-rtx-5080.txt empty-kernel launches")),
+    ("gap_ns", m("CUPTI device gap, E1")),
+    ("zero_ns", m("CUPTI memset 1 MB, E1")),
+    ("atomic_ops_per_ns", m("E1 f32 RED")),
+    ("l2_bytes_per_ns", m("E1 __ldcg 16-48 MB plateau")),
+    ("dram_bytes_per_ns", m("E1 __ldcg 536 MB")),
+    ("lat_ns", m("calib B bw loaded latency, B-bw-rtx-5080.tsv")),
+    ("lsu_ipc_pm", m("calib B lds, B-lds-rtx-5080.txt")),
+    ("lds_bcast_pm", m("calib.cu lds bcast")),
+    ("fill_bytes_per_ns", m("CUPTI zero pass, kernel-merging.md")),
+    ("tail_bytes_per_ns", FIT),
+    ("gsync_ns", m("calib.cu gsync, kernel-merging.md")),
+    ("gsync_block_ps", m("calib.cu gsync, kernel-merging.md")),
+    ("dep_launch_ns", m("calib.cu gsync, kernel-merging.md")),
+    ("pdl_launch_ns", m("calib.cu gsync, kernel-merging.md")),
+    ("coop_launch_ns", m("calib.cu gsync, kernel-merging.md")),
+    ("pageable_pm", m("calib.cu copy, hardware-properties.md")),
+    ("row_iter_ns", FIT),
+    ("coop_first_ns", m("CUPTI driver trace, long-rows.md")),
+    ("sm_bytes_per_ns", m("calib.cu bw sms=1")),
+    ("coop_body_cycles", m("calib.cu body, review-fixes.md")),
+    ("fly_bytes_per_sm", m("calib.cu bw fly, B-bw-rtx-5080.tsv")),
+    ("tma_copy_ns", m("tma_calib.cu")),
+    ("l2_keep_bytes", m("l2keep.cu cyclic sweep")),
+    ("bar_ns", m("calib.cu bar 256 threads")),
+    ("fp32_lanes", DATASHEET),
+    ("clock_khz", m("E1 peak FFMA under load")),
+    ("bar_cycles", m("calib.cu bar 44.6 cycles")),
+    ("mma_tf32_per_clk", m("calib.cu matrix")),
+    ("mma_half_per_clk", m("calib.cu matrix")),
+];
+
+/// ADR-0050 C3: the RTX 5080's placement probes (`benches/local/place_calib.cu`
+/// on the local box, 2026-11-26, driver 620.73.04, 360 W;
+/// `benches/results/evidence/local-rtx-5080/machine-model.md`): a uniform
+/// grid's waves past the first start together (spread 0-10 per mille of a
+/// run at 1 and 2 blocks an SM: lockstep); the L2 keeps 1.025 x its 64 MiB
+/// for a cyclic stream, a walk's rotated readers and a strided column panel
+/// alike (68 784 128 B each; the hit curve the cyclic one's); FFMA and the
+/// warp TF32 / bf16 products' efficiency over chains a lane x warps a
+/// scheduler, their dependent latencies (4.56 / 35.2 / 35.2 clocks); the SM
+/// clock under sustained FFMA load 2.867 GHz (clock64 over %globaltimer, 4 s).
+pub const PLACE_RTX_5080: PlaceFacts = PlaceFacts {
+    prov: PLACE_RTX_5080_PROV,
+    start: Some((mapal_place::Start::Lockstep, "place_calib.cu start")),
+    keep_rotated: 68_784_128,
+    keep_strided: 68_784_128,
+    hit_curve: &[
+        (250, 960),
+        (500, 994),
+        (625, 998),
+        (750, 1000),
+        (812, 1000),
+        (875, 1000),
+        (938, 1000),
+        (1000, 997),
+        (1025, 852),
+        (1050, 484),
+        (1100, 21),
+        (1200, 0),
+        (1350, 0),
+        (1500, 0),
+    ],
+    lat_l2_ns: 328,
+    eff: &[
+        ("ffma", 1, 250, 55),
+        ("ffma", 1, 500, 110),
+        ("ffma", 1, 1000, 219),
+        ("ffma", 1, 2000, 427),
+        ("ffma", 1, 4000, 747),
+        ("ffma", 1, 8000, 823),
+        ("ffma", 2, 250, 109),
+        ("ffma", 2, 500, 217),
+        ("ffma", 2, 1000, 434),
+        ("ffma", 2, 2000, 814),
+        ("ffma", 2, 4000, 898),
+        ("ffma", 2, 8000, 907),
+        ("ffma", 4, 250, 206),
+        ("ffma", 4, 500, 413),
+        ("ffma", 4, 1000, 825),
+        ("ffma", 4, 2000, 945),
+        ("ffma", 4, 4000, 921),
+        ("ffma", 4, 8000, 938),
+        ("ffma", 8, 250, 226),
+        ("ffma", 8, 500, 452),
+        ("ffma", 8, 1000, 904),
+        ("ffma", 8, 2000, 971),
+        ("ffma", 8, 4000, 959),
+        ("ffma", 8, 8000, 968),
+        ("ffma", 16, 250, 227),
+        ("ffma", 16, 500, 455),
+        ("ffma", 16, 1000, 909),
+        ("ffma", 16, 2000, 974),
+        ("ffma", 16, 4000, 968),
+        ("ffma", 16, 8000, 969),
+        ("ffma", 32, 250, 228),
+        ("ffma", 32, 500, 456),
+        ("ffma", 32, 1000, 912),
+        ("ffma", 32, 2000, 976),
+        ("ffma", 32, 4000, 972),
+        ("ffma", 32, 8000, 975),
+        ("ffma", 64, 250, 225),
+        ("ffma", 64, 500, 450),
+        ("ffma", 64, 1000, 900),
+        ("ffma", 64, 2000, 977),
+        ("ffma", 64, 4000, 974),
+        ("mma.m16n8k8.tf32", 1, 250, 227),
+        ("mma.m16n8k8.tf32", 1, 500, 454),
+        ("mma.m16n8k8.tf32", 1, 1000, 909),
+        ("mma.m16n8k8.tf32", 1, 2000, 993),
+        ("mma.m16n8k8.tf32", 1, 4000, 993),
+        ("mma.m16n8k8.tf32", 1, 8000, 995),
+        ("mma.m16n8k8.tf32", 2, 250, 244),
+        ("mma.m16n8k8.tf32", 2, 500, 488),
+        ("mma.m16n8k8.tf32", 2, 1000, 977),
+        ("mma.m16n8k8.tf32", 2, 2000, 995),
+        ("mma.m16n8k8.tf32", 2, 4000, 998),
+        ("mma.m16n8k8.tf32", 2, 8000, 999),
+        ("mma.m16n8k8.tf32", 4, 250, 247),
+        ("mma.m16n8k8.tf32", 4, 500, 495),
+        ("mma.m16n8k8.tf32", 4, 1000, 989),
+        ("mma.m16n8k8.tf32", 4, 2000, 999),
+        ("mma.m16n8k8.tf32", 4, 4000, 999),
+        ("mma.m16n8k8.tf32", 4, 8000, 1000),
+        ("mma.m16n8k8.tf32", 8, 250, 249),
+        ("mma.m16n8k8.tf32", 8, 500, 497),
+        ("mma.m16n8k8.tf32", 8, 1000, 994),
+        ("mma.m16n8k8.tf32", 8, 2000, 999),
+        ("mma.m16n8k8.tf32", 8, 4000, 1000),
+        ("mma.m16n8k8.tf32", 8, 8000, 1000),
+        ("mma.m16n8k8.tf32", 16, 250, 249),
+        ("mma.m16n8k8.tf32", 16, 500, 498),
+        ("mma.m16n8k8.tf32", 16, 1000, 996),
+        ("mma.m16n8k8.tf32", 16, 2000, 1000),
+        ("mma.m16n8k8.tf32", 16, 4000, 1000),
+        ("mma.m16n8k16.bf16", 1, 250, 227),
+        ("mma.m16n8k16.bf16", 1, 500, 454),
+        ("mma.m16n8k16.bf16", 1, 1000, 908),
+        ("mma.m16n8k16.bf16", 1, 2000, 989),
+        ("mma.m16n8k16.bf16", 1, 4000, 995),
+        ("mma.m16n8k16.bf16", 1, 8000, 996),
+        ("mma.m16n8k16.bf16", 2, 250, 244),
+        ("mma.m16n8k16.bf16", 2, 500, 489),
+        ("mma.m16n8k16.bf16", 2, 1000, 977),
+        ("mma.m16n8k16.bf16", 2, 2000, 996),
+        ("mma.m16n8k16.bf16", 2, 4000, 998),
+        ("mma.m16n8k16.bf16", 2, 8000, 999),
+        ("mma.m16n8k16.bf16", 4, 250, 247),
+        ("mma.m16n8k16.bf16", 4, 500, 495),
+        ("mma.m16n8k16.bf16", 4, 1000, 990),
+        ("mma.m16n8k16.bf16", 4, 2000, 999),
+        ("mma.m16n8k16.bf16", 4, 4000, 1000),
+        ("mma.m16n8k16.bf16", 4, 8000, 1000),
+        ("mma.m16n8k16.bf16", 8, 250, 249),
+        ("mma.m16n8k16.bf16", 8, 500, 497),
+        ("mma.m16n8k16.bf16", 8, 1000, 995),
+        ("mma.m16n8k16.bf16", 8, 2000, 1000),
+        ("mma.m16n8k16.bf16", 8, 4000, 1000),
+        ("mma.m16n8k16.bf16", 8, 8000, 1000),
+        ("mma.m16n8k16.bf16", 16, 250, 249),
+        ("mma.m16n8k16.bf16", 16, 500, 499),
+        ("mma.m16n8k16.bf16", 16, 1000, 997),
+        ("mma.m16n8k16.bf16", 16, 2000, 1000),
+        ("mma.m16n8k16.bf16", 16, 4000, 1000),
+    ],
+    latency: &[
+        ("ffma", 46),
+        ("mma.m16n8k8.tf32", 352),
+        ("mma.m16n8k16.bf16", 352),
+    ],
+    clock_khz: 2_866_818,
+    cite: "place_calib.cu, machine-model.md (calib B: L2 loaded latency 328 ns)",
+};
+
+/// ADR-0050 provenance of [`RTX_3090`]'s values (cross-arch box).
+pub const PLACE_RTX_3090: PlaceFacts = PlaceFacts {
+    prov: &[
+        ("flops_per_ns", FIT),
+        ("bytes_per_ns", FIT),
+        ("launch_ns", FIT),
+        ("l2_bytes_per_ns", m("cross-arch calib.cu bw")),
+        ("dram_bytes_per_ns", m("cross-arch calib.cu bw")),
+        ("gsync_ns", m("cross-arch calib.cu gsync")),
+        ("dep_launch_ns", m("cross-arch calib.cu gsync")),
+        ("coop_launch_ns", m("cross-arch calib.cu gsync")),
+        ("sm_bytes_per_ns", m("cross-arch calib.cu bw sms=1")),
+        ("fly_bytes_per_sm", m("calib.cu bw fly, 60f0f8ce")),
+        (
+            "lat_ns",
+            m("calib.cu bw loaded latency, calib-rtx-3090.txt"),
+        ),
+        ("coop_body_cycles", m("calib.cu body, 5fcb401b")),
+        ("l2_keep_bytes", m("l2keep.cu sweep, calib-rtx-3090.txt")),
+        ("fp32_lanes", DATASHEET),
+        ("clock_khz", m("calib.cu ffma peak under load")),
+        ("bar_cycles", m("calib.cu bar 56.7 cycles, 5fcb401b")),
+        (
+            "mma_tf32_per_clk",
+            Src::Derived("datasheet dense TF32 over sms x boost"),
+        ),
+        (
+            "mma_half_per_clk",
+            Src::Derived("datasheet dense FP16/f32 over sms x boost"),
+        ),
+    ],
+    ..PLACE_NONE
+};
+
+/// ADR-0050 provenance of [`A100`]'s values (SXM4, cross-arch box).
+pub const PLACE_A100: PlaceFacts = PlaceFacts {
+    prov: &[
+        ("l2_bytes_per_ns", m("cross-arch calib.cu bw")),
+        ("dram_bytes_per_ns", m("cross-arch calib.cu bw")),
+        ("gsync_ns", m("cross-arch calib.cu gsync")),
+        ("dep_launch_ns", m("cross-arch calib.cu gsync")),
+        ("coop_launch_ns", m("cross-arch calib.cu gsync")),
+        ("sm_bytes_per_ns", m("cross-arch calib.cu bw sms=1")),
+        ("fly_bytes_per_sm", m("calib.cu bw fly, 60f0f8ce")),
+        ("lds_bcast_pm", m("calib.cu lds bcast, two SXM4 boxes")),
+        ("lat_ns", m("calib.cu bw loaded latency, calib-a100.txt")),
+        ("coop_body_cycles", m("calib.cu body, 5fcb401b")),
+        (
+            "l2_keep_bytes",
+            Src::Nominal("half the L2: the keep lies below l2keep.cu's first point (open)"),
+        ),
+        ("fp32_lanes", DATASHEET),
+        ("clock_khz", m("calib.cu ffma peak under load")),
+        ("bar_cycles", m("calib.cu bar 53.7 cycles, 5fcb401b")),
+        ("mma_tf32_per_clk", m("calib.cu matrix, 5fcb401b")),
+        ("mma_half_per_clk", m("calib.cu matrix, 5fcb401b")),
+    ],
+    ..PLACE_NONE
+};
+
 /// The `sm_89` per-SM facts (CUDA C Programming Guide, compute capability 8.9),
 /// with the RTX 4070 Ti's 60 SMs and its 48 MB L2 (AD104, Ada whitepaper).
 const ADA_SM: Gpu = Gpu {
@@ -5835,6 +6314,7 @@ const ADA_SM: Gpu = Gpu {
     wgmma_tf32_per_clk: 0,
     wgmma_half_per_clk: 0,
     caps: CAPS_WARP_MMA_F8,
+    place: &PLACE_CUDA_ADA,
 };
 
 /// RTX 4090 — Ada (`sm_89`), 128 SMs. A rented part (S52): the profile is the
@@ -5921,6 +6401,7 @@ pub const RTX_4090: TargetProfile = TargetProfile {
         // `mem_clock_khz=10501000 bus_bits=384`).
         mem_clock_khz: 10_501_000,
         mem_bus_bits: 384,
+        place: &PLACE_RTX_4090,
         ..ADA_SM
     }),
     ..GENERIC
@@ -6005,6 +6486,7 @@ pub const H100: TargetProfile = TargetProfile {
         // the TF32 `m64n256k8` there 2048 (the value above, now measured).
         wgmma_half_per_clk: 4096,
         caps: CAPS_WARPGROUP_MMA,
+        place: &PLACE_H100,
         ..ADA_SM
     }),
     ..GENERIC
@@ -6053,6 +6535,7 @@ pub const H100_PCIE: TargetProfile = TargetProfile {
         wgmma_tf32_per_clk: 2048,
         wgmma_half_per_clk: 4096,
         caps: CAPS_WARPGROUP_MMA,
+        place: &PLACE_H100_PCIE,
         ..ADA_SM
     }),
     ..GENERIC
@@ -6139,6 +6622,7 @@ pub const RTX_5090: TargetProfile = TargetProfile {
         bar_cycles: 45,
         mem_bus_bits: 512,
         caps: CAPS_WARP_MMA_PDL,
+        place: &PLACE_RTX_5090,
         ..ADA_SM
     }),
     ..GENERIC
@@ -6283,6 +6767,7 @@ pub const RTX_5080: TargetProfile = TargetProfile {
             math: MATH_RTX_5080,
             ..CAPS_WARP_MMA_PDL
         },
+        place: &PLACE_RTX_5080,
         ..ADA_SM
     }),
     ..GENERIC
@@ -6349,6 +6834,7 @@ pub const RTX_3090: TargetProfile = TargetProfile {
             ptx: ptx_of_target(86, false),
             ..CAPS_WARP_MMA
         },
+        place: &PLACE_RTX_3090,
         ..ADA_SM
     }),
     ..GENERIC
@@ -6423,6 +6909,7 @@ pub const A100: TargetProfile = TargetProfile {
         mma_tf32_per_clk: 1012,
         mma_half_per_clk: 2024,
         caps: CAPS_WARP_MMA,
+        place: &PLACE_A100,
         ..ADA_SM
     }),
     ..GENERIC
@@ -7056,8 +7543,35 @@ impl DeviceQuery {
                 0
             },
             caps: caps_of_cc(self.cc, arch_specific),
+            place: &PLACE_NONE,
         };
         let over = calib.and_then(|t| calib_line(t, &self.calib_key()));
+        // ADR-0050 provenance: a calibration line's values are measured; the
+        // compute-capability tables' are derived (marked); the rest is the
+        // device query's.
+        let mut prov: Vec<(&'static str, Src)> = Vec::new();
+        for (name, v) in DeviceCost::NAMES.iter().zip(over.iter().flatten()) {
+            if v.is_some() {
+                prov.push((name, Src::Measured("calibration file")));
+            }
+        }
+        for name in [
+            "fp32_lanes",
+            "bar_cycles",
+            "mma_tf32_per_clk",
+            "mma_half_per_clk",
+            "wgmma_tf32_per_clk",
+            "wgmma_half_per_clk",
+        ] {
+            if !prov.iter().any(|(n, _)| *n == name) {
+                prov.push((name, Src::Derived("compute-capability table")));
+            }
+        }
+        let place: &'static PlaceFacts = Box::leak(Box::new(PlaceFacts {
+            prov: Box::leak(prov.into_boxed_slice()),
+            ..PLACE_NONE
+        }));
+        let gpu = Gpu { place, ..gpu };
         TargetProfile {
             name: NATIVE_GPU,
             machine: Machine::Gpu(match over {

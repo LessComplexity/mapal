@@ -107,6 +107,14 @@ impl Token {
     }
 }
 
+/// Every identifier-shaped lexeme the lexer turns into a keyword token, in
+/// [`keyword_kind`]'s order: the Mapal-Core keywords, then the reserved ones.
+/// Editor tooling reads this list instead of keeping its own.
+pub const KEYWORDS: [&str; 15] = [
+    "fn", "type", "mut", "loop", "ret", "seq", "map", "fold", "true", "false", "category",
+    "executor", "pub", "use", "void",
+];
+
 /// Map an identifier-shaped lexeme to its keyword kind, or `None` for a plain
 /// identifier.
 ///
@@ -180,4 +188,22 @@ pub fn unescape_string(lexeme: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod keyword_list_tests {
+    use super::*;
+
+    #[test]
+    fn keywords_are_exactly_the_keyword_kinds() {
+        for k in KEYWORDS {
+            assert!(
+                keyword_kind(k).is_some(),
+                "`{k}` is listed but lexes as an identifier"
+            );
+        }
+        for ident in ["main", "iota", "f32", "tf32", "read", "x"] {
+            assert!(keyword_kind(ident).is_none());
+        }
+    }
 }

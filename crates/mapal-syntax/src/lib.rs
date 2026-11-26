@@ -32,4 +32,4 @@ pub use format::format_source;
 pub use lexer::{LexOutput, lex};
 pub use loc::{LineCol, LineIndex, SourceLoc};
 pub use parser::{ParseOutput, parse};
-pub use token::{GuardKind, Token, TokenKind, unescape_string};
+pub use token::{GuardKind, KEYWORDS, Token, TokenKind, unescape_string};

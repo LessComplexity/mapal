@@ -1,0 +1,32 @@
+// Program-wide names are order-independent (ADR-0048 D2): a call to a
+// function declared further down, a top-level value bound from a call and a
+// top-level value read above its binding all carry their types to field
+// access.
+type Config {
+    scale: f32,
+    bias: f32,
+}
+
+cfg.scale * 2.0 -> doubled;
+
+3 -> make -> cfg;
+
+fn main() {
+    doubled -> println;
+    cfg.scale + cfg.bias -> println;
+    3 -> make -> made;
+    made.bias -> println;
+    (made.scale > 1.0) -> {
+        -true-> made;
+        -false-> cfg;
+    } -> pick;
+    pick.scale -> println;
+}
+
+fn make(n: i32) -> Config {
+    n -> to<f32> -> s;
+    Config {
+        scale: s,
+        bias: 1.0,
+    } -> ret;
+}

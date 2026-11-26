@@ -2859,7 +2859,24 @@ impl<'a> Parser<'a> {
     ///           | '?' )*`.
     fn parse_postfix(&mut self) -> Expr {
         let mut base = self.parse_primary();
+        // Each postfix wraps `base` one level deeper, so the run counts toward
+        // the shared depth limit (J1): a loop builds the tree, but every walk
+        // over it (and its `Drop`) recurses. Without this, `x(…)(…)…` — P0011
+        // recovery in `((((…` included, where each further `(` reads as a
+        // call — grows a tree as deep as the input is long.
+        let mut wraps = 0u32;
         loop {
+            let wraps_base = matches!(
+                self.kind(),
+                TokenKind::Dot | TokenKind::LBracket | TokenKind::LParen | TokenKind::Question
+            );
+            if wraps_base {
+                if !self.enter() {
+                    self.leave();
+                    break;
+                }
+                wraps += 1;
+            }
             match self.kind() {
                 TokenKind::Dot => {
                     self.bump();
@@ -2996,6 +3013,9 @@ impl<'a> Parser<'a> {
                 }
                 _ => break,
             }
+        }
+        for _ in 0..wraps {
+            self.leave();
         }
         base
     }

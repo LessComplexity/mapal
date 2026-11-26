@@ -1,0 +1,45 @@
+# The highlight classes of Mapal source and what each one is in every highlighter.
+# One row per class: the Vim syntax group (editors/nvim/syntax/mapal.vim), the TextMate
+# scope (editors/vscode/syntaxes/mapal.tmLanguage.json) and the language server's
+# semantic token as type[.modifier] (`mapal lsp`). `-` is "no highlight of its own".
+# The editors map each semantic token back to its class's group / scope
+# (editors/nvim/lua/mapal/lsp.lua, editors/vscode/package.json semanticTokenScopes),
+# so a name looks the same in Neovim and VS Code, with or without the server.
+# Tests: editors/nvim/test/syntax_test.lua, editors/vscode/test/scope_test.py,
+# crates/mapal-lsp/tests/highlight.rs.
+class	vim	textmate	lsp
+comment	flowComment	comment.line.double-slash.mapal	-
+todo	flowTodo	keyword.codetag.notation.mapal	-
+string	flowString	string.quoted.double.mapal	-
+escape	flowEscape	constant.character.escape.mapal	-
+number	flowNumber	constant.numeric.integer.mapal	-
+float	flowFloat	constant.numeric.float.mapal	-
+boolean	flowBoolean	constant.language.boolean.mapal	-
+keyword	flowKeyword	keyword.control.mapal	-
+ret	flowRet	keyword.control.return.mapal	-
+reserved	flowReserved	invalid.illegal.reserved.mapal	-
+operator	flowOperator	keyword.operator.mapal	-
+arrow	flowArrow	keyword.operator.arrow.mapal	-
+guard	flowGuardArrow	keyword.operator.arrow.mapal	-
+guard-bool	flowGuardBool	constant.language.boolean.mapal	-
+guard-int	flowGuardInt	constant.numeric.integer.mapal	-
+guard-default	flowGuardWild	variable.language.wildcard.mapal	-
+size-bracket	flowSizeBracket	punctuation.definition.size.mapal	-
+default-field	flowDefaultField	variable.language.default.mapal	-
+punctuation	-	-	-
+builtin	flowBuiltin	support.function.builtin.mapal	function.defaultLibrary
+primitive	flowPrimType	support.type.primitive.mapal	type.defaultLibrary
+function-declaration	flowFnName	entity.name.function.mapal	function.declaration
+function	flowFunction	entity.name.function.call.mapal	function
+type-declaration	flowTypeName	entity.name.type.mapal	type.declaration
+type	flowTypeName	entity.name.type.mapal	type
+size-declaration	flowSizeParam	variable.other.constant.size.mapal	typeParameter.declaration
+size	flowSizeParam	variable.other.constant.size.mapal	typeParameter
+global	flowConstant	variable.other.constant.mapal	variable.readonly
+binding	flowBinding	variable.other.definition.mapal	variable.declaration
+rebind	flowBinding	variable.other.definition.mapal	variable.modification
+parameter-declaration	flowParameter	variable.parameter.mapal	parameter.declaration
+parameter	flowParameter	variable.parameter.mapal	parameter
+field-declaration	flowField	variable.other.property.mapal	property.declaration
+field	flowField	variable.other.property.mapal	property
+variable	-	-	-

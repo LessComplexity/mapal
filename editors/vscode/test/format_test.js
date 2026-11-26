@@ -4,7 +4,7 @@ const assert = require("assert").strict;
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { createProvider, formatText } = require("../extension");
+const { bundledPath, createProvider, formatText } = require("../extension");
 
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), "mapal-vscode-format-"));
 const binary = path.resolve(process.env.MAPAL_BIN || "target/debug/mapal");
@@ -47,16 +47,18 @@ function document(source) {
   };
 }
 
-function editor(executable) {
+// `executable`: the mapal.executablePath setting (undefined: not set, the default "");
+// `extensionPath`: where the extension is installed (a platform package bundles the server).
+function editor(executable, extensionPath) {
   const errors = [];
   const api = {
     workspace: {
       getConfiguration(section, uri) {
         assert.equal(section, "mapal");
         assert.equal(uri.scheme, "untitled");
-        return { get: key => {
+        return { get: (key, fallback) => {
           assert.equal(key, "executablePath");
-          return executable;
+          return executable === undefined ? fallback : executable;
         } };
       },
     },
@@ -64,7 +66,53 @@ function editor(executable) {
     Range: class { constructor(start, end) { this.start = start; this.end = end; } },
     TextEdit: { replace: (range, newText) => ({ range, newText }) },
   };
-  return { provider: createProvider(api), errors };
+  return { provider: createProvider(api, extensionPath), errors };
+}
+
+// A fake CLI that marks its output with where it was found.
+function marker(name, mark, mode = 0o755) {
+  const file = fixture(name, `process.stdout.write(source + ${JSON.stringify(`// ${mark}\n`)});`);
+  fs.chmodSync(file, mode);
+  return file;
+}
+
+async function formatsWith(executable, extensionPath) {
+  const { provider, errors } = editor(executable, extensionPath);
+  const edits = await provider.provideDocumentFormattingEdits(document(input), {}, cancellationToken());
+  assert.deepEqual(errors, []);
+  assert.equal(edits.length, 1);
+  return edits[0].newText.slice(input.length);
+}
+
+// Formatting runs the executable the server would: the setting, else the bundled
+// server/<platform>-<arch>/mapal, else `mapal` on PATH.
+async function resolutionOrder() {
+  const extension = path.join(directory, "extension");
+  const bundled = bundledPath(extension);
+  fs.mkdirSync(path.dirname(bundled), { recursive: true });
+  fs.renameSync(marker("bundled", "bundled"), bundled);
+  const onPath = path.join(directory, "bin");
+  fs.mkdirSync(onPath);
+  fs.renameSync(marker("on path", "path"), path.join(onPath, "mapal"));
+  const setting = marker("setting", "setting");
+  const savedPath = process.env.PATH;
+  process.env.PATH = onPath + path.delimiter + savedPath;
+  try {
+    assert.equal(await formatsWith(setting, extension), "// setting\n", "the setting wins over the bundled server");
+    assert.equal(await formatsWith(undefined, extension), "// bundled\n", "unset: the bundled server");
+    assert.equal(await formatsWith("", extension), "// bundled\n", "empty is unset");
+    assert.equal(await formatsWith("  ", extension), "// bundled\n", "blank is unset");
+    assert.equal(await formatsWith("mapal", extension), "// path\n", "set to `mapal`: PATH, as asked");
+    assert.equal(await formatsWith(undefined, path.join(directory, "no-server")), "// path\n",
+      "no bundled server: `mapal` on PATH");
+    assert.equal(await formatsWith(undefined, undefined), "// path\n", "no extension path: PATH");
+    // An unpacker that drops the executable bit: the extension restores it.
+    fs.chmodSync(bundled, 0o644);
+    assert.equal(await formatsWith(undefined, extension), "// bundled\n", "a bundled server without +x");
+    assert.equal(fs.statSync(bundled).mode & 0o777, 0o755);
+  } finally {
+    process.env.PATH = savedPath;
+  }
 }
 
 async function main() {
@@ -117,7 +165,10 @@ async function main() {
   const literalPath = fixture("formatter $(touch SHOULD_NOT_EXIST)", "process.stdout.write(source);");
   assert.equal(await formatText(literalPath, input, cancellationToken()), input);
   assert.equal(fs.existsSync(path.join(directory, "SHOULD_NOT_EXIST")), false);
-  console.log("VS Code formatting: CLI, unsaved buffer, paths, errors, stale/closed documents and cancellation passed");
+
+  await resolutionOrder();
+  console.log("VS Code formatting: CLI, unsaved buffer, paths, errors, stale/closed documents, cancellation and "
+    + "the executable's resolution (setting > bundled > PATH) passed");
 }
 
 main().catch(error => {

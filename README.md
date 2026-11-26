@@ -55,9 +55,15 @@ in the source.
 
 What follows from it:
 
-- **Hardware is physical properties, never names.** The rules read SM counts, register and shared-memory sizes,
-  cache capacities, bandwidths, latencies and matrix-instruction shapes, queried from the device or measured by
-  calibration. A new chip is a new property set, not a new code path.
+- **Two kinds of facts, reconciled by the compiler.** The dataflow's facts (what each value reads, when it dies,
+  what is independent) and the hardware's facts, as abstract compute and placement: where bytes can live (capacities,
+  bandwidths, latencies, the cache a part really keeps), what computes (matrix and vector operations as shapes, with
+  the place each operand must be in), what moves bytes, and how work is dispatched, each fact measured, queried or
+  declared, never a part's name. Compilation places the dataflow on the machine with one cost model and one search,
+  then lowers it to the hardware's language; the few hardware-specific steps that cannot be facts come last and are
+  kept to a minimum. Adding a chip, a vendor or an ASIC is describing it as facts, not writing a new backend's worth
+  of heuristics ([ADR-0050](docs/decisions/ADR-0050-the-machine-model-placement-by-one-cost-model.md); its first
+  step, matrix products, is in progress — today rules over the same physical properties decide).
 - **No runtime graph recording.** Which work merges into one kernel, vertically along a chain and horizontally
   across independent branches, is decided at compile time from the dataflow. Nothing is traced or captured while
   the program runs.
@@ -449,10 +455,16 @@ The charts and the table above are generated. To refresh them after a run, updat
 
 ## Roadmap
 
-1. **An AMD backend.** The same graph and facts on a second GPU vendor; its compute units, wavefront width, LDS
-   and matrix instructions are one more property set.
+0. **Now: the machine model** ([ADR-0050](docs/decisions/ADR-0050-the-machine-model-placement-by-one-cost-model.md)):
+   placement by one cost model over the dataflow's and the hardware's facts, matrix products first, then attention,
+   cells and folds, and the whole graph's co-schedule. **Format generics**
+   ([ADR-0051](docs/decisions/ADR-0051-format-generics-to-and-widen.md)): `x -> to<bf16>`, `x -> widen<f32>`, and
+   functions generic over their number formats.
+1. **An AMD backend.** The same graph and facts on a second GPU vendor: its compute units, wavefront width, LDS
+   and matrix instructions are one more translation into the machine model.
 2. **A PyTorch importer**, to bring existing models into Mapal.
-3. **Then the ecosystem around the language:** development → deployment → verification → synthesis.
+3. **Then the ecosystem around the language:** development → deployment → verification → synthesis, where the same
+   search also chooses an ASIC's own parameters (array sizes, memories) within a budget.
 
 Done so far, and how each step turned out, including what was tried and did not work:
 [`docs/sessions/`](docs/sessions/).
@@ -470,7 +482,9 @@ Done so far, and how each step turned out, including what was tried and did not 
 | CPU backend (LLVM)  | working: threading, vectorization, cache blocking                                                                                                               |
 | GPU backend (CUDA)  | working: value gates pass on the RTX 5080, RTX 3090, A100, RTX 4090 and H100 ([Current results](#current-results)); tensor cores, `wgmma` / TMA where the part has them |
 | FPGA backend        | not started                                                                                                                                                     |
-| Command-line tool   | `mapal build`, `run`, `test`, `dump-ir`, `fmt`                                                                                                                  |
+| Placement           | rules over physical properties decide today; the machine model (ADR-0050) is being built, off by default until measured                                       |
+| Command-line tool   | `mapal build`, `run`, `test`, `dump-ir`, `fmt`, `lsp`                                                                                                           |
+| Editors             | Neovim and VS Code: highlighting, formatting and the language server (definition, references, hover, rename, completion, diagnostics)                         |
 | Tests               | about 1,700 across the workspace; the GPU tests skip without a CUDA toolchain                                                                                   |
 | CI                  | `cargo fmt` + the full suite on Linux and macOS, per push; a skipped LLVM differential fails the run                                                            |
 
@@ -481,7 +495,7 @@ print exactly what the interpreter prints, for the examples and for programs fro
 thread count and on any device: the mode for testing and debugging.
 
 **Not in the language yet:** recursion, sum types, pattern matching, strings beyond printing and file paths,
-closures, dynamic arrays, type-generic functions, modules.
+closures, dynamic arrays, modules. Functions generic over number formats are in progress (ADR-0051).
 
 Per-component state: [`docs/STATUS.md`](docs/STATUS.md). Research compiler; no packaged release.
 
@@ -524,21 +538,25 @@ syntax is reported without replacing the source. LLVM and GPU tools are not need
 
 ### Editor support
 
-Both editors get highlighting, formatting through `mapal fmt`, and a file icon. Neither is published to a
-registry, so both load from disk.
+Both editors get the language server (`mapal lsp`: go to definition, references, hover, rename,
+completion, diagnostics, semantic highlighting), highlighting, formatting through `mapal fmt`, and a file
+icon. Neither is published to a registry, so both load from disk.
 
-|                 | Neovim                                     | VS Code                                      |
-| --------------- | ------------------------------------------ | -------------------------------------------- |
-| Highlighting    | Vimscript syntax file                      | TextMate grammar                             |
-| File icon       | font glyph                                 | the real SVG logo                            |
-| Formatting      | `:MapalFormat` or `gggqG`                  | **Format Document**                          |
-| Binding vs call | resolved by scanning for `fn` declarations | lexical only - `-> name;` reads as a binding |
-| Details         | [`editors/nvim/`](editors/nvim/)           | [`editors/vscode/`](editors/vscode/)         |
+|                 | Neovim                                   | VS Code                                          |
+| --------------- | ---------------------------------------- | ------------------------------------------------ |
+| Language server | started for `*.mapal` (`vim.lsp.enable`) | bundled (linux-x64) and started by the extension |
+| Highlighting    | Vimscript syntax + semantic tokens       | TextMate grammar + semantic tokens               |
+| File icon       | font glyph                               | the real SVG logo                                |
+| Formatting      | `:MapalFormat`, `gggqG` or the server    | **Format Document**                              |
+| Details         | [`editors/nvim/`](editors/nvim/)         | [`editors/vscode/`](editors/vscode/)             |
+
+Both highlight with the same classes ([`editors/test/classes.tsv`](editors/test/classes.tsv)), and the same
+fixture tests the Vim syntax, the TextMate grammar and the server's semantic tokens.
 
 **Neovim** - with lazy.nvim:
 
 ```lua
-{ dir = "/path/to/mapal/editors/nvim", ft = "mapal" }
+{ dir = "/path/to/mapal/editors/nvim", lazy = false } -- icon at startup; starts `mapal lsp` for .mapal
 ```
 
 or without a plugin manager:
@@ -548,19 +566,29 @@ vim.opt.runtimepath:append("/path/to/mapal/editors/nvim")
 require("mapal.icon").setup()          -- optional: nvim-web-devicons / mini.icons
 ```
 
-**VS Code / Cursor** - build the extension and install it:
+**VS Code / Cursor** - on linux-x64 one install is the extension and the language server: the platform package
+bundles the `mapal` binary and the extension starts it.
 
 ```sh
-python3 editors/vscode/package-vsix.py
-code --install-extension editors/vscode/mapal-lang-0.2.0.vsix   # or `cursor`
+cargo build --release -p mapal-cli
+(cd editors/vscode && npm install && npm run build)       # bundles the language client
+python3 editors/vscode/package-vsix.py --target linux-x64  # bundles target/release/mapal
+code --install-extension editors/vscode/mapal-lang-0.4.0-linux-x64.vsix --force   # or `cursor`
 ```
+
+On other platforms, build the platform-neutral package (`package-vsix.py` without `--target`, giving
+`mapal-lang-0.4.0.vsix`) and install the CLI with `cargo install --path crates/mapal-cli --locked`. The bundled
+server is the binary as it was packaged: rebuild the `.vsix` after a language change. The extension runs the
+`mapal.executablePath` setting if set, else the bundled server, else `mapal` on `PATH`, and says which in its
+**Mapal** output channel.
 
 Then restart. A `.mapal` file should show **Mapal** in the status bar. Copying the folder into
 `~/.vscode/extensions` does _not_ work: VS Code reads `extensions.json` as its registry and ignores unregistered
 directories silently.
 
-For formatting, install the CLI with `cargo install --path crates/mapal-cli --locked`, or point the plugins at
-your built `target/release/mapal`: set `vim.g.mapal_executable` in Neovim or `mapal.executablePath` in VS Code.
+For Neovim's language server and formatting, install the CLI with `cargo install --path crates/mapal-cli --locked`
+(or copy `target/release/mapal` onto your `PATH`), or point the plugin at your built `target/release/mapal` with
+`vim.g.mapal_executable` (in VS Code: `mapal.executablePath`).
 Formatting uses unsaved buffer text and supports format-on-save through the editor's configuration; see the
 plugin READMEs for setup.
 
@@ -574,8 +602,7 @@ local icon = require("mapal.icon")
 icon.setup({ glyph = icon.logo })     -- the real mark at U+F8F0
 ```
 
-Without it, the closest glyph the Nerd Font already has is used. Neither editor has an LSP yet, so neither
-resolves names the way the compiler does (ADR-0008).
+Without it, the closest glyph the Nerd Font already has is used.
 
 ---
 

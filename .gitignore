@@ -18,3 +18,6 @@ benches/results/evidence/**/*.out
 benches/results/evidence/**/*.log
 benches/results/evidence/**/results-*
 benches/results/evidence/**/run-*
+# VS Code extension: npm install / npm run build output
+editors/vscode/node_modules/
+editors/vscode/dist/

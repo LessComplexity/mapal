@@ -517,6 +517,7 @@ mod toy {
             fill: 1,
             chains: tm * tn,
             groups: threads.div_ceil(32),
+            work: 0.0,
         }
     }
 }

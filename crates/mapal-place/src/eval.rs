@@ -420,7 +420,12 @@ pub fn evaluate(m: &Machine, s: &Site, x: &Schedule, d: &Declared, b: Bound) -> 
                 ..Phase::default()
             }
         };
-    let flops_trip = (2 * bm * bn * bk) as f64;
+    // The operation's work a trip: the useful flops, or what the lowering
+    // declares it issues (a split form's passes).
+    let flops_trip = match d.work {
+        w if w > 0.0 => w,
+        _ => (2 * bm * bn * bk) as f64,
+    };
     match x.trav {
         Traversal::Ordered { .. } | Traversal::Split { .. } | Traversal::Persistent { .. } => {
             let blocks = tiles * s_parts;

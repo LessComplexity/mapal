@@ -1,141 +1,86 @@
--- Pins the highlighting decisions that regex precedence makes fragile.
+-- The Vim syntax against the shared fixture: every token of
+-- editors/test/fixture.mapal must get the group its `static` class names in
+-- editors/test/classes.tsv (editors/test/fixture.tokens.tsv lists them). The
+-- TextMate grammar and the language server are held to the same file
+-- (editors/vscode/test/scope_test.py, crates/mapal-lsp/tests/highlight.rs).
 --
--- syntax/mapal.vim depends on Vim's last-match-wins rule, and its own header says
--- "read before reordering anything". This asserts the outcomes rather than the
--- ordering, so a reorder that changes behaviour fails here instead of silently
--- mis-painting code.
---
--- Run:  editors/nvim/test/run.sh
+-- Run:  editors/nvim/test/run.sh   (run.sh cd's to the repo root)
 
--- run.sh cd's to the repo root, so these are repo-relative. `<sfile>` is not
--- used: it does not resolve inside a `:luafile`.
 vim.cmd("set noswapfile")
+local function say(s) io.stdout:write(s .. "\n") end
 vim.cmd("set rtp+=editors/nvim")
-vim.cmd("edit! editors/nvim/test/fixture.mapal")
-vim.cmd("syntax on")
 
--- {line, token, expected group, why}
-local cases = {
-  { 2, "double", "flowFnName", "name after `fn`" },
-  { 3, "ret", "flowRet", "the graph sink" },
-  { 6, "shout", "flowFnName", "no-value fn declaration" },
-  { 7, "println", "flowBuiltin", "effect builtin, terminal" },
-
-  -- The two the user reported: a binding and a call to one of our own fns,
-  -- which are lexically identical and were both unhighlighted.
-  { 11, "a", "flowBinding", "terminal arrow BINDS a variable" },
-  { 12, "shout", "flowDeclaredFn", "terminal arrow CALLS a declared fn" },
-  { 13, "double", "flowDeclaredFn", "declared fn mid-pipeline" },
-  { 13, "b", "flowBinding", "binding after a call in the same statement" },
-
-  -- Builtins must not fall through to the generic between-arrows rule; `iota`
-  -- did exactly that before being added to the keyword list.
-  { 14, "iota", "flowBuiltin", "procedural source, not a user fn" },
-  { 14, "ti", "flowBinding", "binding at the end of a pipeline" },
-  { 15, "widen_f32", "flowBuiltin", "widening family" },
-
-  -- Keywords must keep outranking the binding match.
-  { 18, "true", "flowGuardBool", "guard discriminant keeps its own colour" },
-  { 21, "Pixel", "flowTypeName", "PascalCase stays a type, not a binding" },
-
-  -- ADR-0012 labelled blocks. Absent from this fixture until a report of them
-  -- being unhighlighted; neither suite covered them.
-  { 25, ":myloop", "flowLabel", "labelled block declaration" },
-  { 27, ":myloop", "flowLabelJump", "jump to a label" },
-
-  -- Strings, array update, the remaining collection builtins, and every guard
-  -- shape. None of these were covered before.
-  { 32, '"', "flowString", "string literal" },
-  { 32, "\\t", "flowEscape", "escape inside a string" },
-  { 32, "print", "flowBuiltin", "print is an effect builtin" },
-  { 33, "zip", "flowBuiltin", "zip (ADR-0018)" },
-  { 33, "pairs", "flowBinding", "binding after zip" },
-  { 34, "enumerate", "flowBuiltin", "enumerate (ADR-0018)" },
-  { 35, "<-", "flowArrow", "array element update arrow" },
-  { 38, "0", "flowGuardInt", "integer guard discriminant" },
-  { 40, "_", "flowGuardWild", "default/wildcard guard" },
-  { 41, "Some", "flowGuardVariant", "variant guard tag" },
-  { 42, "[", "flowGuardVariant", "empty-list destructuring guard" },
-
-  -- Guard CHROME, probed by column. These are the assertions that actually test the
-  -- guard rules: the discriminant scopes (a number, `true`, a PascalCase tag) are also
-  -- produced by the plain number/boolean/type rules, so breaking a guard rule leaves
-  -- them unchanged. The leading `-` is different — it falls to flowOperator the moment
-  -- the guard rule stops matching. Found by deliberately breaking a guard and watching
-  -- this suite pass.
-  -- ADR-0045: the file read is a builtin stage fed by a string literal.
-  { 48, "read", "flowBuiltin", "read (ADR-0045)" },
-  { 48, '"', "flowString", "the path literal" },
-  { 49, "widen_f32", "flowBuiltin", "widening a read bf16" },
-
-  -- ADR-0042 / ADR-0046: the math builtins are builtins mid-pipeline, never
-  -- the between-arrows binding or a declared fn.
-  { 53, "sqrt", "flowBuiltin", "sqrt (ADR-0046)" },
-  { 53, "r", "flowBinding", "binding after sqrt" },
-  { 54, "sin", "flowBuiltin", "sin (ADR-0046)" },
-  { 55, "cos", "flowBuiltin", "cos (ADR-0046)" },
-  { 55, "c", "flowBinding", "binding after cos" },
-  { 56, "exp", "flowBuiltin", "exp (ADR-0042)" },
-
-  { 18, 9, "flowGuardArrow", "chrome of -true->" },
-  { 38, 9, "flowGuardArrow", "chrome of -0->" },
-  { 41, 9, "flowGuardArrow", "chrome of -Some(x)->" },
-
-  -- ADR-0047 size parameters: the list after a function's name.
-  { 60, "scale", "flowFnName", "a size-generic fn keeps its name colour" },
-  { 60, 9, "flowSizeList", "the `<` opening the size list, not an operator" },
-  { 60, "rows", "flowSizeParam", "a declared size parameter" },
-  { 60, "columns", "flowSizeParam", "the second size parameter" },
-  { 60, 23, "flowSizeList", "the `>` closing the size list" },
-
-  -- ADR-0048: a top-level binding, a size-generic type, `_`, a type's sizes.
-  { 64, "hidden_size", "flowBinding", "a top-level binding binds like a local" },
-  { 66, 12, "flowSizeList", "the `<` opening a type's size list" },
-  { 66, "rows", "flowSizeParam", "a type's size parameter" },
-  { 67, 5, "flowDefaultField", "`_`, the type's default interpretation" },
-  { 70, 19, "flowSizeArgs", "the `<` of a generic type's sizes, not an operator" },
-  { 70, "hidden_size", "flowSizeParam", "a top-level size as a type's size" },
-}
-
-local failures = 0
-for _, c in ipairs(cases) do
-  local lnum, tok, want, why = c[1], c[2], c[3], c[4]
-  local line = vim.fn.getline(lnum)
-  -- A numeric second field is an explicit 1-based column rather than a token.
-  if type(tok) == "number" then
-    local got = vim.fn.synIDattr(vim.fn.synID(lnum, tok, 1), "name")
-    if got == "" then got = "«none»" end
-    if got ~= want then
-      failures = failures + 1
-      print(string.format("FAIL  %d:col%-6d want %-16s got %-16s (%s)", lnum, tok, want, got, why))
-    else
-      print(string.format("ok    %d:col%-6d %-16s (%s)", lnum, tok, got, why))
+local function tsv(path)
+  local rows = {}
+  for line in io.lines(path) do
+    if line ~= "" and line:sub(1, 1) ~= "#" then
+      rows[#rows + 1] = vim.split(line, "\t", { plain = true })
     end
-    goto continue
   end
-  -- Whole-word match. A plain substring search finds the `b` inside `double`,
-  -- which is how the first version of this test reported a false failure.
-  -- A leading `:` has no word frontier before it, so match plainly in that case.
-  -- Frontier patterns only work for word-initial tokens; ":myloop", "<-", "[",
-  -- '"' and "\\t" have no word boundary before them, so match those plainly.
-  local col
-  if tok:match("^[%w_]") then
-    col = line:find("%f[%w_]" .. tok .. "%f[^%w_]")
-  else
-    col = line:find(tok, 1, true)
-  end
-  local got = col and vim.fn.synIDattr(vim.fn.synID(lnum, col, 1), "name") or "«no such token»"
-  if got == "" then got = "«none»" end
-  if got ~= want then
-    failures = failures + 1
-    print(string.format("FAIL  %d:%-10s want %-16s got %-16s (%s)", lnum, tok, want, got, why))
-  else
-    print(string.format("ok    %d:%-10s %-16s (%s)", lnum, tok, got, why))
-  end
-  ::continue::
+  return rows
 end
 
--- No valid example may light up as an error.
+local group = {}
+for _, r in ipairs(tsv("editors/test/classes.tsv")) do
+  if r[1] ~= "class" then group[r[1]] = r[2] end
+end
+
+-- Groups that deliberately highlight nothing: the name after a guard arrow.
+local plain = { [""] = true, flowGuardValue = true }
+
+vim.cmd("edit! editors/test/fixture.mapal")
+vim.cmd("syntax on")
+
+local failures, checked = 0, 0
+for _, r in ipairs(tsv("editors/test/fixture.tokens.tsv")) do
+  local lnum, col, text, class, static = tonumber(r[1]), tonumber(r[2]), r[3], r[4], r[5]
+  local want_class = static == "=" and class or static
+  local want = group[want_class]
+  assert(want, "class " .. want_class .. " missing from classes.tsv")
+  local got = vim.fn.synIDattr(vim.fn.synID(lnum, col, 1), "name")
+  local ok = (want == "-" and plain[got]) or got == want
+  checked = checked + 1
+  if not ok then
+    failures = failures + 1
+    say(string.format("FAIL  %d:%d %-12s %-14s want %-16s got %s", lnum, col, text, want_class, want,
+      got == "" and "«none»" or got))
+  end
+end
+say(string.format("%d tokens checked against fixture.tokens.tsv", checked))
+
+-- Lines the fixture cannot hold (it compiles): a builtin or primitive name where
+-- a definition goes keeps its class (editors/vscode/test/scope_test.py
+-- STATIC_CASES holds the TextMate grammar to the same table).
+local cases = {
+  { "fn zip(a: i32) -> i32 {", 4, "builtin" },
+  { "type u8 {", 6, "primitive" },
+  { "    mut f32: i32 <- 0;", 9, "primitive" },
+  { "    } -> u8;", 10, "primitive" },
+  { "    x -> bf16 -> y;", 10, "primitive" },
+  { "        -true-> tf32;", 17, "primitive" },
+  { "fn printer() {", 4, "function-declaration" },
+}
+for _, c in ipairs(cases) do
+  vim.cmd("enew!")
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, { c[1] })
+  vim.bo.filetype = "mapal"
+  local got = vim.fn.synIDattr(vim.fn.synID(1, c[2], 1), "name")
+  checked = checked + 1
+  if got ~= group[c[3]] then
+    failures = failures + 1
+    say(string.format("FAIL  `%s` col %d: want %s, got %s", c[1], c[2], group[c[3]], got))
+  end
+end
+
+-- The reserved spelling is flagged; no valid example lights up as an error.
+vim.cmd("enew")
+vim.bo.filetype = "mapal"
+vim.api.nvim_buf_set_lines(0, 0, -1, false, { "category Pixel { r: f32 }" })
+vim.cmd("syntax on")
+if vim.fn.synIDattr(vim.fn.synID(1, 1, 1), "name") ~= "flowReserved" then
+  failures = failures + 1
+  say("FAIL  `category` is not flagged as reserved")
+end
 for _, f in ipairs(vim.fn.glob(vim.fn.getcwd() .. "/examples/*.mapal", false, true)) do
   vim.cmd("edit! " .. vim.fn.fnameescape(f))
   vim.cmd("syntax on")
@@ -143,12 +88,12 @@ for _, f in ipairs(vim.fn.glob(vim.fn.getcwd() .. "/examples/*.mapal", false, tr
     for c = 1, #vim.fn.getline(l) do
       if vim.fn.synIDattr(vim.fn.synID(l, c, 1), "name") == "flowReserved" then
         failures = failures + 1
-        print(string.format("FAIL  %s:%d:%d flagged as reserved/error", vim.fn.fnamemodify(f, ":t"), l, c))
+        say(string.format("FAIL  %s:%d:%d flagged as reserved", vim.fn.fnamemodify(f, ":t"), l, c))
       end
     end
   end
 end
 
-print(failures == 0 and "\nall highlighting assertions passed"
-  or ("\n" .. failures .. " highlighting assertion(s) failed"))
+say(failures == 0 and "all highlighting assertions passed"
+  or (failures .. " highlighting assertion(s) failed"))
 vim.cmd(failures == 0 and "qa!" or "cq!")

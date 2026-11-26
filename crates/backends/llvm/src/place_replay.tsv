@@ -1,0 +1,147 @@
+# ADR-0050 D8: the placement replay corpus — one row per measured arm of a site: the part, the site's extents and
+# formats (f32: f32 storage, an f32 product; tf32: f32 storage admitting TF32; bf16: both operands stored bf16, the
+# product bf16 | f32; bf16w: b stored bf16, a f32, the product bf16 | f32), the emission's order, the arm's name and
+# its schedule as a plan string, its time (us, or relative units within one id), the null, `rules` on the arm the
+# shipped rules pick, the box's properties beyond the part's profile, and the source. Plans: `mma:<fmt>:<mt>.<nt>.<wy>
+# .<wx>:bk<bk>:st<stages, 0 the rules'>:u<blocks an SM>:<ord|ord.h<h>|cut<S>|walk|walk<ctas>x<iters>>` (an explicit
+# warp tensor tile), or `rules[:+rung,-rung]` (the emitter's launch now under those arms — the arm as measured where
+# the emitter has not drifted since; `crates/backends/llvm/src/place.rs` test `place_replay_scores`). Seeded from
+# WALK_ARMS (17), mma_cut_replay (21), k-fill / streamk-fill, C11 l2-gate, wgmma-ws, plan-cost's losers, mma-depth
+# and split-tile (rung_replay.tsv's lines).
+# id	part	m	n	k	fmt	order	arm	plan	us	null	rules	box	source
+walk-0	rtx-5080	512	2048	8192	bf16	free	ordered	mma:bf16:2.8.2.2:bk32:st0:u2:ord	216.0	0.02		-	bf16-tensor-tile.md
+walk-0	rtx-5080	512	2048	8192	bf16	free	walk	mma:bf16:4.8.2.2:bk32:st0:u2:walk	164.2	0.02	rules	-	bf16-tensor-tile.md
+walk-1	rtx-5080	512	8192	2048	bf16	free	ordered	mma:bf16:4.8.2.2:bk32:st0:u2:ord	192.7	0.02		-	bf16-tensor-tile.md
+walk-1	rtx-5080	512	8192	2048	bf16	free	walk	mma:bf16:4.8.2.2:bk32:st0:u2:walk	161.2	0.02	rules	-	bf16-tensor-tile.md
+walk-2	rtx-5080	2048	2048	8192	bf16	free	ordered	mma:bf16:4.8.2.2:bk32:st0:u2:ord	754.1	0.02		-	bf16-tensor-tile.md
+walk-2	rtx-5080	2048	2048	8192	bf16	free	walk	mma:bf16:4.8.2.2:bk32:st0:u2:walk	626.5	0.02	rules	-	bf16-tensor-tile.md
+walk-3	rtx-5080	2048	2048	2048	bf16	free	ordered	mma:bf16:4.8.2.2:bk32:st0:u2:ord	193.1	0.02		-	bf16-tensor-tile.md
+walk-3	rtx-5080	2048	2048	2048	bf16	free	walk	mma:bf16:4.8.2.2:bk32:st0:u2:walk	161.9	0.02	rules	-	bf16-tensor-tile.md
+walk-4	rtx-5080	2048	8192	2048	bf16	free	ordered	mma:bf16:4.8.2.2:bk32:st0:u2:ord	628.4	0.02	rules	-	bf16-tensor-tile.md
+walk-4	rtx-5080	2048	8192	2048	bf16	free	walk	mma:bf16:4.8.2.2:bk32:st0:u2:walk	685.1	0.02		-	bf16-tensor-tile.md
+walk-5	rtx-5080	512	512	2048	bf16	free	ordered	mma:bf16:1.4.2.2:bk32:st0:u2:ord	18.8	0.02	rules	-	bf16-tensor-tile.md
+walk-5	rtx-5080	512	512	2048	bf16	free	walk	mma:bf16:4.8.2.2:bk32:st0:u2:walk	19.3	0.02		-	bf16-tensor-tile.md
+walk-6	rtx-5080	512	2048	2048	bf16	free	ordered	mma:bf16:2.8.2.2:bk32:st0:u2:ord	56.6	0.02	rules	-	bf16-tensor-tile.md
+walk-6	rtx-5080	512	2048	2048	bf16	free	walk	mma:bf16:4.8.2.2:bk32:st0:u2:walk	49.6	0.02		-	bf16-tensor-tile.md
+walk-7	rtx-5080	2048	512	2048	bf16	free	ordered	mma:bf16:2.8.2.2:bk32:st0:u2:ord	57.0	0.02	rules	-	bf16-tensor-tile.md
+walk-7	rtx-5080	2048	512	2048	bf16	free	walk	mma:bf16:4.8.2.2:bk32:st0:u2:walk	48.7	0.02		-	bf16-tensor-tile.md
+walk-8	rtx-3090	2048	4096	4096	bf16	free	ordered	mma:bf16:4.8.2.2:bk32:st0:u2:ord	1082.0	0.02	rules	-	hopper/disasm-rented.md
+walk-8	rtx-3090	2048	4096	4096	bf16	free	walk	mma:bf16:4.8.2.2:bk32:st0:u2:walk	1314.0	0.02		-	hopper/disasm-rented.md
+walk-9	a100	2048	2048	8192	bf16	free	ordered	mma:bf16:4.8.2.2:bk64:st0:u2:ord	761.0	0.02	rules	-	hopper/disasm-rented.md (residual epilogue)
+walk-9	a100	2048	2048	8192	bf16	free	walk	mma:bf16:4.8.2.2:bk64:st0:u2:walk	788.0	0.02		-	hopper/disasm-rented.md (residual epilogue)
+walk-10	rtx-5080	2048	4096	4096	bf16	free	ordered	mma:bf16:4.8.2.2:bk32:st0:u2:ord	666.6	0.02		-	the 3090's grid on the 5080
+walk-10	rtx-5080	2048	4096	4096	bf16	free	walk	mma:bf16:4.8.2.2:bk32:st0:u2:walk164x400	649.7	0.02	rules	-	the 3090's grid on the 5080
+walk-11	rtx-5080	3072	4096	8192	bf16	free	ordered	mma:bf16:4.8.2.2:bk32:st0:u2:ord	1836.0	0.02	rules	-	hopper-wgmma walk-reuse
+walk-11	rtx-5080	3072	4096	8192	bf16	free	walk	mma:bf16:4.8.2.2:bk32:st0:u2:walk	1869.0	0.02		-	hopper-wgmma walk-reuse
+walk-12	rtx-5080	2048	4096	8192	bf16	free	ordered	mma:bf16:4.8.2.2:bk32:st0:u2:cut4	1318.9	0.02		-	hopper-wgmma walk-reuse
+walk-12	rtx-5080	2048	4096	8192	bf16	free	walk	mma:bf16:4.8.2.2:bk32:st0:u2:walk	1205.7	0.02	rules	-	hopper-wgmma walk-reuse
+walk-13	rtx-5080	4096	2048	8192	bf16	free	ordered	mma:bf16:4.8.2.2:bk32:st0:u2:cut4	1313.7	0.02		-	hopper-wgmma walk-reuse
+walk-13	rtx-5080	4096	2048	8192	bf16	free	walk	mma:bf16:4.8.2.2:bk32:st0:u2:walk	1219.1000000000001	0.02	rules	-	hopper-wgmma walk-reuse
+walk-14	rtx-5080	128	6144	4096	bf16	free	ordered	mma:bf16:2.8.2.2:bk32:st0:u2:cut8	77.3	0.02		-	hopper-wgmma walk-reuse (suite)
+walk-14	rtx-5080	128	6144	4096	bf16	free	walk	mma:bf16:4.8.2.2:bk32:st0:u2:walk	65.9	0.02	rules	-	hopper-wgmma walk-reuse (suite)
+walk-15	rtx-5080	128	28672	4096	bf16	free	ordered	mma:bf16:4.8.2.2:bk16:st0:u2:ord	332.8	0.02	rules	-	hopper-wgmma walk-reuse (suite)
+walk-15	rtx-5080	128	28672	4096	bf16	free	walk	mma:bf16:4.8.2.2:bk16:st0:u2:walk	332.3	0.02		-	hopper-wgmma walk-reuse (suite)
+walk-16	rtx-5080	2048	6144	4096	bf16	free	ordered	mma:bf16:4.8.2.2:bk32:st0:u2:ord	929.2	0.02	rules	-	hopper-wgmma walk-reuse (suite)
+walk-16	rtx-5080	2048	6144	4096	bf16	free	walk	mma:bf16:4.8.2.2:bk32:st0:u2:walk	1042.7	0.02		-	hopper-wgmma walk-reuse (suite)
+cut-0	rtx-3090	2048	2048	2048	tf32	free	uncut	mma:tf32:4.8.2.2:bk16:st2:u2:ord	1000.0	0.02	rules	-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-0	rtx-3090	2048	2048	2048	tf32	free	cut8	mma:tf32:4.8.2.2:bk16:st2:u2:cut8	1057.1	0.02		-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-1	rtx-3090	2048	2048	2048	tf32	free	uncut	mma:tf32:4.8.2.2:bk16:st2:u2:ord	1000.0	0.02	rules	-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-1	rtx-3090	2048	2048	2048	tf32	free	cut8	mma:tf32:4.8.2.2:bk16:st2:u2:cut8	1060.4	0.02		-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-2	rtx-3090	128	4096	14336	bf16	free	uncut	mma:bf16:2.2.2.4:bk64:st2:u2:ord	1000.0	0.02	rules	-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-2	rtx-3090	128	4096	14336	bf16	free	cut8	mma:bf16:2.2.2.4:bk64:st2:u2:cut8	1077.6	0.02		-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-3	rtx-3090	128	4096	14336	tf32	free	uncut	mma:tf32:2.2.2.4:bk32:st2:u2:ord	1000.0	0.02		-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-3	rtx-3090	128	4096	14336	tf32	free	cut8	mma:tf32:2.2.2.4:bk32:st2:u2:cut8	931.1	0.02	rules	-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-4	rtx-3090	128	6144	4096	bf16	free	uncut	mma:bf16:4.4.2.2:bk16:st2:u4:ord	1000.0	0.02		-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-4	rtx-3090	128	6144	4096	bf16	free	cut8	mma:bf16:4.4.2.2:bk16:st2:u4:cut8	785.5	0.02	rules	-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-5	rtx-3090	128	6144	4096	tf32	free	uncut	mma:tf32:4.4.2.2:bk8:st2:u4:ord	1000.0	0.02		-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-5	rtx-3090	128	6144	4096	tf32	free	cut8	mma:tf32:4.4.2.2:bk8:st2:u4:cut8	669.3	0.02	rules	-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-6	a100	2048	2048	2048	tf32	free	uncut	mma:tf32:4.8.2.2:bk32:st2:u2:ord	1000.0	0.02	rules	-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-6	a100	2048	2048	2048	tf32	free	cut4	mma:tf32:4.8.2.2:bk32:st2:u2:cut4	1196.2	0.02		-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-7	a100	2048	2048	2048	tf32	free	uncut	mma:tf32:4.8.2.2:bk32:st2:u2:ord	1000.0	0.02	rules	-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-7	a100	2048	2048	2048	tf32	free	cut4	mma:tf32:4.8.2.2:bk32:st2:u2:cut4	1094.1	0.02		-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-8	a100	128	4096	14336	bf16	free	uncut	mma:bf16:2.2.2.4:bk128:st2:u2:ord	1000.0	0.02		-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-8	a100	128	4096	14336	bf16	free	cut8	mma:bf16:2.2.2.4:bk128:st2:u2:cut8	904.2	0.02	rules	-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-9	a100	128	4096	14336	tf32	free	uncut	mma:tf32:2.2.2.4:bk64:st2:u2:ord	1000.0	0.02		-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-9	a100	128	4096	14336	tf32	free	cut8	mma:tf32:2.2.2.4:bk64:st2:u2:cut8	745.2	0.02	rules	-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-10	a100	2048	4096	14336	bf16	free	uncut	mma:bf16:4.8.2.2:bk64:st2:u2:ord	1000.0	0.02		-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-10	a100	2048	4096	14336	bf16	free	cut2	mma:bf16:4.8.2.2:bk64:st2:u2:cut2	917.4	0.02	rules	-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-11	a100	2048	4096	14336	tf32	free	uncut	mma:tf32:4.8.2.2:bk32:st2:u2:ord	1000.0	0.02	rules	-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-11	a100	2048	4096	14336	tf32	free	cut8	mma:tf32:4.8.2.2:bk32:st2:u2:cut8	1046.0	0.02		-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-12	rtx-4090	128	4096	14336	bf16	free	uncut	mma:bf16:2.2.2.4:bk64:st2:u2:ord	1000.0	0.02		-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-12	rtx-4090	128	4096	14336	bf16	free	cut2	mma:bf16:2.2.2.4:bk64:st2:u2:cut2	920.0	0.02	rules	-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-13	rtx-4090	128	4096	14336	tf32	free	uncut	mma:tf32:2.2.2.4:bk32:st2:u2:ord	1000.0	0.02		-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-13	rtx-4090	128	4096	14336	tf32	free	cut2	mma:tf32:2.2.2.4:bk32:st2:u2:cut2	980.4	0.02	rules	-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-14	rtx-4090	128	6144	4096	bf16	free	uncut	mma:bf16:2.2.2.4:bk64:st2:u2:ord	1000.0	0.02		-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-14	rtx-4090	128	6144	4096	bf16	free	cut4	mma:bf16:2.2.2.4:bk64:st2:u2:cut4	1157.4	0.02	rules	-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-15	rtx-4090	128	6144	4096	tf32	free	uncut	mma:tf32:2.2.2.4:bk32:st2:u2:ord	1000.0	0.02		-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-15	rtx-4090	128	6144	4096	tf32	free	cut4	mma:tf32:2.2.2.4:bk32:st2:u2:cut4	1084.6	0.02	rules	-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-16	h100	128	6144	4096	bf16	free	uncut	mma:bf16:2.2.2.4:bk128:st3:u2:ord	1000.0	0.02	rules	-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-16	h100	128	6144	4096	bf16	free	cut4	mma:bf16:2.2.2.4:bk128:st3:u2:cut4	1112.3	0.02		-	cross-arch 5fcb401b analysis/arms.md (mma_cut_replay)
+cut-17	rtx-5080	2048	2048	2048	tf32	free	uncut	mma:tf32:4.8.2.2:bk16:st2:u2:ord	1000.0	0.02		-	f32-tensor-cores.md ABBA
+cut-17	rtx-5080	2048	2048	2048	tf32	free	cut8	mma:tf32:4.8.2.2:bk16:st2:u2:cut8	945.0	0.02	rules	-	f32-tensor-cores.md ABBA
+cut-18	rtx-5080	128	6144	4096	tf32	free	uncut	mma:tf32:2.4.2.4:bk16:st3:u2:ord	1000.0	0.02		-	f32-tensor-cores.md ABBA
+cut-18	rtx-5080	128	6144	4096	tf32	free	cut8	mma:tf32:2.4.2.4:bk16:st3:u2:cut8	759.7	0.02	rules	-	f32-tensor-cores.md ABBA
+cut-19	rtx-5080	128	4096	14336	tf32	free	uncut	mma:tf32:2.2.2.4:bk32:st2:u2:ord	1000.0	0.02		-	f32-tensor-cores.md ABBA
+cut-19	rtx-5080	128	4096	14336	tf32	free	cut8	mma:tf32:2.2.2.4:bk32:st2:u2:cut8	916.8	0.02	rules	-	f32-tensor-cores.md ABBA
+cut-20	rtx-5080	2048	4096	14336	tf32	free	uncut	mma:tf32:4.8.2.2:bk16:st2:u2:ord	1000.0	0.02		-	f32-tensor-cores.md ABBA
+cut-20	rtx-5080	2048	4096	14336	tf32	free	cut8	mma:tf32:4.8.2.2:bk16:st2:u2:cut8	904.1	0.02	rules	-	f32-tensor-cores.md ABBA
+kfill-0	rtx-5080	128	4096	4096	f32	free	rules	rules	147.5	0.02	rules	-	large-gemm cells ON/OFF
+kfill-0	rtx-5080	128	4096	4096	f32	free	-k-fill	rules:-k-fill	221.2	0.02		-	large-gemm cells ON/OFF
+kfill-1	rtx-5080	128	6144	4096	f32	free	rules	rules	204.8	0.02	rules	-	large-gemm cells ON/OFF
+kfill-1	rtx-5080	128	6144	4096	f32	free	-k-fill	rules:-k-fill	325.6	0.02		-	large-gemm cells ON/OFF
+kfill-2	rtx-5080	128	4096	14336	f32	free	rules	rules	432.2	0.02	rules	-	large-gemm cells ON/OFF
+kfill-2	rtx-5080	128	4096	14336	f32	free	-k-fill	rules:-k-fill	765.7	0.02		-	large-gemm cells ON/OFF
+kfill-3	rtx-5080	128	2048	7168	f32	free	rules	rules	137.2	0.02	rules	-	large-gemm cells ON/OFF
+kfill-3	rtx-5080	128	2048	7168	f32	free	-k-fill	rules:-k-fill	245.8	0.02		-	large-gemm cells ON/OFF
+skfill-0	rtx-5080	16	2048	7168	f32	free	rules	rules	88.1	0.02	rules	-	large-gemm cells ON/OFF
+skfill-0	rtx-5080	16	2048	7168	f32	free	-streamk-fill	rules:-streamk-fill	112.6	0.02		-	large-gemm cells ON/OFF
+skfill-1	rtx-5080	16	18432	7168	f32	free	rules	rules	614.4	0.02	rules	-	large-gemm cells ON/OFF
+skfill-1	rtx-5080	16	18432	7168	f32	free	-streamk-fill	rules:-streamk-fill	634.8	0.02		-	large-gemm cells ON/OFF
+c11-0	rtx-5080	2048	28672	4096	bf16w	free	-raster	rules:-raster	4571.0	0.02		-	gapfix-tensor-tile C11 local ABBA
+c11-0	rtx-5080	2048	28672	4096	bf16w	free	rules	rules	3991.0	0.02	rules	-	gapfix-tensor-tile C11 local ABBA
+c11-1	rtx-5080	2048	28672	4096	tf32	free	-raster	rules:-raster	9070.0	0.02		-	gapfix-tensor-tile C11 local ABBA
+c11-1	rtx-5080	2048	28672	4096	tf32	free	rules	rules	8530.0	0.02	rules	-	gapfix-tensor-tile C11 local ABBA
+c11-2	rtx-5080	2048	4096	14336	bf16w	free	rules	rules	2264.0	0.02	rules	-	gapfix-tensor-tile C11 local ABBA
+c11-2	rtx-5080	2048	4096	14336	bf16w	free	-l2-gate	rules:-l2-gate	2496.0	0.02		-	gapfix-tensor-tile C11 local ABBA
+c11-3	rtx-4090	2048	28672	4096	bf16w	free	-raster	rules:-raster	4281.0	0.02		-	C11 rented RTX 4090 ABBA
+c11-3	rtx-4090	2048	28672	4096	bf16w	free	rules	rules	2860.0	0.02	rules	-	C11 rented RTX 4090 ABBA
+c11-4	rtx-4090	2048	28672	4096	tf32	free	-raster	rules:-raster	8313.0	0.02		-	C11 rented RTX 4090 ABBA
+c11-4	rtx-4090	2048	28672	4096	tf32	free	rules	rules	6041.0	0.02	rules	-	C11 rented RTX 4090 ABBA
+c11-5	a100	2048	28672	4096	bf16w	free	-raster	rules:-raster	3094.0	0.02		-	C11 rented A100 ABBA
+c11-5	a100	2048	28672	4096	bf16w	free	rules	rules	2514.0	0.02	rules	-	C11 rented A100 ABBA
+c11-6	a100	2048	28672	4096	tf32	free	-raster	rules:-raster	5926.0	0.02		-	C11 rented A100 ABBA
+c11-6	a100	2048	28672	4096	tf32	free	rules	rules	5157.0	0.02	rules	-	C11 rented A100 ABBA
+c11-7	h100	128	4096	4096	tf32	free	-raster	rules:-raster	99.4	0.02		-	C11 rented H100 ABBA (wgmma-ws)
+c11-7	h100	128	4096	4096	tf32	free	rules	rules	87.4	0.02	rules	-	C11 rented H100 ABBA (wgmma-ws)
+c11-8	h100	128	4096	14336	tf32	free	-raster	rules:-raster	228.6	0.02		-	C11 rented H100 ABBA (wgmma-ws)
+c11-8	h100	128	4096	14336	tf32	free	rules	rules	207.7	0.02	rules	-	C11 rented H100 ABBA (wgmma-ws)
+c11-9	h100	128	6144	4096	tf32	free	-raster	rules:-raster	113.6	0.02		-	C11 rented H100 ABBA (wgmma-ws)
+c11-9	h100	128	6144	4096	tf32	free	rules	rules	103.8	0.02	rules	-	C11 rented H100 ABBA (wgmma-ws)
+c11-10	h100	2048	28672	4096	bf16w	free	-raster	rules:-raster	1687.0	0.02		-	C11 rented H100 ABBA
+c11-10	h100	2048	28672	4096	bf16w	free	rules	rules	1543.0	0.02	rules	-	C11 rented H100 ABBA
+c11-11	h100	2048	28672	4096	tf32	free	-raster	rules:-raster	1946.0	0.02		-	C11 rented H100 ABBA
+c11-11	h100	2048	28672	4096	tf32	free	rules	rules	1902.0	0.02	rules	-	C11 rented H100 ABBA
+ws-0	h100	128	6144	4096	tf32	free	-wgmma-ws	rules:-wgmma-ws	154.5	0.02		-	hopper-launch box 2 ABBA
+ws-0	h100	128	6144	4096	tf32	free	rules	rules	115.9	0.02	rules	-	hopper-launch box 2 ABBA
+ws-1	h100	128	28672	4096	tf32	free	-wgmma-ws	rules:-wgmma-ws	252.6	0.02		-	hopper-launch box 2 ABBA
+ws-1	h100	128	28672	4096	tf32	free	rules	rules	220.6	0.02	rules	-	hopper-launch box 2 ABBA
+ws-2	h100	2048	28672	4096	tf32	free	-wgmma-ws	rules:-wgmma-ws	2038.0	0.02		-	hopper-launch box 2 ABBA
+ws-2	h100	2048	28672	4096	tf32	free	rules	rules	1887.6	0.02	rules	-	hopper-launch box 2 ABBA
+ws-3	h100	2048	4096	14336	tf32	free	-wgmma-ws	rules:-wgmma-ws	999.3	0.02		-	hopper-launch box 2 ABBA
+ws-3	h100	2048	4096	14336	tf32	free	rules	rules	965.5	0.02	rules	-	hopper-launch box 2 ABBA
+pc-0	rtx-4090	1	1024	4096	f32	free	rules	rules	30.7	0.02	rules	warm=b	plan-cost programs-rtx-4090 (mm_1x1024x4096)
+pc-0	rtx-4090	1	1024	4096	f32	free	+plan-cost,+linear	rules:+plan-cost,+linear	84.0	0.02		warm=b	plan-cost programs-rtx-4090 (mm_1x1024x4096)
+pc-1	rtx-5090	1	1024	4096	f32	free	rules	rules	16.4	0.02	rules	warm=b	plan-cost programs-rtx-5090 (mm_1x1024x4096)
+pc-1	rtx-5090	1	1024	4096	f32	free	+plan-cost,+linear	rules:+plan-cost,+linear	55.3	0.02		warm=b	plan-cost programs-rtx-5090 (mm_1x1024x4096)
+depth-0	rtx-5080	128	4096	4096	tf32	free	+mma-depth	rules:+mma-depth	143.3	0.02		-	f32-tensor-cores ABBA mma-depth
+depth-0	rtx-5080	128	4096	4096	tf32	free	rules	rules	134.9	0.02	rules	-	f32-tensor-cores ABBA mma-depth
+depth-1	rtx-5080	128	4096	14336	tf32	free	+mma-depth	rules:+mma-depth	489.8	0.02		-	f32-tensor-cores ABBA mma-depth
+depth-1	rtx-5080	128	4096	14336	tf32	free	rules	rules	454.1	0.02	rules	-	f32-tensor-cores ABBA mma-depth
+depth-2	rtx-5080	128	28672	4096	tf32	free	+mma-depth	rules:+mma-depth	721.5	0.02		-	f32-tensor-cores ABBA mma-depth
+depth-2	rtx-5080	128	28672	4096	tf32	free	rules	rules	695.7	0.02	rules	-	f32-tensor-cores ABBA mma-depth
+depth-3	rtx-5080	2048	4096	4096	tf32	free	+mma-depth	rules:+mma-depth	1493.7	0.02		-	f32-tensor-cores ABBA mma-depth
+depth-3	rtx-5080	2048	4096	4096	tf32	free	rules	rules	1417.9	0.02	rules	-	f32-tensor-cores ABBA mma-depth
+split-0	rtx-5080	2048	4096	4096	f32	free	+split-tile	rules:+split-tile	4101.8	0.02		-	f32-tensor-cores ABBA tf32x3
+split-0	rtx-5080	2048	4096	4096	f32	free	rules	rules	1830.6	0.02	rules	-	f32-tensor-cores ABBA tf32x3
+split-1	rtx-5080	128	4096	4096	f32	free	+split-tile	rules:+split-tile	301.2	0.02		-	f32-tensor-cores ABBA tf32x3
+split-1	rtx-5080	128	4096	4096	f32	free	rules	rules	143.3	0.02	rules	-	f32-tensor-cores ABBA tf32x3

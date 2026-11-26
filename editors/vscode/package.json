@@ -1,32 +1,61 @@
 {
   "name": "mapal-lang",
   "displayName": "Mapal",
-  "description": "Syntax highlighting, formatting and file icon for the Mapal dataflow language.",
-  "version": "0.2.0",
+  "description": "Language server (go to definition, references, hover, rename, completion, diagnostics, semantic highlighting), syntax highlighting, formatting and file icon for the Mapal dataflow language; the platform package bundles the server.",
+  "version": "0.4.0",
   "publisher": "mapal-lang",
   "license": "Apache-2.0 WITH LLVM-exception",
   "engines": {
-    "vscode": "^1.66.0"
+    "vscode": "^1.82.0"
   },
   "categories": [
-    "Programming Languages"
+    "Programming Languages",
+    "Formatters"
   ],
-  "main": "./extension.js",
+  "main": "./dist/extension.js",
   "activationEvents": [
     "onLanguage:mapal"
   ],
+  "scripts": {
+    "build": "esbuild extension.js --bundle --platform=node --format=cjs --target=node18 --external:vscode --outfile=dist/extension.js",
+    "pretest": "npm run build",
+    "test": "cd ../.. && python3 editors/vscode/test/scope_test.py && node editors/vscode/test/grammar_test.js && node editors/vscode/test/format_test.js && node editors/vscode/test/lsp_test.js && python3 editors/vscode/test/package_test.py",
+    "package": "npm run build && python3 package-vsix.py",
+    "package:linux-x64": "npm run build && python3 package-vsix.py --target linux-x64"
+  },
+  "dependencies": {
+    "vscode-languageclient": "9.0.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.24.2",
+    "vscode-oniguruma": "2.0.1",
+    "vscode-textmate": "9.2.0"
+  },
   "contributes": {
     "configuration": {
       "title": "Mapal",
       "properties": {
         "mapal.executablePath": {
           "type": "string",
-          "default": "mapal",
+          "default": "",
           "scope": "machine-overridable",
-          "description": "Executable name or absolute path to the Mapal CLI used for formatting. Arguments are not supported."
+          "description": "Executable name or absolute path to the Mapal CLI: the language server is `<path> lsp`, formatting falls back to `<path> fmt -` when the server is off. Empty (the default): the server bundled with the extension (platform package), else `mapal` on PATH. Arguments are not supported."
+        },
+        "mapal.server.enabled": {
+          "type": "boolean",
+          "default": true,
+          "scope": "machine-overridable",
+          "description": "Start the Mapal language server (`mapal lsp`): go to definition, references, hover, rename, completion, diagnostics and semantic highlighting. Off: syntax highlighting and CLI formatting only."
         }
       }
     },
+    "commands": [
+      {
+        "command": "mapal.restartServer",
+        "title": "Restart Language Server",
+        "category": "Mapal"
+      }
+    ],
     "configurationDefaults": {
       "[mapal]": {
         "editor.insertSpaces": true,
@@ -56,6 +85,58 @@
         "language": "mapal",
         "scopeName": "source.mapal",
         "path": "./syntaxes/mapal.tmLanguage.json"
+      }
+    ],
+    "semanticTokenScopes": [
+      {
+        "language": "mapal",
+        "scopes": {
+          "function.defaultLibrary": [
+            "support.function.builtin.mapal"
+          ],
+          "type.defaultLibrary": [
+            "support.type.primitive.mapal"
+          ],
+          "function.declaration": [
+            "entity.name.function.mapal"
+          ],
+          "function": [
+            "entity.name.function.call.mapal"
+          ],
+          "type.declaration": [
+            "entity.name.type.mapal"
+          ],
+          "type": [
+            "entity.name.type.mapal"
+          ],
+          "typeParameter.declaration": [
+            "variable.other.constant.size.mapal"
+          ],
+          "typeParameter": [
+            "variable.other.constant.size.mapal"
+          ],
+          "variable.readonly": [
+            "variable.other.constant.mapal"
+          ],
+          "variable.declaration": [
+            "variable.other.definition.mapal"
+          ],
+          "variable.modification": [
+            "variable.other.definition.mapal"
+          ],
+          "parameter.declaration": [
+            "variable.parameter.mapal"
+          ],
+          "parameter": [
+            "variable.parameter.mapal"
+          ],
+          "property.declaration": [
+            "variable.other.property.mapal"
+          ],
+          "property": [
+            "variable.other.property.mapal"
+          ]
+        }
       }
     ]
   }

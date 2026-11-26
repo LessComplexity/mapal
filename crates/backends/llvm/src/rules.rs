@@ -997,7 +997,16 @@ mod native_tests {
         let p = q.profile(Some(CALIB));
         assert_eq!(p.name, NATIVE_GPU);
         let (g, h) = (p.gpu().expect("gpu"), RTX_5080.gpu().expect("gpu"));
-        assert_eq!(*g, *h, "the query + calibration spell the hand profile");
+        // The physical properties; the placement facts and provenance
+        // (ADR-0050 `PlaceFacts`) are the hand profile's own.
+        assert_eq!(
+            crate::profile::Gpu {
+                place: h.place,
+                ..*g
+            },
+            *h,
+            "the query + calibration spell the hand profile"
+        );
         for wps in [0, 1, 2, 4, 64] {
             for face in [Face::Exact, Face::Contract, Face::Tf32] {
                 assert_eq!(p.gpu_rungs_on(wps, face), RTX_5080.gpu_rungs_on(wps, face));
@@ -1032,7 +1041,14 @@ mod native_tests {
         assert!(q.sms > 0 && q.l2_bytes > 0 && q.regs_per_sm > 0 && q.mem_bus_bits > 0);
         if q == rtx_5080_query() {
             let p = q.profile(Some(CALIB));
-            assert_eq!(*p.gpu().expect("gpu"), *RTX_5080.gpu().expect("gpu"));
+            let h = RTX_5080.gpu().expect("gpu");
+            assert_eq!(
+                crate::profile::Gpu {
+                    place: h.place,
+                    ..*p.gpu().expect("gpu")
+                },
+                *h
+            );
         }
     }
 }
