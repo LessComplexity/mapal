@@ -1,0 +1,13 @@
+// The length of a vector: a fold says how values combine, not in which order.
+4096 -> length;
+
+fn main() {
+    length -> iota -> map {
+        i -> i % 10 - 5 -> widen_f32
+    } -> v;
+    (0.0, v) -> fold {
+        sum, x -> sum + x * x
+    } -> squares;
+    squares -> sqrt -> norm;
+    norm -> println;
+}

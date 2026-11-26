@@ -1,0 +1,30 @@
+// A linear layer with bf16 weights: out[t][row] = sum over columns of weight[row][column] * x[t][column].
+128 -> tokens;
+4096 -> rows;
+4096 -> columns;
+
+fn main() {
+    rows * columns -> iota -> map {
+        c -> (c * 11 + 57) % 103 - 51 -> widen_f32 -> v;
+        v / 64.0 -> to_bf16
+    } -> weight;
+    tokens * columns -> iota -> map {
+        c -> (c * 7 + 13) % 101 - 50 -> widen_f32 -> v;
+        v / 8.0
+    } -> x;
+    columns -> iota -> along;
+    tokens * rows -> iota -> map {
+        cell ->
+        cell / rows -> t;
+        cell % rows -> row;
+        (0.0, along) -> fold: bf16 | f32 {
+            sum, column -> weight[row * columns + column] -> widen_f32 -> w;
+            sum + w * x[t * columns + column]
+        }
+    } -> out;
+    (0.0, out) -> fold {
+        sum, v -> sum + v
+    } -> checksum;
+    out[0] -> println;
+    checksum -> println;
+}

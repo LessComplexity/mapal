@@ -1,0 +1,31 @@
+// Heat spreading along a rod: state carried through a loop, one new array per step.
+64 -> points;
+100 -> steps;
+
+fn main() {
+    points -> iota -> map {
+        i -> (i == points / 2) -> {
+            -true-> 100.0;
+            -false-> 0.0;
+        }
+    } -> start;
+    mut u: [f32; points] <- start;
+    mut step: i32 <- 0;
+    loop {
+        (step < steps) -> {
+            -true-> {
+                points -> iota -> map {
+                    i -> (i > 0 && i < points - 1) -> {
+                        -true-> u[i] + 0.25 * (u[i - 1] - 2.0 * u[i] + u[i + 1]);
+                        -false-> 0.0;
+                    }
+                } -> u;
+                step + 1 -> step;
+                -> loop;
+            }
+            -false-> u -> final;
+        }
+    }
+    final[points / 2] -> println;
+    final[points / 2 + 8] -> println;
+}

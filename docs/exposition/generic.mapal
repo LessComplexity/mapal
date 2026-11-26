@@ -1,0 +1,17 @@
+// One function for every length: the size is inferred at each call.
+fn mean<n>(x: [f32; n]) -> f32 {
+    (0.0, x) -> fold {
+        sum, v -> sum + v
+    } -> total;
+    n -> widen_f32 -> count;
+    total / count -> ret;
+}
+
+fn main() {
+    [1.0, 2.0, 3.0, 4.0] -> small: [f32; 4];
+    1000 -> iota -> map {
+        i -> i -> widen_f32
+    } -> large;
+    small -> mean -> println;
+    large -> mean -> println;
+}

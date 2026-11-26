@@ -1,0 +1,17 @@
+// Data comes from a file: raw little-endian values, typed by the binding.
+fn main() {
+    "readings.bin" -> read -> hourly: [f32; 24];
+    (0.0, hourly) -> fold {
+        sum, t -> sum + t
+    } -> total;
+    (-1000.0, hourly) -> fold {
+        best, t -> (t > best) -> {
+            -true-> t;
+            -false-> best;
+        }
+    } -> warmest;
+    "mean " -> print;
+    total / 24.0 -> println;
+    "max  " -> print;
+    warmest -> println;
+}

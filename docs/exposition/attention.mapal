@@ -1,0 +1,59 @@
+// Attention for one head: scores, a softmax over each row, a weighted sum of the values.
+16 -> tokens;
+8 -> width;
+
+fn main() {
+    tokens * width -> iota -> cells;
+    cells -> map {
+        c -> (c * 7 + 13) % 11 - 5 -> widen_f32
+    } -> query;
+    cells -> map {
+        c -> (c * 5 + 3) % 13 - 6 -> widen_f32
+    } -> key;
+    cells -> map {
+        c -> (c * 3 + 1) % 7 - 3 -> widen_f32
+    } -> value;
+    width -> iota -> dims;
+    tokens -> iota -> positions;
+    width -> widen_f32 -> sqrt -> scale;
+    tokens * tokens -> iota -> map {
+        cell ->
+        cell / tokens -> i;
+        cell % tokens -> j;
+        (0.0, dims) -> fold {
+            sum, d -> sum + query[i * width + d] * key[j * width + d]
+        } -> dot;
+        dot / scale
+    } -> scores;
+    positions -> map {
+        i -> (-1000000000.0, positions) -> fold {
+            best, j -> scores[i * tokens + j] -> s;
+            (s > best) -> {
+                -true-> s;
+                -false-> best;
+            }
+        }
+    } -> maximum;
+    tokens * tokens -> iota -> map {
+        cell -> scores[cell] - maximum[cell / tokens] -> exp
+    } -> weights;
+    positions -> map {
+        i -> (0.0, positions) -> fold {
+            sum, j -> sum + weights[i * tokens + j]
+        }
+    } -> total;
+    cells -> map {
+        cell ->
+        cell / width -> i;
+        cell % width -> d;
+        (0.0, positions) -> fold {
+            sum, j -> sum + weights[i * tokens + j] * value[j * width + d]
+        } -> mixed;
+        mixed / total[i]
+    } -> out;
+    (0.0, out) -> fold {
+        sum, v -> sum + v
+    } -> checksum;
+    out[0] -> println;
+    checksum -> println;
+}

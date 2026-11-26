@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Highlight Mapal source in docs/architecture-explorer.html exactly as the editors do.
+"""Highlight Mapal source in docs/language-exposition.html exactly as the editors do.
 
 The classes are the editors' (editors/test/classes.tsv, shared by Neovim and VS Code):
 
@@ -27,7 +27,9 @@ character -- so a region is regenerated in place from what it already shows:
     /* mapal:hl css begin ... */ ... /* mapal:hl css end */
 
 A `src=` region is a whole file, regenerated from the file: an expandable <details id=NAME> with
-line numbers (CSS counters, never copied), a copy button and a link to the file. To add a snippet,
+line numbers (CSS counters, never copied), a copy button and a link to the file; with `show=inline`
+it is shown open instead -- a <figure id=NAME> holding the highlighted file, its link and a copy
+button (the demo cards of the exposition). To add a snippet,
 wrap a plain `<pre><code>...</code></pre>` in begin/end markers with a new id and run the script.
 
 Usage:
@@ -37,6 +39,7 @@ Usage:
                                              page token classes vs the server, CSS + contrast
     docs/tools/highlight_mapal.py --palette  class -> group -> colors and contrast ratios
     docs/tools/highlight_mapal.py FILE.mapal print FILE highlighted (an HTML fragment)
+    --page PATH                              another page (default docs/language-exposition.html)
 
 The server: --server PATH, else $MAPAL_BIN, else `mapal` on PATH, else ~/.local/bin/mapal.
 Python 3.9+, standard library only.
@@ -56,7 +59,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-PAGE = ROOT / "docs" / "architecture-explorer.html"
+PAGE = ROOT / "docs" / "language-exposition.html"
 CLASSES = ROOT / "editors" / "test" / "classes.tsv"
 GRAMMAR = ROOT / "editors" / "vscode" / "syntaxes" / "mapal.tmLanguage.json"
 VIM = ROOT / "editors" / "nvim" / "syntax" / "mapal.vim"
@@ -187,8 +190,11 @@ def css_region() -> str:
         rows = [";".join(parts[k : k + 5]) + ";" for k in range(0, len(parts), 5)]
         return "\n  " + "\n  ".join(rows) + "\n"
 
+    # Light by default; dark from the reader's system unless the page is set to light, or when the
+    # page's theme switch sets it (`<html data-theme="dark">`).
     lines.append(":root{" + tokens("light") + "}")
-    lines.append("@media (prefers-color-scheme: dark){:root{" + tokens("dark") + "}}")
+    lines.append('@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){' + tokens("dark") + "}}")
+    lines.append(':root[data-theme="dark"]{' + tokens("dark") + "}")
     for cls, (_group, _d, _l, extra) in styles.items():
         rule = f"color:var(--mp-{cls})"
         if cls == "todo":
@@ -206,7 +212,7 @@ def css_region() -> str:
         "-webkit-user-select:none;user-select:none;pointer-events:none}",
         ".hl-bar{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;"
         "justify-content:space-between;margin:12px 0 0;font-size:14px}",
-        ".hl-copy{border:1px solid var(--line);background:#f7fafb;color:var(--ink);"
+        ".hl-copy{border:1px solid var(--line);background:var(--chip-bg,#f7fafb);color:var(--ink);"
         "border-radius:999px;padding:5px 14px;font-size:13.5px;cursor:pointer}",
         ".hl-copy:hover{border-color:var(--accent);color:var(--accent)}",
         "@media(max-width:900px){pre.hl{padding:12px 12px}details.hl-file .body{padding:2px 8px 10px}}",
@@ -717,6 +723,22 @@ def render_snippet(hl: Highlighter, rid: str, src: str) -> str:
     return f'<pre class="hl"><code>{hl.html(snippet_uri(rid), src)}</code></pre>'
 
 
+def render_inline(hl: Highlighter, rid: str, path: str, title: str) -> str:
+    """A whole file shown open: the highlighted source, its link and a copy button."""
+    text = file_source(path)
+    shown = text[:-1] if text.endswith("\n") else text
+    body = hl.html((ROOT / path).as_uri(), shown)
+    count = shown.count("\n") + 1
+    eol = ' data-eol="1"' if text.endswith("\n") else ""
+    href = os.path.relpath(ROOT / path, PAGE.parent)
+    return (
+        f'<figure class="hl-demo" id="{rid}"><pre class="hl" id="{rid}-src"><code>{body}</code></pre>'
+        f'<figcaption><span>{html.escape(title)} — <a href="{html.escape(href)}"><code>{html.escape(path)}'
+        f"</code></a>, {count} lines</span>"
+        f'<button type="button" class="hl-copy" data-copy="{rid}-src"{eol}>Copy</button></figcaption></figure>'
+    )
+
+
 def render_file(hl: Highlighter, rid: str, path: str, title: str) -> str:
     text = file_source(path)
     shown = text[:-1] if text.endswith("\n") else text
@@ -746,7 +768,9 @@ def regenerate(page: str, hl: Highlighter) -> tuple[str, list[str], int]:
         count += 1
         a = attrs_of(m.group("attrs"))
         rid = a.get("id") or f"#{count}"
-        if "src" in a:
+        if "src" in a and a.get("show") == "inline":
+            body = render_inline(hl, rid, a["src"], a.get("title", "The whole file"))
+        elif "src" in a:
             body = render_file(hl, rid, a["src"], a.get("title", "The whole file"))
         else:
             body = render_snippet(hl, rid, snippet_source(m.group("body"), rid))
@@ -888,7 +912,7 @@ def self_test(exe: str) -> int:
         css = CSS.search(page)
         css_text = css.group(0) if css else ""
         for cls in classes:
-            if css_text.count(f"--mp-{cls}:") != 2 or f".mp-{cls}{{" not in css_text:
+            if css_text.count(f"--mp-{cls}:") != 3 or f".mp-{cls}{{" not in css_text:
                 failures.append(f"css: class {cls} lacks its light/dark token or rule")
         for cls, (group, dark, light, _x) in class_styles().items():
             for theme, color in (("dark", dark), ("light", light)):
@@ -922,7 +946,11 @@ def main() -> int:
     ap.add_argument("--test", action="store_true", help="self-test (fixture, page, server, CSS)")
     ap.add_argument("--palette", action="store_true", help="print class colors and contrast ratios")
     ap.add_argument("--server", help="the mapal binary (with `lsp`)")
+    ap.add_argument("--page", help="the page to regenerate (default docs/language-exposition.html)")
     args = ap.parse_args()
+    if args.page:
+        global PAGE
+        PAGE = Path(args.page).resolve()
     if args.palette:
         print_palette()
         return 0
