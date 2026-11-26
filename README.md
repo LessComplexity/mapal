@@ -55,9 +55,15 @@ in the source.
 
 What follows from it:
 
-- **Hardware is physical properties, never names.** The rules read SM counts, register and shared-memory sizes,
-  cache capacities, bandwidths, latencies and matrix-instruction shapes, queried from the device or measured by
-  calibration. A new chip is a new property set, not a new code path.
+- **Two kinds of facts, reconciled by the compiler.** The dataflow's facts (what each value reads, when it dies,
+  what is independent) and the hardware's facts, as abstract compute and placement: where bytes can live (capacities,
+  bandwidths, latencies, the cache a part really keeps), what computes (matrix and vector operations as shapes, with
+  the place each operand must be in), what moves bytes, and how work is dispatched, each fact measured, queried or
+  declared, never a part's name. Compilation places the dataflow on the machine with one cost model and one search,
+  then lowers it to the hardware's language; the few hardware-specific steps that cannot be facts come last and are
+  kept to a minimum. Adding a chip, a vendor or an ASIC is describing it as facts, not writing a new backend's worth
+  of heuristics ([ADR-0050](docs/decisions/ADR-0050-the-machine-model-placement-by-one-cost-model.md); its first
+  step, matrix products, is in progress — today rules over the same physical properties decide).
 - **No runtime graph recording.** Which work merges into one kernel, vertically along a chain and horizontally
   across independent branches, is decided at compile time from the dataflow. Nothing is traced or captured while
   the program runs.
@@ -444,10 +450,16 @@ The charts and the table above are generated. To refresh them after a run, updat
 
 ## Roadmap
 
-1. **An AMD backend.** The same graph and facts on a second GPU vendor; its compute units, wavefront width, LDS
-   and matrix instructions are one more property set.
+0. **Now: the machine model** ([ADR-0050](docs/decisions/ADR-0050-the-machine-model-placement-by-one-cost-model.md)):
+   placement by one cost model over the dataflow's and the hardware's facts, matrix products first, then attention,
+   cells and folds, and the whole graph's co-schedule. **Format generics**
+   ([ADR-0051](docs/decisions/ADR-0051-format-generics-to-and-widen.md)): `x -> to<bf16>`, `x -> widen<f32>`, and
+   functions generic over their number formats.
+1. **An AMD backend.** The same graph and facts on a second GPU vendor: its compute units, wavefront width, LDS
+   and matrix instructions are one more translation into the machine model.
 2. **A PyTorch importer**, to bring existing models into Mapal.
-3. **Then the ecosystem around the language:** development → deployment → verification → synthesis.
+3. **Then the ecosystem around the language:** development → deployment → verification → synthesis, where the same
+   search also chooses an ASIC's own parameters (array sizes, memories) within a budget.
 
 Done so far, and how each step turned out, including what was tried and did not work:
 [`docs/sessions/`](docs/sessions/).
@@ -465,7 +477,9 @@ Done so far, and how each step turned out, including what was tried and did not 
 | CPU backend (LLVM)  | working: threading, vectorization, cache blocking                                                                                                               |
 | GPU backend (CUDA)  | working: value gates pass on the RTX 5080, RTX 3090, A100, RTX 4090 and H100 ([Current results](#current-results)); tensor cores, `wgmma` / TMA where the part has them |
 | FPGA backend        | not started                                                                                                                                                     |
-| Command-line tool   | `mapal build`, `run`, `test`, `dump-ir`, `fmt`                                                                                                                  |
+| Placement           | rules over physical properties decide today; the machine model (ADR-0050) is being built, off by default until measured                                       |
+| Command-line tool   | `mapal build`, `run`, `test`, `dump-ir`, `fmt`, `lsp`                                                                                                           |
+| Editors             | Neovim and VS Code: highlighting, formatting and the language server (definition, references, hover, rename, completion, diagnostics)                         |
 | Tests               | about 1,700 across the workspace; the GPU tests skip without a CUDA toolchain                                                                                   |
 | CI                  | `cargo fmt` + the full suite on Linux and macOS, per push; a skipped LLVM differential fails the run                                                            |
 
@@ -476,7 +490,7 @@ print exactly what the interpreter prints, for the examples and for programs fro
 thread count and on any device: the mode for testing and debugging.
 
 **Not in the language yet:** recursion, sum types, pattern matching, strings beyond printing and file paths,
-closures, dynamic arrays, type-generic functions, modules.
+closures, dynamic arrays, modules. Functions generic over number formats are in progress (ADR-0051).
 
 Per-component state: [`docs/STATUS.md`](docs/STATUS.md). Research compiler; no packaged release.
 
@@ -575,8 +589,7 @@ local icon = require("mapal.icon")
 icon.setup({ glyph = icon.logo })     -- the real mark at U+F8F0
 ```
 
-Without it, the closest glyph the Nerd Font already has is used. Neither editor has an LSP yet, so neither
-resolves names the way the compiler does (ADR-0008).
+Without it, the closest glyph the Nerd Font already has is used.
 
 ---
 
