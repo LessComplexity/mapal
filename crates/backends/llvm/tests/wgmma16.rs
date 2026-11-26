@@ -150,13 +150,13 @@ const MODES: [[(&str, &str); 2]; 4] = [
 const PJ: &str = "fn main(): bf16 | f32 {
     65536 -> iota -> ia;
     ia -> map {
-        t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v;
+        t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v;
         v / 7.0
     } -> a;
     65536 -> iota -> ib;
     ib -> map {
-        t -> (t * 5 + 57) % 103 - 51 -> widen_f32 -> v;
-        v / 9.0 -> to_bf16
+        t -> (t * 5 + 57) % 103 - 51 -> widen<f32> -> v;
+        v / 9.0 -> to<bf16>
     } -> b;
     65536 -> iota -> ic;
     256 -> iota -> kr;
@@ -164,7 +164,7 @@ const PJ: &str = "fn main(): bf16 | f32 {
         t -> t / 256 -> i;
         t % 256 -> j;
         (0.0, kr) -> fold {
-            acc, k -> b[k * 256 + j] -> widen_f32 -> w;
+            acc, k -> b[k * 256 + j] -> widen<f32> -> w;
             acc + a[i * 256 + k] * w
         }
     } -> y;
@@ -303,17 +303,17 @@ fn ptxas_check(dev: &str, plan: &str) -> String {
 const MERGED: &str = "fn main() {
     49152 -> iota -> ia;
     ia -> map {
-        t -> (t * 21 + 13) % 101 - 50 -> widen_f32 -> v;
+        t -> (t * 21 + 13) % 101 - 50 -> widen<f32> -> v;
         v / 7.0
     } -> a;
     16384 -> iota -> ib;
     ib -> map {
-        t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v;
-        v / 9.0 -> to_bf16
+        t -> (t * 11 + 57) % 103 - 51 -> widen<f32> -> v;
+        v / 9.0 -> to<bf16>
     } -> b;
     12288 -> iota -> ic;
     ic -> map {
-        t -> (t * 3 + 7) % 17 - 8 -> widen_f32 -> v;
+        t -> (t * 3 + 7) % 17 - 8 -> widen<f32> -> v;
         v / 8.0
     } -> r;
     256 -> iota -> kr;
@@ -322,26 +322,26 @@ const MERGED: &str = "fn main() {
         t % 64 -> j;
         (0.0, kr) -> fold: bf16 | f32 {
             acc, q -> a[i * 256 + q] -> x;
-            b[q * 64 + j] -> widen_f32 -> y;
+            b[q * 64 + j] -> widen<f32> -> y;
             acc + x * y
         } -> u;
         r[t] -> rv;
         u * 0.5 + rv
     } -> y;
     ia -> map {
-        t -> (t * 21 + 13) % 101 - 50 -> widen_f32 -> v;
+        t -> (t * 21 + 13) % 101 - 50 -> widen<f32> -> v;
         v / 7.0
     } -> am;
     ib -> map {
-        t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v;
-        v / 9.0 -> to_bf16
+        t -> (t * 11 + 57) % 103 - 51 -> widen<f32> -> v;
+        v / 9.0 -> to<bf16>
     } -> bm;
     ic -> map: f32 {
         t -> t / 64 -> i;
         t % 64 -> j;
         (0.0, kr) -> fold {
             acc, q -> am[i * 256 + q] -> x;
-            bm[q * 64 + j] -> widen_f32 -> y;
+            bm[q * 64 + j] -> widen<f32> -> y;
             x * y
         }
     } -> mag;

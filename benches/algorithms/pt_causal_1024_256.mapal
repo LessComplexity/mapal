@@ -1,11 +1,11 @@
 fn main() {
     65536 -> iota -> tw;
     tw -> map {
-        t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> x;
+        t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> x;
         x / 4096.0
     } -> wk;
     tw -> map {
-        t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> x;
+        t -> (t * 11 + 57) % 103 - 51 -> widen<f32> -> x;
         x / 4096.0
     } -> wv;
     262144 -> iota -> tc;
@@ -23,7 +23,7 @@ fn main() {
                 tc -> map {
                     c -> (c / 256 == t) -> {
                         -true-> {
-                            (c * 7 + 13) % 101 - 50 -> widen_f32 -> f;
+                            (c * 7 + 13) % 101 - 50 -> widen<f32> -> f;
                             f / 64.0 + o[c % 256]
                         }
                         -false-> x[c];
@@ -46,7 +46,7 @@ fn main() {
                     }
                 } -> vv;
                 krange -> map {
-                    k -> ((t * 256 + k) * 5 + 3) % 97 - 48 -> widen_f32 -> qv;
+                    k -> ((t * 256 + k) * 5 + 3) % 97 - 48 -> widen<f32> -> qv;
                     qv / 4096.0
                 } -> q;
                 rrange -> map {

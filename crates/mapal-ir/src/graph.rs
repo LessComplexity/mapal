@@ -168,7 +168,7 @@ pub enum Operation {
     Widen,
     /// ADR-0043: `f32 → Narrow(fmt)` — the operand rounded once to
     /// the target's narrow format, to nearest with ties to even
-    /// ([`crate::narrow::round`]): the `to_bf16` / `to_f16` builtins. Pure —
+    /// ([`crate::narrow::round`]): the `to<bf16>` / `to<f16>` builtins. Pure —
     /// no token; total and trap-free.
     Narrow,
     /// A math builtin on a float scalar, `Float{b} → Float{b}` (ADR-0046;

@@ -105,8 +105,8 @@ fn norm_shift_and_phase_laws() {
     4096 -> iota -> t;
     64 -> iota -> r;
     64 -> iota -> k;
-    t -> map { e -> (e * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 64.0 } -> x;
-    t -> map { e -> (e * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 64.0 } -> w;
+    t -> map { e -> (e * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 64.0 } -> x;
+    t -> map { e -> (e * 11 + 57) % 103 - 51 -> widen<f32> -> v; v / 64.0 } -> w;
     t -> map { e -> x[e] * x[e] } -> sq;
     r -> map { i -> (0.0, k) -> fold { acc, j -> acc + sq[i * 64 + j] } } -> ss;
     r -> map { i -> 1.0 / (ss[i] / 64.0 + 0.5) } -> rinv;
@@ -272,8 +272,8 @@ fn exp_rescale_laws() {
     4096 -> iota -> t;
     64 -> iota -> r;
     64 -> iota -> k;
-    t -> map { e -> (e * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 64.0 } -> x;
-    t -> map { e -> (e * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 64.0 } -> w;
+    t -> map { e -> (e * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 64.0 } -> x;
+    t -> map { e -> (e * 11 + 57) % 103 - 51 -> widen<f32> -> v; v / 64.0 } -> w;
     r -> map { i -> (-1000000.0, k) -> fold { acc, j -> x[i * 64 + j] -> v; (v > acc) -> { -true-> v; -false-> acc; } } } -> m;
     r -> map { i -> (1000000.0, k) -> fold { acc, j -> x[i * 64 + j] -> v; (v < acc) -> { -true-> v; -false-> acc; } } } -> mn;
     t -> map { e -> x[e] - m[e / 64] -> exp } -> e1;

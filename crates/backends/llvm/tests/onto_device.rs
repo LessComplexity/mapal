@@ -163,7 +163,7 @@ fn loop_exit_value_reads_in_later_bodies() {
 fn guard_condition_proves_partner_read() {
     let src = "fn main() {
     256 -> iota -> r;
-    r -> map { t -> t % 101 -> widen_f32 } -> a;
+    r -> map { t -> t % 101 -> widen<f32> } -> a;
     r -> map {
         c -> c % 128 -> i;
         (i < 64) -> {
@@ -207,7 +207,7 @@ fn guard_condition_proves_partner_read() {
 fn loop_counter_ranges_index() {
     let src = "fn main() {
     128 -> iota -> r;
-    r -> map { t -> t % 101 -> widen_f32 } -> tab;
+    r -> map { t -> t % 101 -> widen<f32> } -> tab;
     4 -> iota -> r4;
     (0.0, 4) -> fill -> x0;
     mut x: [f32; 4] <- x0;
@@ -251,7 +251,7 @@ fn loop_counter_ranges_index() {
 fn exit_condition_and_phi_arms_range() {
     let src = "fn main() {
     16 -> iota -> r;
-    r -> map { t -> t % 7 -> widen_f32 } -> a;
+    r -> map { t -> t % 7 -> widen<f32> } -> a;
     mut u: i32 <- 0;
     loop {
         (u < 3) -> {
@@ -560,8 +560,8 @@ fn host_maps_of_a_gpu_build_split_on_the_pool() {
     262144 -> iota -> r;
     32768 -> iota -> rq;
     64 -> iota -> kd;
-    rq -> map { e -> (e * 5 + 3) % 31 - 15 -> widen_f32 -> v; v / 16.0 } -> q;
-    rq -> map { e -> (e * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 64.0 } -> w;
+    rq -> map { e -> (e * 5 + 3) % 31 - 15 -> widen<f32> -> v; v / 16.0 } -> q;
+    rq -> map { e -> (e * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 64.0 } -> w;
     r -> map { e -> e / 512 -> i; e % 512 -> j; (0.0, kd) -> fold { acc, d -> acc + q[i * 64 + d] * w[d * 512 + j] } } -> x;
     r -> map { t -> (t * 7 + 3) % 262144 } -> perm;
     r -> map { c -> x[perm[c]] } -> g;
@@ -670,12 +670,12 @@ const HOISTED_NEXT: &str = r#"fn main() {
     8 -> iota -> kd;
     8 -> iota -> tq;
     tq -> map {
-        e -> (e * 5 + 3) % 31 - 15 -> widen_f32 -> v;
+        e -> (e * 5 + 3) % 31 - 15 -> widen<f32> -> v;
         v / 16.0
     } -> q;
     8192 -> iota -> tw;
     tw -> map {
-        e -> (e * 7 + 13) % 101 - 50 -> widen_f32 -> v;
+        e -> (e * 7 + 13) % 101 - 50 -> widen<f32> -> v;
         v / 64.0
     } -> w;
     t -> map {
@@ -686,7 +686,7 @@ const HOISTED_NEXT: &str = r#"fn main() {
         }
     } -> a0;
     t -> map {
-        e -> (e * 11 + 57) % 103 - 51 -> widen_f32 -> v;
+        e -> (e * 11 + 57) % 103 - 51 -> widen<f32> -> v;
         v / 64.0
     } -> b0;
     mut x: [f32; 1024] <- b0;
@@ -720,12 +720,12 @@ const HOISTED_NEXT_READ: &str = r#"fn main() {
     8 -> iota -> kd;
     8 -> iota -> tq;
     tq -> map {
-        e -> (e * 5 + 3) % 31 - 15 -> widen_f32 -> v;
+        e -> (e * 5 + 3) % 31 - 15 -> widen<f32> -> v;
         v / 16.0
     } -> q;
     8192 -> iota -> tw;
     tw -> map {
-        e -> (e * 7 + 13) % 101 - 50 -> widen_f32 -> v;
+        e -> (e * 7 + 13) % 101 - 50 -> widen<f32> -> v;
         v / 64.0
     } -> w;
     t -> map {
@@ -734,7 +734,7 @@ const HOISTED_NEXT_READ: &str = r#"fn main() {
         }
     } -> a0;
     t -> map {
-        e -> (e * 11 + 57) % 103 - 51 -> widen_f32 -> v;
+        e -> (e * 11 + 57) % 103 - 51 -> widen<f32> -> v;
         v / 64.0
     } -> b0;
     mut x: [f32; 1024] <- b0;
@@ -836,7 +836,7 @@ fn gather_src(r: u64, w: u64, n: u64, kind: u8, probe: bool) -> String {
         ("", String::new())
     };
     format!(
-        "{walk}fn main() {{\n    {rw} -> iota -> i_t;\n    i_t -> map {{\n        x -> (x * 7 + 3) % 13 - 6 -> widen_f32 -> v;\n        v / 4.0\n    }} -> table;\n    {n} -> iota -> i_ids;\n    i_ids -> map {{\n        x -> ({cond}) -> {{\n            -true-> {far};\n            -false-> (x * 5 + 3) % {r};\n        }}\n    }} -> ids;\n    table[3] -> println;\n    {nw} -> iota -> map {{\n        cell -> table[ids[cell / {w}] * {w} + cell % {w}] * 2.0\n    }} -> rows;\n{probe}    {w} -> iota -> i_w2;\n    i_w2 -> map {{\n        x -> (x * 3 + 1) % 7 - 3 -> widen_f32 -> v;\n        v / 8.0\n    }} -> w2;\n    {w} -> iota -> rw;\n    {n} -> iota -> map {{\n        i -> (0.0, rw) -> fold {{\n            acc, k -> acc + rows[i * {w} + k] * w2[k]\n        }}\n    }} -> y;\n    y[0] -> println;\n    y[{last}] -> println;\n    0.0 -> zero: f32;\n    (zero, y) -> fold {{\n        acc, v -> acc + v\n    }} -> total;\n    total -> println;\n}}\n",
+        "{walk}fn main() {{\n    {rw} -> iota -> i_t;\n    i_t -> map {{\n        x -> (x * 7 + 3) % 13 - 6 -> widen<f32> -> v;\n        v / 4.0\n    }} -> table;\n    {n} -> iota -> i_ids;\n    i_ids -> map {{\n        x -> ({cond}) -> {{\n            -true-> {far};\n            -false-> (x * 5 + 3) % {r};\n        }}\n    }} -> ids;\n    table[3] -> println;\n    {nw} -> iota -> map {{\n        cell -> table[ids[cell / {w}] * {w} + cell % {w}] * 2.0\n    }} -> rows;\n{probe}    {w} -> iota -> i_w2;\n    i_w2 -> map {{\n        x -> (x * 3 + 1) % 7 - 3 -> widen<f32> -> v;\n        v / 8.0\n    }} -> w2;\n    {w} -> iota -> rw;\n    {n} -> iota -> map {{\n        i -> (0.0, rw) -> fold {{\n            acc, k -> acc + rows[i * {w} + k] * w2[k]\n        }}\n    }} -> y;\n    y[0] -> println;\n    y[{last}] -> println;\n    0.0 -> zero: f32;\n    (zero, y) -> fold {{\n        acc, v -> acc + v\n    }} -> total;\n    total -> println;\n}}\n",
         rw = r * w,
         nw = n * w,
         last = n - 1,

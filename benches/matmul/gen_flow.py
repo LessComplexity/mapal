@@ -41,8 +41,8 @@ fn matmul(a: [f32; {nn}], b: [f32; {nn}]) -> [f32; {nn}] {{
 
 fn main() {{
     {nn} -> iota -> ta;
-    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 }} -> a;
-    ta -> map {{ t -> (t * 7 + 57) % 101 - 50 -> widen_f32 }} -> b;
+    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen<f32> }} -> a;
+    ta -> map {{ t -> (t * 7 + 57) % 101 - 50 -> widen<f32> }} -> b;
     (a, b) -> matmul -> c;
     c[0] -> println;
     c[{nn - 1}] -> println;

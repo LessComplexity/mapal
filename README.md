@@ -86,7 +86,7 @@ RMSNorm, for any number of tokens:
 // RMSNorm of each vector: x / sqrt(mean(x^2) + epsilon), times a learned gain per feature.
 fn rms_norm<tokens>(x: [f32; tokens * hidden_size], gain: [bf16; hidden_size]) -> [f32; tokens * hidden_size] {
     hidden_size -> iota -> features;
-    hidden_size -> widen_f32 -> width;
+    hidden_size -> widen<f32> -> width;
     tokens -> iota -> map {
         t -> (0.0, features) -> fold {
             sum, i -> sum + x[t * hidden_size + i] * x[t * hidden_size + i]
@@ -95,7 +95,7 @@ fn rms_norm<tokens>(x: [f32; tokens * hidden_size], gain: [bf16; hidden_size]) -
     tokens * hidden_size -> iota -> map {
         cell ->
         sum_of_squares[cell / hidden_size] / width + rms_epsilon -> sqrt -> root;
-        gain[cell % hidden_size] -> widen_f32 -> g;
+        gain[cell % hidden_size] -> widen<f32> -> g;
         x[cell] * (1.0 / root) * g
     } -> ret;
 }
@@ -150,7 +150,7 @@ fn attend<tokens>(
 ) -> [f32; tokens * query_size] {
     head_size -> iota -> dimensions;
     context_length -> iota -> past_positions;
-    head_size -> widen_f32 -> sqrt -> scale_root;
+    head_size -> widen<f32> -> sqrt -> scale_root;
     tokens * query_heads * context_length -> iota -> map {
         cell ->
         cell / context_length -> token_head;
@@ -253,7 +253,7 @@ fn project<r, c>(weight: Matrix<r, c>, x: [f32; c]) -> [f32; r] {
     r -> iota -> map {
         row -> (0.0, along) -> fold {
             sum, column ->
-            weight[row * c + column] -> widen_f32 -> w;
+            weight[row * c + column] -> widen<f32> -> w;
             sum + w * x[column]
         }
     } -> ret;
@@ -286,7 +286,7 @@ fn total<n>(values: [f32; n]) -> f32 {
 fn main() {
     "weights.bin" -> read -> weight: Matrix<rows, columns>;
     columns -> iota -> map {
-        i -> i -> widen_f32 -> sqrt
+        i -> i -> widen<f32> -> sqrt
     } -> x;
     (weight, x) -> project -> y;
     y -> map {
@@ -304,7 +304,7 @@ fn main() {
 | `fn project<rows, columns>(…)` | size-generic: the sizes are inferred at each call, one fixed-size function per size tuple | [ADR-0047](docs/decisions/ADR-0047-size-generic-functions.md) |
 | `x -> exp`, `-> sqrt`, `-> sin`, `-> cos` | math builtins in pipeline position (no call syntax), bit-defined on the exact faces | [ADR-0042](docs/decisions/ADR-0042-exp-builtin.md), [ADR-0046](docs/decisions/ADR-0046-math-builtins-and-target-realizations.md) |
 | `"file" -> read -> w: [bf16; n];` | load a value's raw bytes from a file: an array, or a whole struct of arrays | [ADR-0045](docs/decisions/ADR-0045-read-builtin.md) |
-| `bf16`, `f16` | narrow storage: one rounding in (`to_bf16`), exact widening out (`widen_f32`), f32 compute | [ADR-0043](docs/decisions/ADR-0043-narrow-float-storage.md) |
+| `bf16`, `f16` | narrow storage: one rounding in (`to<bf16>`), exact widening out (`widen<f32>`), f32 compute | [ADR-0043](docs/decisions/ADR-0043-narrow-float-storage.md) |
 | `n -> iota -> map { i -> … }` | a value per cell, every cell independent | |
 | `(seed, xs) -> fold { acc, x -> … }` | combine values; on the default face the order is the compiler's | [ADR-0040](docs/decisions/ADR-0040-default-float-face.md) |
 | `(c) -> { -true-> a; -false-> b; }` | a guard: exactly one arm runs | |

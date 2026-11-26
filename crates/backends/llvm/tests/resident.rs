@@ -112,7 +112,7 @@ fn site(out: &str, a: &str, b: &str, n: u64) -> String {
 }
 
 fn operand(name: &str, mul: u32) -> String {
-    format!("    ta -> map {{ t -> (t * {mul} + 13) % 101 - 50 -> widen_f32 }} -> {name};\n")
+    format!("    ta -> map {{ t -> (t * {mul} + 13) % 101 - 50 -> widen<f32> }} -> {name};\n")
 }
 
 /// The e2e shape: two closed-form operands, one site, one element printed.
@@ -313,8 +313,8 @@ fn devgen_refuses_a_float_remainder() {
     // x)` on NVPTX: different bits, so a body with one is never device-built.
     // `a` is copied in; `b` (no float `%`) is still device-built.
     let src = e2e_src().replace(
-        "(t * 7 + 13) % 101 - 50 -> widen_f32 }",
-        "(t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v % 0.7 }",
+        "(t * 7 + 13) % 101 - 50 -> widen<f32> }",
+        "(t * 7 + 13) % 101 - 50 -> widen<f32> -> v; v % 0.7 }",
     );
     assert_ne!(src, e2e_src(), "the operand was rewritten");
     let t = transfers(&emit(&src, on()));
@@ -649,8 +649,8 @@ fn device_carried_state_has_no_host_bytes() {
 
 const DECODE_16_8: &str = r#"fn main() {
     64 -> iota -> tw;
-    tw -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> x; x / 128.0 } -> wk;
-    tw -> map { t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> x; x / 128.0 } -> wv;
+    tw -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> x; x / 128.0 } -> wk;
+    tw -> map { t -> (t * 11 + 57) % 103 - 51 -> widen<f32> -> x; x / 128.0 } -> wv;
     128 -> iota -> tc;
     8 -> iota -> krange;
     16 -> iota -> rrange;
@@ -662,10 +662,10 @@ const DECODE_16_8: &str = r#"fn main() {
     loop {
         (t < 16) -> {
             -true-> {
-                ((t * 8 + 0) * 7 + 13) % 101 - 50 -> widen_f32 -> f0;
+                ((t * 8 + 0) * 7 + 13) % 101 - 50 -> widen<f32> -> f0;
                 f0 / 64.0 + o[0] -> v0;
                 x[t * 8 + 0] <- v0;
-                ((t * 8 + 1) * 7 + 13) % 101 - 50 -> widen_f32 -> f1;
+                ((t * 8 + 1) * 7 + 13) % 101 - 50 -> widen<f32> -> f1;
                 f1 / 64.0 + o[1] -> v1;
                 x[t * 8 + 1] <- v1;
                 tc -> map { c ->
@@ -678,7 +678,7 @@ const DECODE_16_8: &str = r#"fn main() {
                     c % 8 -> j;
                     (0.0, krange) -> fold { acc, k -> acc + x[i * 8 + k] * wv[k * 8 + j] }
                 } -> vv;
-                krange -> map { k -> ((t * 8 + k) * 5 + 3) % 97 - 48 -> widen_f32 -> qv; qv / 128.0 } -> q;
+                krange -> map { k -> ((t * 8 + k) * 5 + 3) % 97 - 48 -> widen<f32> -> qv; qv / 128.0 } -> q;
                 rrange -> map { r -> (0.0, krange) -> fold { acc, k -> acc + q[k] * kk[r * 8 + k] } } -> s;
                 krange -> map { j -> (0.0, rrange) -> fold { acc, r -> acc + s[r] * vv[r * 8 + j] } } -> o;
                 t + 1 -> t;

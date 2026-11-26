@@ -262,9 +262,9 @@ fn softmax(rows: u64, len: u64, scaled: bool) -> String {
     {len} -> iota -> kl;
     8 -> iota -> kd;
     {rq} -> iota -> tq;
-    tq -> map {{ e -> (e * 5 + 3) % 31 - 15 -> widen_f32 -> v; e / 8 + 1 -> widen_f32 -> rf; v * rf / 4.0 }} -> q;
+    tq -> map {{ e -> (e * 5 + 3) % 31 - 15 -> widen<f32> -> v; e / 8 + 1 -> widen<f32> -> rf; v * rf / 4.0 }} -> q;
     {lw} -> iota -> tw;
-    tw -> map {{ e -> (e * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 16.0 }} -> w;
+    tw -> map {{ e -> (e * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 16.0 }} -> w;
     t -> map {{ e -> e / {len} -> i; e % {len} -> j; (0.0, kd) -> fold {{ acc, d -> acc + q[i * 8 + d] * w[d * {len} + j] }} }} -> x;
     rr -> map {{ i -> (-1000000000.0, kl) -> fold {{ acc, j -> x[i * {len} + j] -> e; (e > acc) -> {{ -true-> e; -false-> acc; }} }} }} -> mx;
     t -> map {{ e -> {ex} }} -> ex;
@@ -348,9 +348,9 @@ fn masked_softmax(len: u64, cut: u64, seed: &str) -> String {
     {len} -> iota -> kl;
     8 -> iota -> kd;
     24 -> iota -> tq;
-    tq -> map {{ e -> (e * 5 + 3) % 31 - 15 -> widen_f32 -> v; v / 4.0 }} -> q;
+    tq -> map {{ e -> (e * 5 + 3) % 31 - 15 -> widen<f32> -> v; v / 4.0 }} -> q;
     {lw} -> iota -> tw;
-    tw -> map {{ e -> (e * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 16.0 }} -> w;
+    tw -> map {{ e -> (e * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 16.0 }} -> w;
     t -> map {{ e -> e / {len} -> i; e % {len} -> j; (0.0, kd) -> fold {{ acc, d -> acc + q[i * 8 + d] * w[d * {len} + j] }} }} -> x;
     t -> map {{ e -> e / {len} -> i; e % {len} -> j; (j + i * 100 < {cut}) -> {{ -true-> x[e]; -false-> {NEG_INF}; }} }} -> xm;
     rr -> map {{ i -> ({seed}, kl) -> fold {{ acc, j -> xm[i * {len} + j] -> e; (e > acc) -> {{ -true-> e; -false-> acc; }} }} }} -> mx;

@@ -21,6 +21,7 @@ use mapal_syntax::{
 
 use crate::diag::{LCode, diag};
 use crate::effects::Effects;
+use crate::formats::{Arg, Format, Realize, Verb};
 use crate::scope::ScopeStack;
 use crate::sizes::{Generics, Instance, SiteKey, SizeEnv};
 use crate::typing::{FnSig, TypeInfo};
@@ -30,7 +31,7 @@ use crate::tys::{TypeTable, ir_loc, name_text, src_slice};
 /// size tuples with their names), and the log emission keeps of its calls.
 pub struct Mono<'a> {
     pub generics: &'a Generics<'a>,
-    pub instances: &'a BTreeMap<String, Vec<(Vec<u64>, String)>>,
+    pub instances: &'a BTreeMap<String, Vec<(Vec<Arg>, String)>>,
     pub log: &'a RefCell<CallLog>,
     /// The typing walk erred where a generic call was untyped: emit every
     /// unit as far as it goes, to log the calls (the result is discarded).
@@ -45,9 +46,12 @@ pub struct Mono<'a> {
 /// ones called but not declared this round.
 #[derive(Default)]
 pub struct CallLog {
-    pub sites: BTreeMap<SiteKey, Vec<u64>>,
+    pub sites: BTreeMap<SiteKey, Vec<Arg>>,
     pub called: BTreeSet<Instance>,
     pub requested: BTreeSet<Instance>,
+    /// ADR-0051 D4: the `widen` conversions exact only on a value range,
+    /// proven by the facts once the IR is sealed ([`crate::convert`]).
+    pub widens: Vec<crate::convert::WidenCheck>,
 }
 
 /// A surface-bound symbol (DESIGN §3).
@@ -180,7 +184,7 @@ fn ir_err(e: IrError, span: syn::SourceLoc) -> syn::Diagnostic {
         ),
         IrError::InvalidNarrow => (
             LCode::InvalidNarrow,
-            "`to_bf16` / `to_f16` take an `f32`".to_string(),
+            "`to<bf16>` / `to<f16>` take an `f32`".to_string(),
         ),
         other => (
             LCode::Internal,
@@ -214,14 +218,14 @@ pub fn lower_program(
     for item in &program.items {
         if let syn::Item::Fn(fd) = item {
             let name = name_text(source, fd.name).to_string();
-            if fd.sizes.is_empty() {
+            if fd.generics.is_empty() {
                 units.push((fd, name, types.base_env().clone()));
             } else {
                 for (vs, iname) in mono.instances.get(&name).into_iter().flatten() {
                     units.push((
                         fd,
                         iname.clone(),
-                        crate::sizes::env_of(source, fd, vs, types.base_env()),
+                        crate::sizes::env_of(source, &fd.generics, vs, types.base_env()),
                     ));
                 }
             }
@@ -258,7 +262,7 @@ pub fn lower_program(
         let info = typing.get(name).expect("typing info");
         // An error inside an instance names it (ADR-0047 D5).
         let note = |mut d: syn::Diagnostic| {
-            if !fd.sizes.is_empty() {
+            if !fd.generics.is_empty() {
                 d.message = format!("{} (in `{name}`)", d.message);
             }
             vec![d]
@@ -644,30 +648,42 @@ impl Emitter<'_> {
     }
 
     /// D3 at a call to a generic function (emission side, authoritative): the
-    /// sizes from the wire's exact type (and the next stage's annotation), the
-    /// instance's id — or, when this round did not declare it, the request
-    /// that makes the next round declare it.
+    /// arguments from the stage's explicit prefix (ADR-0051 D2), then the
+    /// wire's exact type (and the next stage's annotation), the instance's id
+    /// — or, when this round did not declare it, the request that makes the
+    /// next round declare it.
     fn generic_callee(
         &mut self,
         text: &str,
         wire: ObjectId,
         next: Option<&Stage>,
         sp: syn::SourceLoc,
+        args: Option<&[syn::SizeExpr]>,
     ) -> ER<(FuncId, String)> {
         let fd = self.mono.generics[text];
-        let arg = self.tyq(wire);
-        let expected = match next.map(|s| &s.kind) {
-            Some(StageKind::Bind { ty: Some(t), .. }) => {
-                self.types
-                    .resolve_sized(self.source, t, self.sizes, &mut Vec::new())
-            }
-            Some(StageKind::Ret { proj: None }) => self
-                .fn_sigs
-                .get(&self.owner_name)
-                .and_then(|s| s.ret.clone()),
-            _ => None,
+        let explicit = match args {
+            Some(a) => crate::sizes::explicit_args(
+                self.source,
+                a,
+                self.sizes,
+                self.source,
+                text,
+                &fd.generics,
+                sp,
+            )?,
+            None => Vec::new(),
         };
-        let values = crate::sizes::infer(self.source, self.types, fd, &arg, expected.as_ref(), sp)?;
+        let arg = self.tyq(wire);
+        let expected = self.expected_result(next);
+        let values = crate::sizes::infer(
+            self.source,
+            self.types,
+            fd,
+            &arg,
+            expected.as_ref(),
+            &explicit,
+            sp,
+        )?;
         let name = crate::sizes::instance_name(text, &values);
         let inst: Instance = (text.to_string(), values.clone());
         let mut log = self.mono.log.borrow_mut();
@@ -685,6 +701,56 @@ impl Emitter<'_> {
                     &format!("instance `{name}` not declared this round (ADR-0047 D5)"),
                 ))
             }
+        }
+    }
+
+    /// D3.4: the type a call's result is bound with — the next stage's
+    /// annotation, or the owner's output at a `-> ret` (`ret.k`: that
+    /// component).
+    fn expected_result(&self, next: Option<&Stage>) -> Option<Ty> {
+        match next.map(|s| &s.kind) {
+            Some(StageKind::Bind { ty: Some(t), .. }) => {
+                self.types
+                    .resolve_sized(self.source, t, self.sizes, &mut Vec::new())
+            }
+            Some(StageKind::Ret { proj: None }) => self
+                .fn_sigs
+                .get(&self.owner_name)
+                .and_then(|s| s.ret.clone()),
+            _ => None,
+        }
+    }
+
+    /// ADR-0051 D3: the type a conversion's result flows into — the result's
+    /// binding annotation, the owner's output at `-> ret` (`ret.k`: its
+    /// component), or the one parameter of a fixed function called next.
+    fn expected_flow(&self, next: Option<&Stage>) -> Option<Ty> {
+        if let Some(t) = self.expected_result(next) {
+            return Some(t);
+        }
+        match next.map(|s| &s.kind) {
+            Some(StageKind::Ret { proj: Some((k, _)) }) => self
+                .fn_sigs
+                .get(&self.owner_name)
+                .and_then(|s| s.ret.as_ref())
+                .and_then(|r| u32::try_from(*k).ok().and_then(|k| r.component_ty(k)))
+                .cloned(),
+            Some(StageKind::Expr(e)) => match &e.kind {
+                ExprKind::Var(n) => match self.fn_sigs.get(name_text(self.source, *n)) {
+                    Some(sig)
+                        if !sig.generic
+                            && self.scope.resolve(name_text(self.source, *n)).is_none() =>
+                    {
+                        match sig.params.as_slice() {
+                            [one] => Some(one.clone()),
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                },
+                _ => None,
+            },
+            _ => None,
         }
     }
 
@@ -1332,6 +1398,12 @@ impl Emitter<'_> {
             | StageKind::MapFold { .. }
             | StageKind::Fanout { .. } => true,
             StageKind::Expr(e) => {
+                if let ExprKind::Generic { name, .. } = &e.kind {
+                    // ADR-0051: a conversion or a pure generic instance.
+                    let text = name_text(self.source, *name);
+                    return Verb::from_name(text).is_some()
+                        || self.fn_sigs.get(text).is_some_and(|s| !s.effectful);
+                }
                 if let ExprKind::Var(n) = &e.kind {
                     let text = name_text(self.source, *n);
                     if crate::is_pure_builtin(text)
@@ -1527,7 +1599,7 @@ impl Emitter<'_> {
                     };
                     let (fid, callee) = match self.fn_ids.get(&text) {
                         Some(&fid) => (fid, text.clone()),
-                        None => self.generic_callee(&text, wire, next, e.span)?,
+                        None => self.generic_callee(&text, wire, next, e.span, None)?,
                     };
                     let dest = self.lookahead_dest(next, ctx, next.is_none())?;
                     let r = self.emit_call(fb, fid, &callee, wire, dest, e.span)?;
@@ -1582,23 +1654,15 @@ impl Emitter<'_> {
                             dest,
                             e.span,
                         )?,
-                        t if crate::narrow_target(t).is_some() => self.emit_narrow(
-                            fb,
-                            wire,
-                            crate::narrow_target(t).expect("narrow builtin"),
-                            dest,
-                            e.span,
-                        )?,
-                        _ => self.emit_widen(
-                            fb,
-                            wire,
-                            crate::widen_target(&text).expect("pure widen builtin"),
-                            dest,
-                            e.span,
-                        )?,
+                        _ => {
+                            let verb = Verb::from_name(&text).expect("conversion builtin");
+                            self.emit_convert(fb, verb, None, wire, next, ctx, dest, e.span)?
+                        }
                     };
                     self.maybe_bind_next(fb, next, r);
                     Ok(Some(r))
+                } else if let Some((verb, f)) = crate::formats::removed(&text) {
+                    Err(crate::typing::removed_conversion(&text, verb, f, e.span))
                 } else {
                     // Unbound bare name = a fresh binding (LD1): the wire's value
                     // takes this name. The previous stage's lookahead Dest already
@@ -1609,6 +1673,41 @@ impl Emitter<'_> {
                     let ty = self.ty_of(fb, wire);
                     self.bind_new(&text, wire, ty, false);
                     Ok(Some(wire))
+                }
+            }
+            ExprKind::Generic { name, args } => {
+                // ADR-0051 D2: a stage with explicit generic arguments — a
+                // generic function's instance, or a conversion.
+                let text = name_text(self.source, *name).to_string();
+                let local = self.scope.resolve(&text).is_some();
+                if !local && self.mono.generics.contains_key(&text) {
+                    let wire =
+                        cur.ok_or_else(|| diag(LCode::HeadlessChain, e.span, "call with no arg"))?;
+                    let (fid, callee) =
+                        self.generic_callee(&text, wire, next, e.span, Some(args))?;
+                    let dest = self.lookahead_dest(next, ctx, next.is_none())?;
+                    let r = self.emit_call(fb, fid, &callee, wire, dest, e.span)?;
+                    if let Some(r) = r {
+                        self.maybe_bind_next(fb, next, r);
+                    }
+                    Ok(r)
+                } else if let (false, Some(verb)) = (local, Verb::from_name(&text)) {
+                    let wire = cur.ok_or_else(|| {
+                        diag(LCode::HeadlessChain, e.span, "builtin stage with no source")
+                    })?;
+                    let dest = self.lookahead_dest(next, ctx, next.is_none())?;
+                    let r =
+                        self.emit_convert(fb, verb, Some(args), wire, next, ctx, dest, e.span)?;
+                    self.maybe_bind_next(fb, next, r);
+                    Ok(Some(r))
+                } else {
+                    Err(crate::typing::no_generic_args(
+                        self.source,
+                        &text,
+                        local,
+                        self.fn_sigs.contains_key(&text),
+                        e.span,
+                    ))
                 }
             }
             ExprKind::Member { base, field } => {
@@ -2083,7 +2182,7 @@ impl Emitter<'_> {
                 let generic = self
                     .types
                     .decl(tname)
-                    .filter(|td| !td.sizes.is_empty())
+                    .filter(|td| !td.generics.is_empty())
                     .cloned();
                 let sty = match &generic {
                     None => self.types.get(tname).cloned().ok_or_else(|| {
@@ -2175,6 +2274,12 @@ impl Emitter<'_> {
             ExprKind::Call { .. } | ExprKind::Question(_) | ExprKind::Error => {
                 Err(diag(LCode::UncleanTree, sp, "unclean expression node"))
             }
+            // The parser builds explicit arguments in stage position only.
+            ExprKind::Generic { .. } => Err(diag(
+                LCode::ExprStage,
+                sp,
+                "explicit generic arguments `name<…>` stand only as a stage (ADR-0051 D2)",
+            )),
         }
     }
 
@@ -3264,77 +3369,102 @@ impl Emitter<'_> {
         Ok(self.record(o, out))
     }
 
-    /// Explicit scalar widening (ADR-0029). Owns L1614; the builder validates
-    /// the same four-edge lattice independently.
-    fn emit_widen(
+    /// ADR-0051 D4: `x -> to<…>` / `x -> widen<…>` — the prelude's generic
+    /// signature inferred like any generic call (the explicit prefix, the
+    /// argument's format, the expected type: [`Self::expected_flow`]), then
+    /// realized by the existing operations: `Narrow` (ADR-0043 rounding),
+    /// `Widen` (ADR-0029 widening; `sitofp` rounds an `i32` to nearest), or
+    /// nothing (the identity, erased). `widen<f32>` of an `i32` is logged for
+    /// the facts to prove exact once the IR is sealed. Owns L1614 (`widen`),
+    /// L1616 (`to`) and, through the inference, L1708–L1710.
+    #[allow(clippy::too_many_arguments)]
+    fn emit_convert(
         &mut self,
         fb: &mut FnBuilder,
+        verb: Verb,
+        args: Option<&[syn::SizeExpr]>,
         wire: ObjectId,
-        target: Ty,
+        next: Option<&Stage>,
+        ctx: &ChainCtx,
         dest: Dest,
         sp: syn::SourceLoc,
     ) -> ER<ObjectId> {
+        let decl = verb.decl();
+        let explicit = match args {
+            Some(a) => crate::sizes::explicit_args(
+                self.source,
+                a,
+                self.sizes,
+                crate::formats::PRELUDE,
+                verb.name(),
+                &decl.generics,
+                sp,
+            )?,
+            None => Vec::new(),
+        };
         let source = self.ty_of(fb, wire);
-        let legal = matches!(
-            (&source, &target),
-            (
-                Ty::Int {
-                    bits: 32,
-                    signed: true
-                },
-                Ty::Int {
-                    bits: 64,
-                    signed: true
-                } | Ty::Float { bits: 32 | 64 }
-            ) | (Ty::Float { bits: 32 }, Ty::Float { bits: 64 })
-                | (Ty::Narrow(_), Ty::Float { bits: 32 | 64 })
-        );
-        if !legal {
+        let code = match verb {
+            Verb::To => LCode::InvalidNarrow,
+            Verb::Widen => LCode::InvalidWiden,
+        };
+        if Format::of(&source).is_none() {
             return Err(diag(
-                LCode::InvalidWiden,
+                code,
                 sp,
                 format!(
-                    "cannot widen `{}` to `{}`; legal lattice: i32→i64, i32→f32, i32→f64, f32→f64, bf16|f16|f8e4m3|f8e5m2→f32|f64",
+                    "`{}` converts a number; got `{}` (a map converts each element: \
+                     `xs -> map {{ x -> x -> {}<…> }}`)",
+                    verb.name(),
                     ty_name(&source),
-                    ty_name(&target)
+                    verb.name()
                 ),
             ));
         }
-        let o = fb
-            .widen(wire, target.clone(), dest, ir_loc(sp))
-            .map_err(|e| ir_err(e, sp))?;
-        self.prop(o, &[wire]);
-        Ok(self.record(o, target))
-    }
-
-    /// `x -> to_bf16` / `x -> to_f16` (ADR-0043): an `f32` rounded once to a
-    /// narrow storage format. Owns L1616.
-    fn emit_narrow(
-        &mut self,
-        fb: &mut FnBuilder,
-        wire: ObjectId,
-        fmt: mapal_ir::NarrowFloat,
-        dest: Dest,
-        sp: syn::SourceLoc,
-    ) -> ER<ObjectId> {
-        let source = self.ty_of(fb, wire);
-        if source != Ty::f32() {
-            return Err(diag(
-                LCode::InvalidNarrow,
-                sp,
-                format!(
-                    "`to_{}` takes an `f32`, got `{}`; widen an integer first (`x -> widen_f32 -> to_{}`)",
-                    fmt.name(),
-                    ty_name(&source),
-                    fmt.name()
-                ),
-            ));
+        let expected = self.expected_flow(next);
+        let values = crate::sizes::infer(
+            crate::formats::PRELUDE,
+            self.types,
+            decl,
+            &source,
+            expected.as_ref(),
+            &explicit,
+            sp,
+        )?;
+        let (Arg::Format(target), Arg::Format(from)) = (values[0], values[1]) else {
+            return Err(internal(sp, "conversion arguments are formats"));
+        };
+        let realize = crate::formats::admit(verb, from, target).map_err(|m| diag(code, sp, m))?;
+        let o = match realize {
+            Realize::Identity => {
+                // Erased (D4): the wire is the value. A return position takes
+                // it as a pre-existing value.
+                if let Dest::Ret { slot } = dest {
+                    self.emit_ret_existing(fb, wire, slot.map(|k| (u64::from(k), sp)), sp, ctx)?;
+                }
+                return Ok(wire);
+            }
+            Realize::Narrow(n) => fb
+                .narrow(wire, n, dest, ir_loc(sp))
+                .map_err(|e| ir_err(e, sp))?,
+            Realize::Widen | Realize::WidenProven => fb
+                .widen(wire, target.ty(), dest, ir_loc(sp))
+                .map_err(|e| ir_err(e, sp))?,
+        };
+        if realize == Realize::WidenProven {
+            self.mono
+                .log
+                .borrow_mut()
+                .widens
+                .push(crate::convert::WidenCheck {
+                    target: o,
+                    source: from,
+                    format: target,
+                    span: sp,
+                    owner: self.owner_name.clone(),
+                });
         }
-        let o = fb
-            .narrow(wire, fmt, dest, ir_loc(sp))
-            .map_err(|e| ir_err(e, sp))?;
         self.prop(o, &[wire]);
-        Ok(self.record(o, Ty::Narrow(fmt)))
+        Ok(self.record(o, target.ty()))
     }
 
     /// `x -> exp` (ADR-0042), `x -> sqrt` / `sin` / `cos` (ADR-0046): the
@@ -3355,7 +3485,7 @@ impl Emitter<'_> {
                 LCode::InvalidExp,
                 sp,
                 format!(
-                    "`{name}` takes an `f32` or `f64`, got `{}`; widen an integer first (`x -> widen_f32 -> {name}`)",
+                    "`{name}` takes an `f32` or `f64`, got `{}`; widen an integer first (`x -> widen<f32> -> {name}`)",
                     ty_name(&source)
                 ),
             ));

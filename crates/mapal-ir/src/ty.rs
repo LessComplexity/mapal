@@ -32,8 +32,8 @@ pub enum Ty {
     },
     /// ADR-0043: a narrow float **storage** format (`bf16`, `f16`). No
     /// arithmetic, comparison or print takes one: a value is widened exactly
-    /// (`widen_f32` / `widen_f64`) to compute and rounded once, to nearest
-    /// even, into the format (`to_bf16` / `to_f16`). Not numeric
+    /// (`widen<f32>` / `widen<f64>`) to compute and rounded once, to nearest
+    /// even, into the format (`to<bf16>` / `to<f16>`). Not numeric
     /// ([`Ty::is_numeric`]), so every arithmetic rule rejects it.
     Narrow(NarrowFloat),
     Bool,

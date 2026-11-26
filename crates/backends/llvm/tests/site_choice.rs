@@ -801,8 +801,8 @@ fn excluded_site_classes_keep_one_launch() {
         "fn main() {{
     {nn} -> iota -> ta;
     {n} -> iota -> krange;
-    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 }} -> a;
-    ta -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen_f32 }} -> b;
+    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen<f32> }} -> a;
+    ta -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen<f32> }} -> b;
     ta -> map {{ t -> t / {n} -> i; t % {n} -> j; (0.0, krange) -> fold {{ acc, k -> acc + a[i * {n} + k] * b[k * {n} + j] }} }} -> c;
     krange -> map {{ i -> (0.0, krange) -> fold {{ acc, j -> c[i * {n} + j] -> e; acc + e }} }} -> r;
     r[0] -> println;
@@ -1121,8 +1121,8 @@ fn a_looped_site_decides_once() {
         "fn main() {{
     {nn} -> iota -> ta;
     {n} -> iota -> krange;
-    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> x0;
-    ta -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 64.0 }} -> w;
+    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 }} -> x0;
+    ta -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen<f32> -> v; v / 64.0 }} -> w;
     mut x: [f32; {nn}] <- x0;
     mut it: i32 <- 0;
     loop {{
@@ -1212,9 +1212,9 @@ fn cold_flag_follows_residence() {
         format!(
             "fn main() {{
     {k} -> iota -> ia;
-    ia -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> a;
+    ia -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 }} -> a;
     {kn} -> iota -> ib;
-    ib -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 }} -> b;
+    ib -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen<f32> -> v; v / 9.0 }} -> b;
     4096 -> iota -> oc;
     {k} -> iota -> kc;
     oc -> map {{ j -> (0.0, kc) -> fold {{ acc, q -> acc + a[q] * b[q * 4096 + j] }} }} -> c;

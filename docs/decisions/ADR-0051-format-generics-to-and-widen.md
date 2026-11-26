@@ -103,3 +103,26 @@ rounding, the exact embeddings); instances are named per D5.
 - A use whose format cannot be named at the stage nor inferred from the argument or the context (then the inference of
   D3 is incomplete).
 - A rewrite in D6 that changes the lowered IR of an existing program (then the new builtins do not express the old ones).
+
+## Implementation (2026-11-26)
+
+- **Syntax** (`mapal-syntax`): `FnDecl` / `TypeDecl` hold `generics: Vec<GenericParam>` (`name`, `kind: Option<Name>`);
+  a stage `IDENT '<' size (',' size)* ','? '>'` that ends where the stage ends is `ExprKind::Generic { name, args }`
+  (otherwise the expression stage it always was); a number format is a generic type's argument (`Matrix<64, 64,
+  bf16>`; a capitalized name or `bool` stays ⟦P0103⟧). The formatter writes `to<bf16>`, `fn f<n, c: float>(`.
+- **Lowering** (`mapal-lower`): `formats.rs` (formats, kinds, `Arg = Size | Format`, the prelude, D4's admission),
+  `sizes.rs` (the explicit prefix, format equations beside size equations, kinds, instance names), `tys.rs` (a
+  format parameter in any type position, a generic type's format arguments), `convert.rs` (the post-seal proof of
+  `widen<f32>` of an `i32`). Codes: L1708 undetermined, L1709 conflict, L1710 out of kind (or a size where a format
+  is declared, and back), L1711 unknown kind, L1712 explicit arguments on a stage that takes none, L1713 a removed
+  name; L1614 / L1616 keep `widen` / `to`.
+- **Facts** (`mapal-ir`): `BoundsProof::widen_range(m)` — the range of the integer a `Widen` converts where it runs;
+  `%` by a constant is ranged without its dividend's range (any `i32`, a wrapped product included, leaves `x % k`
+  inside `(−|k|, |k|)`). The suite's host and device text is unchanged on the RTX 5080 and x86-64-v3 profiles.
+- **Readings of D4.** `to` admits the exact pairs too (rounding to nearest of a representable value is the value),
+  so a generic `x -> to<cache>` stays valid at `cache = f32` (the identity) and `f64`. A float literal flowing into
+  a conversion takes the target's width (an `f32` into a narrow target); an integer literal keeps `i32`.
+- **Open (reported, not realized):** `u8` and `i64` sources (no IR conversion edge yet), an integer to a narrow
+  format (one rounding; through `f32` two), `f64 → f32` / narrow and float → int (ADR-0043 D2's open item);
+  inference of a conversion's target from a map body's expected element type (the body's tail has no expected
+  type yet: write the argument).

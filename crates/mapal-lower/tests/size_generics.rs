@@ -35,7 +35,7 @@ fn message(src: &str, code: &str) -> String {
 
 const PROJECT: &str = "fn project<rows, columns>(weight: [bf16; rows * columns], x: [f32; columns]) -> [f32; rows] {
     columns -> iota -> column_indices;
-    rows -> iota -> map { row -> (0.0, column_indices) -> fold { sum, column -> weight[row * columns + column] -> widen_f32 -> w; sum + w * x[column] } } -> ret;
+    rows -> iota -> map { row -> (0.0, column_indices) -> fold { sum, column -> weight[row * columns + column] -> widen<f32> -> w; sum + w * x[column] } } -> ret;
 }
 ";
 
@@ -45,10 +45,10 @@ fn the_users_project_lowers_once_per_shape() {
         "type Layer {{ query: [bf16; 32], key: [bf16; 16] }}
 {PROJECT}
 fn main() {{
-    32 -> iota -> map {{ i -> i -> widen_f32 -> to_bf16 }} -> q;
-    16 -> iota -> map {{ i -> i -> widen_f32 -> to_bf16 }} -> k;
+    32 -> iota -> map {{ i -> i -> widen<f32> -> to<bf16> }} -> q;
+    16 -> iota -> map {{ i -> i -> widen<f32> -> to<bf16> }} -> k;
     Layer {{ query: q, key: k }} -> layer;
-    8 -> iota -> map {{ i -> i -> widen_f32 }} -> normed;
+    8 -> iota -> map {{ i -> i -> widen<f32> }} -> normed;
     (layer.query, normed) -> project -> query;
     (layer.key, normed) -> project -> key;
     (layer.query, normed) -> project -> again;
@@ -433,7 +433,7 @@ fn monomorphized_ir_is_the_hand_specialized_programs() {
     // size in a guard, a nested generic call.
     let generic = "fn project<rows, columns>(weight: [bf16; rows * columns], x: [f32; columns]) -> [f32; rows] {
     columns -> iota -> column_indices;
-    rows -> iota -> map { row -> (0.0, column_indices) -> fold { sum, column -> weight[row * columns + column] -> widen_f32 -> w; sum + w * x[column] } } -> ret;
+    rows -> iota -> map { row -> (0.0, column_indices) -> fold { sum, column -> weight[row * columns + column] -> widen<f32> -> w; sum + w * x[column] } } -> ret;
 }
 fn clip<n>(y: [f32; n]) -> [f32; n] {
     n * 2 - 1 -> iota -> top;
@@ -441,7 +441,7 @@ fn clip<n>(y: [f32; n]) -> [f32; n] {
 }
 fn both<n>(y: [f32; n]) -> f32 { y -> clip -> c; (0.0, c) -> fold { s, v -> s + v } -> ret; }
 fn main() {
-    12 -> iota -> map { i -> i -> widen_f32 -> * 0.25 -> to_bf16 } -> w;
+    12 -> iota -> map { i -> i -> widen<f32> -> * 0.25 -> to<bf16> } -> w;
     [1.0, 2.0, 3.0, 4.0] -> x4;
     [1.0, 2.0, 3.0] -> x3;
     (w, x4) -> project -> y;
@@ -453,11 +453,11 @@ fn main() {
 }";
     let hand = "fn project_3_4(weight: [bf16; 12], x: [f32; 4]) -> [f32; 3] {
     4 -> iota -> column_indices;
-    3 -> iota -> map { row -> (0.0, column_indices) -> fold { sum, column -> weight[row * 4 + column] -> widen_f32 -> w; sum + w * x[column] } } -> ret;
+    3 -> iota -> map { row -> (0.0, column_indices) -> fold { sum, column -> weight[row * 4 + column] -> widen<f32> -> w; sum + w * x[column] } } -> ret;
 }
 fn project_4_3(weight: [bf16; 12], x: [f32; 3]) -> [f32; 4] {
     3 -> iota -> column_indices;
-    4 -> iota -> map { row -> (0.0, column_indices) -> fold { sum, column -> weight[row * 3 + column] -> widen_f32 -> w; sum + w * x[column] } } -> ret;
+    4 -> iota -> map { row -> (0.0, column_indices) -> fold { sum, column -> weight[row * 3 + column] -> widen<f32> -> w; sum + w * x[column] } } -> ret;
 }
 fn clip_3(y: [f32; 3]) -> [f32; 3] {
     5 -> iota -> top;
@@ -470,7 +470,7 @@ fn clip_4(y: [f32; 4]) -> [f32; 4] {
 fn both_3(y: [f32; 3]) -> f32 { y -> clip_3 -> c; (0.0, c) -> fold { s, v -> s + v } -> ret; }
 fn both_4(y: [f32; 4]) -> f32 { y -> clip_4 -> c; (0.0, c) -> fold { s, v -> s + v } -> ret; }
 fn main() {
-    12 -> iota -> map { i -> i -> widen_f32 -> * 0.25 -> to_bf16 } -> w;
+    12 -> iota -> map { i -> i -> widen<f32> -> * 0.25 -> to<bf16> } -> w;
     [1.0, 2.0, 3.0, 4.0] -> x4;
     [1.0, 2.0, 3.0] -> x3;
     (w, x4) -> project_3_4 -> y;
@@ -595,14 +595,14 @@ fn main() {
 fn product_systems_solve_with_the_results_type() {
     let generic = "fn project<tokens, rows, columns>(weight: [bf16; rows * columns], x: [f32; tokens * columns]) -> [f32; tokens * rows] {
     columns -> iota -> along;
-    tokens * rows -> iota -> map { cell -> cell / rows -> t; cell % rows -> row; (0.0, along) -> fold { sum, k -> weight[row * columns + k] -> widen_f32 -> w; sum + w * x[t * columns + k] } } -> ret;
+    tokens * rows -> iota -> map { cell -> cell / rows -> t; cell % rows -> row; (0.0, along) -> fold { sum, k -> weight[row * columns + k] -> widen<f32> -> w; sum + w * x[t * columns + k] } } -> ret;
 }
 ";
     let ok = format!(
         "{generic}
 fn main() {{
-    12 -> iota -> map {{ i -> i -> widen_f32 -> to_bf16 }} -> w: [bf16; 12];
-    8 -> iota -> map {{ i -> i -> widen_f32 }} -> x: [f32; 8];
+    12 -> iota -> map {{ i -> i -> widen<f32> -> to<bf16> }} -> w: [bf16; 12];
+    8 -> iota -> map {{ i -> i -> widen<f32> }} -> x: [f32; 8];
     (w, x) -> project -> y: [f32; 6];
     y[5] -> println;
 }}
@@ -619,8 +619,8 @@ fn main() {{
     let ambiguous = format!(
         "{generic}
 fn main() {{
-    12 -> iota -> map {{ i -> i -> widen_f32 -> to_bf16 }} -> w: [bf16; 12];
-    8 -> iota -> map {{ i -> i -> widen_f32 }} -> x: [f32; 8];
+    12 -> iota -> map {{ i -> i -> widen<f32> -> to<bf16> }} -> w: [bf16; 12];
+    8 -> iota -> map {{ i -> i -> widen<f32> }} -> x: [f32; 8];
     (w, x) -> project -> y;
     y[0] -> println;
 }}

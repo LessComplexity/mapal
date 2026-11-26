@@ -10,8 +10,8 @@ may be rounded to bf16, the sums kept in f32 — the class the competitors compu
 accumulation). Without it the program is Mapal's default face: f32 activations on the bf16 weights.
 
 `--cache bf16` stores the key/value cache in bf16, as the competitors keep it: `KeyValueCache`'s arrays are
-`[bf16; cache_size]`, `write_rows` rounds each new row once (`-> to_bf16`) and `attend` widens each cached element
-it reads (`-> widen_f32`, exact). The bf16 class (`--compute bf16`) takes it unless `--cache f32` is given.
+`[bf16; cache_size]`, `write_rows` rounds each new row once (`-> to<bf16>`) and `attend` widens each cached element
+it reads (`-> widen<f32>`, exact). The bf16 class (`--compute bf16`) takes it unless `--cache f32` is given.
 """
 import os
 import re
@@ -60,15 +60,15 @@ def bf16_cache(s):
          "fn write_rows<tokens>(cache: [bf16; cache_size], rows: [f32; tokens * key_value_size], layer: i32, "
          "first_position: i32) -> [bf16; cache_size] {"),
         ("            -true-> rows[t * key_value_size + cell % key_value_size];",
-         "            -true-> rows[t * key_value_size + cell % key_value_size] -> to_bf16;"),
+         "            -true-> rows[t * key_value_size + cell % key_value_size] -> to<bf16>;"),
         ("                    sum, d -> sum + query[token_head * head_size + d] * cache.keys[key_row * head_size + d]",
-         "                    sum, d ->\n                    cache.keys[key_row * head_size + d] -> widen_f32 -> key;\n"
+         "                    sum, d ->\n                    cache.keys[key_row * head_size + d] -> widen<f32> -> key;\n"
          "                    sum + query[token_head * head_size + d] * key"),
         ("            sum + exponentials[token_head * context_length + past] * cache.values[value_row * head_size + d]",
-         "            cache.values[value_row * head_size + d] -> widen_f32 -> value;\n"
+         "            cache.values[value_row * head_size + d] -> widen<f32> -> value;\n"
          "            sum + exponentials[token_head * context_length + past] * value"),
         ("    (0.0, cache_size) -> fill -> nothing_cached;",
-         "    0.0 -> to_bf16 -> zero;\n    (zero, cache_size) -> fill -> nothing_cached;"),
+         "    0.0 -> to<bf16> -> zero;\n    (zero, cache_size) -> fill -> nothing_cached;"),
     ]
     for old, new in subs:
         assert s.count(old) == 1, old

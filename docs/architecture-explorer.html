@@ -211,7 +211,7 @@ mapal fmt      prog.mapal              # formatter (owns layout; --check to veri
 <tr><th>Kind</th><th>Spelling</th><th>Notes</th></tr>
 <tr><td>Integers</td><td><code>i32</code>, <code>i64</code>, <code>u8</code></td><td>The three Core integer types. Literals default to <code>i32</code>.</td></tr>
 <tr><td>Floats</td><td><code>f32</code>, <code>f64</code></td><td>Literal type is directed by context (e.g. binding annotation).</td></tr>
-<tr><td>Narrow float storage</td><td><code>bf16</code>, <code>f16</code>, <code>f8e4m3</code>, <code>f8e5m2</code></td><td>Values stored in fewer bytes; no arithmetic on them. In by one rounding (<code>x -&gt; to_bf16</code>), out by an exact widening (<code>w -&gt; widen_f32</code>); compute stays f32 (ADR-0043).</td></tr>
+<tr><td>Narrow float storage</td><td><code>bf16</code>, <code>f16</code>, <code>f8e4m3</code>, <code>f8e5m2</code></td><td>Values stored in fewer bytes; no arithmetic on them. In by one rounding (<code>x -&gt; to<bf16></code>), out by an exact widening (<code>w -&gt; widen<f32></code>); compute stays f32 (ADR-0043).</td></tr>
 <tr><td>Bool / unit / string</td><td><code>bool</code>, <code>()</code>, <code>"…"</code></td><td>Strings exist to be printed in Core.</td></tr>
 <tr><td>Fixed arrays</td><td><code>[f32; 8]</code>, <code>[Pixel; 16]</code>, <code>[f32; tokens * hidden_size]</code></td><td>Size is part of the type and always ≥ 1 — a literal, a top-level integer, or a size expression over a function’s size parameters (ADR-0047). Dynamic <code>[T]</code> is rejected (P0104).</td></tr>
 <tr><td>Tuples</td><td><code>(i32, f32)</code>, value <code>(a, b)</code></td><td>The product type; multi-argument calls are tuple inputs. Project with <code>p.0</code>, <code>p.1</code>.</td></tr>
@@ -262,8 +262,8 @@ fn main() {
 16 -&gt; iota -&gt; ts;                                            // [0,1,…,15]
 arr -&gt; enumerate -&gt; indexed;                                 // [(0,a0),(1,a1),…]
 7 -&gt; fill -&gt; sevens: [i32; 4];                               // [7,7,7,7] (count from the type)
-t -&gt; widen_f64 -&gt; wide;                                      // i32 → f64 (also widen_i64, widen_f32)
-x -&gt; to_bf16 -&gt; stored;                                      // f32 → bf16, rounded once (also to_f16, to_f8e4m3, to_f8e5m2)
+t -&gt; widen<f64> -&gt; wide;                                      // i32 → f64 (also widen<i64>, widen<f32>)
+x -&gt; to<bf16> -&gt; stored;                                      // f32 → bf16, rounded once (also to<f16>, to<f8e4m3>, to<f8e5m2>)
 v -&gt; sqrt -&gt; root;                                          // math builtins: pipeline form only
 angle -&gt; sin -&gt; sine;                                       //   (also cos, exp)
 -x -&gt; exp -&gt; decay;</code></pre>
@@ -342,7 +342,7 @@ fn project&lt;tokens, rows, columns&gt;(weight: Matrix&lt;rows, columns&gt;, x: 
         cell % rows -&gt; row;
         (0.0, along) -&gt; fold {
             sum, column -&gt;
-            weight[row * columns + column] -&gt; widen_f32 -&gt; w;
+            weight[row * columns + column] -&gt; widen<f32> -&gt; w;
             sum + w * x[t * columns + column]
         }
     } -&gt; ret;
@@ -1122,7 +1122,7 @@ mapal run --interp examples/sepia.mapal   # oracle — must agree</code></pre>
 <details><summary><code>matmul128.mapal</code> — from textbook loops to a tiled kernel</summary><div class="body">
 <table>
 <tr><th>Layer</th><th>What happens</th></tr>
-<tr><td>Source</td><td><code>iota</code> ranges, two generator maps (with <code>widen_f64</code>), one cell map with an inner dot-product fold capturing <code>a</code>, <code>b</code>, <code>krange</code> (§6, Walkthrough 2).</td></tr>
+<tr><td>Source</td><td><code>iota</code> ranges, two generator maps (with <code>widen<f64></code>), one cell map with an inner dot-product fold capturing <code>a</code>, <code>b</code>, <code>krange</code> (§6, Walkthrough 2).</td></tr>
 <tr><td>Graph</td><td>Three <code>Map</code> sites; the cell site’s source is <code>(a, b, krange, ta)</code> with <code>captures = 3</code>; the fold body reads two affine <code>Index</code>es.</td></tr>
 <tr><td>Plans</td><td><code>tile_plan</code> fires (broadcast + vector reads, §6.3). <code>path_plan</code>: generator maps are independent <code>Split</code> tasks; the cell map depends on both. <code>last_use_plan</code>: <code>ta</code> dies after the generators; <code>a</code>/<code>b</code> live into the kernel; <code>c</code> escapes to the prints.</td></tr>
 <tr><td>CPU device</td><td>Profile picks register block + panel depths; <code>b</code> packed if the working set exceeds L2; accumulators resident across <em>k</em>; tasks sliced by row blocks across the pool.</td></tr>

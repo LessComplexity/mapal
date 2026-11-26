@@ -67,9 +67,9 @@ fn main() {{
     layer_count -> iota -> map {{
         l ->
         width -> iota -> map {{
-            i -> (l * {scale} + i) % 7 - 3 -> widen_f32
+            i -> (l * {scale} + i) % 7 - 3 -> widen<f32>
         }} -> w;
-        l -> widen_f32 -> b;
+        l -> widen<f32> -> b;
         Layer {{
             weight: w,
             bias: b,
@@ -80,7 +80,7 @@ fn main() {{
         c -> stack[c / width].weight[c % width]
     }} -> flat;
     width -> iota -> map {{
-        i -> i -> widen_f32
+        i -> i -> widen<f32>
     }} -> x0;
     mut x: [f32; width] <- x0;
     mut s: i32 <- 0;
@@ -126,7 +126,7 @@ fn a_plain_counted_loop_stays() {
     let src = r#"
 fn main() {
     8 -> iota -> map {
-        i -> i -> widen_f32
+        i -> i -> widen<f32>
     } -> x0;
     mut x: [f32; 8] <- x0;
     mut k: i32 <- 0;
@@ -191,7 +191,7 @@ fn step<rows>(x: [f32; rows * width], stack: [Layer; layer_count]) -> [f32; rows
 fn main() {{
     "{file}" -> read -> stack: [Layer; layer_count];
     {rows} * width -> iota -> map {{
-        i -> i % 5 -> widen_f32
+        i -> i % 5 -> widen<f32>
     }} -> prompt;
     (prompt, stack) -> step -> prefilled: [f32; {rows} * width];
     prefilled[0] -> println;

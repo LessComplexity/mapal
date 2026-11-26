@@ -9,9 +9,9 @@
 
 use mapal_syntax::{
     ArmPayload, BinOp, Block, BlockItem, Chain, CollOp, Diagnostic, Expr, ExprKind, FanoutKind,
-    Field, FieldInit, FnDecl, GuardArm, GuardDiscr, GuardKind, Item, LexOutput, LineIndex,
-    LoopLabel, MemberField, Param, Program, SourceLoc, Stage, StageKind, Stmt, StmtKind, Token,
-    TokenKind, Ty, TyKind, UnOp, lex,
+    Field, FieldInit, FnDecl, GenericParam, GuardArm, GuardDiscr, GuardKind, Item, LexOutput,
+    LineIndex, LoopLabel, MemberField, Param, Program, SourceLoc, Stage, StageKind, Stmt, StmtKind,
+    Token, TokenKind, Ty, TyKind, UnOp, lex,
 };
 
 /// Render a token's kind in a compact, stable textual form.
@@ -294,8 +294,8 @@ impl<'a> TreeWriter<'a> {
             Item::Fn(f) => self.fn_decl(d, f),
             Item::Type(t) => {
                 self.line(d, t.span, &format!("Type {}", self.quoted(t.name.span)));
-                for n in &t.sizes {
-                    self.line(d + 1, n.span, &format!("size {}", self.quoted(n.span)));
+                for g in &t.generics {
+                    self.generic(d + 1, g);
                 }
                 for field in &t.fields {
                     self.field(d + 1, field);
@@ -311,8 +311,8 @@ impl<'a> TreeWriter<'a> {
 
     fn fn_decl(&mut self, d: usize, f: &FnDecl) {
         self.line(d, f.span, &format!("Fn {}", self.quoted(f.name.span)));
-        for n in &f.sizes {
-            self.line(d + 1, n.span, &format!("size {}", self.quoted(n.span)));
+        for g in &f.generics {
+            self.generic(d + 1, g);
         }
         for p in &f.params {
             self.param(d + 1, p);
@@ -322,6 +322,23 @@ impl<'a> TreeWriter<'a> {
             self.ty(d + 2, rt);
         }
         self.block(d + 1, &f.body);
+    }
+
+    /// ADR-0047 / ADR-0051: a declared generic parameter — `size n` or
+    /// `format cache: float`.
+    fn generic(&mut self, d: usize, g: &GenericParam) {
+        match g.kind {
+            None => self.line(d, g.span, &format!("size {}", self.quoted(g.name.span))),
+            Some(k) => self.line(
+                d,
+                g.span,
+                &format!(
+                    "format {}: {}",
+                    self.quoted(g.name.span),
+                    self.quoted(k.span)
+                ),
+            ),
+        }
     }
 
     fn param(&mut self, d: usize, p: &Param) {
@@ -583,6 +600,14 @@ impl<'a> TreeWriter<'a> {
                 for f in fields {
                     self.field_init(d + 1, f);
                 }
+            }
+            ExprKind::Generic { name, args } => {
+                let args: Vec<String> = args.iter().map(|a| self.quoted(a.span)).collect();
+                self.line(
+                    d,
+                    e.span,
+                    &format!("Generic {} <{}>", self.quoted(name.span), args.join(", ")),
+                );
             }
             ExprKind::Call { callee, args } => {
                 self.line(d, e.span, &format!("Call ({})", args.len()));

@@ -2,15 +2,15 @@ fn main() {
     16777216 -> iota -> ta;
     4096 -> iota -> krange;
     ta -> map {
-        t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v;
+        t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v;
         v / 7.0
     } -> a;
     ta -> map {
-        t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v;
+        t -> (t * 11 + 57) % 103 - 51 -> widen<f32> -> v;
         v / 9.0
     } -> b;
     ta -> map {
-        t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v;
+        t -> (t * 5 + 3) % 97 - 48 -> widen<f32> -> v;
         v / 11.0
     } -> e;
     () -> time -> t0;

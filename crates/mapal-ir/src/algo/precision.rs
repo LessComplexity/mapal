@@ -39,7 +39,7 @@ pub struct PrecisionPlan {
     /// bound a value gate composes through the builtin
     /// ([`crate::math::MathForm::compose`]).
     pub math: SecondaryMap<MorphismId, crate::math::MathForm>,
-    /// ADR-0043 D3: each `Narrow` (`to_bf16` / `to_f16`) of the function with
+    /// ADR-0043 D3: each `Narrow` (`to<bf16>` / `to<f16>`) of the function with
     /// its format's form — the rounding is exact on every face (IEEE
     /// `convertFormat`); a default-face gate adds `u·|x| + abs` per rounding
     /// whose operand carries that face's error (a flip across a tie).

@@ -225,11 +225,11 @@ fn epilogue_launch_keeps_its_own_tile_beside_a_split() {
     65536 -> iota -> th;
     256 -> iota -> dr;
     512 -> iota -> hr;
-    tx -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 } -> x;
-    two -> map { t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 256.0 } -> wo;
-    tup -> map { t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v; v / 256.0 } -> wup;
-    tdn -> map { t -> (t * 3 + 1) % 89 - 44 -> widen_f32 -> v; v / 512.0 } -> wdn;
-    hr -> map { t -> t % 13 - 6 -> widen_f32 -> v; v / 5.0 } -> b1;
+    tx -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 } -> x;
+    two -> map { t -> (t * 11 + 57) % 103 - 51 -> widen<f32> -> v; v / 256.0 } -> wo;
+    tup -> map { t -> (t * 5 + 3) % 97 - 48 -> widen<f32> -> v; v / 256.0 } -> wup;
+    tdn -> map { t -> (t * 3 + 1) % 89 - 44 -> widen<f32> -> v; v / 512.0 } -> wdn;
+    hr -> map { t -> t % 13 - 6 -> widen<f32> -> v; v / 5.0 } -> b1;
     tx -> map { t -> t / 256 -> i; t % 256 -> j; (0.0, dr) -> fold { acc, k -> acc + x[i * 256 + k] * wo[k * 256 + j] } } -> p;
     th -> map { t -> t / 512 -> i; t % 512 -> j; (0.0, dr) -> fold { acc, k -> acc + p[i * 256 + k] * wup[k * 512 + j] } } -> hraw;
     th -> map { t -> hraw[t] + b1[t % 512] -> u; (u > 0.0) -> { -true-> u; -false-> 0.0; } -> r; r } -> hh;

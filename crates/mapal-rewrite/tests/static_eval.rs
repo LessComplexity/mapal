@@ -73,7 +73,7 @@ fn a_value_of_an_effect_or_an_input_is_not_computable() {
     // A function's parameter is a run-time input; a constant cone inside it
     // is computable.
     let src = "fn f(x: f32) -> f32 {
-    4 -> iota -> map { i -> i -> widen_f32 } -> w;
+    4 -> iota -> map { i -> i -> widen<f32> } -> w;
     (0.0, w) -> fold { s, v -> s + v } -> six;
     x * six -> ret;
 }
@@ -99,7 +99,7 @@ fn main() {
     () -> time -> t;
     t > 0.0 -> on;
     on -> map_k -> k;
-    8192 -> iota -> map { i -> i -> widen_f32 -> * 0.5 } -> big;
+    8192 -> iota -> map { i -> i -> widen<f32> -> * 0.5 } -> big;
     (big, k) -> h -> println;
 }
 fn map_k(b: bool) -> i32 { 3 -> ret; }";

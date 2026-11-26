@@ -650,8 +650,8 @@ fn check_finite(
 }
 
 /// bf16-class `narrow-window`: `src` with its keys and values stored bf16
-/// (a bf16 KV cache: each written element rounded once, `-> to_bf16`; each
-/// read widened exactly before its product, `-> widen_f32`) — the struct's
+/// (a bf16 KV cache: each written element rounded once, `-> to<bf16>`; each
+/// read widened exactly before its product, `-> widen<f32>`) — the struct's
 /// fields too. `None` when the source has no such reads.
 fn bf16_cache_src(src: &str) -> Option<String> {
     let mut out = String::new();
@@ -669,7 +669,7 @@ fn bf16_cache_src(src: &str) -> Option<String> {
             let at = rest.find(k).expect("the read");
             let (lhs, read) = (&rest[..at], &rest[at + 3..]);
             out +=
-                &format!("{ind}{head} ->\n{ind}{read} -> widen_f32 -> kv16;\n{ind}{lhs} * kv16\n");
+                &format!("{ind}{head} ->\n{ind}{read} -> widen<f32> -> kv16;\n{ind}{lhs} * kv16\n");
             reads += 1;
             continue;
         }
@@ -686,7 +686,7 @@ fn bf16_cache_src(src: &str) -> Option<String> {
         }
         out = out.replace(
             &plain,
-            &format!("        v / 4.0 -> to_bf16\n    }} -> {name};"),
+            &format!("        v / 4.0 -> to<bf16>\n    }} -> {name};"),
         );
     }
     Some(

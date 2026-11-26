@@ -86,8 +86,8 @@ type KeyValueCache {
 // ones: wavelengths longer than the original context / low factor are divided by the factor, those shorter
 // than the original context / high factor are kept, and those between are blended smoothly.
 fn inverse_frequency(pair: i32) -> f32 {
-    pair * 2 -> widen_f32 -> twice_pair;
-    head_size -> widen_f32 -> width;
+    pair * 2 -> to<f32> -> twice_pair;
+    head_size -> widen<f32> -> width;
     -(twice_pair / width) * log_rope_theta -> exp -> frequency;
     6.2831855 / frequency -> wavelength;
     (wavelength > rope_original_context / rope_low_frequency_factor) -> {
@@ -118,7 +118,7 @@ fn rotate<tokens, width>(x: [f32; tokens * width], positions: [i32; tokens]) -> 
         cell / width -> t;
         cell % head_size -> within_head;
         within_head % rotation_pairs -> pair;
-        positions[t] -> widen_f32 -> position;
+        positions[t] -> to<f32> -> position;
         position * inverse_frequencies[pair] -> angle;
         angle -> cos -> cosine;
         angle -> sin -> sine;
@@ -136,14 +136,14 @@ fn embed<tokens>(embedding: Matrix<vocabulary_size, hidden_size>, ids: [i32; tok
     tokens * hidden_size -> iota -> map {
         cell ->
         ids[cell / hidden_size] * hidden_size + cell % hidden_size -> row_cell;
-        embedding[row_cell] -> widen_f32
+        embedding[row_cell] -> widen<f32>
     } -> ret;
 }
 
 // RMSNorm of each vector: x / sqrt(mean(x^2) + epsilon), times a learned gain per feature.
 fn rms_norm<tokens>(x: [f32; tokens * hidden_size], gain: [bf16; hidden_size]) -> [f32; tokens * hidden_size] {
     hidden_size -> iota -> features;
-    hidden_size -> widen_f32 -> width;
+    hidden_size -> widen<f32> -> width;
     tokens -> iota -> map {
         t -> (0.0, features) -> fold {
             sum, i -> sum + x[t * hidden_size + i] * x[t * hidden_size + i]
@@ -152,7 +152,7 @@ fn rms_norm<tokens>(x: [f32; tokens * hidden_size], gain: [bf16; hidden_size]) -
     tokens * hidden_size -> iota -> map {
         cell ->
         sum_of_squares[cell / hidden_size] / width + rms_epsilon -> sqrt -> root;
-        gain[cell % hidden_size] -> widen_f32 -> g;
+        gain[cell % hidden_size] -> widen<f32> -> g;
         x[cell] * (1.0 / root) * g
     } -> ret;
 }
@@ -166,7 +166,7 @@ fn project<tokens, rows, columns>(weight: Matrix<rows, columns>, x: [f32; tokens
         cell % rows -> row;
         (0.0, along) -> fold {
             sum, column ->
-            weight[row * columns + column] -> widen_f32 -> w;
+            weight[row * columns + column] -> widen<f32> -> w;
             sum + w * x[t * columns + column]
         }
     } -> ret;
@@ -218,7 +218,7 @@ fn attend<tokens>(
 ) -> [f32; tokens * query_size] {
     head_size -> iota -> dimensions;
     context_length -> iota -> past_positions;
-    head_size -> widen_f32 -> sqrt -> scale_root;
+    head_size -> widen<f32> -> sqrt -> scale_root;
     tokens * query_heads * context_length -> iota -> map {
         cell ->
         cell / context_length -> token_head;

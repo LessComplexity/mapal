@@ -211,7 +211,7 @@ Items surfaced during this pass that are worth tracking but outside scope:
 (`(1 + x/256)^256` by squarings), with a clamped domain and ~5·10⁻⁵ relative error, and `fold_combine` had no
 exponential law (a softmax's denominator waited for its max: a phase).
 
-**After.** `x -> exp` is a pure stage builtin like `widen_f32` (no call syntax), IR `Operation::Exp`, L1615 for a
+**After.** `x -> exp` is a pure stage builtin like `widen<f32>` (no call syntax), IR `Operation::Exp`, L1615 for a
 non-float operand. Its value is the oracle's algorithm (`mapal-ir/src/exp.rs`) on the exact faces — byte for byte on
 every backend — and within `2⁻²¹·eˣ + 2⁻¹⁴⁹` (f32) on the default face, where the device takes MUFU.EX2 after a
 Cody–Waite reduction and the host a vectorizable contracted polynomial. `fold_combine` gains `DepLaw::Rescale`
@@ -224,8 +224,8 @@ programs (`benches/algorithms`, `gen_tiles.py`) use `-> exp`; editors highlight 
 16-bit weights could only be held as `f32`, twice the bytes a bandwidth-bound decode step moves.
 
 **After.** `bf16` and `f16` are storage types (`[bf16; n]`, bindings, loop state, guards, updates) with no arithmetic,
-comparison or print: `x -> to_bf16` / `x -> to_f16` round an `f32` once (ties to even, subnormals kept, `±inf` past
-the threshold; L1616 otherwise) and `w -> widen_f32` / `widen_f64` widen exactly. IR `Ty::Narrow`, `Value::Narrow`,
+comparison or print: `x -> to<bf16>` / `x -> to<f16>` round an `f32` once (ties to even, subnormals kept, `±inf` past
+the threshold; L1616 otherwise) and `w -> widen<f32>` / `widen<f64>` widen exactly. IR `Ty::Narrow`, `Value::Narrow`,
 `Operation::Narrow`. Every backend computes the interpreter's bits on every face (host: an integer sequence for
 `bf16`, F16C for `f16`; device: `cvt.rn`). A sum of products over a widened narrow operand is a `tile_plan_narrow`
 site: the device's one-thread-per-cell kernel loads the 2-byte format, the register-staged tile widens its panels as
@@ -294,6 +294,29 @@ realizes it by bytes against work — `fold_static` embeds the cheap ones (oracl
 dropped), the rest run. `type Hidden { _: [f32; hidden_size] }` is a zero-cost alias; `_` beside other fields is read
 where the struct's own type does not fit; `type Matrix<rows, columns>` is a size-generic type (`Matrix<hidden_size,
 hidden_size>`; L1809). Formatter, Neovim, tests on generated programs (interpreter, native CPU, every emulator mode).
+
+### 9.7 Format generics: `to<target>` / `widen<target>`, format parameters, explicit arguments (ADR-0051, 2026-11-26)
+
+**Before.** Seven builtins carried a format in their name (`to_bf16`, `to_f16`, `to_f8e4m3`, `to_f8e5m2`,
+`widen_i64`, `widen_f32`, `widen_f64`), and no function could be written once for several formats: the readable Llama
+fixed its weight and cache formats in every function that touched them.
+
+**After.** A declared generic list holds format parameters with their kind beside the sizes —
+`fn attend<positions, cache: float>`, `type Matrix<rows, columns, element: float>` (kinds `float`, `narrow`, `int`,
+`number`; a bare name stays a size). A stage may name a prefix of the callee's arguments, `x -> to<bf16>`,
+`-> project<4096, 2048>` (written tight); the rest are inferred from the argument's type (a format parameter in a type
+position binds to the argument's scalar format) and then from the expected type (a binding's annotation, the output at
+`-> ret`, a fixed function's parameter the value flows into). The conversions are two generic builtins of one prelude
+declaration each, `fn to<target: number, source: number>(value: source) -> target` (rounds) and `widen<…>` (exact),
+realized by the existing `Narrow` / `Widen` operations: `widen` where every value of the source is a value of the
+target, or where the facts prove the value is one (`i32 → f32` within ±2²⁴: `bounds_proof`'s new `widen_range`, or a
+compile-time value); an identity is erased. Instances are named `name<4096, bf16>`. Errors: L1708 a format nothing
+determines, L1709 two determinations, L1710 a format outside its kind (or a size where a format is declared), L1711 an
+unknown kind, L1712 explicit arguments on a stage that takes none, L1713 a removed name (naming its replacement);
+L1614 / L1616 keep the `widen` / `to` admissions. Every Mapal source of the repository is rewritten — 3,053
+occurrences; of the `widen_f32` of an `i32`, the facts prove all but 11 exact (`to<f32>` there) — and lowers to the
+same IR (spans aside), host and device text unchanged on the RTX 5080 and x86-64-v3 profiles
+(`benches/results/evidence/local-rtx-5080/format-generics.md`).
 
 ---
 

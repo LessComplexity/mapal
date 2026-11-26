@@ -58,7 +58,7 @@ fn read_takes_every_element_type() {
         ("f16", Ty::Narrow(NarrowFloat::F16)),
     ] {
         let widen = match name {
-            "bf16" | "f16" => " -> widen_f32",
+            "bf16" | "f16" => " -> widen<f32>",
             _ => "",
         };
         let src = format!(
@@ -138,7 +138,7 @@ fn a_missing_or_non_array_annotation_is_l1617() {
         r#"fn main() { "w.bin" -> read -> w: f32; w -> println; }"#,
         // an element type a file cannot hold
         r#"fn main() { "w.bin" -> read -> w: [bool; 2]; w[0] -> println; }"#,
-        r#"fn main() { "w.bin" -> read -> w: [f8e4m3; 2]; w[0] -> widen_f32 -> println; }"#,
+        r#"fn main() { "w.bin" -> read -> w: [f8e4m3; 2]; w[0] -> widen<f32> -> println; }"#,
         // a record whose layout needs padding (an f32 after a u8)
         r#"fn main() { "w.bin" -> read -> w: [(u8, f32); 2]; w[0].1 -> println; }"#,
     ] {
@@ -150,7 +150,7 @@ fn a_missing_or_non_array_annotation_is_l1617() {
         r#"fn main() { "w.bin" -> read -> w: [[f32; 2]; 2]; w[0][0] -> println; }"#,
         r#"fn main() { "w.bin" -> read -> w: [(f32, f32); 2]; w[0].0 -> println; }"#,
         r#"type L { g: [bf16; 2], w: [[bf16; 2]; 3] }
-fn main() { "w.bin" -> read -> m: [L; 4]; m[1].w[2][0] -> widen_f32 -> println; }"#,
+fn main() { "w.bin" -> read -> m: [L; 4]; m[1].w[2][0] -> widen<f32> -> println; }"#,
     ] {
         let po = mapal_syntax::parse(src);
         assert!(po.diagnostics.is_empty(), "{:?}", po.diagnostics);
@@ -194,9 +194,9 @@ fn read_is_reserved() {
 
 #[test]
 fn formatter_keeps_the_stage() {
-    let src = "fn main() {\n    \"weights/embedding.bin\" -> read -> token_embedding: [bf16; 64];\n    token_embedding[0] -> widen_f32 -> println;\n}\n";
+    let src = "fn main() {\n    \"weights/embedding.bin\" -> read -> token_embedding: [bf16; 64];\n    token_embedding[0] -> widen<f32> -> println;\n}\n";
     let out = mapal_syntax::format_source(src).expect("formats");
     assert_eq!(out, src);
-    let messy = "fn main(){\n\"weights/embedding.bin\"->read->token_embedding:[bf16;64];\ntoken_embedding[0]->widen_f32->println;}\n";
+    let messy = "fn main(){\n\"weights/embedding.bin\"->read->token_embedding:[bf16;64];\ntoken_embedding[0]->widen<f32>->println;}\n";
     assert_eq!(mapal_syntax::format_source(messy).expect("formats"), src);
 }

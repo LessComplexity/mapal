@@ -205,6 +205,9 @@ impl Names {
     fn size(&mut self, source: &str, e: &SizeExpr) {
         match &e.kind {
             SizeKind::Int(_) => {}
+            // ADR-0051: a format argument (`Matrix<r, c, bf16>`) reads no size.
+            SizeKind::Name(n)
+                if crate::formats::Format::from_name(name_text(source, *n)).is_some() => {}
             SizeKind::Name(n) => {
                 self.sizes.insert(name_text(source, *n).to_string());
             }
@@ -281,6 +284,14 @@ impl Names {
         match &e.kind {
             ExprKind::Var(n) => {
                 self.values.insert(name_text(source, *n).to_string());
+            }
+            // ADR-0051 D2: a stage's explicit arguments read sizes (a format
+            // name is no size: [`Names::size`]).
+            ExprKind::Generic { name, args } => {
+                self.values.insert(name_text(source, *name).to_string());
+                for a in args {
+                    self.size(source, a);
+                }
             }
             ExprKind::Unary { operand, .. } => self.expr(source, operand),
             ExprKind::Binary { lhs, rhs, .. } => {

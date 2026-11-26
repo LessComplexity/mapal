@@ -1,42 +1,42 @@
 fn main() {
     128 -> iota -> i_x0;
     i_x0 -> map {
-        t -> (t % 101 * 7 + 13) % 101 - 50 -> widen_f32 -> v;
+        t -> (t % 101 * 7 + 13) % 101 - 50 -> widen<f32> -> v;
         v / 29.0
     } -> x0;
     64 -> iota -> i_g1;
     i_g1 -> map {
-        t -> (t % 97 * 5 + 3) % 97 - 48 -> widen_f32 -> v;
+        t -> (t % 97 * 5 + 3) % 97 - 48 -> widen<f32> -> v;
         1.0 + v / 400.0
     } -> g1;
     8192 -> iota -> i_wqkv;
     i_wqkv -> map {
-        t -> (t % 103 * 11 + 57) % 103 - 51 -> widen_f32 -> v;
+        t -> (t % 103 * 11 + 57) % 103 - 51 -> widen<f32> -> v;
         v / 232.0
     } -> wqkv;
     4096 -> iota -> i_wo;
     i_wo -> map {
-        t -> (t % 97 * 5 + 3) % 97 - 48 -> widen_f32 -> v;
+        t -> (t % 97 * 5 + 3) % 97 - 48 -> widen<f32> -> v;
         v / 232.0
     } -> wo;
     128 -> iota -> i_cs;
     i_cs -> map {
-        t -> (t % 89 * 3 + 1) % 89 - 44 -> widen_f32 -> v;
+        t -> (t % 89 * 3 + 1) % 89 - 44 -> widen<f32> -> v;
         v / 50.0
     } -> cs;
     128 -> iota -> i_sn;
     i_sn -> map {
-        t -> (t % 107 * 13 + 7) % 107 - 53 -> widen_f32 -> v;
+        t -> (t % 107 * 13 + 7) % 107 - 53 -> widen<f32> -> v;
         v / 50.0
     } -> sn;
     1024 -> iota -> i_kc0;
     i_kc0 -> map {
-        t -> (t % 109 * 17 + 29) % 109 - 54 -> widen_f32 -> v;
+        t -> (t % 109 * 17 + 29) % 109 - 54 -> widen<f32> -> v;
         v / 29.0
     } -> kc0;
     1024 -> iota -> i_vc0;
     i_vc0 -> map {
-        t -> (t % 101 * 7 + 13) % 101 - 50 -> widen_f32 -> v;
+        t -> (t % 101 * 7 + 13) % 101 - 50 -> widen<f32> -> v;
         v / 29.0
     } -> vc0;
     2 -> iota -> rR;
@@ -92,9 +92,9 @@ fn main() {
                     qkv[b * 128 + rh * 16 + ri] -> va;
                     qkv[b * 128 + rh * 16 + (ri + 8) % 16] -> vb;
                     (p * 8 + rj) % 89 * 3 + 1 -> cq;
-                    (cq % 89 - 44) -> widen_f32 -> cv;
+                    (cq % 89 - 44) -> widen<f32> -> cv;
                     (p * 8 + rj) % 107 * 13 + 7 -> sq;
-                    (sq % 107 - 53) -> widen_f32 -> sv;
+                    (sq % 107 - 53) -> widen<f32> -> sv;
                     va * (cv / 50.0) + sg * vb * (sv / 50.0)
                 } -> q;
                 rC -> map {
@@ -113,9 +113,9 @@ fn main() {
                             qkv[b * 128 + 64 + rh * 16 + ri] -> va;
                             qkv[b * 128 + 64 + rh * 16 + (ri + 8) % 16] -> vb;
                             (p * 8 + rj) % 89 * 3 + 1 -> cq;
-                            (cq % 89 - 44) -> widen_f32 -> cv;
+                            (cq % 89 - 44) -> widen<f32> -> cv;
                             (p * 8 + rj) % 107 * 13 + 7 -> sq;
-                            (sq % 107 - 53) -> widen_f32 -> sv;
+                            (sq % 107 - 53) -> widen<f32> -> sv;
                             va * (cv / 50.0) + sg * vb * (sv / 50.0)
                         }
                         -false-> kc[c];

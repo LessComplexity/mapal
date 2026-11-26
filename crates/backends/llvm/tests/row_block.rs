@@ -144,9 +144,9 @@ fn attention(t: u64, d: u64, extra: &str, out: &str, len: u64) -> String {
     format!(
         "fn main() {{
     {td} -> iota -> tq;
-    tq -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 64.0 }} -> q;
-    tq -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 64.0 }} -> kk;
-    tq -> map {{ t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v; v / 16.0 }} -> vv;
+    tq -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 64.0 }} -> q;
+    tq -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen<f32> -> v; v / 64.0 }} -> kk;
+    tq -> map {{ t -> (t * 5 + 3) % 97 - 48 -> widen<f32> -> v; v / 16.0 }} -> vv;
     {d} -> iota -> kd;
     {t} -> iota -> kt;
     {tt} -> iota -> ts;
@@ -250,8 +250,8 @@ fn unit_plan_refuses_unclosed_reads() {
         "fn main() {{
     {nn} -> iota -> ta;
     {n} -> iota -> kr;
-    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> a;
-    ta -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 }} -> b;
+    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 }} -> a;
+    ta -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen<f32> -> v; v / 9.0 }} -> b;
     ta -> map {{ t ->
         t / {n} -> i;
         t % {n} -> j;
@@ -426,9 +426,9 @@ fn staged_column_passes_values() {
     };
     let src = "fn main() {
     32 -> iota -> iq;
-    iq -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 64.0 } -> q;
+    iq -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 64.0 } -> q;
     4096 -> iota -> ik;
-    ik -> map { t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 64.0 } -> kk;
+    ik -> map { t -> (t * 11 + 57) % 103 - 51 -> widen<f32> -> v; v / 64.0 } -> kk;
     8 -> iota -> kd;
     4 -> iota -> kr;
     512 -> iota -> kt;

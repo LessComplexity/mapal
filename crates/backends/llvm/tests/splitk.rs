@@ -23,9 +23,9 @@ fn src(m: u64, n: u64, k: u64) -> String {
     format!(
         "fn main() {{
     {mk} -> iota -> ta;
-    ta -> map {{ t -> t % {k} -> kk; 1 + 16777215 * (({k1} - kk) / {k1}) -> widen_f32 }} -> a;
+    ta -> map {{ t -> t % {k} -> kk; 1 + 16777215 * (({k1} - kk) / {k1}) -> widen<f32> }} -> a;
     {kn} -> iota -> tb;
-    tb -> map {{ t -> t * 0 + 1 -> widen_f32 }} -> b;
+    tb -> map {{ t -> t * 0 + 1 -> widen<f32> }} -> b;
     {k} -> iota -> krange;
     {mn} -> iota -> tc;
     tc -> map {{ t ->
@@ -355,9 +355,9 @@ fn mm_src(m: u64, n: u64, k: u64) -> String {
     format!(
         "fn main() {{
     {mk} -> iota -> ta;
-    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 }} -> a;
+    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen<f32> }} -> a;
     {kn} -> iota -> tb;
-    tb -> map {{ t -> (t * 7 + 57) % 101 - 50 -> widen_f32 }} -> b;
+    tb -> map {{ t -> (t * 7 + 57) % 101 - 50 -> widen<f32> }} -> b;
     {k} -> iota -> krange;
     {mn} -> iota -> tc;
     tc -> map {{ t ->

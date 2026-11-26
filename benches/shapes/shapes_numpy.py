@@ -7,7 +7,7 @@ import numpy as np
 
 
 def inputs(count: int, mul: int, add: int, modulus: int, subtract: int) -> np.ndarray:
-    # Mapal does integer arithmetic first, then widen_f32.
+    # Mapal does integer arithmetic first, then widen<f32>.
     values = np.arange(count, dtype=np.int64)
     return ((values * mul + add) % modulus - subtract).astype(np.float32)
 

@@ -1,17 +1,28 @@
 fn main() {
     589824 -> iota -> i_w;
-    i_w -> map { t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v; v / 11.0 } -> w;
+    i_w -> map {
+        t -> (t * 5 + 3) % 97 - 48 -> widen<f32> -> v;
+        v / 11.0
+    } -> w;
     6889472 -> iota -> i_img;
-    i_img -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 } -> img;
+    i_img -> map {
+        t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v;
+        v / 7.0
+    } -> img;
     () -> time -> t0;
     6422528 -> iota -> o_y;
     2304 -> iota -> k_y;
-    o_y -> map { t ->
+    o_y -> map {
+        t ->
         t / 802816 -> b;
         t / 3136 % 256 -> co;
         t / 56 % 56 -> i;
         t % 56 -> j;
-        (0.0, k_y) -> fold { acc, k -> k / 9 -> ci; k % 9 -> q; acc + w[co * 2304 + k] * img[((b * 256 + ci) * 58 + i + q / 3) * 58 + j + q % 3] }
+        (0.0, k_y) -> fold {
+            acc, k -> k / 9 -> ci;
+            k % 9 -> q;
+            acc + w[co * 2304 + k] * img[((b * 256 + ci) * 58 + i + q / 3) * 58 + j + q % 3]
+        }
     } -> y;
     () -> time -> t1;
     y[0] -> println;

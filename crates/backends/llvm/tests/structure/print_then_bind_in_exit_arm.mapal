@@ -2,7 +2,7 @@
 // after the loop (its print included), and binds in the enclosing scope.
 fn main() {
     64 -> iota -> map {
-        i -> i -> widen_f32
+        i -> i -> widen<f32>
     } -> x;
     mut hidden: [f32; 64] <- x;
     mut layer: i32 <- 0;

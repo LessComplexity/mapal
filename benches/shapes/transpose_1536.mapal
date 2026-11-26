@@ -7,10 +7,14 @@
 // 48 lines, 48 mod 128 = 48, gcd(48,128) = 16 -> 8 sets, 64 slots. Both fire.
 fn main() {
     2359296 -> iota -> ia;
-    ia -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 } -> a;
+    ia -> map {
+        t -> (t * 7 + 13) % 101 - 50 -> widen<f32>
+    } -> a;
     2359296 -> iota -> ib;
     () -> time -> t0;
-    ib -> map { t -> a[(t % 1536) * 1536 + t / 1536] } -> b;
+    ib -> map {
+        t -> a[(t % 1536) * 1536 + t / 1536]
+    } -> b;
     () -> time -> t1;
     b[0] -> println;
     b[2359295] -> println;

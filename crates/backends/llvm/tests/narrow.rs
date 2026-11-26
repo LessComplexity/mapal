@@ -99,12 +99,12 @@ const GEMV: &str = "fn main() {
     64 -> iota -> tk;
     6144 -> iota -> tw;
     96 -> iota -> tn;
-    tk -> map { e -> (e * 7 + 3) % 31 - 15 -> widen_f32 -> v; v / 29.0 } -> x;
-    tw -> map { e -> (e % 103 * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 1856.0 -> to_bf16 } -> w;
+    tk -> map { e -> (e * 7 + 3) % 31 - 15 -> widen<f32> -> v; v / 29.0 } -> x;
+    tw -> map { e -> (e % 103 * 11 + 57) % 103 - 51 -> widen<f32> -> v; v / 1856.0 -> to<bf16> } -> w;
     96 -> iota -> tb;
-    tb -> map { e -> e -> widen_f32 -> v; v * 1000.5 -> to_f16 } -> h;
-    tw -> map { e -> (e % 97 * 5 + 3) % 97 - 48 -> widen_f32 -> v; v / 1856.0 } -> g;
-    tn -> map { j -> (0.0, tk) -> fold { acc, k -> w[k * 96 + j] -> widen_f32 -> b; acc + x[k] * b } -> s; h[j] -> widen_f32 -> hv; s + hv } -> y;
+    tb -> map { e -> e -> widen<f32> -> v; v * 1000.5 -> to<f16> } -> h;
+    tw -> map { e -> (e % 97 * 5 + 3) % 97 - 48 -> widen<f32> -> v; v / 1856.0 } -> g;
+    tn -> map { j -> (0.0, tk) -> fold { acc, k -> w[k * 96 + j] -> widen<f32> -> b; acc + x[k] * b } -> s; h[j] -> widen<f32> -> hv; s + hv } -> y;
     tn -> map { j -> (0.0, tk) -> fold { acc, k -> acc + x[k] * g[k * 96 + j] } } -> f;
     y[0] -> println;
     y[95] -> println;
@@ -118,7 +118,7 @@ const GEMV: &str = "fn main() {
 /// rounding's form and the narrow site's bound (the f32 site's).
 #[test]
 fn narrow_sites_and_roundings_are_facts() {
-    let src = GEMV.replace(" -> s; h[j] -> widen_f32 -> hv; s + hv", "");
+    let src = GEMV.replace(" -> s; h[j] -> widen<f32> -> hv; s + hv", "");
     let ir = lower(&src);
     let f = ir.entry();
     let narrow = ir.tile_plan_narrow(f);
@@ -136,7 +136,7 @@ fn narrow_sites_and_roundings_are_facts() {
         .funcs()
         .flat_map(|(g, _)| ir.precision_plan(g).narrow.into_iter().map(|(_, n)| n))
         .collect();
-    assert_eq!(roundings.len(), 2, "to_bf16 and to_f16");
+    assert_eq!(roundings.len(), 2, "to<bf16> and to<f16>");
     assert!(roundings.iter().any(|n| n.u == 2f64.powi(-8)));
     assert!(
         roundings
@@ -159,8 +159,8 @@ fn narrow_sites_and_roundings_are_facts() {
     }));
 }
 
-/// D5 / D6 / D8 intents: the host defines `to_bf16` as the integer
-/// sequence and `to_f16` as `fptrunc`; the device both as `fptrunc`
+/// D5 / D6 / D8 intents: the host defines `to<bf16>` as the integer
+/// sequence and `to<f16>` as `fptrunc`; the device both as `fptrunc`
 /// (`cvt.rn`); the narrow site's kernel loads `bfloat` and widens it (one
 /// thread a cell), its pointer an allocation's — aligned as the kernel's
 /// other operands (regressions: `align 2` kept the bf16 KV cache's scores

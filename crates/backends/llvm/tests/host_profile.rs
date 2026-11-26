@@ -86,8 +86,8 @@ fn site(n: u64) -> String {
     format!(
         "fn main() {{
     {nn} -> iota -> ta;
-    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> x; x / 7.0 }} -> a;
-    ta -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> x; x / 9.0 }} -> b;
+    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> x; x / 7.0 }} -> a;
+    ta -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen<f32> -> x; x / 9.0 }} -> b;
     {n} -> iota -> krange;
     ta -> map {{ t ->
         t / {n} -> i;

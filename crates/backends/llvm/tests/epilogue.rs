@@ -137,7 +137,7 @@ fn site(out: &str, a: &str, b: &str) -> String {
 
 fn operand(name: &str, mul: u32) -> String {
     format!(
-        "    ta -> map {{ t -> (t * {mul} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> {name};\n"
+        "    ta -> map {{ t -> (t * {mul} + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 }} -> {name};\n"
     )
 }
 
@@ -151,7 +151,7 @@ fn program(ops: &[&str], body: &str, outs: &[&str]) -> String {
     for (i, o) in ops.iter().enumerate() {
         s.push_str(&operand(o, 7 + 2 * i as u32));
     }
-    s.push_str("    krange -> map { t -> t % 13 - 6 -> widen_f32 -> v; v / 5.0 } -> bias;\n");
+    s.push_str("    krange -> map { t -> t % 13 - 6 -> widen<f32> -> v; v / 5.0 } -> bias;\n");
     s.push_str(body);
     for o in outs {
         s.push_str(&format!(

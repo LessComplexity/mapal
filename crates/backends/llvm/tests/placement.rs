@@ -513,7 +513,7 @@ fn priced_placement_follows_the_carried_state() {
 /// prompt's rows.
 fn prompt_head_src(r: u64, w: u64, n: u64, norm: bool, res: bool) -> String {
     let mut s = format!(
-        "fn main() {{\n    {rw} -> iota -> i_t;\n    i_t -> map {{\n        x -> (x * 7 + 3) % 13 - 6 -> widen_f32 -> v;\n        v / 4.0\n    }} -> table;\n    {n} -> iota -> i_ids;\n    i_ids -> map {{\n        x -> (x > {far}) -> {{\n            -true-> 100000;\n            -false-> (x * 5 + 3) % {r};\n        }}\n    }} -> ids;\n    {nw} -> iota -> map {{\n        cell -> table[ids[cell / {w}] * {w} + cell % {w}]\n    }} -> rows;\n    {w} -> iota -> rw;\n    {w} -> iota -> i_g;\n    i_g -> map {{\n        x -> (x * 3 + 1) % 5 - 2 -> widen_f32 -> v;\n        v / 2.0 + 1.0\n    }} -> gain;\n    {ww} -> iota -> i_wt;\n    i_wt -> map {{\n        x -> (x * 5 + 2) % 9 - 4 -> widen_f32 -> v;\n        v / 16.0\n    }} -> weight;\n",
+        "fn main() {{\n    {rw} -> iota -> i_t;\n    i_t -> map {{\n        x -> (x * 7 + 3) % 13 - 6 -> widen<f32> -> v;\n        v / 4.0\n    }} -> table;\n    {n} -> iota -> i_ids;\n    i_ids -> map {{\n        x -> (x > {far}) -> {{\n            -true-> 100000;\n            -false-> (x * 5 + 3) % {r};\n        }}\n    }} -> ids;\n    {nw} -> iota -> map {{\n        cell -> table[ids[cell / {w}] * {w} + cell % {w}]\n    }} -> rows;\n    {w} -> iota -> rw;\n    {w} -> iota -> i_g;\n    i_g -> map {{\n        x -> (x * 3 + 1) % 5 - 2 -> widen<f32> -> v;\n        v / 2.0 + 1.0\n    }} -> gain;\n    {ww} -> iota -> i_wt;\n    i_wt -> map {{\n        x -> (x * 5 + 2) % 9 - 4 -> widen<f32> -> v;\n        v / 16.0\n    }} -> weight;\n",
         rw = r * w,
         nw = n * w,
         ww = w * 64,

@@ -34,16 +34,16 @@ fn bf16(x: f64) -> f64 {
 
 const DOT: &str = "fn main() {
     16 -> iota -> map {
-        t -> t -> widen_f32 -> v;
+        t -> t -> widen<f32> -> v;
         v / 3.0 + 0.1
     } -> x;
     16 -> iota -> map {
-        t -> t % 5 - 2 -> widen_f32 -> v;
-        v / 8.0 -> to_bf16
+        t -> t % 5 - 2 -> widen<f32> -> v;
+        v / 8.0 -> to<bf16>
     } -> w;
     16 -> iota -> rk;
     (0.0, rk) -> fold: bf16 | f32 {
-        acc, k -> w[k] -> widen_f32 -> wv;
+        acc, k -> w[k] -> widen<f32> -> wv;
         acc + x[k] * wv
     } -> y;
     y -> println;
@@ -90,8 +90,8 @@ fn f32_products_and_exact_roundings() {
     assert!(b[0].order > 0.0 && b[0].order < 1e-5, "{:?}", b[0]);
     let exact = "fn main() {
     2.5 -> x;
-    x / 3.0 -> to_bf16 -> y;
-    y -> widen_f32 -> println;
+    x / 3.0 -> to<bf16> -> y;
+    y -> widen<f32> -> println;
 }";
     let (_, b) = bounded(exact);
     assert_eq!(b[0].total, 0.0, "{:?}", b[0]);
@@ -103,7 +103,7 @@ fn f32_products_and_exact_roundings() {
 fn narrow_rounding_absorbs_short_of_a_tie() {
     let src = DOT.replace(
         "    y -> println;",
-        "    y -> println;\n    y -> to_bf16 -> z;\n    z -> widen_f32 -> println;",
+        "    y -> println;\n    y -> to<bf16> -> z;\n    z -> widen<f32> -> println;",
     );
     let (v, b) = bounded(&src);
     let (y, e) = (v[0], b[0].total);

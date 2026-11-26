@@ -5,10 +5,16 @@
 // deduction has the least to offer, which is exactly why it is measured.
 fn main() {
     1048576 -> iota -> ix;
-    ix -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 } -> x;
-    ix -> map { t -> (t * 1021 + 12347) % 1048576 } -> idx;
+    ix -> map {
+        t -> (t * 7 + 13) % 101 - 50 -> widen<f32>
+    } -> x;
+    ix -> map {
+        t -> (t * 1021 + 12347) % 1048576
+    } -> idx;
     () -> time -> t0;
-    idx -> map { j -> x[j] } -> y;
+    idx -> map {
+        j -> x[j]
+    } -> y;
     () -> time -> t1;
     y[0] -> println;
     y[1048575] -> println;

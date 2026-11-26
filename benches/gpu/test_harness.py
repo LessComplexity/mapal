@@ -391,8 +391,8 @@ class RuntimeProgramTests(unittest.TestCase):
                 for p in progs:
                     s = p.read_text()
                     pre, body = s.split("    loop {", 1)
-                    immutable = re.findall(r"\(t \* \d+ \+ \d+\) % \d+ - \d+ -> widen_f32 -> v; v / [\d.]+ \} -> (\w+);", s)
-                    immutable += re.findall(r"krange -> map \{ t -> t % \d+ - \d+ -> widen_f32 -> v; v / [\d.]+ \} -> (\w+);", s)
+                    immutable = re.findall(r"\(t \* \d+ \+ \d+\) % \d+ - \d+ -> widen<f32> -> v; v / [\d.]+ \} -> (\w+);", s)
+                    immutable += re.findall(r"krange -> map \{ t -> t % \d+ - \d+ -> widen<f32> -> v; v / [\d.]+ \} -> (\w+);", s)
                     request = re.findall(r"\(\(t \+ it\) \* \d+ \+ \d+\) % [^}]*\} -> (\w+);", s)
                     self.assertTrue(immutable and request, p.name)
                     for x in request:

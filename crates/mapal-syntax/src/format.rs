@@ -143,15 +143,18 @@ impl<'a> Formatter<'a> {
                     && !matches!(self.previous, None | Some(TokenKind::LBrace));
                 base + usize::from(continuation)
             };
-            // `fn name <` / `type Name <`: the `<` opens the size parameter
-            // list; `Name <` of a size-generic type opens its sizes.
+            // `fn name <` / `type Name <`: the `<` opens the generic list;
+            // `Name <` of a size-generic type opens its sizes; `-> name <` a
+            // stage's explicit arguments (ADR-0051 D2: `to<bf16>`).
             let opens_sizes = kind == TokenKind::Lt
                 && i >= 2
                 && self.tokens[i - 1].kind == TokenKind::Ident
                 && (matches!(self.tokens[i - 2].kind, TokenKind::KwFn | TokenKind::KwType)
                     || self
                         .generic_types
-                        .contains(&token_text(self.source, &self.tokens[i - 1])));
+                        .contains(&token_text(self.source, &self.tokens[i - 1]))
+                    || (self.tokens[i - 2].kind == TokenKind::Arrow
+                        && stage_args_close(self.tokens, i)));
             let tight = opens_sizes
                 || (self.after_sizes && kind == TokenKind::LParen)
                 || (self.sizes && kind == TokenKind::Gt)
@@ -305,6 +308,29 @@ impl<'a> Formatter<'a> {
         }
         true
     }
+}
+
+/// Whether the `<` at `open` (after `-> name`) opens a stage's explicit
+/// argument list (ADR-0051 D2): a `>` closes it, over size-expression tokens
+/// only, where the stage ends — the parser's own rule.
+fn stage_args_close(tokens: &[Token], open: usize) -> bool {
+    use TokenKind::*;
+    let mut i = open + 1;
+    while let Some(t) = tokens.get(i) {
+        match t.kind {
+            Ident | Int | Plus | Minus | Star | LParen | RParen | Comma => i += 1,
+            Gt => {
+                return tokens.get(i + 1).is_some_and(|n| {
+                    matches!(
+                        n.kind,
+                        Arrow | Semi | RBrace | RParen | RBracket | Comma | Eof
+                    )
+                });
+            }
+            _ => return false,
+        }
+    }
+    false
 }
 
 /// Only map/fold braces introduce parameters. Inspect the immediate opener,

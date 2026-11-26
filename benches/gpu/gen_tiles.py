@@ -34,7 +34,7 @@ def b_index(layout, K, N):
 
 
 def program(M, N, K, al, bl, elem):
-    widen = f"widen_{elem}"
+    widen = f"widen<{elem}>"
     zero = "0.0"
     return f"""fn main() {{
     {M * K} -> iota -> ta;
@@ -101,15 +101,15 @@ def bench(n, N=None, K=None):
     M, N, K = n, N or n, K or n
     if (M, N, K) == (n, n, n):
         ops = f"""    {n * n} -> iota -> ta;
-    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 }} -> a;
-    ta -> map {{ t -> (t * 7 + 57) % 101 - 50 -> widen_f32 }} -> b;
+    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen<f32> }} -> a;
+    ta -> map {{ t -> (t * 7 + 57) % 101 - 50 -> widen<f32> }} -> b;
     {n} -> iota -> krange;
     ta -> map {{ t ->"""
     else:
         ops = f"""    {M * K} -> iota -> ta;
-    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 }} -> a;
+    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen<f32> }} -> a;
     {K * N} -> iota -> tb;
-    tb -> map {{ t -> (t * 7 + 57) % 101 - 50 -> widen_f32 }} -> b;
+    tb -> map {{ t -> (t * 7 + 57) % 101 - 50 -> widen<f32> }} -> b;
     {K} -> iota -> krange;
     {M * N} -> iota -> tc;
     tc -> map {{ t ->"""
@@ -149,8 +149,8 @@ def e2e(n):
     launch included), next to the harness's kernel-only number."""
     return f"""fn main() {{
     {n * n} -> iota -> ta;
-    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 }} -> a;
-    ta -> map {{ t -> (t * 7 + 57) % 101 - 50 -> widen_f32 }} -> b;
+    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen<f32> }} -> a;
+    ta -> map {{ t -> (t * 7 + 57) % 101 - 50 -> widen<f32> }} -> b;
     {n} -> iota -> krange;
     () -> time -> t0;
     ta -> map {{ t ->
@@ -173,7 +173,7 @@ for n in (1024, 4096):
 # the program exits 101 before its first site, while the eager init may still
 # be running. The interpreter and the CPU build trap the same way.
 (out / "e2e_trap.mapal").write_text(
-    bench(1024).replace("(t * 7 + 13) % 101 - 50 -> widen_f32", "1000 / (t - 77) -> widen_f32"))
+    bench(1024).replace("(t * 7 + 13) % 101 - 50 -> widen<f32>", "1000 / (t - 77) -> to<f32>"))
 
 # --- S53 `resident`: programs with more than one site, or a loop, where the
 # question is where each object lives between sites (plan-s53 §2.3).
@@ -181,7 +181,7 @@ for n in (1024, 4096):
 def operand(name, n, mul, add, mod, off, scale):
     """`name` = a formula over the index: closed form, so `devgen` may build it
     on the device; `scale` keeps loop products bounded."""
-    return (f"    ta -> map {{ t -> (t * {mul} + {add}) % {mod} - {off} -> widen_f32 -> v; "
+    return (f"    ta -> map {{ t -> (t * {mul} + {add}) % {mod} - {off} -> widen<f32> -> v; "
             f"v / {scale} }} -> {name};\n")
 
 
@@ -302,14 +302,14 @@ def decode(T, d, rewrite=False, scaled=False, causal=False, prefill=0, gen=0):
         # Row j's cell of column t % d: the new value of row j (the fed-back
         # output damped: every row takes it, every trip).
         new = (f"(c % {d} == col) -> {{ -true-> {{ "
-               f"((t * {d} + c / {d}) * 7 + 13) % 101 - 50 -> widen_f32 -> f; f / 64.0 + o[c / {d} % {d}] / 4.0 }} ")
+               f"((t * {d} + c / {d}) * 7 + 13) % 101 - 50 -> widen<f32> -> f; f / 64.0 + o[c / {d} % {d}] / 4.0 }} ")
         row = [f"                t % {d} -> col;\n"
                f"                tc -> map {{ c -> {new}-false-> x[c]; }} }} -> x;\n"]
     else:
         fed = (f"(t < {gen}) -> {{ -true-> f / 64.0; -false-> f / 64.0 + o[c % {d}]; }}" if gen
                else f"f / 64.0 + o[c % {d}]")
         new = (f"(c / {d} == t) -> {{ -true-> {{ "
-               f"(c * 7 + 13) % 101 - 50 -> widen_f32 -> f; {fed} }} ")
+               f"(c * 7 + 13) % 101 - 50 -> widen<f32> -> f; {fed} }} ")
         row = [f"                tc -> map {{ c -> {new}-false-> x[c]; }} }} -> x;\n"]
     xs = "xh" if scaled else "x"
     half = "                x -> map { v -> v * 0.5 } -> xh;\n" if scaled else ""
@@ -334,12 +334,12 @@ def decode(T, d, rewrite=False, scaled=False, causal=False, prefill=0, gen=0):
     if P:
         # The prompt: row r < P holds the decode's row law (`f / 64.0`, no fed-back `o`).
         init = (
-            f"    tc -> map {{ c -> (c / {d} < {P}) -> {{ -true-> {{ (c * 7 + 13) % 101 - 50 -> widen_f32 -> f; f / 64.0 }} -false-> 0.0; }} }} -> x0;\n"
+            f"    tc -> map {{ c -> (c / {d} < {P}) -> {{ -true-> {{ (c * 7 + 13) % 101 - 50 -> widen<f32> -> f; f / 64.0 }} -false-> 0.0; }} }} -> x0;\n"
             f"    () -> time -> pf0;\n"
             f"    {proj('wk', 'x0')} -> k0;\n"
             f"    {proj('wv', 'x0')} -> v0;\n"
             f"    {P * d} -> iota -> pq;\n"
-            f"    pq -> map {{ e -> (e * 5 + 3) % 97 - 48 -> widen_f32 -> qv; qv / {w}.0 }} -> qp;\n"
+            f"    pq -> map {{ e -> (e * 5 + 3) % 97 - 48 -> widen<f32> -> qv; qv / {w}.0 }} -> qp;\n"
             f"    {P * T} -> iota -> ps_i;\n"
             f"    {P} -> iota -> prange;\n"
             f"    ps_i -> map {{ e -> e / {T} -> i; e % {T} -> r; (r <= i) -> {{ -true-> {{ (0.0, krange) -> fold {{ acc, k -> acc + qp[i * {d} + k] * k0[r * {d} + k] }} }} -false-> {ninf}; }} }} -> ps;\n"
@@ -356,8 +356,8 @@ def decode(T, d, rewrite=False, scaled=False, causal=False, prefill=0, gen=0):
     # the arena, and a 1024x256 decode carries ~10 MB of arrays.
     return f"""fn main() {{
     {d * d} -> iota -> tw;
-    tw -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> x; x / {w}.0 }} -> wk;
-    tw -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> x; x / {w}.0 }} -> wv;
+    tw -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> x; x / {w}.0 }} -> wk;
+    tw -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen<f32> -> x; x / {w}.0 }} -> wv;
     {T * d} -> iota -> tc;
     {d} -> iota -> krange;
     {T} -> iota -> rrange;
@@ -369,7 +369,7 @@ def decode(T, d, rewrite=False, scaled=False, causal=False, prefill=0, gen=0):
             -true-> {{
 {''.join(row)}{half}                {proj('wk')} -> kk;
                 {proj('wv')} -> vv;
-                krange -> map {{ k -> ((t * {d} + k) * 5 + 3) % 97 - 48 -> widen_f32 -> qv; qv / {w}.0 }} -> q;
+                krange -> map {{ k -> ((t * {d} + k) * 5 + 3) % 97 - 48 -> widen<f32> -> qv; qv / {w}.0 }} -> q;
 {attend}                t + 1 -> t;
                 -> loop;
             }}
@@ -419,7 +419,7 @@ def probe_ops(names, n, w=None):
 
 def bias(name):
     mod, off, div = BIAS[name]
-    return f"    krange -> map {{ t -> t % {mod} - {off} -> widen_f32 -> v; v / {div} }} -> {name};\n"
+    return f"    krange -> map {{ t -> t % {mod} - {off} -> widen<f32> -> v; v / {div} }} -> {name};\n"
 
 
 def relu(e):
@@ -555,7 +555,7 @@ for n in (2048, 4096):
 # kernel (100 is indivisible by every tile) and of an f64 site.
 (out / "px_bias_100.mapal").write_text(probe_program(100, probes(100)['bias'], False))
 (out / "px_mlp2_64_f64.mapal").write_text(
-    probe_program(64, probes(64)['mlp2'], False).replace("widen_f32", "widen_f64").replace("zero: f32", "zero: f64"))
+    probe_program(64, probes(64)['mlp2'], False).replace("widen<f32>", "widen<f64>").replace("zero: f32", "zero: f64"))
 # S54 `streams`: the probes with independent sites (and `mlp`, `pdl`'s chain) at
 # sizes whose grids are under one wave on every part — where concurrency can pay.
 for n in (512, 1024):
@@ -597,9 +597,9 @@ def bench_mnk(M, N, K):
     """`bench(n)` at M × N × K: the timed kernel of a projection-shaped site."""
     return f"""fn main() {{
     {M * K} -> iota -> ta;
-    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 }} -> a;
+    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen<f32> }} -> a;
     {K * N} -> iota -> tb;
-    tb -> map {{ t -> (t * 7 + 57) % 101 - 50 -> widen_f32 }} -> b;
+    tb -> map {{ t -> (t * 7 + 57) % 101 - 50 -> widen<f32> }} -> b;
     {K} -> iota -> krange;
     {M * N} -> iota -> tc;
     tc -> map {{ t ->
@@ -632,9 +632,9 @@ def rmlp_skip(M, d, h, timed):
     {M * h} -> iota -> tc;
     {d} -> iota -> kd;
     {h} -> iota -> kh;
-    tx -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> x;
-    tw -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / {d}.0 }} -> w1;
-    tw -> map {{ t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v; v / {h}.0 }} -> w2;
+    tx -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 }} -> x;
+    tw -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen<f32> -> v; v / {d}.0 }} -> w1;
+    tw -> map {{ t -> (t * 5 + 3) % 97 - 48 -> widen<f32> -> v; v / {h}.0 }} -> w2;
 {t0}    tc -> map {{ t ->
         t / {h} -> i;
         t % {h} -> j;
@@ -666,13 +666,13 @@ def rmlp(M, d, h, timed):
                 f"        (0.0, {kr}) -> fold {{ acc, k -> acc + {a}[i * {k} + k] * {b}[k * {n} + j] }}\n"
                 f"    }} -> {o};\n")
     w = lambda name, it, mul, add, mod, off, div: (
-        f"    {it} -> map {{ t -> (t * {mul} + {add}) % {mod} - {off} -> widen_f32 -> v; v / {div} }} -> {name};\n")
+        f"    {it} -> map {{ t -> (t * {mul} + {add}) % {mod} - {off} -> widen<f32> -> v; v / {div} }} -> {name};\n")
     s = (f"fn main() {{\n    {M * d} -> iota -> tx;\n    {d * d} -> iota -> two;\n    {d * h} -> iota -> tup;\n"
          f"    {h * d} -> iota -> tdn;\n    {M * h} -> iota -> th;\n    {d} -> iota -> dr;\n    {h} -> iota -> hr;\n"
          + w("x", "tx", 7, 13, 101, 50, "7.0") + w("wo", "two", 11, 57, 103, 51, f"{d}.0")
          + w("wup", "tup", 5, 3, 97, 48, f"{d}.0") + w("wdn", "tdn", 3, 1, 89, 44, f"{h}.0")
-         + "    hr -> map { t -> t % 13 - 6 -> widen_f32 -> v; v / 5.0 } -> b1;\n"
-         + "    dr -> map { t -> t % 11 - 5 -> widen_f32 -> v; v / 4.0 } -> b2;\n")
+         + "    hr -> map { t -> t % 13 - 6 -> widen<f32> -> v; v / 5.0 } -> b1;\n"
+         + "    dr -> map { t -> t % 11 - 5 -> widen<f32> -> v; v / 4.0 } -> b2;\n")
     body = (site_("p", "x", "wo", d, d, "dr", "tx") + site_("hraw", "p", "wup", h, d, "dr", "th")
             + f"    th -> map {{ t -> {relu(f'hraw[t] + b1[t % {h}]')} }} -> hh;\n"
             + site_("mraw", "hh", "wdn", d, h, "hr", "tx")
@@ -698,7 +698,7 @@ for d, h in ((256, 512), (1024, 2048)):
 def law(name, length, key):
     mul, add, mod, off, div = OPS[key]
     return (f"    {length} -> iota -> i_{name};\n"
-            f"    i_{name} -> map {{ t -> (t * {mul} + {add}) % {mod} - {off} -> widen_f32 -> v; "
+            f"    i_{name} -> map {{ t -> (t * {mul} + {add}) % {mod} - {off} -> widen<f32> -> v; "
             f"v / {div} }} -> {name};\n")
 
 
@@ -739,7 +739,7 @@ for M, d, h in ((128, 256, 512), (128, 1024, 2048)):
             + gsite("s2", "hh", "w2", M, d, h)
             + "    o_s2 -> map { t -> s2[t] + x[t] } -> y;\n")
     bias_law = (f"    {h} -> iota -> i_bias;\n"
-                f"    i_bias -> map {{ t -> t % 13 - 6 -> widen_f32 -> v; v / 5.0 }} -> bias;\n")
+                f"    i_bias -> map {{ t -> t % 13 - 6 -> widen<f32> -> v; v / 5.0 }} -> bias;\n")
     src = composed([("x", M * d, 'a'), ("w1", d * h, 'b'), ("w2", h * d, 'e')], body, [("y", M * d)])
     (out / f"pt_rm_m{M}_d{d}_h{h}.mapal").write_text(src.replace("    () -> time -> t0;\n", bias_law + "    () -> time -> t0;\n"))
 def mixed(n, s):
@@ -977,7 +977,7 @@ def ewconvew(n, kk, timed=True):
 def smlp(M, d, h, timed=True):
     """MLP: relu(x·W1 + b1)·W2."""
     body = (f"    {h} -> iota -> i_b1;\n"
-            f"    i_b1 -> map {{ t -> t % 13 - 6 -> widen_f32 -> v; v / 5.0 }} -> b1;\n"
+            f"    i_b1 -> map {{ t -> t % 13 - 6 -> widen<f32> -> v; v / 5.0 }} -> b1;\n"
             + gsite("s1", "x", "w1", M, h, d)
             + f"    o_s1 -> map {{ t -> {relu(f's1[t] + b1[t % {h}]')} }} -> hh;\n"
             + gsite("s2", "hh", "w2", M, d, h))
@@ -1065,9 +1065,9 @@ for stem in ("pt_convmc_8_64_56_3", "px_convmc_2_4_6_3", "pt_mlp_2048", "pt_mlp2
 # its chain's M (relu is 1-Lipschitz). The 4090 smoke failed pt_pc_32 and pt_mlp2_2048_tf32 on the relative
 # fallback under cancellation (|exact| << M) with the error inside D2 / D3 of M.
 def mabs(src):
-    # A narrow input (`-> to_bf16`): the rounding of |v| is |rounding of v| (round to nearest is symmetric).
-    out, n = re.subn(r'-> widen_f32 -> v; v / ([0-9.]+)( -> to_bf16)? \}',
-                     r'-> widen_f32 -> v; (v > 0.0) -> { -true-> v; -false-> 0.0 - v; } -> va; va / \1\2 }', src)
+    # A narrow input (`-> to<bf16>`): the rounding of |v| is |rounding of v| (round to nearest is symmetric).
+    out, n = re.subn(r'-> widen<f32> -> v; v / ([0-9.]+)( -> to<bf16>)? \}',
+                     r'-> widen<f32> -> v; (v > 0.0) -> { -true-> v; -false-> 0.0 - v; } -> va; va / \1\2 }', src)
     assert n > 0, "no closed-form input"
     # M is the exact face's.
     return out.replace("-> fold: tf32 | f32 {", "-> fold {").replace("-> fold: bf16 | f32 {", "-> fold {")
@@ -1186,7 +1186,7 @@ def llm_law(name, length, key, body):
     """`((t % mod)·mul + add) % mod − off` widened (OPS's values, i32-safe), then `body` of `v`."""
     mul, add, mod, off, _ = OPS[key]
     return (f"    {length} -> iota -> i_{name};\n"
-            f"    i_{name} -> map {{ t -> (t % {mod} * {mul} + {add}) % {mod} - {off} -> widen_f32 -> v; {body} }} -> {name};\n")
+            f"    i_{name} -> map {{ t -> (t % {mod} * {mul} + {add}) % {mod} - {off} -> widen<f32> -> v; {body} }} -> {name};\n")
 
 
 def llm_div(k):
@@ -1228,14 +1228,14 @@ def llm_rope_pv(src, base, c, pos, dh, closed=False):
     if closed:
         mf, af, modf, offf, _ = OPS["f"]
         mg, ag, modg, offg, _ = OPS["g"]
-        return s + (f"({pos} * {h} + rj) % {modf} * {mf} + {af} -> cq; (cq % {modf} - {offf}) -> widen_f32 -> cv; "
-                    f"({pos} * {h} + rj) % {modg} * {mg} + {ag} -> sq; (sq % {modg} - {offg}) -> widen_f32 -> sv; "
+        return s + (f"({pos} * {h} + rj) % {modf} * {mf} + {af} -> cq; (cq % {modf} - {offf}) -> widen<f32> -> cv; "
+                    f"({pos} * {h} + rj) % {modg} * {mg} + {ag} -> sq; (sq % {modg} - {offg}) -> widen<f32> -> sv; "
                     f"va * (cv / 50.0) + sg * vb * (sv / 50.0)")
     return s + f"va * cs[{pos} * {h} + rj] + sg * vb * sn[{pos} * {h} + rj]"
 
 
 # half-precision (ADR-0043): `w16` stores the layer's weights (wqkv, wo, wg, wu, wd) as `bf16` — each the f32 law's
-# value rounded once (`-> to_bf16`), read through its exact widening (`w[i] -> widen_f32`), products and folds f32:
+# value rounded once (`-> to<bf16>`), read through its exact widening (`w[i] -> widen<f32>`), products and folds f32:
 # half the weight bytes a decode step moves. The torch legs build the same tensors (`.to(bfloat16)`).
 LLM_WEIGHTS = ("wqkv", "wo", "wg", "wu", "wd")
 # tensor-cores: `kv16` stores the KV cache as `bf16` too (its initial rows and each step's new row rounded once,
@@ -1262,15 +1262,15 @@ def llm_ops(P, rows, positions, cache, ffn, w16=False, kv16=False):
         ops += [("g2", D, "b", "1.0 + v / 400.0"), ("wg", D * F, "f", f"v / {llm_div(D)}"),
                 ("wu", D * F, "g", f"v / {llm_div(D)}"), ("wd", F * D, "p", f"v / {llm_div(F)}")]
     if w16:
-        ops = [(n, ln, k, f"{b} -> to_bf16" if n in LLM_WEIGHTS else b) for n, ln, k, b in ops]
+        ops = [(n, ln, k, f"{b} -> to<bf16>" if n in LLM_WEIGHTS else b) for n, ln, k, b in ops]
     if kv16:
-        ops = [(n, ln, k, f"{b} -> to_bf16" if n in LLM_CACHE else b) for n, ln, k, b in ops]
+        ops = [(n, ln, k, f"{b} -> to<bf16>" if n in LLM_CACHE else b) for n, ln, k, b in ops]
     return ops
 
 
 # fp8 storage (ADR-0043 slice 3): `w8` stores the layer's weights as `f8e4m3` with a per-output-channel scale — the
 # f32 law's weight `{n}_f`, its column's largest magnitude by two whole max folds over `k`, `s_{n}[j] = amax / 448`,
-# the weight `{n}_f[t] / s_{n}[t % N] -> to_f8e4m3` (saturating, round to nearest even), read through its exact
+# the weight `{n}_f[t] / s_{n}[t % N] -> to<f8e4m3>` (saturating, round to nearest even), read through its exact
 # widening, the scale in the projection's epilogue (`u · s_{n}[j]`): a quarter of the f32 weight bytes a step moves.
 # The quantization runs once, before the timed loop; the f32 weights die there.
 def llm_w8_dims(P):
@@ -1294,7 +1294,7 @@ def llm_f8(P, ffn):
         s += (f"    {N} -> iota -> jn_{n};\n    {K} -> iota -> kk_{n};\n"
               f"    jn_{n} -> map {{ j -> {mx(f'{n}_f[k * {N} + j]')} -> hi; {mx(f'0.0 - {n}_f[k * {N} + j]')} -> lo; "
               f"(hi > lo) -> {{ -true-> hi; -false-> lo; }} -> am; am / 448.0 }} -> s_{n};\n"
-              f"    i_{n}_f -> map {{ t -> {n}_f[t] / s_{n}[t % {N}] -> to_f8e4m3 }} -> {n};\n")
+              f"    i_{n}_f -> map {{ t -> {n}_f[t] / s_{n}[t % {N}] -> to<f8e4m3> }} -> {n};\n")
     return s
 
 
@@ -1308,7 +1308,7 @@ def llm_w(name, idx, w16):
     widening bound first."""
     if not w16:
         return "", f"{name}[{idx}]"
-    return f"{name}[{idx}] -> widen_f32 -> wv; ", "wv"
+    return f"{name}[{idx}] -> widen<f32> -> wv; ", "wv"
 
 
 def llm_ffn(P, src, dst, w16=False, w8=False):
@@ -1372,7 +1372,7 @@ def llm_decode(B, L, S, ffn, timed=True, P=LLM, pv=False, w16=False, kv16=False,
     if kv16:
         bk_, bv_ = bk_.replace("wv;", "kv;"), bv_.replace("wv;", "vv;")
         vk_, vv_ = "kv", "vv"
-    to16 = " -> to_bf16" if kv16 else ""
+    to16 = " -> to<bf16>" if kv16 else ""
     ct = "bf16" if kv16 else "f32"
     ops = llm_ops_w8(P, B, L, C, ffn) if w8 else llm_ops(P, B, L, C, ffn, w16, kv16)
     s = "fn main() {\n" + "".join(llm_law(*o) for o in ops)
@@ -1642,16 +1642,16 @@ for M in (1, 16, 128, 2048):
     for N, K in ((6144, 4096), (4096, 4096), (28672, 4096), (4096, 14336)):
         llm_progs[f"pt_pj_m{M}_n{N}_k{K}"] = (
             composed([("a", M * K, 'a'), ("b", K * N, 'b')], gsite("c", "a", "b", M, N, K), [("c", M * N)]), K)
-# tensor-cores: the projections with bf16 weights under the bf16 face (`_bf16`: `b` stored `-> to_bf16`, read
+# tensor-cores: the projections with bf16 weights under the bf16 face (`_bf16`: `b` stored `-> to<bf16>`, read
 # through its widening, `: bf16 | f32`) — torch's bf16 GEMM (cuBLASLt) is the competitor.
 for M in (1, 16, 128, 2048):
     for N, K in ((6144, 4096), (4096, 4096), (28672, 4096), (4096, 14336)):
         src = llm_progs[f"pt_pj_m{M}_n{N}_k{K}"][0]
         src = src.replace("v / ", "v / ", 1)
         lines = src.split("\n")
-        lines = [ln.replace("} -> b;", "-> to_bf16 } -> b;") if "-> b;" in ln and "i_b" in ln else ln for ln in lines]
+        lines = [ln.replace("} -> b;", "-> to<bf16> } -> b;") if "-> b;" in ln and "i_b" in ln else ln for ln in lines]
         src = "\n".join(lines).replace("acc + a[i * {K} + k] * b[k * {N} + j]".format(K=K, N=N),
-                                        "b[k * {N} + j] -> widen_f32 -> wv; acc + a[i * {K} + k] * wv".format(K=K, N=N))
+                                        "b[k * {N} + j] -> widen<f32> -> wv; acc + a[i * {K} + k] * wv".format(K=K, N=N))
         llm_progs[f"pt_pj_m{M}_n{N}_k{K}_bf16"] = (bf16_folds(src), K)
 # The TF32 face (ADR-0041: `: tf32 | f32` on every fold) where GEMM products dominate: the prefills, the prefill
 # block and the m >= 128 projections.

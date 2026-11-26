@@ -97,7 +97,7 @@ fn norm_src(p: &NormProg) -> String {
         "fn main() {{
     {n} -> iota -> ix;
     ix -> map {{
-        t -> (t * {m} + 5) % 9 - 4 -> widen_f32
+        t -> (t * {m} + 5) % 9 - 4 -> widen<f32>
     }} -> x0;
     {r} -> iota -> rR;
     {n} -> iota -> rRD;

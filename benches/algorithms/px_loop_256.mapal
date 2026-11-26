@@ -2,11 +2,11 @@ fn main() {
     65536 -> iota -> ta;
     256 -> iota -> krange;
     ta -> map {
-        t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v;
+        t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v;
         v / 7.0
     } -> a;
     ta -> map {
-        t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v;
+        t -> (t * 11 + 57) % 103 - 51 -> widen<f32> -> v;
         v / 256.0
     } -> w;
     mut x: [f32; 65536] <- a;

@@ -5,9 +5,13 @@
 // serial accumulator chain.
 fn main() {
     1048576 -> iota -> ix;
-    ix -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 } -> x;
+    ix -> map {
+        t -> (t * 7 + 13) % 101 - 50 -> widen<f32>
+    } -> x;
     () -> time -> t0;
-    (0.0, x) -> fold { acc, v -> acc + v } -> total;
+    (0.0, x) -> fold {
+        acc, v -> acc + v
+    } -> total;
     () -> time -> t1;
     total -> println;
     "iter ms=" -> print;

@@ -223,7 +223,7 @@ data * 2
 Shorthand stages like `+ 5` and `* 3` are syntactic sugar for `⟨·, 5⟩ ; add` and `⟨·, 3⟩ ; mul` — they take the piped value as the left operand and the literal as the right.
 
 **Builtin stages.** A builtin is a stage name the value flows into, never a call: `n -> iota`, `(x, n) -> fill`,
-`(a, b) -> zip`, `a -> enumerate`, `i -> widen_f32`, and **`x -> exp`** — `eˣ` of an `f32` or `f64`, the same width
+`(a, b) -> zip`, `a -> enumerate`, `i -> widen<f32>`, and **`x -> exp`** — `eˣ` of an `f32` or `f64`, the same width
 out (ADR-0042). It goes anywhere a value flows, a map or fold body included:
 
 ```flow
@@ -251,16 +251,16 @@ GPU's `sqrt.approx` and, for the `cos` half of the reduction, `cos.approx` where
 them. `sqrt` of a negative is `NaN`, `sqrt(−0) = −0`; `sin(±0) = ±0`; `sin`, `cos` of `±inf` or `NaN` are `NaN`.
 
 **Narrow storage: `bf16`, `f16`** (ADR-0043). A model's weights can be stored in two bytes. A narrow value takes no
-arithmetic: round an `f32` into it with **`x -> to_bf16`** / **`x -> to_f16`** (once, to nearest even; `f16` overflows
-to `inf` past 65504) and widen it back, exactly, with `widen_f32` / `widen_f64` where you compute:
+arithmetic: round an `f32` into it with **`x -> to<bf16>`** / **`x -> to<f16>`** (once, to nearest even; `f16` overflows
+to `inf` past 65504) and widen it back, exactly, with `widen<f32>` / `widen<f64>` where you compute:
 
 ```flow
-t -> map { e -> law(e) / 1856.0 -> to_bf16 } -> w;                     // [bf16; n]: half the bytes
-rows -> map { j -> (0.0, kr) -> fold { acc, k -> w[k * n + j] -> widen_f32 -> b; acc + x[k] * b } } -> y;
+t -> map { e -> law(e) / 1856.0 -> to<bf16> } -> w;                     // [bf16; n]: half the bytes
+rows -> map { j -> (0.0, kr) -> fold { acc, k -> w[k * n + j] -> widen<f32> -> b; acc + x[k] * b } } -> y;
 ```
 
 The products and sums are `f32` (the widened values are exact), so the result's bound is an `f32` program's; a
-narrow value prints only after `widen_f32`. On a GPU the weights are read in their 2-byte format.
+narrow value prints only after `widen<f32>`. On a GPU the weights are read in their 2-byte format.
 
 **Explicit intermediates — useful for debugging or to make pipeline stages visible in hardware generation.**
 

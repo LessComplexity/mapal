@@ -163,10 +163,10 @@ fn sum_src(m: u64, n: u64, k: u64, t: usize, share: u8) -> String {
     for i in 0..t {
         let (p, q) = (7 + 2 * i, 11 + 2 * i);
         s += &format!(
-            "    tak -> map {{ t -> (t * {p} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> a{i};\n"
+            "    tak -> map {{ t -> (t * {p} + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 }} -> a{i};\n"
         );
         s += &format!(
-            "    tkb -> map {{ t -> (t * {q} + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 }} -> b{i};\n"
+            "    tkb -> map {{ t -> (t * {q} + 57) % 103 - 51 -> widen<f32> -> v; v / 9.0 }} -> b{i};\n"
         );
     }
     for i in 0..t {

@@ -4,7 +4,9 @@
 //!
 //! - `bounds_proof`: sibling views of one input slot share a condition's
 //!   narrowing (a rotation's partner); a selecting fold's index component is
-//!   ranged by its seed and items (an argmax token's embedding row).
+//!   ranged by its seed and items (an argmax token's embedding row); a
+//!   `Widen`'s integer ranged where it runs (`widen_range`, ADR-0051 D4 —
+//!   `%` by a constant without its dividend's range).
 //! - `map_law`'s `Outside` through a capture the site passes as a constant.
 //! - `step_algebra`'s regroup reads: a captured array's stride along the fold.
 //! - The rewriter: a struct-typed loop state is carried as its leaves; a
@@ -55,7 +57,7 @@ fn body_proven(ir: &CategoryIr, m: MorphismId) -> bool {
 
 const ROTATE: &str = "fn main() {
     16 -> iota -> map {
-        i -> i % 5 -> widen_f32
+        i -> i % 5 -> widen<f32>
     } -> row;
     16 -> iota -> map {
         i ->
@@ -84,10 +86,10 @@ fn sibling_views_share_a_conditions_narrowing() {
 
 const ARGMAX: &str = "fn main() {
     12 -> iota -> map {
-        i -> (i * 7 + 3) % 11 -> widen_f32
+        i -> (i * 7 + 3) % 11 -> widen<f32>
     } -> logits;
     48 -> iota -> map {
-        i -> i % 9 -> widen_f32
+        i -> i % 9 -> widen<f32>
     } -> table;
     12 -> iota -> tokens;
     ((logits[0], 0), tokens) -> fold {
@@ -131,7 +133,7 @@ const APPEND: &str =
 fn main() {
     (0.0, 64) -> fill -> zeros;
     4 -> iota -> map {
-        i -> i -> widen_f32
+        i -> i -> widen<f32>
     } -> row;
     mut cache: [f32; 64] <- zeros;
     mut position: i32 <- 0;
@@ -171,10 +173,10 @@ fn a_constant_capture_is_its_value_in_a_range_law() {
 
 const PROJECT: &str = "fn main() {
     96 -> iota -> map {
-        i -> i % 7 - 3 -> widen_f32
+        i -> i % 7 - 3 -> widen<f32>
     } -> weights;
     32 -> iota -> map {
-        i -> i % 3 -> widen_f32
+        i -> i % 3 -> widen<f32>
     } -> x;
     32 -> iota -> columns;
     3 -> iota -> map {
@@ -230,7 +232,7 @@ fn bump(p: Pair2, x: [f32; 8]) -> Pair2 {
 
 fn main() {
     8 -> iota -> map {
-        i -> i -> widen_f32
+        i -> i -> widen<f32>
     } -> x;
     Pair2 {
         keys: x,
@@ -343,4 +345,48 @@ fn every_rewrite_plan_is_consistent_with_forwarded_loop_views() {
     }
     assert!(invariant_views > 0, "no loop view forwarded an invariant");
     assert_eq!(output(&cur), output(&parse_lower(STATE)));
+}
+
+/// The `Widen` morphisms of every function of `ir`, each with the range
+/// `bounds_proof` gives the integer it converts (ADR-0051 D4's fact).
+fn widen_ranges(ir: &CategoryIr) -> Vec<Option<(i128, i128)>> {
+    let mut out = Vec::new();
+    for (f, fd) in ir.funcs() {
+        let bp = ir.bounds_proof(f);
+        for &m in &fd.morphisms {
+            if ir.morphism(m).is_some_and(|x| x.op == Operation::Widen) {
+                out.push(bp.widen_range(m));
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn widen_range_is_the_converted_integers_range_where_it_runs() {
+    // An iota element through `+ − ·k %k`; `%` by a constant needs no range
+    // of its dividend (the product wraps past `i32` at `t < 2²⁸`).
+    let ir = parse_lower(
+        "fn main() {
+    268435456 -> iota -> map { t -> (t * 11 + 57) % 103 - 51 -> widen<f32> } -> v;
+    1000 -> iota -> map { t -> t * 3 - 7 -> widen<f32> } -> w;
+    v[3] -> println;
+    w[3] -> println;
+}",
+    );
+    let mut got = widen_ranges(&ir);
+    got.sort();
+    assert_eq!(got, [Some((-153, 51)), Some((-7, 2990))]);
+    // A guard arm's condition narrows it; a function input has no range.
+    let ir = parse_lower(
+        "fn f(x: i32) -> f32 { x -> to<f32> -> ret; }
+fn main() {
+    100000000 -> iota -> map { t -> (t < 300) -> { -true-> t -> widen<f32>; -false-> 0.0; } } -> v;
+    v[3] -> println;
+    3 -> f -> println;
+}",
+    );
+    let mut got = widen_ranges(&ir);
+    got.sort();
+    assert_eq!(got, [None, Some((0, 299))]);
 }

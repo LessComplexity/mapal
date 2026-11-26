@@ -55,18 +55,39 @@ pub struct TopBind {
     pub span: SourceLoc,
 }
 
-/// `fn-decl := 'fn' IDENT sizes? '(' params? ')' ( '->' type )? block`
-/// (DESIGN §14.1; `sizes := '<' IDENT (',' IDENT)* ','? '>'`, ADR-0047 D1).
+/// `fn-decl := 'fn' IDENT generics? '(' params? ')' ( '->' type )? block`
+/// (DESIGN §14.1; `generics := '<' generic (',' generic)* ','? '>'`,
+/// `generic := IDENT (':' IDENT)?` — ADR-0047 D1, ADR-0051 D1).
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct FnDecl {
     pub name: Name,
-    /// ADR-0047: the size parameters `<rows, columns>` in declared order;
-    /// empty for a fixed-size function.
-    pub sizes: Vec<Name>,
+    /// ADR-0047 / ADR-0051: the declared generic list `<rows, cache: float>`
+    /// in declared order — size parameters and format parameters; empty for
+    /// a fixed function.
+    pub generics: Vec<GenericParam>,
     pub params: Vec<Param>,
     pub ret_ty: Option<Ty>,
     pub body: Block,
     pub span: SourceLoc,
+}
+
+/// ADR-0051 D1: one entry of a declared generic list — a size parameter
+/// (`rows`, no kind) or a format parameter with its kind (`cache: float`).
+/// The kind's name is kept as written (lowering checks it: `float`,
+/// `narrow`, `int`, `number`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct GenericParam {
+    pub name: Name,
+    /// `Some(kind)` for a format parameter; `None` for a size parameter.
+    pub kind: Option<Name>,
+    pub span: SourceLoc,
+}
+
+impl GenericParam {
+    /// Whether this is a size parameter (a bare name, ADR-0047).
+    pub fn is_size(&self) -> bool {
+        self.kind.is_none()
+    }
 }
 
 /// `compute := ':' member ('|' member)*` on anything that opens a body — a
@@ -100,9 +121,9 @@ pub struct Param {
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TypeDecl {
     pub name: Name,
-    /// ADR-0048 D4: the size parameters `type Matrix<rows, columns>`; empty
-    /// for a fixed-size type.
-    pub sizes: Vec<Name>,
+    /// ADR-0048 D4 / ADR-0051 D1: the declared generic list `type
+    /// Matrix<rows, columns, element: float>`; empty for a fixed type.
+    pub generics: Vec<GenericParam>,
     pub fields: Vec<Field>,
     pub span: SourceLoc,
 }
@@ -416,6 +437,14 @@ pub enum ExprKind {
     Struct {
         name: Name,
         fields: Vec<FieldInit>,
+    },
+    /// ADR-0051 D2: a stage's explicit generic arguments — `to<bf16>`,
+    /// `project<4096, 2048>` — a prefix of the callee's declared list, each a
+    /// size expression (a format is a bare name: `bf16`, or the caller's own
+    /// format parameter). Built only in stage position.
+    Generic {
+        name: Name,
+        args: Vec<SizeExpr>,
     },
     /// ⟦P0108⟧ — kept for precision.
     Call {

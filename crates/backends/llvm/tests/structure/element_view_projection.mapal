@@ -10,7 +10,7 @@ fn project(weight: [bf16; 2048], x: [f32; 64]) -> [f32; 32] {
         row ->
         (0.0, columns) -> fold {
             sum, column ->
-            weight[row * 64 + column] -> widen_f32 -> w;
+            weight[row * 64 + column] -> widen<f32> -> w;
             sum + w * x[column]
         }
     } -> ret;
@@ -38,11 +38,11 @@ fn run(x: [f32; 64], layers: [Layer; 3]) -> [f32; 32] {
 
 fn make_layer(seed: i32) -> Layer {
     2048 -> iota -> map {
-        i -> (i * 7 + seed * 13) % 17 - 8 -> widen_f32 -> v;
-        v * 0.125 -> to_bf16
+        i -> (i * 7 + seed * 13) % 17 - 8 -> widen<f32> -> v;
+        v * 0.125 -> to<bf16>
     } -> weight;
     32 -> iota -> map {
-        i -> (i + seed) -> widen_f32
+        i -> (i + seed) -> to<f32>
     } -> bias;
     Layer {
         weight: weight,
@@ -58,7 +58,7 @@ fn main() {
     mut step: i32 <- 0;
     loop {
         64 -> iota -> map {
-            i -> (i + step) % 5 -> widen_f32
+            i -> (i + step) % 5 -> widen<f32>
         } -> x;
         (x, layers) -> run -> y;
         y[step] -> println;

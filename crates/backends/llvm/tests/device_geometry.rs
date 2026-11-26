@@ -106,8 +106,8 @@ fn maps(ir: &CategoryIr) -> Vec<mapal_ir::MorphismId> {
 
 const GEMM_RES: &str = "fn main() {
     4096 -> iota -> ra;
-    ra -> map { t -> (t * 5 + 3) % 7 - 3 -> widen_f32 } -> a;
-    ra -> map { t -> (t * 3 + 1) % 5 - 2 -> widen_f32 } -> b;
+    ra -> map { t -> (t * 5 + 3) % 7 - 3 -> widen<f32> } -> a;
+    ra -> map { t -> (t * 3 + 1) % 5 - 2 -> widen<f32> } -> b;
     4096 -> iota -> o;
     64 -> iota -> rk;
     o -> map {
@@ -171,9 +171,9 @@ fn tile_post_takes_a_residual_after_the_fold() {
 fn tile_post_gemv_reduces_through_the_epilogue() {
     let src = "fn main() {
     2048 -> iota -> rx;
-    rx -> map { t -> (t * 5 + 3) % 7 - 3 -> widen_f32 } -> x;
+    rx -> map { t -> (t * 5 + 3) % 7 - 3 -> widen<f32> } -> x;
     4194304 -> iota -> rw;
-    rw -> map { t -> (t * 3 + 1) % 5 - 2 -> widen_f32 } -> w;
+    rw -> map { t -> (t * 3 + 1) % 5 - 2 -> widen<f32> } -> w;
     2048 -> iota -> o;
     2048 -> iota -> rk;
     o -> map {
@@ -207,7 +207,7 @@ fn tile_post_gemv_reduces_through_the_epilogue() {
 fn row_tree_takes_the_loading_fold_beside_a_root() {
     let src = "fn main() {
     512 -> iota -> rx;
-    rx -> map { t -> (t * 5 + 3) % 7 - 3 -> widen_f32 } -> x;
+    rx -> map { t -> (t * 5 + 3) % 7 - 3 -> widen<f32> } -> x;
     4 -> iota -> rr;
     128 -> iota -> rw;
     8 -> iota -> rh;
@@ -246,10 +246,10 @@ fn row_tree_takes_the_loading_fold_beside_a_root() {
 fn tile_post_leaves_a_lone_k_major_row_to_the_cell() {
     let src = "fn main() {
     262144 -> iota -> ik;
-    ik -> map { t -> (t * 3 + 1) % 5 - 2 -> widen_f32 } -> k0;
-    ik -> map { t -> (t * 5 + 3) % 7 - 3 -> widen_f32 } -> v0;
+    ik -> map { t -> (t * 3 + 1) % 5 - 2 -> widen<f32> } -> k0;
+    ik -> map { t -> (t * 5 + 3) % 7 - 3 -> widen<f32> } -> v0;
     256 -> iota -> rk;
-    rk -> map { t -> (t * 7 + 2) % 9 - 4 -> widen_f32 } -> q;
+    rk -> map { t -> (t * 7 + 2) % 9 - 4 -> widen<f32> } -> q;
     1024 -> iota -> rr;
     0 -> z0: i32;
     (z0, rk) -> fold { acc, v -> acc + v % 3 } -> pp;
@@ -302,9 +302,9 @@ fn tile_post_leaves_a_lone_k_major_row_to_the_cell() {
 
 const APPEND: &str = "fn main() {
     1536 -> iota -> i0;
-    i0 -> map { t -> (t * 3 + 1) % 5 - 2 -> widen_f32 } -> kc0;
+    i0 -> map { t -> (t * 3 + 1) % 5 - 2 -> widen<f32> } -> kc0;
     48 -> iota -> rbw;
-    rbw -> map { t -> (t * 5 + 2) % 7 - 3 -> widen_f32 } -> nw;
+    rbw -> map { t -> (t * 5 + 2) % 7 - 3 -> widen<f32> } -> nw;
     1536 -> iota -> rc;
     mut kc: [f32; 1536] <- kc0;
     mut acc: [f32; 48] <- nw;
@@ -398,9 +398,9 @@ fn piece_delta_sees_a_per_sequence_append() {
 
 const GQA: &str = "fn main() {
     2048 -> iota -> iq;
-    iq -> map { t -> (t * 5 + 3) % 7 - 3 -> widen_f32 } -> q;
+    iq -> map { t -> (t * 5 + 3) % 7 - 3 -> widen<f32> } -> q;
     65536 -> iota -> ik;
-    ik -> map { t -> (t * 3 + 1) % 5 - 2 -> widen_f32 } -> kc;
+    ik -> map { t -> (t * 3 + 1) % 5 - 2 -> widen<f32> } -> kc;
     32 -> iota -> rd;
     0 -> z0: i32;
     (z0, rd) -> fold { acc, v -> acc + v % 3 } -> pp;
@@ -659,13 +659,13 @@ fn device_geometry_on_generated_programs() {
 /// (`ua` / `ub`), in bounds at `g`'s top where the site runs (`g < 2`).
 const SLICED: &str = "fn main() {
     16384 -> iota -> i_q;
-    i_q -> map { t -> (t * 5 + 3) % 7 - 3 -> widen_f32 } -> q;
+    i_q -> map { t -> (t * 5 + 3) % 7 - 3 -> widen<f32> } -> q;
     4096 -> iota -> i_k;
-    i_k -> map { t -> (t * 3 + 1) % 5 - 2 -> widen_f32 } -> kr;
+    i_k -> map { t -> (t * 3 + 1) % 5 - 2 -> widen<f32> } -> kr;
     16384 -> iota -> i_w;
-    i_w -> map { t -> (t * 3 + 2) % 5 - 2 -> widen_f32 } -> wo;
+    i_w -> map { t -> (t * 3 + 2) % 5 - 2 -> widen<f32> } -> wo;
     2048 -> iota -> y0;
-    y0 -> map { t -> t % 3 -> widen_f32 } -> yi;
+    y0 -> map { t -> t % 3 -> widen<f32> } -> yi;
     32 -> iota -> rd;
     16384 -> iota -> rs;
     256 -> iota -> rgd;

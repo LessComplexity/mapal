@@ -5,10 +5,14 @@
 // does when its main lever (reuse) is absent.
 fn main() {
     1048576 -> iota -> ia;
-    ia -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 } -> a;
+    ia -> map {
+        t -> (t * 7 + 13) % 101 - 50 -> widen<f32>
+    } -> a;
     1048576 -> iota -> ib;
     () -> time -> t0;
-    ib -> map { t -> a[(t % 1024) * 1024 + t / 1024] } -> b;
+    ib -> map {
+        t -> a[(t % 1024) * 1024 + t / 1024]
+    } -> b;
     () -> time -> t1;
     b[0] -> println;
     b[1048575] -> println;

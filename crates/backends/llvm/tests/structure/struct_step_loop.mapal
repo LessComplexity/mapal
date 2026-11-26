@@ -15,7 +15,7 @@ type Cache {
 
 fn step(token: i32, model: Model, caches: [Cache; 2]) -> ([f32; 64], [Cache; 2]) {
     64 -> iota -> map {
-        i -> (i + token) % 7 -> widen_f32
+        i -> (i + token) % 7 -> widen<f32>
     } -> start;
     mut hidden: [f32; 64] <- start;
     mut updated: [Cache; 2] <- caches;
@@ -54,7 +54,7 @@ fn step(token: i32, model: Model, caches: [Cache; 2]) -> ([f32; 64], [Cache; 2])
 
 fn main() {
     64 -> iota -> map {
-        i -> i -> widen_f32
+        i -> i -> widen<f32>
     } -> ramp;
     64 -> iota -> map {
         i -> 0.5

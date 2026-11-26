@@ -7,7 +7,6 @@ P0102 356..357 9:1 annotations (`@…`) are out of Mapal-Core (HANDOFF §4); pla
 P0101 421..422 11:11 the `?` operator is out of Mapal-Core (HANDOFF §4); planned for Core+1 error handling
 P0101 427..428 11:17 the `?` operator is out of Mapal-Core (HANDOFF §4); planned for Core+1 error handling
 P0112 433..436 14:1 `pub` is out of Mapal-Core (HANDOFF §4); planned for post-M5
-P0103 470..482 16:15 generic type arguments are out of Mapal-Core (HANDOFF §4); planned for Core+1
 P0103 487..499 16:32 generic type arguments are out of Mapal-Core (HANDOFF §4); planned for Core+1
 P0109 518..520 17:17 `::` paths are out of Mapal-Core (HANDOFF §4); planned for Core+1 modules
 P0107 543..550 18:12 rest elements (`...tail`) in array literals are out of Mapal-Core (HANDOFF §4); planned for Core+1 slices

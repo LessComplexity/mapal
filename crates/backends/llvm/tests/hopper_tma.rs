@@ -112,9 +112,9 @@ const MODES: [[(&str, &str); 2]; 4] = [
 
 const MM: &str = "fn main(): tf32 | f32 {
     65536 -> iota -> ia;
-    ia -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 } -> a;
+    ia -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 } -> a;
     65536 -> iota -> ib;
-    ib -> map { t -> (t * 5 + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 } -> b;
+    ib -> map { t -> (t * 5 + 57) % 103 - 51 -> widen<f32> -> v; v / 9.0 } -> b;
     65536 -> iota -> ic;
     256 -> iota -> kr;
     ic -> map { t -> t / 256 -> i; t % 256 -> j; (0.0, kr) -> fold { acc, k -> acc + a[i * 256 + k] * b[k * 256 + j] } } -> y;
