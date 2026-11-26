@@ -1,8 +1,8 @@
 {
   "name": "mapal-lang",
   "displayName": "Mapal",
-  "description": "Language server (go to definition, references, hover, rename, completion, diagnostics, semantic highlighting), syntax highlighting, formatting and file icon for the Mapal dataflow language.",
-  "version": "0.3.0",
+  "description": "Language server (go to definition, references, hover, rename, completion, diagnostics, semantic highlighting), syntax highlighting, formatting and file icon for the Mapal dataflow language; the platform package bundles the server.",
+  "version": "0.4.0",
   "publisher": "mapal-lang",
   "license": "Apache-2.0 WITH LLVM-exception",
   "engines": {
@@ -18,8 +18,10 @@
   ],
   "scripts": {
     "build": "esbuild extension.js --bundle --platform=node --format=cjs --target=node18 --external:vscode --outfile=dist/extension.js",
-    "test": "cd ../.. && python3 editors/vscode/test/scope_test.py && node editors/vscode/test/grammar_test.js && node editors/vscode/test/format_test.js && node editors/vscode/test/lsp_test.js",
-    "package": "npm run build && python3 package-vsix.py"
+    "pretest": "npm run build",
+    "test": "cd ../.. && python3 editors/vscode/test/scope_test.py && node editors/vscode/test/grammar_test.js && node editors/vscode/test/format_test.js && node editors/vscode/test/lsp_test.js && python3 editors/vscode/test/package_test.py",
+    "package": "npm run build && python3 package-vsix.py",
+    "package:linux-x64": "npm run build && python3 package-vsix.py --target linux-x64"
   },
   "dependencies": {
     "vscode-languageclient": "9.0.1"
@@ -35,9 +37,9 @@
       "properties": {
         "mapal.executablePath": {
           "type": "string",
-          "default": "mapal",
+          "default": "",
           "scope": "machine-overridable",
-          "description": "Executable name or absolute path to the Mapal CLI: the language server is `<path> lsp`, formatting falls back to `<path> fmt -` when the server is off. Arguments are not supported."
+          "description": "Executable name or absolute path to the Mapal CLI: the language server is `<path> lsp`, formatting falls back to `<path> fmt -` when the server is off. Empty (the default): the server bundled with the extension (platform package), else `mapal` on PATH. Arguments are not supported."
         },
         "mapal.server.enabled": {
           "type": "boolean",

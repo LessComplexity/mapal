@@ -4,26 +4,75 @@
 // answers definition requests, and — the check that matters for "the same
 // highlights as Neovim" — every token of the shared fixture ends up with its
 // class's scope once the semantic tokens are mapped through package.json's
-// semanticTokenScopes over the TextMate scopes (what VS Code paints).
+// semanticTokenScopes over the TextMate scopes (what VS Code paints). The server is
+// started the way the extension finds it: the setting, else the server a platform
+// package bundles (here: MAPAL_BIN placed as one), else `mapal` on PATH.
 //
 //   cargo build -p mapal-cli && npm install && node test/lsp_test.js   (MAPAL_BIN: the CLI)
 
 const assert = require("assert").strict;
 const cp = require("child_process");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const rpc = require("vscode-jsonrpc/node");
 const { grammar, scopes, tsv, root } = require("./grammar_test");
-const { serverOptions, clientOptions } = require("../extension");
+const { serverOptions, clientOptions, resolveExecutable, bundledPath } = require("../extension");
 
 const binary = path.resolve(root, process.env.MAPAL_BIN || "target/debug/mapal");
 
+// The mapal section of the settings with mapal.executablePath at `value` (undefined: unset).
+const settings = (value) => ({
+  get: (key, fallback) => {
+    assert.equal(key, "executablePath");
+    return value === undefined ? fallback : value;
+  },
+});
+
+// Which executable the extension runs: the setting > the bundled server > `mapal` on PATH.
+function resolutionOrder() {
+  const ext = path.join(path.sep, "ext");
+  const linux = { platform: "linux", arch: "x64" };
+  const bundled = path.join(ext, "server", "linux-x64", "mapal");
+  assert.equal(bundledPath(ext, "linux", "x64"), bundled);
+  assert.equal(bundledPath(ext, "darwin", "arm64"), path.join(ext, "server", "darwin-arm64", "mapal"));
+  assert.equal(bundledPath(ext, "win32", "x64"), path.join(ext, "server", "win32-x64", "mapal.exe"));
+  const asked = [];
+  const present = { ...linux, canRun: (file) => (asked.push(file), true) };
+  const absent = { ...linux, canRun: () => false };
+  const pick = (value, host, at = ext) => {
+    const { command, source } = resolveExecutable(settings(value), at, host); // at null: no install path
+    return [command, source];
+  };
+  assert.deepEqual(pick("/opt/mapal", present), ["/opt/mapal", "setting"], "the setting wins");
+  assert.deepEqual(asked, [], "a set path is not second-guessed by the bundled server");
+  assert.deepEqual(pick("mapal", present), ["mapal", "setting"], "set to `mapal`: PATH, as asked");
+  assert.deepEqual(pick(undefined, present), [bundled, "bundled"], "unset: the bundled server");
+  assert.deepEqual(asked, [bundled], "only this platform's server is looked for");
+  assert.deepEqual(pick("", present), [bundled, "bundled"], "empty (the default) is unset");
+  assert.deepEqual(pick(" ", present), [bundled, "bundled"], "blank is unset");
+  assert.deepEqual(pick(undefined, absent), ["mapal", "path"], "no bundled server: PATH");
+  assert.deepEqual(pick(undefined, present, null), ["mapal", "path"], "no extension path: PATH");
+  const other = { platform: "linux", arch: "arm64", canRun: (file) => file === bundled };
+  assert.deepEqual(pick(undefined, other), ["mapal", "path"], "another platform's server is not used");
+}
+
 async function main() {
-  // The extension starts exactly `<executablePath> lsp` for mapal documents.
+  // The extension starts exactly `<executable> lsp` for mapal documents.
   assert.deepEqual(serverOptions("mapal"), { command: "mapal", args: ["lsp"], transport: 0 });
   assert.ok(clientOptions().documentSelector.every((s) => s.language === "mapal"));
+  const channel = { name: "Mapal" };
+  assert.equal(clientOptions(channel).outputChannel, channel, "server logs go to the Mapal output channel");
+  resolutionOrder();
 
-  const proc = cp.spawn(binary, serverOptions(binary).args, { stdio: ["pipe", "pipe", "inherit"] });
+  // The server the extension resolves from an install that bundles one, the setting unset.
+  const install = fs.mkdtempSync(path.join(os.tmpdir(), "mapal-vscode-lsp-"));
+  fs.mkdirSync(path.dirname(bundledPath(install)), { recursive: true });
+  fs.symlinkSync(binary, bundledPath(install));
+  const server = resolveExecutable(settings(undefined), install);
+  assert.deepEqual([server.command, server.source], [bundledPath(install), "bundled"]);
+
+  const proc = cp.spawn(server.command, serverOptions(server.command).args, { stdio: ["pipe", "pipe", "inherit"] });
   const conn = rpc.createMessageConnection(
     new rpc.StreamMessageReader(proc.stdout), new rpc.StreamMessageWriter(proc.stdin));
   const diagnostics = new Map();
@@ -109,6 +158,7 @@ async function main() {
   conn.sendNotification("exit");
   await new Promise((r) => proc.on("exit", r));
   conn.dispose();
+  fs.rmSync(install, { recursive: true, force: true });
   console.log(fails ? `${fails} failure(s)` : "all lsp assertions passed");
   process.exitCode = fails ? 1 : 0;
 }
