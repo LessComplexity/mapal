@@ -33,6 +33,19 @@ FIXTURE = ROOT / "editors/test/fixture.mapal"
 TOKENS = ROOT / "editors/test/fixture.tokens.tsv"
 
 
+# (line, 0-based column, class): static classes off the fixture, the same table as
+# grammar_test.js and editors/nvim/test/syntax_test.lua.
+STATIC_CASES = [
+    ("fn zip(a: i32) -> i32 {", 3, "builtin"),
+    ("type u8 {", 5, "primitive"),
+    ("    mut f32: i32 <- 0;", 8, "primitive"),
+    ("    } -> u8;", 9, "primitive"),
+    ("    x -> bf16 -> y;", 9, "primitive"),
+    ("        -true-> tf32;", 16, "primitive"),
+    ("fn printer() {", 3, "function-declaration"),
+]
+
+
 def tsv(path):
     return [l.split("\t") for l in path.read_text().splitlines() if l and not l.startswith("#")]
 
@@ -136,23 +149,32 @@ def main():
                 fails += 1
                 print(f"FAIL {f.name}:{i} flagged as reserved")
 
-    # The rules that start at the whitespace after an arrow must exclude every keyword and
-    # builtin, or they claim it (see the module docstring).
+    # The rules that start at the whitespace after an arrow (and `mut name`) must exclude
+    # every keyword, builtin and primitive type, or they claim it (see the module
+    # docstring): the Vim keywords win there, so `-> u8;` is a primitive in both.
     repo = grammar["repository"]
     kw = repo["keywords"]["patterns"]
     names = set()
     for p in kw:
         names |= set(re.search(r"\\b\(([^)]+)\)\\b", p["match"]).group(1).split("|"))
-    prims = set(re.search(r"\\b\(([^)]+)\)\\b", kw[-1]["match"]).group(1).split("|"))
-    must = (names - prims) | {"category"}
-    pats = [("call-position", repo["call-position"]["match"]), ("binding", repo["binding"]["match"])]
+    must = names | {"category"}
+    pats = [(r, repo[r]["match"]) for r in ("call-position", "binding", "mut-binding")]
     pats += [(f"guards[{i}]", p["match"]) for i, p in enumerate(repo["guards"]["patterns"])]
     for rule, pat in pats:
         listed = set(re.search(r"\(\?!\(\?:([^)]+)\)", pat).group(1).split("|"))
         if must - listed:
             fails += 1
             print(f"FAIL #{rule} exclusion is missing {sorted(must - listed)}")
-    print(f"ok   the arrow rules exclude all {len(must)} keywords and builtins" if not fails else "")
+    print(f"ok   the arrow rules exclude all {len(must)} keywords, builtins and primitives" if not fails else "")
+
+    # Lines the fixture cannot hold (it compiles): a builtin or primitive name where a
+    # definition goes keeps its class, as the Vim keywords do (STATIC_CASES).
+    for line, col, want_class in STATIC_CASES:
+        want = classes[want_class][2]
+        got = scope_at(tokenize(line, rules), col)
+        if got != want:
+            fails += 1
+            print(f"FAIL `{line}` col {col + 1}: want {want}, got {got}")
 
     # semanticTokenScopes: each semantic token → its class's TextMate scope.
     package = json.loads(PACKAGE.read_text())

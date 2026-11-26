@@ -48,6 +48,30 @@ for _, r in ipairs(tsv("editors/test/fixture.tokens.tsv")) do
 end
 say(string.format("%d tokens checked against fixture.tokens.tsv", checked))
 
+-- Lines the fixture cannot hold (it compiles): a builtin or primitive name where
+-- a definition goes keeps its class (editors/vscode/test/scope_test.py
+-- STATIC_CASES holds the TextMate grammar to the same table).
+local cases = {
+  { "fn zip(a: i32) -> i32 {", 4, "builtin" },
+  { "type u8 {", 6, "primitive" },
+  { "    mut f32: i32 <- 0;", 9, "primitive" },
+  { "    } -> u8;", 10, "primitive" },
+  { "    x -> bf16 -> y;", 10, "primitive" },
+  { "        -true-> tf32;", 17, "primitive" },
+  { "fn printer() {", 4, "function-declaration" },
+}
+for _, c in ipairs(cases) do
+  vim.cmd("enew!")
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, { c[1] })
+  vim.bo.filetype = "mapal"
+  local got = vim.fn.synIDattr(vim.fn.synID(1, c[2], 1), "name")
+  checked = checked + 1
+  if got ~= group[c[3]] then
+    failures = failures + 1
+    say(string.format("FAIL  `%s` col %d: want %s, got %s", c[1], c[2], group[c[3]], got))
+  end
+end
+
 -- The reserved spelling is flagged; no valid example lights up as an error.
 vim.cmd("enew")
 vim.bo.filetype = "mapal"

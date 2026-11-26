@@ -110,3 +110,10 @@ fn main() {
     () -> time -> stop;
     stop - start -> println;
 }
+
+// A local named like a scalar type: a line alone says primitive, the server
+// says binding (both editors paint the server's class over the line's).
+fn halve(x: f32) -> f32 {
+    x * 0.5 -> u8;
+    x * 0.5 -> ret;
+}

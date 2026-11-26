@@ -299,6 +299,58 @@ fn hover_shows_signatures_types_and_docs() {
     c.stop();
 }
 
+/// Through the server: a value made by a function declared further down is
+/// typed (hover, type definition, `value.` completion), and a `seq`'s binding
+/// is defined after the block (definition, hover).
+#[test]
+fn later_declarations_and_seq_bindings_through_the_server() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/programs");
+    let later = std::fs::read_to_string(dir.join("declared_later.mapal")).unwrap();
+    let seq = std::fs::read_to_string(dir.join("seq_scope.mapal")).unwrap();
+    let mut c = Client::start();
+    c.open(URI, &later);
+    let hover = c.request("textDocument/hover", at(&later, "made.bias", 0, 0));
+    let hover = hover["contents"]["value"].as_str().unwrap_or("");
+    assert!(hover.contains("made: Config"), "{hover}");
+    let ty = c.request("textDocument/typeDefinition", at(&later, "made.bias", 0, 0));
+    assert_eq!(
+        ty["range"]["start"]["line"].as_u64().map(|l| l + 1),
+        Some(line_of(&later, "type Config", 0)),
+        "{ty}"
+    );
+    let gd = c.request("textDocument/definition", at(&later, "made.bias", 0, 5));
+    assert_eq!(
+        gd["range"]["start"]["line"].as_u64().map(|l| l + 1),
+        Some(line_of(&later, "    bias: f32,", 0)),
+        "{gd}"
+    );
+    let items = c.request("textDocument/completion", at(&later, "made.bias", 0, 5));
+    let labels: Vec<&str> = items
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["label"].as_str().unwrap())
+        .collect();
+    assert_eq!(labels, ["scale", "bias"]);
+
+    c.notify(
+        "textDocument/didChange",
+        json!({ "textDocument": { "uri": URI, "version": 2 }, "contentChanges": [{ "text": seq }] }),
+    );
+    let gd = c.request("textDocument/definition", at(&seq, "escaped + next", 0, 0));
+    assert_eq!(
+        gd["range"]["start"]["line"].as_u64().map(|l| l + 1),
+        Some(line_of(&seq, "n * 10 -> escaped;", 0)),
+        "{gd}"
+    );
+    let refs = c.request(
+        "textDocument/references",
+        json!({ "textDocument": { "uri": URI }, "position": pos(&seq, "escaped + next", 0, 0), "context": { "includeDeclaration": true } }),
+    );
+    assert_eq!(refs.as_array().map(Vec::len), Some(2), "{refs}");
+    c.stop();
+}
+
 #[test]
 fn rename_symbols_completion_formatting() {
     let text = llama();

@@ -6,9 +6,14 @@
 //! `globals`, `typing`) instead of inventing its own:
 //!
 //! - A function body is one root frame holding the parameters; `loop`, guard
-//!   arms, `seq` and block stages push child frames (a fanout's branches do
-//!   not: they join); a `map` / `fold` body
-//!   pushes a frame that is a capture boundary (ADR-0027).
+//!   arms and block stages push child frames (a fanout's branches do not: they
+//!   join; nor does a `seq`: it lowers in the enclosing scope, ADR-0019 pin b);
+//!   a `map` / `fold` body pushes a frame that is a capture boundary (ADR-0027).
+//! - Every function's signature type is known before any body is walked, and
+//!   every top-level value's type before any chain reads it (ADR-0048 D2:
+//!   program-wide names are order-independent), so a call to a function
+//!   declared further down, or a top-level value bound further down, still
+//!   carries its type into field access, hover and completion.
 //! - A bare-name stage `-> name` resolves innermost-first: a `mut` local is a
 //!   rebind of that local; an immutable capture is a fresh shadow in the body;
 //!   then a function is a call, a builtin is the builtin, and anything else is
@@ -468,21 +473,41 @@ impl<'a> Walker<'a> {
                 self.declare_fields(td);
             }
         }
-        // Pass B: bodies. Top-level chains first so globals carry their types
-        // into the functions that read them.
+        // The signatures' types, from their annotations: a call reads its
+        // callee's result type wherever the two are declared.
         for item in &p.items {
-            if let Item::Bind(tb) = item {
-                self.top = true;
-                self.frames.push(Frame {
-                    names: BTreeMap::new(),
-                    kind: FrameKind::Root,
-                    end: tb.span.end,
-                });
-                self.chain(&tb.chain);
-                self.frames.clear();
-                self.top = false;
+            if let Item::Fn(fd) = item {
+                self.declare_signature(fd);
             }
         }
+        // The top-level values' types: a chain may read a value a later chain
+        // binds (`cfg.scale` above `-> cfg;`), so walk them for their types
+        // alone until no type changes (each round settles one more link of a
+        // dependency chain; lowering rejects a cycle, L1807).
+        let tops = p
+            .items
+            .iter()
+            .filter(|i| matches!(i, Item::Bind(_)))
+            .count();
+        for _ in 0..tops.min(16) {
+            let before: Vec<Ty> = self
+                .globals
+                .values()
+                .map(|&g| self.defs[g].ty.clone())
+                .collect();
+            self.quietly(|w| w.top_chains(p));
+            let after: Vec<Ty> = self
+                .globals
+                .values()
+                .map(|&g| self.defs[g].ty.clone())
+                .collect();
+            if before == after {
+                break;
+            }
+        }
+        // Pass B: bodies. Top-level chains first so globals carry their types
+        // into the functions that read them.
+        self.top_chains(p);
         for item in &p.items {
             if let Item::Fn(fd) = item {
                 self.function(fd);
@@ -507,6 +532,57 @@ impl<'a> Walker<'a> {
         });
         self.occ(fd.name.span, id, Role::Decl);
         self.fns.insert(name, id);
+    }
+
+    /// A function's type is its declared result (`-> T`, else `()`).
+    fn declare_signature(&mut self, fd: &FnDecl) {
+        let Some(&fid) = self.fns.get(self.name(fd.name)) else {
+            return;
+        };
+        if self.defs[fid].span != fd.span {
+            return; // a duplicate declaration: the first one owns the name
+        }
+        let ret = self.quietly(|w| {
+            fd.ret_ty
+                .as_ref()
+                .map(|t| w.ty(t))
+                .unwrap_or(Ty::Tuple(Vec::new()))
+        });
+        self.defs[fid].ty = ret;
+    }
+
+    /// Walk every top-level chain (ADR-0048 D1: their bindings are globals).
+    fn top_chains(&mut self, p: &Program) {
+        for item in &p.items {
+            if let Item::Bind(tb) = item {
+                self.top = true;
+                self.frames.push(Frame {
+                    names: BTreeMap::new(),
+                    kind: FrameKind::Root,
+                    end: tb.span.end,
+                });
+                self.chain(&tb.chain);
+                self.frames.clear();
+                self.top = false;
+            }
+        }
+    }
+
+    /// Run `f` for the types it settles alone: the definitions, occurrences
+    /// and names it records are dropped (the real walk records them once).
+    fn quietly<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
+        let (defs, occs, lexical, puns) = (
+            self.defs.len(),
+            self.occs.len(),
+            self.lexical.len(),
+            self.puns.len(),
+        );
+        let r = f(self);
+        self.defs.truncate(defs);
+        self.occs.truncate(occs);
+        self.lexical.truncate(lexical);
+        self.puns.truncate(puns);
+        r
     }
 
     fn declare_type(&mut self, td: &TypeDecl) {
@@ -649,13 +725,10 @@ impl<'a> Walker<'a> {
             self.occ(p.name.span, id, Role::Decl);
             self.frames[0].names.insert(text, id);
         }
-        let ret = fd
-            .ret_ty
-            .as_ref()
-            .map(|t| self.ty(t))
-            .unwrap_or(Ty::Tuple(Vec::new()));
-        if self.defs[fid].span == fd.span {
-            self.defs[fid].ty = ret;
+        // The result type is the signature's (`declare_signature`); walk the
+        // annotation for its names' occurrences.
+        if let Some(t) = &fd.ret_ty {
+            self.ty(t);
         }
         self.compute(&fd.body);
         self.block_items(&fd.body);
@@ -827,11 +900,17 @@ impl<'a> Walker<'a> {
     // --- blocks, statements, chains ----------------------------------------
 
     fn block_items(&mut self, b: &Block) -> Ty {
+        self.block_items_from(b, &Ty::Unknown)
+    }
+
+    /// A block's items; a headless chain (no head expression) starts from
+    /// `seed` (a `seq`'s input, ADR-0019 pin a).
+    fn block_items_from(&mut self, b: &Block, seed: &Ty) -> Ty {
         for item in &b.items {
             match item {
                 BlockItem::Stmt(s) => match &s.kind {
                     StmtKind::Chain(c) => {
-                        self.chain(c);
+                        self.chain_from(c, seed);
                     }
                     StmtKind::Bind(bs) => {
                         if let Some(ix) = &bs.index {
@@ -871,9 +950,20 @@ impl<'a> Walker<'a> {
             }
         }
         match &b.tail {
-            Some(t) => self.chain(t),
+            Some(t) => self.chain_from(t, seed),
             None => Ty::Unknown,
         }
+    }
+
+    /// `seq { … }` (ADR-0019): the block lowers in the enclosing scope (pin b),
+    /// so its bindings stay visible after it; headless statements and the
+    /// tail start from the seq's input (pin a).
+    fn seq(&mut self, b: &Block, input: &Ty) -> Ty {
+        self.compute(b);
+        let top = std::mem::replace(&mut self.top, false);
+        let t = self.block_items_from(b, input);
+        self.top = top;
+        t
     }
 
     /// A nested block in its own frame.
@@ -888,10 +978,15 @@ impl<'a> Walker<'a> {
     }
 
     fn chain(&mut self, c: &Chain) -> Ty {
+        self.chain_from(c, &Ty::Unknown)
+    }
+
+    /// A chain; with no head it starts from `seed`.
+    fn chain_from(&mut self, c: &Chain, seed: &Ty) -> Ty {
         let mut wire = Wire {
             ty: match &c.head {
                 Some(h) => self.expr(h),
-                None => Ty::Unknown,
+                None => seed.clone(),
             },
             head: c.head.as_ref(),
         };
@@ -966,7 +1061,8 @@ impl<'a> Walker<'a> {
                 Ty::Tuple(ts)
             }
             StageKind::MapFold { op, params, body } => self.map_fold(*op, params, body, wire),
-            StageKind::SeqBlock(b) | StageKind::StmtBlock(b) => self.block(b, FrameKind::Block),
+            StageKind::SeqBlock(b) => self.seq(b, &wire.ty),
+            StageKind::StmtBlock(b) => self.block(b, FrameKind::Block),
         }
     }
 

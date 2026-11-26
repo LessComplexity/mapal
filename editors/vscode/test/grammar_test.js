@@ -66,6 +66,25 @@ async function main() {
       console.log(`FAIL ${line}:${col} ${text.padEnd(12)} want ${want.padEnd(34)} got ${got}`);
     }
   }
+  // Lines the fixture cannot hold (it compiles): a builtin or primitive name where a
+  // definition goes keeps its class, as the Vim keywords do (scope_test.py STATIC_CASES).
+  const cases = [
+    ["fn zip(a: i32) -> i32 {", 3, "builtin"],
+    ["type u8 {", 5, "primitive"],
+    ["    mut f32: i32 <- 0;", 8, "primitive"],
+    ["    } -> u8;", 9, "primitive"],
+    ["    x -> bf16 -> y;", 9, "primitive"],
+    ["        -true-> tf32;", 16, "primitive"],
+    ["fn printer() {", 3, "function-declaration"],
+  ];
+  for (const [line, col, cls] of cases) {
+    const got = scopes(g, [line])[0][col] || "-";
+    checked++;
+    if (got !== classes[cls]) {
+      fails++;
+      console.log(`FAIL \`${line}\` col ${col + 1}: want ${classes[cls]}, got ${got}`);
+    }
+  }
   // Every example tokenizes, and nothing valid is flagged as reserved.
   for (const f of fs.readdirSync(path.join(root, "examples")).filter((f) => f.endsWith(".mapal"))) {
     const ls = fs.readFileSync(path.join(root, "examples", f), "utf8").split("\n");

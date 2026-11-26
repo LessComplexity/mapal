@@ -45,6 +45,14 @@ command in `vim.g.mapal_lsp_cmd = { "/path/to/mapal", "lsp" }`); without it the 
 works as before. `vim.g.mapal_lsp = false` turns the server off. Check it with `:checkhealth vim.lsp`
 or `:lua =vim.lsp.get_clients({ name = "mapal" })`.
 
+LazyVim's `gd` / `gy` / `gD` / `gI` are [Snacks](https://github.com/folke/snacks.nvim) pickers,
+which drop every result on the cursor's line (`include_current = false`). In Mapal a definition
+often shares its use's line — `acc, k -> acc + a[k]`, `fn f<rows>(x: [f32; rows])` — so the plugin
+sets `include_current = true` for those pickers when they open from a mapal buffer
+(`require("mapal.lsp").snacks()`; other filetypes keep Snacks' setting). fzf-lua's LazyVim mapping
+passes `ignore_current_line=true` itself; with fzf-lua, map `gd` to `vim.lsp.buf.definition` for
+mapal buffers.
+
 ### One set of colours, two editors
 
 The syntax file highlights what one line can tell; the server knows the rest (whether `-> name;`
@@ -187,12 +195,14 @@ editors/test.sh              # both editors
 editors/nvim/test/run.sh     # this one only
 ```
 
-- `syntax_test.lua` — every token of the shared fixture gets its class's group (596 tokens), and
-  nothing in `examples/` lights up as an error.
+- `syntax_test.lua` — every token of the shared fixture gets its class's group (621 tokens), a
+  builtin or primitive name where a definition goes keeps its class (as in the TextMate grammar),
+  and nothing in `examples/` lights up as an error.
 - `lsp_test.lua` — the plugin starts `mapal lsp`; `gd` (the definition request and
   `vim.lsp.buf.definition()`'s jump) lands on a function, a type, a binding, a parameter, a field,
   a top-level value, a size parameter, a struct-literal field and a loop's exit binding; `gr`, `K`,
   rename, symbols and diagnostics answer; every fixture token is *painted* (semantic token over
-  syntax) as its class.
+  syntax) as its class; with snacks.nvim installed (`$SNACKS_NVIM`, else lazy.nvim's checkout),
+  `gd` through `Snacks.picker.lsp_definitions()` jumps to a definition on the use's own line.
 - `format_test.lua` — the CLI on unsaved buffer text, `gq`, paths with spaces, invalid input,
   missing executables and concurrent edits.

@@ -211,6 +211,57 @@ do
   check(bad == 0, "all " .. n .. " fixture tokens painted as their class")
 end
 
+-- `gd` through Snacks' picker, as LazyVim maps it. The picker drops results on
+-- the cursor's line unless the plugin keeps them for mapal buffers
+-- (require("mapal.lsp").snacks); here a definition shares its use's line.
+-- Needs snacks.nvim: $SNACKS_NVIM, else lazy.nvim's checkout; skipped without it.
+do
+  local dir = vim.env.SNACKS_NVIM or (vim.fn.stdpath("data") .. "/lazy/snacks.nvim")
+  if vim.fn.isdirectory(dir .. "/lua/snacks") == 0 then
+    say("skip  gd through Snacks' picker (no snacks.nvim at " .. dir .. ")")
+  else
+    vim.opt.runtimepath:append(dir)
+    require("snacks").setup({ picker = { enabled = true } })
+    local same_line = vim.fn.tempname() .. ".mapal"
+    vim.fn.writefile({
+      "fn total<rows>(x: [f32; rows]) -> f32 {",
+      "    (0.0, x) -> fold {",
+      "        acc, v -> acc + v",
+      "    } -> ret;",
+      "}",
+      "",
+      "fn main() {",
+      "    4 -> iota -> map {",
+      "        i -> i * 2",
+      "    } -> twice;",
+      "    twice[1] -> println;",
+      "}",
+    }, same_line)
+    vim.cmd("edit " .. vim.fn.fnameescape(same_line))
+    buf = vim.api.nvim_get_current_buf()
+    client_for(buf)
+    vim.keymap.set("n", "gd", function() Snacks.picker.lsp_definitions() end, { buffer = buf })
+    local function snacks_gd(what, needle, into, target, target_into)
+      local l, c = find(buf, needle, 1, into)
+      local wl, wc = find(buf, target, 1, target_into)
+      vim.api.nvim_win_set_cursor(0, { l, c })
+      vim.api.nvim_feedkeys("gd", "mx", false)
+      vim.wait(5000, function()
+        local p = vim.api.nvim_win_get_cursor(0)
+        return p[1] == wl and p[2] == wc
+      end, 10)
+      local p = vim.api.nvim_win_get_cursor(0)
+      check(vim.api.nvim_get_current_buf() == buf and p[1] == wl and p[2] == wc,
+        string.format("Snacks gd on %s -> %d:%d, want %d:%d", what, p[1], p[2], wl, wc))
+      vim.api.nvim_set_current_buf(buf)
+    end
+    snacks_gd("a fold parameter on its line", "acc + v", 0, "acc, v", 0)
+    snacks_gd("a size parameter in its signature", "; rows]", 2, "<rows>", 1)
+    snacks_gd("a map parameter on its line", "i * 2", 0, "i -> i", 0)
+    snacks_gd("a binding on another line", "twice[1]", 0, "-> twice;", 3)
+  end
+end
+
 -- Diagnostics: the compiler's, positioned.
 vim.cmd("enew")
 local scratch = vim.fn.tempname() .. ".mapal"

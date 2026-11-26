@@ -1,0 +1,24 @@
+// A `seq` block lowers in the enclosing scope (ADR-0019 pin b): what it binds
+// is read after it. Its headless statements start from the seq's input.
+type Reading {
+    value: f32,
+    weight: f32,
+}
+
+fn main() {
+    3 -> n;
+    n -> seq {
+        -> println;
+        n * 10 -> escaped;
+        n + 1 -> next;
+    }
+    escaped + next -> println;
+    Reading {
+        value: 2.0,
+        weight: 0.5,
+    } -> reading;
+    reading -> seq {
+        -> sample;
+    }
+    sample.value * sample.weight -> println;
+}

@@ -1,5 +1,7 @@
 //! Name resolution against the compiler, over every program in the repo
-//! (`examples/*.mapal`, `benches/algorithms/**/*.mapal`).
+//! (`examples/*.mapal`, `benches/algorithms/**/*.mapal`, the editor fixture)
+//! and the scoping cases the repo's programs do not happen to contain
+//! (`tests/programs/*.mapal`).
 //!
 //! Two oracles, neither of which is the analysis itself:
 //!
@@ -23,6 +25,10 @@ fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
+fn programs() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/programs")
+}
+
 fn mapal_files(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(rd) = std::fs::read_dir(dir) else {
         return;
@@ -43,6 +49,7 @@ fn corpus() -> Vec<PathBuf> {
     mapal_files(&root().join("examples"), &mut out);
     mapal_files(&root().join("benches/algorithms"), &mut out);
     mapal_files(&root().join("editors/test"), &mut out);
+    mapal_files(&programs(), &mut out);
     assert!(
         out.len() > 100,
         "corpus not found under {}",
@@ -295,5 +302,99 @@ fn renaming_through_a_pun_keeps_the_program() {
             after.matches("Print").count(),
             "{renamed}"
         );
+    }
+}
+
+fn program(name: &str) -> String {
+    std::fs::read_to_string(programs().join(name)).unwrap()
+}
+
+/// The definition the name at the `nth` `needle` (`into` bytes in) resolves to.
+fn def_at<'a>(
+    a: &'a Analysis,
+    text: &str,
+    needle: &str,
+    nth: usize,
+    into: usize,
+) -> Option<&'a mapal_lsp::analysis::Def> {
+    let at = text.match_indices(needle).nth(nth)?.0 + into;
+    a.def_at(at as u32).map(|d| &a.defs[d])
+}
+
+/// ADR-0019 pin b: a `seq` block lowers in the enclosing scope, so a name it
+/// binds is read after it (and renaming it keeps the program, through the
+/// corpus oracle above); pin a: a headless statement starts from the seq's
+/// input, so its binding has the input's type.
+#[test]
+fn seq_bindings_escape_the_block() {
+    let text = program("seq_scope.mapal");
+    assert!(lowered(&text).is_some(), "the program compiles");
+    let a = Analysis::new(&text);
+    let escaped =
+        def_at(&a, &text, "escaped + next", 0, 0).expect("`escaped` resolves after the seq");
+    assert_eq!(escaped.kind, DefKind::Local);
+    assert_eq!(
+        escaped.name_span.start as usize,
+        text.find("-> escaped;").unwrap() + 3
+    );
+    assert!(
+        def_at(&a, &text, "escaped + next", 0, 10).is_some(),
+        "`next` resolves after the seq"
+    );
+    let sample = def_at(&a, &text, "sample.value", 0, 0).expect("`sample` resolves");
+    assert_eq!(
+        sample.ty.render(),
+        "Reading",
+        "a headless statement starts from the seq's input"
+    );
+    let value = def_at(&a, &text, "sample.value", 0, 7).expect("the field resolves");
+    assert_eq!((value.kind, value.name.as_str()), (DefKind::Field, "value"));
+}
+
+/// ADR-0048 D2: functions and top-level values are program-wide whatever the
+/// order. A call to a function declared below its caller, a top-level value
+/// bound from a call, and a top-level value read above its binding all have
+/// their type, so their fields resolve (renaming a field keeps the program,
+/// through the corpus oracle above).
+#[test]
+fn types_flow_from_later_declarations() {
+    let text = program("declared_later.mapal");
+    assert!(lowered(&text).is_some(), "the program compiles");
+    let a = Analysis::new(&text);
+    for (needle, nth, into, field) in [
+        ("made.bias", 0, 5, "bias"),
+        ("made.scale", 0, 5, "scale"),
+        ("pick.scale", 0, 5, "scale"),
+        ("cfg.scale + cfg.bias", 0, 4, "scale"),
+        ("cfg.scale + cfg.bias", 0, 16, "bias"),
+        ("cfg.scale * 2.0", 0, 4, "scale"),
+    ] {
+        let d = def_at(&a, &text, needle, nth, into)
+            .unwrap_or_else(|| panic!("`{field}` in `{needle}` resolves"));
+        assert_eq!(
+            (d.kind, d.name.as_str()),
+            (DefKind::Field, field),
+            "{needle}"
+        );
+    }
+    let made = def_at(&a, &text, "made.bias", 0, 0).unwrap();
+    assert_eq!(made.ty.render(), "Config");
+    let cfg = def_at(&a, &text, "cfg.scale + cfg.bias", 0, 0).unwrap();
+    assert_eq!(
+        (cfg.kind, cfg.ty.render()),
+        (DefKind::Global, "Config".to_string())
+    );
+    let make = def_at(&a, &text, "-> make -> made", 0, 3).unwrap();
+    assert_eq!(
+        (make.kind, make.ty.render()),
+        (DefKind::Function, "Config".to_string())
+    );
+    // The pre-pass leaves no trace: one declaration per definition.
+    for (i, d) in a.defs.iter().enumerate() {
+        let decls = a
+            .occurrences(i)
+            .filter(|o| o.role == Role::Decl && o.span == d.name_span)
+            .count();
+        assert!(decls <= 1, "`{}` declared {decls} times", d.name);
     }
 }

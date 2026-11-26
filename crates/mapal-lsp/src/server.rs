@@ -167,9 +167,18 @@ enum DiagJob {
     },
 }
 
+/// The diagnostics worker's stack. The front end recurses over the program's
+/// nesting; a spawned thread's default (2 MiB) is a quarter of the main
+/// thread's that `mapal build` runs it on, so a file the CLI reports on would
+/// abort the server. Reserved, not committed: untouched pages cost nothing.
+pub const DIAGNOSTICS_STACK: usize = 64 << 20;
+
 fn spawn_diagnostics(sender: crossbeam_channel::Sender<Message>) -> mpsc::Sender<DiagJob> {
     let (tx, rx) = mpsc::channel::<DiagJob>();
-    std::thread::spawn(move || {
+    let worker = std::thread::Builder::new()
+        .name("mapal-lsp diagnostics".into())
+        .stack_size(DIAGNOSTICS_STACK);
+    let spawned = worker.spawn(move || {
         while let Ok(first) = rx.recv() {
             // Only the latest text of each document is worth checking.
             let mut jobs = vec![first];
@@ -202,6 +211,10 @@ fn spawn_diagnostics(sender: crossbeam_channel::Sender<Message>) -> mpsc::Sender
             }
         }
     });
+    if let Err(e) = spawned {
+        // No worker: requests are still served, only diagnostics are missing.
+        eprintln!("mapal lsp: no diagnostics worker: {e}");
+    }
     tx
 }
 
