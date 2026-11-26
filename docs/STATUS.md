@@ -1,10 +1,45 @@
 # Mapal — Global Status
 
+## At a glance (2026-11-27)
+
+The project as it stands, in one table. Back to the [README](../README.md); where it goes next: [roadmap](roadmap.md);
+the latest numbers: [results](performance/results.md).
+
+|                     |                                                                                                                                                                 |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Language core       | working: pipelines, top-level bindings, size-generic functions and types, guards, loops, `map` / `fold` / `zip` / `enumerate`, tuples, structs, fixed arrays |
+| Numbers             | `i32`, `i64`, `u8`, `f32`, `f64`; `bf16` / `f16` storage; `exp`, `sqrt`, `sin`, `cos`; reduced-precision products opt-in (`: tf32 \| f32`, `: bf16 \| f32`)   |
+| Effects             | `print` / `println`, `time`, `read`                                                                                                                             |
+| Interpreter         | working: _defines_ the language; every backend is tested against it                                                                                            |
+| CPU backend (LLVM)  | working: threading, vectorization, cache blocking                                                                                                               |
+| GPU backend (CUDA)  | working: value gates pass on the RTX 5080, RTX 3090, A100, RTX 4090 and H100 ([results](performance/results.md)); tensor cores, `wgmma` / TMA where the part has them |
+| FPGA backend        | not started                                                                                                                                                     |
+| Placement           | rules over physical properties decide today; the machine model ([ADR-0050](decisions/ADR-0050-the-machine-model-placement-by-one-cost-model.md)) is being built, off by default until measured                                       |
+| Command-line tool   | `mapal build`, `run`, `test`, `dump-ir`, `fmt`, `lsp`                                                                                                           |
+| Editors             | Neovim and VS Code: highlighting, formatting and the language server (definition, references, hover, rename, completion, diagnostics)                         |
+| Tests               | about 1,700 across the workspace; the GPU tests skip without a CUDA toolchain                                                                                   |
+| CI                  | `cargo fmt` + the full suite on Linux and macOS, per push; a skipped LLVM differential fails the run                                                            |
+
+**Checked against the interpreter.** On the default face, compiled values are checked against the interpreter within
+the stated bound, in whatever order the compiler chose. In the development modes (the exact faces,
+[ADR-0049](decisions/ADR-0049-correctness-is-the-flow-and-the-bound.md)) every compiled program is checked to
+print exactly what the interpreter prints, for the examples and for programs from the random generator, at any
+thread count and on any device: the mode for testing and debugging.
+
+**Not in the language yet:** recursion, sum types, pattern matching, strings beyond printing and file paths,
+closures, dynamic arrays, modules. Functions generic over number formats are in progress
+([ADR-0051](decisions/ADR-0051-format-generics-to-and-widen.md): `x -> to<bf16>`, `x -> widen<f32>`).
+
+Per-component state: [Components](#components) and the tables below; the older roll-ups that follow are history.
+Research compiler; no packaged release.
+
+## Earlier roll-ups (history, newest first)
+
 2026-10-28 tooling: shared source formatting is available as `mapal fmt`, with
 Neovim `:MapalFormat`/`gggqG` and VS Code **Format Document** adapters. Four spaces,
 multiline braces, token/comment preservation; check/preview modes do not write.
 See [CLI status](components/cli/STATUS.md), [syntax status](components/syntax/STATUS.md)
-and [usage](../README.md#formatting). Existing benchmark sources remain unchanged
+and [usage](getting-started.md#formatting). Existing benchmark sources remain unchanged
 by this work; prior performance continuations below remain separate.
 
 Current continuation: **2026-10-23, S62 integrated on `s62-integrated` (6a0e3a0): six items merged, M16 E/C kernels 1.6–10.6× faster than 4e1102c on four parts; residual-MLP whole programs still slower than base on three. [Gap map](performance/gpu/disassembly/s62-gap-map.md) · [session](sessions/2026-10-23-s62-optimize-integrate.md) · [next](next-session.md).**

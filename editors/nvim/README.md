@@ -18,6 +18,24 @@ test/run.sh               highlighting, the language server and formatting, head
 Groups link to standard groups via `hi default link`, so your colorscheme drives the actual
 colors and can override any of them.
 
+## Neovim and VS Code side by side
+
+Both editors get the language server (`mapal lsp`: go to definition, references, hover, rename,
+completion, diagnostics, semantic highlighting), highlighting, formatting through `mapal fmt`, and a file
+icon. Neither is published to a registry, so both load from disk.
+
+|                 | Neovim                                   | VS Code                                          |
+| --------------- | ---------------------------------------- | ------------------------------------------------ |
+| Language server | started for `*.mapal` (`vim.lsp.enable`) | bundled (linux-x64) and started by the extension |
+| Highlighting    | Vimscript syntax + semantic tokens       | TextMate grammar + semantic tokens               |
+| File icon       | font glyph                               | the real SVG logo                                |
+| Formatting      | `:MapalFormat`, `gggqG` or the server    | **Format Document**                              |
+| Details         | this page                                | [`editors/vscode/`](../vscode/README.md)         |
+
+Both highlight with the same classes ([`editors/test/classes.tsv`](../test/classes.tsv)), and the same
+fixture tests the Vim syntax, the TextMate grammar and the server's semantic tokens
+([below](#one-set-of-colours-two-editors)).
+
 ## Language server
 
 `mapal lsp` is the compiler's own front end behind the Language Server Protocol (crate
@@ -69,8 +87,14 @@ grammar and the server are all tested against it.
 **lazy.nvim**
 
 ```lua
+{ dir = "/path/to/mapal/editors/nvim", lazy = false } -- icon at startup; starts `mapal lsp` for .mapal
+```
+
+or, spelled out:
+
+```lua
 {
-  dir = "/path/to/flow/editors/nvim",
+  dir = "/path/to/mapal/editors/nvim",
   lazy = false, -- NOT ft = "mapal": the icon must register at startup, see below
   -- optional, for the real logo instead of a stock glyph:
   -- config = function() local i = require("mapal.icon"); i.setup({ glyph = i.logo }) end,
@@ -80,21 +104,25 @@ grammar and the server are all tested against it.
 **packer**
 
 ```lua
-use { "/path/to/flow/editors/nvim" }
+use { "/path/to/mapal/editors/nvim" }
 ```
 
 **No plugin manager** — add the directory to your runtimepath:
 
 ```lua
-vim.opt.runtimepath:append("/path/to/flow/editors/nvim")
+vim.opt.runtimepath:append("/path/to/mapal/editors/nvim")
+require("mapal.icon").setup()          -- optional: nvim-web-devicons / mini.icons
 ```
 
 ## Formatting
 
-Install the CLI from the repository root, then reopen a `.mapal` buffer:
+For the language server and formatting, install the CLI from the repository root with
+`cargo install --path crates/mapal-cli --locked` (or copy `target/release/mapal` onto your `PATH`), or point the
+plugin at your built `target/release/mapal` with `vim.g.mapal_executable` (in VS Code: `mapal.executablePath`),
+then reopen a `.mapal` buffer:
 
 ```sh
-cargo install --path crates/mapal-cli
+cargo install --path crates/mapal-cli --locked
 ```
 
 Use `:MapalFormat` or `gggqG` to format the whole buffer. The plugin sends your
@@ -145,11 +173,13 @@ registered — the likely reason.
 
 The Rust and C++ marks in a file tree are **font glyphs**: Nerd Fonts ships those brand logos as
 characters. Providers take a glyph, not an image, so the only way to get Mapal's own mark is to
-put it in a font — which [`../../assets/font/`](../../assets/font/) does, one glyph at U+F8F0.
+put it in a font — which [`../../assets/font/`](../../assets/font/) does, one glyph at U+F8F0. So Mapal's mark
+ships as a single-glyph font, [`assets/font/MapalIcons.ttf`](../../assets/font/): install it and add it as a
+terminal _fallback_ font, rather than us patching and redistributing someone else's Nerd Font. Then:
 
 ```lua
 local icon = require("mapal.icon")
-icon.setup({ glyph = icon.logo })   -- needs MapalIcons.ttf + a terminal fallback mapping
+icon.setup({ glyph = icon.logo })     -- the real mark at U+F8F0; needs MapalIcons.ttf + a terminal fallback mapping
 ```
 
 Install steps and per-terminal fallback config are in

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Draw the README's result charts and its headline tables from the evidence data.
+"""Draw the result charts and the headline tables from the evidence data.
 
 Inputs (written by the measurement steps; this script only reads them):
   benches/results/evidence/matrix.json       the cross-part suite matrix (benches/local/matrix.py)
@@ -7,11 +7,15 @@ Inputs (written by the measurement steps; this script only reads them):
                                              (local-rtx-5080/full-model.md, cross-arch/README.md)
 
 Outputs:
-  benches/results/charts/<chart>-light.svg and <chart>-dark.svg  (the README picks one per GitHub theme
-  with <picture>): llm-f32, llm-bf16, suite-gpus, suite-groups
-  README.md between `<!-- results-headline:start -->` and `<!-- results-headline:end -->`
+  benches/results/charts/<chart>-light.svg and <chart>-dark.svg  (README.md and docs/performance/results.md
+  pick one per GitHub theme with <picture>): llm-f32, llm-bf16, suite-gpus, suite-groups
+  docs/performance/results.md between `<!-- results-headline:start -->` and `<!-- results-headline:end -->`
+  (README.md is never written: it shows the charts only)
 
-Run from anywhere:  python3 benches/results/charts/make_charts.py   (--no-readme: leave README.md alone)
+A part's `reruns` that carry a `label` get a row of their own under the part's rows (Mapal's `mapal_after` against
+the fastest engine measured with it on that box) and their `note` after the table.
+
+Run from anywhere:  python3 benches/results/charts/make_charts.py   (--no-results: print the tables instead)
 Standard library only. Colors follow the dataviz reference palette (validated: blue / red polarity pair in
 both modes). Type to type: a precision class is only ever compared with engines of its own class
 (full-model.json's classes; llama.cpp f16 sits under other_types and is never drawn), each suite row only
@@ -29,7 +33,7 @@ ROOT = Path(__file__).resolve().parents[3]
 MATRIX = ROOT / "benches/results/evidence/matrix.json"
 FULL_MODEL = ROOT / "benches/results/evidence/full-model.json"
 OUT = ROOT / "benches/results/charts"
-README = ROOT / "README.md"
+RESULTS = ROOT / "docs/performance/results.md"
 HEADLINE_START = "<!-- results-headline:start -->"
 HEADLINE_END = "<!-- results-headline:end -->"
 
@@ -295,6 +299,14 @@ def model_cell(part, cid, metric, j):
     me = mapal_engine(engines)
     best = min(competitors(engines), key=lambda e: e[metric][j])
     return me[metric][j] / best[metric][j], me[metric][j], best[metric][j], best["name"]
+
+
+def rerun_cell(rr, metric, j):
+    """A rerun's Mapal (`mapal_after`) ÷ the fastest engine measured on its box: (ratio, Mapal, best, best name)."""
+    me = rr["mapal_after"][metric][j]
+    engines = [(k, v) for k, v in rr.items() if isinstance(v, dict) and metric in v and not k.startswith("mapal")]
+    name, best = min(engines, key=lambda e: e[1][metric][j])
+    return me / best[metric][j], me, best[metric][j], name
 
 
 def model_domain(fm, j):
@@ -593,7 +605,7 @@ def suite_groups_chart(matrix, theme):
     return svg.render(y + 18)
 
 
-# --- the README's headline table ---------------------------------------------------------------------------
+# --- the headline tables (docs/performance/results.md) -------------------------------------------------------
 
 
 def headline(fm, matrix):
@@ -607,6 +619,7 @@ def headline(fm, matrix):
         return f"**{shown}**" if float(shown) < 1 - even else shown
 
     parts, by, common = suite_rows(matrix)
+    notes = []
     lines = [
         f"**Kernel and layer suite**: Mapal ÷ the fastest competitor at the program's own precision, geomean over the "
         f"{len(common)} programs timed on every GPU, both sides timed at the program boundary.",
@@ -640,6 +653,18 @@ def headline(fm, matrix):
             _, da, db, dn = model_cell(p, cid, "decode_ms", j512)
             at = f"{sig(a)} vs {sig(b)} ms ({n}); {sig(da)} vs {sig(db)} ms / token ({dn})"
             lines.append(f"| {part_name(p['part'])} | {cid} | {cells[0]} | {cells[1]} | {at} |")
+        for rr in p.get("reruns", []):
+            if not rr.get("label"):
+                continue
+            cells = []
+            for metric in ("ttft_ms", "decode_ms"):
+                cells.append(" / ".join(ratio(rerun_cell(rr, metric, j)[0]) for j in range(len(lengths))))
+            _, a, b, n = rerun_cell(rr, "ttft_ms", j512)
+            _, da, db, dn = rerun_cell(rr, "decode_ms", j512)
+            at = f"{sig(a)} vs {sig(b)} ms ({n}); {sig(da)} vs {sig(db)} ms / token ({dn})"
+            lines.append(f"| {part_name(p['part'])}, {rr['label']} | {rr['class']} | {cells[0]} | {cells[1]} | {at} |")
+            if rr.get("note"):
+                notes.append(rr["note"])
     lines += [
         "",
         f"Below 1: Mapal faster; bold: faster by more than {even:.0%}. Type to type: the **f32 class** is the program "
@@ -647,28 +672,29 @@ def headline(fm, matrix):
         "computing in f32 with TF32 off (SGLang has no f32 path and TensorRT-LLM's f32 output is wrong: neither is "
         "compared); the **bf16 class** (`fold: bf16 | f32`, bf16 KV cache) against gpt-fast, vLLM, SGLang, "
         "TensorRT-LLM, llama.cpp and Hugging Face in bf16. llama.cpp in f16 is another 16-bit format and is not "
-        "compared.",
+        "compared." + "".join(" " + n for n in notes),
     ]
     return "\n".join(lines)
 
 
-def update_readme(text):
-    s = README.read_text()
+def update_results(text):
+    s = RESULTS.read_text()
+    name = RESULTS.relative_to(ROOT)
     if HEADLINE_START not in s or HEADLINE_END not in s:
-        print(f"README.md has no {HEADLINE_START} … {HEADLINE_END} block; left unchanged")
+        print(f"{name} has no {HEADLINE_START} … {HEADLINE_END} block; left unchanged")
         return
     pattern = re.compile(re.escape(HEADLINE_START) + r".*?" + re.escape(HEADLINE_END), re.S)
     new = pattern.sub(lambda _: f"{HEADLINE_START}\n\n{text}\n\n{HEADLINE_END}", s)
     if new != s:
-        README.write_text(new)
-        print("README.md: headline table updated")
+        RESULTS.write_text(new)
+        print(f"{name}: headline tables updated")
     else:
-        print("README.md: headline table unchanged")
+        print(f"{name}: headline tables unchanged")
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--no-readme", action="store_true", help="do not rewrite the README's headline block")
+    ap.add_argument("--no-results", action="store_true", help="print the headline tables, leave results.md alone")
     args = ap.parse_args()
     matrix = json.loads(MATRIX.read_text())
     fm = json.loads(FULL_MODEL.read_text())
@@ -686,8 +712,8 @@ def main():
             path.write_text(body)
             print(f"wrote {path.relative_to(ROOT)}")
     table = headline(fm, matrix)
-    if not args.no_readme:
-        update_readme(table)
+    if not args.no_results:
+        update_results(table)
     else:
         print(table)
 
