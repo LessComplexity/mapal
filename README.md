@@ -76,7 +76,7 @@ What follows from it:
 
 ## Example: Llama-3.2-1B
 
-[`examples/llama.mapal`](examples/llama.mapal) is Llama-3.2-1B-Instruct in 403 lines, written to be read: the
+[`examples/llama.mapal`](examples/llama.mapal) is Llama-3.2-1B-Instruct in 412 lines, written to be read: the
 checkpoint's weights are one `read`, and one `forward` runs the whole prompt and then each generated token through
 the 16 layers. Excerpts, unedited.
 
@@ -106,13 +106,13 @@ One decoder layer, as a flow from the hidden state to the next hidden state and 
 ```flow
 // One decoder layer over the chunk: attention with a residual connection, then the feed-forward block with
 // a residual connection. The chunk's keys and values enter the cache before its queries attend.
-fn decoder_layer<tokens>(
+fn decoder_layer<tokens, element: float>(
     hidden: [f32; tokens * hidden_size],
     weights: DecoderLayerWeights,
     layer: i32,
-    cache: KeyValueCache,
+    cache: KeyValueCache<element>,
     positions: [i32; tokens],
-) -> ([f32; tokens * hidden_size], KeyValueCache) {
+) -> ([f32; tokens * hidden_size], KeyValueCache<element>) {
     (hidden, weights.attention_norm) -> rms_norm -> normed;
     (weights.query, normed) -> project -> query: [f32; tokens * query_size];
     (weights.key, normed) -> project -> key: [f32; tokens * key_value_size];
@@ -142,10 +142,10 @@ fn decoder_layer<tokens>(
 // Causal grouped-query attention over layer `layer`'s cached keys and values: each token's query head h reads
 // key/value head h / 4 of every cached position up to its own, scores are scaled by 1 / sqrt(head_size),
 // softmax over each head's scores, and the result is the weighted sum of the cached values.
-fn attend<tokens>(
+fn attend<tokens, element: float>(
     query: [f32; tokens * query_size],
     positions: [i32; tokens],
-    cache: KeyValueCache,
+    cache: KeyValueCache<element>,
     layer: i32,
 ) -> [f32; tokens * query_size] {
     head_size -> iota -> dimensions;
@@ -161,7 +161,10 @@ fn attend<tokens>(
             -true-> {
                 (layer * context_length + past) * key_value_heads + key_value_head -> key_row;
                 (0.0, dimensions) -> fold {
-                    sum, d -> sum + query[token_head * head_size + d] * cache.keys[key_row * head_size + d]
+                    sum, d ->
+                    query[token_head * head_size + d] -> q;
+                    cache.keys[key_row * head_size + d] -> widen<f32> -> key;
+                    sum + q * key
                 } -> dot;
                 dot / scale_root
             }
@@ -190,7 +193,9 @@ fn attend<tokens>(
         (0.0, past_positions) -> fold {
             sum, past ->
             (layer * context_length + past) * key_value_heads + key_value_head -> value_row;
-            sum + exponentials[token_head * context_length + past] * cache.values[value_row * head_size + d]
+            exponentials[token_head * context_length + past] -> weight;
+            cache.values[value_row * head_size + d] -> widen<f32> -> value;
+            sum + weight * value
         } -> weighted;
         weighted / row_total[token_head]
     } -> ret;
@@ -204,7 +209,7 @@ Greedy decoding, inside `main`: each step feeds the last token back through the 
 ```flow
     // Each later token: feed the previous one at the next position.
     mut token: i32 <- first_token;
-    mut cache: KeyValueCache <- prefilled.1;
+    mut cache <- prefilled.1;
     mut position: i32 <- prompt_length;
     loop {
         (position < prompt_length + generated_tokens - 1) -> {

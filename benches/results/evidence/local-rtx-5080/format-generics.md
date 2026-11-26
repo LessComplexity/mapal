@@ -62,3 +62,26 @@ included, leaves the remainder inside `(−|k|, |k|)`), which proves the ladder'
 Generator note: `testgen`'s tile laws drew a coefficient from the length of the program text so far; the rewrite's
 one extra character per law (`widen<f32>`) would have changed every draw, so the draw takes the length less one per
 line — the generated set is the one before the rewrite (the 600-program row).
+
+## The readable Llama with a format parameter (separate commit)
+
+`examples/llama.mapal` declares its key/value cache format once: `type KeyValueCache<element: float>`, the
+functions over the cache take `element` (inferred from the cache they are given), `write_rows` rounds each new
+element with `to<element>`, `attend` reads with `widen<f32>`, and `main` chooses the format in one line
+(`0.0 -> to<f32> -> zero;`). `benches/model/variant.py --cache bf16` is now that one token (`to<bf16>`) instead of
+six text substitutions. Run on the local RTX 5080, `prompt_length=128`, 128 generated tokens, built with
+`mapal build --target=rtx-5080`:
+
+| class | old (`43a1b61d`, `variant.py` then) | new (generic program) | tokens | logits | host `.ll` | device `.ll` / PTX |
+| --- | --- | --- | --- | --- | --- | --- |
+| default (f32 cache, default face) | `variant.py prompt_length=128` | same | 128 / 128 identical | within 3.7e-5 (a rerun of the old binary: 4.2e-5 — the default face's free order) | identical | identical |
+| bf16 (`--compute bf16`, bf16 cache) | `variant.py prompt_length=128 --compute bf16` | same | 128 / 128 identical | identical | differs | differs |
+
+At the program's own sizes (`prompt_length` 512) the generic `examples/llama.mapal` emits the old program's host and
+device text byte for byte on `rtx-5080` and `x86-64-v3` (the table's method).
+
+The bf16 class differs only in the order the attention folds read their two arrays: the old variant's substitution
+read the cache before the query (`cache.keys[…] -> widen<f32> -> key; sum + query[…] * key`), the f32 program the
+query first, and one generic source has one order (it keeps the f32 class's). The old compiler on the old bf16
+program written in the generic program's order (`query[…] -> q;` first) gives the new host text, device text and PTX
+byte for byte — the generic instance is the hand-specialized bf16 program.
