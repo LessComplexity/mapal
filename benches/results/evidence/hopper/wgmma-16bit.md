@@ -89,6 +89,13 @@ the m64k16 layout, each k16 step summed as the warp `mma.m16n8k16` (`mma_sum`); 
 - **On the H100**: 48 generated programs (`dump_hw_programs`) + 24 of them on the persistent walk: **72 / 72 within
   the bound** (`hw_check.py`); the suite's value gates 10 / 10 (`on`, `null`, `off-wgmma16` each within D2 / D3; on
   and off print identical values).
+- Formatting (review fix, after `b3ad75f4`): `testgen::wgmma16_src` / `block_src` returned compacted source
+  (`mapal fmt --check` on `wg16_00`: needs formatting, 2 lines past 120 columns); both now return
+  `format_source`'s layout, as do the fixed `PJ` / `MERGED` programs (tests `wg16_sources_are_formatted`,
+  `block_sources_are_formatted`: 64 draws each). The layout changes no token: the H100 runs' dumped programs
+  (`wg16_00`, `01`, `05`, `17`, `33`) and their formatted text emit the same host and device IR byte for byte at
+  `--target=h100`, so the 72 / 72 above stand. `deep_stages_equal_the_warp_tile` builds its variant of `PJ` by
+  checked replacements (each present once), so a layout change can no longer leave it the original.
 
 ## Kernel suite on the box (`box_run.sh`, ABBA × 5, value-gated; `gpu_changed`: `suite_diff.py --arch h100 --off
 wgmma16` → 10 programs differ, 127 text-equal: null by construction)

@@ -9,7 +9,9 @@
 //!   space with no empty block, it keeps its whole warp tile (no block of
 //!   fewer warps than the ordered tile's), and its kernel adds the shared
 //!   tiles' partials (`atomicrmw fadd`) beside the whole tiles' plain store;
-//!   the OFF arm (`--gpu-off=mma-walk`) and the fixed order walk none.
+//!   its k loop is the ordered tile's (the warp tile's `mt·nt·bk/k` products
+//!   a trip, walked or not); the OFF arm (`--gpu-off=mma-walk`) and the fixed
+//!   order walk none.
 //! - **Reuse, every part** (hopper-wgmma `walk-reuse`). The walk's readers
 //!   of an operand slice sit where its rotation puts them; a slice the
 //!   part's L2 keep does not hold between two readers is read again. No
@@ -122,6 +124,19 @@ fn walked(p: &HashMap<String, String>) -> bool {
     p.get("combine").is_some_and(|c| c == "streamk")
 }
 
+/// A warp tensor tile's `mma.sync` in its emitted body against its warp
+/// tile's products a k-loop trip (`mt · nt · bk / k` of the `m16n8kK` op);
+/// `None` for another instruction (the warpgroup product).
+fn mma_issue(t: &HashMap<String, String>, body: &str) -> Option<(u64, u64)> {
+    let k = match t.get("op")?.split('.').next()? {
+        "m16n8k16" => 16,
+        "m16n8k8" => 8,
+        _ => return None,
+    };
+    let want = num(t, "mt") * num(t, "nt") * num(t, "bk") / k;
+    Some((body.matches("mma.sync").count() as u64, want))
+}
+
 /// Large extents (plans only): skinny-to-square projections, `k` deep
 /// enough to be walked.
 fn plan_dims(p: &testgen::GemmProg) -> (u64, u64, u64) {
@@ -141,6 +156,7 @@ struct Cover {
     kept: u64,
     shared: u64,
     gated: u64,
+    loops: u64,
 }
 
 impl std::ops::AddAssign for Cover {
@@ -150,6 +166,7 @@ impl std::ops::AddAssign for Cover {
         self.kept += o.kept;
         self.shared += o.shared;
         self.gated += o.gated;
+        self.loops += o.loops;
     }
 }
 
@@ -278,8 +295,18 @@ fn check_plans(p: &testgen::GemmProg, part: &'static str) -> Cover {
     }
     // A forced walk its re-reads bind: the default arm keeps the ordered
     // grid (or its cut).
-    let forced = emission(&ir, part, &[], &["mma-walk"], &[]);
-    if mma_kernels(&forced)
+    let forced = mma_kernels(&emission(&ir, part, &[], &["mma-walk"], &[]));
+    // The walk's k loop is the ordered tile's (`walk-reuse`, correcting
+    // disasm-rented's "the walk's loop halves", a static SASS count): the warp
+    // tile's `mt·nt·bk/k` products a trip, walked or not, in one k-step body
+    // (LLVM's peel of the ordered loop's last trip comes later, in `opt`).
+    for (t, body) in forced.iter().chain(&ordered) {
+        if let Some((got, want)) = mma_issue(t, body) {
+            assert_eq!(got, want, "{ctx}: the k loop's products a trip: {t:?}");
+            c.loops += u64::from(walked(t));
+        }
+    }
+    if forced
         .iter()
         .any(|(t, _)| walked(t) && rereads_bind(t, &Facts(part)))
     {
@@ -328,6 +355,7 @@ fn mma_walk_rules_on_generated_shapes() {
     );
     assert!(c.shared > 0, "walks with shared tiles: {c:?}");
     assert!(c.gated > 0, "walks the re-reads gate: {c:?}");
+    assert!(c.loops > 0, "walked k loops compared: {c:?}");
 }
 
 const MODES: [[(&str, &str); 2]; 3] = [

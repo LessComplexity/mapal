@@ -7447,7 +7447,25 @@ pub fn wgmma16_src(p: &Wgmma16Prog) -> (String, (usize, u64)) {
         src += &format!("    y[{c}] -> println;\n    mag[{c}] -> println;\n");
     }
     src += "}\n";
-    (src, (cells.len(), k))
+    (formatted(src), (cells.len(), k))
+}
+
+/// A generated program laid out by the formatter (CLAUDE.md: generated source
+/// is formatted too — the text the tests lower and the hardware runs dump).
+/// The layout changes no token, so the program and its IR are the same.
+pub fn formatted(src: String) -> String {
+    mapal_syntax::format_source(&src)
+        .unwrap_or_else(|d| panic!("generated program does not parse: {d:?}\n{src}"))
+}
+
+/// `mapal fmt --check` on a program a test lowers: the formatter leaves it
+/// unchanged and no line is compacted past 120 columns.
+pub fn assert_formatted(src: &str, what: &str) {
+    let out = mapal_syntax::format_source(src)
+        .unwrap_or_else(|d| panic!("{what} does not parse: {d:?}\n{src}"));
+    assert_eq!(out, src, "{what} needs formatting");
+    let long = src.lines().filter(|l| l.chars().count() > 120).count();
+    assert_eq!(long, 0, "{what}: {long} lines past 120 columns\n{src}");
 }
 
 // --- size-generics: helpers called at several sizes, as Mapal source --------
@@ -8438,5 +8456,5 @@ pub fn block_src(p: &BlockProg, member: bool) -> String {
         "{b}t + 1 -> t;\n{b}-> loop;\n            }}\n            -false-> x -> out;\n        }}\n    }}\n    out[0] -> println;\n    out[{last}] -> println;\n    0.0 -> zero: f32;\n    (zero, out) -> fold{k}{{\n        acc, v -> acc + v * v\n    }} -> ssq;\n    ssq -> println;\n}}\n",
         last = r * d - 1,
     );
-    s
+    formatted(s)
 }

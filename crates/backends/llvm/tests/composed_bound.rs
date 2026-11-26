@@ -154,6 +154,23 @@ fn check(clang: &str, p: &testgen::BlockProg) -> [u64; 6] {
     cover
 }
 
+/// CLAUDE.md "format generated source too": both forms of every generated
+/// decode block are the formatter's layout, as `mapal fmt --check` wants.
+#[test]
+fn block_sources_are_formatted() {
+    let mut runner = TestRunner::deterministic();
+    for i in 0..64 {
+        let p = testgen::block_strategy()
+            .new_tree(&mut runner)
+            .unwrap()
+            .current();
+        for member in [true, false] {
+            let src = testgen::block_src(&p, member);
+            testgen::assert_formatted(&src, &format!("block #{i} member={member}"));
+        }
+    }
+}
+
 #[test]
 fn composed_bound_on_generated_decode_blocks() {
     let Some(clang) = emu::clang() else {

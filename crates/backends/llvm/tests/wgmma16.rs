@@ -149,16 +149,36 @@ const MODES: [[(&str, &str); 2]; 4] = [
 /// f32, `b` stored bf16 (lanes-major), every fold `: bf16 | f32`.
 const PJ: &str = "fn main(): bf16 | f32 {
     65536 -> iota -> ia;
-    ia -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 } -> a;
+    ia -> map {
+        t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v;
+        v / 7.0
+    } -> a;
     65536 -> iota -> ib;
-    ib -> map { t -> (t * 5 + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 -> to_bf16 } -> b;
+    ib -> map {
+        t -> (t * 5 + 57) % 103 - 51 -> widen_f32 -> v;
+        v / 9.0 -> to_bf16
+    } -> b;
     65536 -> iota -> ic;
     256 -> iota -> kr;
-    ic -> map { t -> t / 256 -> i; t % 256 -> j; (0.0, kr) -> fold { acc, k -> b[k * 256 + j] -> widen_f32 -> w; acc + a[i * 256 + k] * w } } -> y;
+    ic -> map {
+        t -> t / 256 -> i;
+        t % 256 -> j;
+        (0.0, kr) -> fold {
+            acc, k -> b[k * 256 + j] -> widen_f32 -> w;
+            acc + a[i * 256 + k] * w
+        }
+    } -> y;
     y[0] -> println;
     y[65535] -> println;
 }
 ";
+
+/// `src` with `from` (present once) replaced by `to`: a variant of a fixed
+/// program that cannot silently stay the original.
+fn sub(src: &str, from: &str, to: &str) -> String {
+    assert_eq!(src.matches(from).count(), 1, "{from:?} once in\n{src}");
+    src.replacen(from, to, 1)
+}
 
 /// The kernel text on `sm_90a`: the 16-bit warpgroup instruction with `a`
 /// from registers (rounded `cvt.rn.bf16x2.f32`) and `b` MN-major (transpose
@@ -170,7 +190,8 @@ fn ws16_kernel_text_on_sm_90a() {
     // `a` read by the product alone: stored rounded by its producer
     // (`PrecisionPlan::store`) — `a` from a descriptor; printed too: kept
     // f32 — `a` from registers, rounded in its fragment load.
-    let kept = PJ.replace(
+    let kept = sub(
+        PJ,
         "    y[0] -> println;",
         "    a[3] -> println;\n    y[0] -> println;",
     );
@@ -281,16 +302,49 @@ fn ptxas_check(dev: &str, plan: &str) -> String {
 /// warpgroup: 256 threads, the fold's block).
 const MERGED: &str = "fn main() {
     49152 -> iota -> ia;
-    ia -> map { t -> (t * 21 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 } -> a;
+    ia -> map {
+        t -> (t * 21 + 13) % 101 - 50 -> widen_f32 -> v;
+        v / 7.0
+    } -> a;
     16384 -> iota -> ib;
-    ib -> map { t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 -> to_bf16 } -> b;
+    ib -> map {
+        t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v;
+        v / 9.0 -> to_bf16
+    } -> b;
     12288 -> iota -> ic;
-    ic -> map { t -> (t * 3 + 7) % 17 - 8 -> widen_f32 -> v; v / 8.0 } -> r;
+    ic -> map {
+        t -> (t * 3 + 7) % 17 - 8 -> widen_f32 -> v;
+        v / 8.0
+    } -> r;
     256 -> iota -> kr;
-    ic -> map { t -> t / 64 -> i; t % 64 -> j; (0.0, kr) -> fold: bf16 | f32 { acc, q -> a[i * 256 + q] -> x; b[q * 64 + j] -> widen_f32 -> y; acc + x * y } -> u; r[t] -> rv; u * 0.5 + rv } -> y;
-    ia -> map { t -> (t * 21 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 } -> am;
-    ib -> map { t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 -> to_bf16 } -> bm;
-    ic -> map: f32 { t -> t / 64 -> i; t % 64 -> j; (0.0, kr) -> fold { acc, q -> am[i * 256 + q] -> x; bm[q * 64 + j] -> widen_f32 -> y; x * y } } -> mag;
+    ic -> map {
+        t -> t / 64 -> i;
+        t % 64 -> j;
+        (0.0, kr) -> fold: bf16 | f32 {
+            acc, q -> a[i * 256 + q] -> x;
+            b[q * 64 + j] -> widen_f32 -> y;
+            acc + x * y
+        } -> u;
+        r[t] -> rv;
+        u * 0.5 + rv
+    } -> y;
+    ia -> map {
+        t -> (t * 21 + 13) % 101 - 50 -> widen_f32 -> v;
+        v / 7.0
+    } -> am;
+    ib -> map {
+        t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v;
+        v / 9.0 -> to_bf16
+    } -> bm;
+    ic -> map: f32 {
+        t -> t / 64 -> i;
+        t % 64 -> j;
+        (0.0, kr) -> fold {
+            acc, q -> am[i * 256 + q] -> x;
+            bm[q * 64 + j] -> widen_f32 -> y;
+            x * y
+        }
+    } -> mag;
     y[245] -> println;
     mag[245] -> println;
 }
@@ -343,18 +397,23 @@ fn deep_stages_equal_the_warp_tile() {
     let Some(clang) = emu::clang() else {
         return;
     };
-    let deep = PJ
-        .replace("65536 -> iota -> ia", "131072 -> iota -> ia")
-        .replace(
-            "ic -> map { t -> t / 256 -> i; t % 256 -> j;",
-            "ic -> map { t -> t / 64 -> i; t % 64 -> j;",
-        )
-        .replace("65536 -> iota -> ic", "8192 -> iota -> ic")
-        .replace("256 -> iota -> kr", "1024 -> iota -> kr")
-        .replace("b[k * 256 + j]", "b[k * 64 + j]")
-        .replace("a[i * 256 + k]", "a[i * 1024 + k]")
-        .replace("y[65535]", "y[8191]");
-    let kept = deep.replace(
+    let mut deep = PJ.to_string();
+    for (from, to) in [
+        ("65536 -> iota -> ia", "131072 -> iota -> ia"),
+        (
+            "t -> t / 256 -> i;\n        t % 256 -> j;",
+            "t -> t / 64 -> i;\n        t % 64 -> j;",
+        ),
+        ("65536 -> iota -> ic", "8192 -> iota -> ic"),
+        ("256 -> iota -> kr", "1024 -> iota -> kr"),
+        ("b[k * 256 + j]", "b[k * 64 + j]"),
+        ("a[i * 256 + k]", "a[i * 1024 + k]"),
+        ("y[65535]", "y[8191]"),
+    ] {
+        deep = sub(&deep, from, to);
+    }
+    let kept = sub(
+        &deep,
         "    y[0] -> println;",
         "    a[3] -> println;\n    y[0] -> println;",
     );
@@ -384,7 +443,8 @@ fn ws16_equals_the_warp_tile() {
     let Some(clang) = emu::clang() else {
         return;
     };
-    let kept = PJ.replace(
+    let kept = sub(
+        PJ,
         "    y[0] -> println;",
         "    a[3] -> println;\n    y[0] -> println;",
     );
@@ -587,6 +647,22 @@ fn dump_hw_programs() {
 /// non-zero but `deep` (a stage past one 128-byte row: the copies' price at
 /// the profile's rates rarely asks it of so small a site —
 /// [`deep_stages_equal_the_warp_tile`] pins it).
+/// CLAUDE.md "format generated source too": the fixed programs and every
+/// generated one (the text `MAPAL_WG16_DUMP` writes for the H100 runs) are
+/// the formatter's layout, as `mapal fmt --check` wants.
+#[test]
+fn wg16_sources_are_formatted() {
+    testgen::assert_formatted(PJ, "PJ");
+    testgen::assert_formatted(MERGED, "MERGED");
+    let mut runner = TestRunner::deterministic();
+    let strat = testgen::wgmma16_prog_strategy();
+    for i in 0..64 {
+        let p = strat.new_tree(&mut runner).unwrap().current();
+        let (src, _) = testgen::wgmma16_src(&p);
+        testgen::assert_formatted(&src, &format!("wg16 #{i}"));
+    }
+}
+
 #[test]
 fn generated_ws16_within_the_bound() {
     let Some(clang) = emu::clang() else {

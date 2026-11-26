@@ -86,8 +86,10 @@ RTX 5080 0.876 (46/44/30) · RTX 3090 0.920 (39/30/51) · A100 1.006 (57/11/51) 
 9. **Hopper wgmma + regression study** (running workflow): 16-bit `wgmma.m64nNk16` tiles as capability geometry, one tile
    family with TF32 wgmma (779f4a15; H100 bf16 projections 1.13–2.23×, 2048×28672×4096 1.05× cuBLAS; merged-launch
    crash worked around — warp-specialized kernels launch alone, root cause open); regression study 16f46432: **one Mapal
-   regression** — mma-walk on Ampere (3090 pj_m2048_n4096_k4096_bf16 1.10 → 1.48; A100 down projection 788 vs 761 µs: the
-   walk loop has half the static HMMA + RED + a zero pass) — being fixed by the resumed integrate; everything else box
+   regression** — mma-walk on Ampere (3090 pj_m2048_n4096_k4096_bf16 1.10 → 1.48; A100 down projection 788 vs 761 µs:
+   the walk's operand re-reads past the part's L2 keep + RED + a zero pass; the k loops are equal a trip — the first
+   reading's "half the static HMMA" was LLVM's peel of the ordered loop's last trip) — fixed by `walk-reuse`
+   (b3ad75f4); everything else box
    properties (4090 last round clock-locked at 1.2 GHz; H100 host round trips 2–3×, 500 → 700 W; A100 ±50 % noise + tuner
    reverting good picks).
 
@@ -95,7 +97,8 @@ RTX 5080 0.876 (46/44/30) · RTX 3090 0.920 (39/30/51) · A100 1.006 (57/11/51) 
 
 - bf16 class behind on the rented GPUs (table above); H100 still 1.25 / 1.58 at 512/2048 after wgmma; next: flash
   attention on wgmma (FA3-style), persistent walk, the merged-launch crash's root cause.
-- The mma-walk Ampere regression (in the resumed integrate).
+- The mma-walk Ampere regression: fixed by `walk-reuse` (b3ad75f4); open: a walk order whose readers meet within a
+  small L2 keep, the A100 down projection's two-round grid.
 - Decode vs gpt-fast: argmax on the host (75–126 µs/step), K/V projections at ~500 GB/s (16-byte loads), q/k/v not merged
   with their rotations (walk order), 288–323 launches/step.
 - Properties: host round-trip cost as a measured property; tuner revert only when pairs agree beyond null.
