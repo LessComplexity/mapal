@@ -657,6 +657,18 @@
       "date": "2026-11-26",
       "report": "benches/results/evidence/cross-arch/README.md (b8429388 / 9be9886d)",
       "box": "vast.ai: Xeon Platinum 8568Y+, 700 W",
+      "reruns": [
+        {
+          "what": "wgmma16: the 16-bit tiles on the warpgroup matrix instruction (779f4a15); bf16 class only",
+          "box": "another vast.ai H100 SXM; gpt-fast (the H100's best bf16 engine in the round above) run on the same box",
+          "report": "benches/results/evidence/hopper/wgmma-16bit.md",
+          "date": "2026-11-26",
+          "class": "bf16",
+          "mapal_before": {"detail": "--gpu-off=wgmma16 (mma.sync)", "ttft_ms": [3.92, 7.44, 24.81], "decode_ms": [1.98, 2.01, 2.06]},
+          "mapal_after": {"detail": "wgmma16", "ttft_ms": [2.70, 5.60, 18.11], "decode_ms": [1.98, 2.00, 2.06]},
+          "gpt-fast": {"detail": "max-autotune, CUDA graphs", "ttft_ms": [3.58, 4.47, 11.45], "decode_ms": [1.33, 1.34, 1.42]}
+        }
+      ],
       "classes": {
         "f32": {
           "engines": [
