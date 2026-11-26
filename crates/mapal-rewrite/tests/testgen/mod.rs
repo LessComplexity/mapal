@@ -8529,6 +8529,14 @@ pub const FORMAT_HELPERS: &[FormatHelper] = &[
         scalar: false,
     },
     FormatHelper {
+        name: "matvec",
+        kind: "float",
+        sig: "(w: [$t; @{n * n}], x: [f32; @{n}]) -> [f32; @{n}]",
+        body: "@{n} -> iota -> cols;\n@{n} -> iota -> map { i -> (0.0, cols) -> fold { s, j -> w[i * @{n} + j] -> widen<f32> -> v; s + v * x[j] } } -> ret;",
+        output_only: false,
+        scalar: false,
+    },
+    FormatHelper {
         name: "pick",
         kind: "narrow",
         sig: "(x: f32) -> $t",
@@ -8684,9 +8692,16 @@ impl FormatProg {
             // The operand: an f32 closed form of the index (exact in every
             // drawn format's range), rounded to the format where the helper
             // takes `[t; n]`.
+            // `matvec` reads an `n × n` matrix and an `n` vector.
+            let len = if g.name == "matvec" { n * n } else { n };
             src.push_str(&format!(
-                "    {n} -> iota -> map {{ i -> (i * {a} + {b}) % 13 - 6 -> widen<f32> -> * 0.125 }} -> x{k};\n"
+                "    {len} -> iota -> map {{ i -> (i * {a} + {b}) % 13 - 6 -> widen<f32> -> * 0.125 }} -> x{k};\n"
             ));
+            if g.name == "matvec" {
+                src.push_str(&format!(
+                    "    {n} -> iota -> map {{ i -> (i * {b} + {a}) % 7 - 3 -> widen<f32> }} -> u{k};\n"
+                ));
+            }
             if !g.output_only {
                 src.push_str(&format!(
                     "    x{k} -> map {{ v -> v -> to<{f}> }} -> y{k};\n"
@@ -8712,7 +8727,7 @@ impl FormatProg {
             let ty = match (g.name, g.scalar) {
                 (_, true) => f.to_string(),
                 ("total", _) => "f32".to_string(),
-                ("load", _) => format!("[f32; {n}]"),
+                ("load" | "matvec", _) => format!("[f32; {n}]"),
                 _ => format!("[{f}; {n}]"),
             };
             let bind = if annotated {
@@ -8724,13 +8739,14 @@ impl FormatProg {
                 "store" => format!("x{k}"),
                 "load" | "total" => format!("y{k}"),
                 "rescale" => format!("(y{k}, 0.5)"),
+                "matvec" => format!("(y{k}, u{k})"),
                 _ => format!("x{k}[{}]", n - 1),
             };
             src.push_str(&format!("    {input} -> {callee} -> {bind};\n"));
             match g.name {
                 "total" => src.push_str(&format!("    r{k} -> println;\n")),
                 "pick" => src.push_str(&format!("    r{k} -> widen<f32> -> println;\n")),
-                "load" => src.push_str(&format!(
+                "load" | "matvec" => src.push_str(&format!(
                     "    (0.0, r{k}) -> fold {{ s, v -> s + v }} -> println;\n"
                 )),
                 _ => src.push_str(&format!(
