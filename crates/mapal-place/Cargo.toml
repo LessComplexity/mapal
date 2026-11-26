@@ -1,0 +1,10 @@
+[package]
+name = "mapal-place"
+version.workspace = true
+edition.workspace = true
+description = "ADR-0050: the machine model — places, executors, operations, movers and dispatch as facts with provenance; schedules; one evaluator; reuse by distinct bytes."
+
+[dependencies]
+
+[dev-dependencies]
+proptest = "1.11.0"

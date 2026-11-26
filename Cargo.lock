@@ -520,6 +520,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "mapal-place"
+version = "0.0.1"
+dependencies = [
+ "proptest",
+]
+
+[[package]]
 name = "mapal-rewrite"
 version = "0.0.1"
 dependencies = [
