@@ -160,9 +160,9 @@ async function startServer(vscode, context) {
   try {
     await next.start();
   } catch (error) {
-    output.appendLine(`The language server did not start: ${error.message}`);
+    output.appendLine(`The language server did not start: ${(error && error.message) || String(error)}`);
     vscode.window.showWarningMessage(
-      `Mapal: the language server did not start (${error.message}). Highlighting and formatting `
+      `Mapal: the language server did not start (${(error && error.message) || String(error)}). Highlighting and formatting `
       + `still work; check that \`${server.command} lsp\` runs (${server.detail}; setting mapal.executablePath).`,
     );
     return false;

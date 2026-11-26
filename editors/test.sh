@@ -24,3 +24,4 @@ python3 editors/vscode/test/scope_test.py
 node editors/vscode/test/grammar_test.js
 node editors/vscode/test/lsp_test.js
 node editors/vscode/test/format_test.js
+python3 editors/vscode/test/package_test.py
