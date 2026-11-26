@@ -14,488 +14,118 @@
 
 <br>
 
+**A programming language where you write how data flows, and the compiler decides how it runs.**
+
 </div>
 
-<!--toc:start-->
-
-- [Philosophy](#philosophy)
-- [Example](#example)
-- [Syntax](#syntax)
-- [Current results](#current-results)
-  - [The full model](#the-full-model)
-  - [The kernel and layer suite](#the-kernel-and-layer-suite)
-- [Roadmap](#roadmap)
-- [Status](#status)
-- [Trying it](#trying-it)
-  - [Formatting](#formatting)
-  - [Editor support](#editor-support)
-- [How the project works](#how-the-project-works)
-- [License](#license)
-
-<!--toc:end-->
-
-**A dataflow programming language.** You write what the data is and how it flows; the compiler works out how
-it runs: on the CPU, on the GPU, and across both. No threads, streams, kernels, tile sizes or intrinsics appear
-in the source.
-
----
-
-## Philosophy
-
-- **The language is the flow.** A program states data and how it flows, `data -> transform -> result;`, not the
-  control that moves it. A `map` says every cell is independent, a `fold` says how values combine, a binding says
-  who reads what.
-- **Data is category-theoretic.** Values are objects, transforms are morphisms, a program is their composition.
-  The compiler's IR is that graph, and its rewrites are the category's laws
-  ([`docs/spec/category-ir.md`](docs/spec/category-ir.md)).
-- **Expressing the flow beats expressing control.** Because the source states only what depends on what, the
-  compiler derives what runs in parallel, what merges into one kernel, what stays in registers, shared memory or
-  cache, and what moves between devices, from facts on the graph (independence, reuse, death points, footprints)
-  against the hardware's properties. Control written by hand fixes each of those decisions for one machine.
-
-What follows from it:
-
-- **Two kinds of facts, reconciled by the compiler.** The dataflow's facts (what each value reads, when it dies,
-  what is independent) and the hardware's facts, as abstract compute and placement: where bytes can live (capacities,
-  bandwidths, latencies, the cache a part really keeps), what computes (matrix and vector operations as shapes, with
-  the place each operand must be in), what moves bytes, and how work is dispatched, each fact measured, queried or
-  declared, never a part's name. Compilation places the dataflow on the machine with one cost model and one search,
-  then lowers it to the hardware's language; the few hardware-specific steps that cannot be facts come last and are
-  kept to a minimum. Adding a chip, a vendor or an ASIC is describing it as facts, not writing a new backend's worth
-  of heuristics ([ADR-0050](docs/decisions/ADR-0050-the-machine-model-placement-by-one-cost-model.md); its first
-  step, matrix products, is in progress — today rules over the same physical properties decide).
-- **No runtime graph recording.** Which work merges into one kernel, vertically along a chain and horizontally
-  across independent branches, is decided at compile time from the dataflow. Nothing is traced or captured while
-  the program runs.
-- **Correct numerics: the flow and the bound, not bit-identity.** Every result is within an error bound stated before
-  the program runs, at full precision ([ADR-0040](docs/decisions/ADR-0040-default-float-face.md)). The compiler orders
-  and combines operations freely for speed and placement, so parallel sums may differ in the last bits between runs —
-  correctness is a correct flow of operations, not a repeated bit pattern
-  ([ADR-0049](docs/decisions/ADR-0049-correctness-is-the-flow-and-the-bound.md)). Bit-reproducible runs exist as a
-  development mode for testing and debugging. Reduced precision is opt-in, per product.
-- **Readable, idiomatic source.** Programs read like the math they compute. If natural code compiles worse than a
-  hand-shaped version, the compiler is fixed, not the program.
-- **A language AI agents can write and verify.** Deterministic semantics, precise diagnostics with stable codes, one
-  formatter (`mapal fmt`), and the interpreter as an exact reference that any compiled run is checked against.
-
----
-
-## Example
-
-RMSNorm, one of the steps of a transformer, for any number of tokens:
+## A first look
 
 ```flow
-fn rms_norm<tokens>(x: [f32; tokens * hidden_size], gain: [bf16; hidden_size]) -> [f32; tokens * hidden_size] {
-    hidden_size -> iota -> features;
-    hidden_size -> widen_f32 -> width;
-    tokens -> iota -> map {
-        t -> (0.0, features) -> fold {
-            sum, i -> sum + x[t * hidden_size + i] * x[t * hidden_size + i]
+// softmax: turn scores into probabilities that add up to 1.
+fn softmax<n>(scores: [f32; n]) -> [f32; n] {
+    n -> iota -> positions;
+    (scores[0], positions) -> fold {
+        top, i -> (scores[i] > top) -> {
+            -true-> scores[i];
+            -false-> top;
         }
-    } -> sum_of_squares;
-    tokens * hidden_size -> iota -> map {
-        cell ->
-        sum_of_squares[cell / hidden_size] / width + rms_epsilon -> sqrt -> root;
-        gain[cell % hidden_size] -> widen_f32 -> g;
-        x[cell] * (1.0 / root) * g
+    } -> largest;
+    positions -> map {
+        i -> scores[i] - largest -> exp
+    } -> weights;
+    (0.0, positions) -> fold {
+        sum, i -> sum + weights[i]
+    } -> total;
+    positions -> map {
+        i -> weights[i] / total
     } -> ret;
-}
-```
-
-No threads, tiles or kernels in the source: the compiler derives that every `map` cell is independent, how the `fold`
-combines, and where each value lives. The whole Llama-3.2-1B is one readable file,
-[`examples/llama.mapal`](examples/llama.mapal) (403 lines).
-
----
-
-## Syntax
-
-The core forms in one whole program. It reads 12 `bf16` values from `weights.bin` (the directory comes from
-`MAPAL_DATA_DIR`) and prints one number.
-
-```flow
-// Top-level values: immutable (there is no `const`), computed before the program runs.
-3 -> rows;
-4 -> columns;
-
-// `_` is a type's default interpretation: a Matrix is its array wherever an array fits.
-type Matrix<r, c> {
-    _: [bf16; r * c]
-}
-
-// Size-generic: `r` and `c` are inferred from the arguments at each call.
-fn project<r, c>(weight: Matrix<r, c>, x: [f32; c]) -> [f32; r] {
-    c -> iota -> along;
-    r -> iota -> map {
-        row -> (0.0, along) -> fold {
-            sum, column ->
-            weight[row * c + column] -> widen_f32 -> w;
-            sum + w * x[column]
-        }
-    } -> ret;
-}
-
-// A guard: one arm runs, chosen by the condition.
-fn relu(v: f32) -> f32 {
-    (v > 0.0) -> {
-        -true-> v;
-        -false-> 0.0;
-    } -> ret;
-}
-
-// A loop: `mut` state, and a guard that either goes round again or leaves.
-fn total<n>(values: [f32; n]) -> f32 {
-    mut step: i32 <- 0;
-    mut sum: f32 <- 0.0;
-    loop {
-        (step < n) -> {
-            -true-> {
-                sum + values[step] -> sum;
-                step + 1 -> step;
-                -> loop;
-            }
-            -false-> sum -> ret;
-        }
-    }
 }
 
 fn main() {
-    "weights.bin" -> read -> weight: Matrix<rows, columns>;
-    columns -> iota -> map {
-        i -> i -> widen_f32 -> sqrt
-    } -> x;
-    (weight, x) -> project -> y;
-    y -> map {
-        v -> v -> relu
-    } -> activated;
-    activated -> total -> println;
+    [1.0, 2.0, 3.0, 4.0] -> softmax -> probabilities;
+    probabilities[3] -> println;    // 0.6439143
 }
 ```
 
-| form | what it says | decision |
-| --- | --- | --- |
-| `x -> f -> y;` | a pipeline: `x` flows through `f`, the result is bound as `y` | [ADR-0005](docs/decisions/ADR-0005-flow-is-a-statement.md) |
-| `2048 -> hidden_size;` | a top-level binding: immutable (no `const`; only `mut` values change), computed before the program runs when its dataflow reads no input | [ADR-0048](docs/decisions/ADR-0048-top-level-bindings-compile-time-evaluation.md) |
-| `type Matrix<rows, columns> { _: [bf16; rows * columns] }` | `_` is the type's default interpretation: with no other field the type is an alias, with others it reads as `_` wherever only that fits | [ADR-0048](docs/decisions/ADR-0048-top-level-bindings-compile-time-evaluation.md) |
-| `fn project<rows, columns>(…)` | size-generic: the sizes are inferred at each call, one fixed-size function per size tuple | [ADR-0047](docs/decisions/ADR-0047-size-generic-functions.md) |
-| `x -> exp`, `-> sqrt`, `-> sin`, `-> cos` | math builtins in pipeline position (no call syntax), bit-defined on the exact faces | [ADR-0042](docs/decisions/ADR-0042-exp-builtin.md), [ADR-0046](docs/decisions/ADR-0046-math-builtins-and-target-realizations.md) |
-| `"file" -> read -> w: [bf16; n];` | load a value's raw bytes from a file: an array, or a whole struct of arrays | [ADR-0045](docs/decisions/ADR-0045-read-builtin.md) |
-| `bf16`, `f16` | narrow storage: one rounding in (`to_bf16`), exact widening out (`widen_f32`), f32 compute | [ADR-0043](docs/decisions/ADR-0043-narrow-float-storage.md) |
-| `n -> iota -> map { i -> … }` | a value per cell, every cell independent | |
-| `(seed, xs) -> fold { acc, x -> … }` | combine values; on the default face the order is the compiler's | [ADR-0040](docs/decisions/ADR-0040-default-float-face.md) |
-| `(c) -> { -true-> a; -false-> b; }` | a guard: exactly one arm runs | |
-| `mut s: T <- init; loop { … -> loop; }` | a loop: `mut` state, an arm that goes round again or leaves | |
+`a -> f -> b` means "a flows through f and becomes b". A `map` does something to every item, and the items are
+independent. A `fold` combines many values into one. That is all the program says, so the compiler is free to decide
+the rest: what runs in parallel, where the data lives, and whether it runs on the CPU, the GPU or both. There are no
+threads, kernels or tile sizes in the source.
 
-Every decision record, with the alternatives it rejected: [`docs/decisions/`](docs/decisions/README.md).
+A whole language model, Llama-3.2-1B, is one readable file:
+[`examples/llama.mapal`](examples/llama.mapal).
 
----
+## The ideas
 
-## Current results
+- **The program is the flow.** You describe the data and how it moves, not the steps a machine should take.
+- **Data composes like mathematics.** Values and the transformations between them are built on category theory, so
+  the compiler can reason about a program exactly.
+- **Describing the flow beats describing control.** Code that spells out the control is tuned for one machine. Code
+  that states the flow can be compiled well for each machine.
+- **The compiler knows both sides.** It knows your program (what depends on what) and the hardware (where data can
+  live, what can compute it), and it matches the two. A new chip only needs to be described, not reprogrammed for.
+- **Correct within a stated error.** Results are guaranteed within a precision you can see, not bit for bit, which
+  leaves the compiler free to choose the fastest correct way.
+- **Readable code is the target.** If the natural version of a program runs slower, the compiler gets fixed.
+- **Made for AI agents too.** One way to write each thing, exact error messages, a formatter, and a reference
+  interpreter to check every result against.
 
-Five GPUs, 2026-11-26: an RTX 5080 at home and an RTX 3090, A100, RTX 4090 and H100 rented. The full model on all
-five and the kernel suite on the rented four ran this round's final build (`b8429388`, re-timed on `9be9886d`'s
-runtime); the RTX 5080's suite column is the gapfix integration's (`d945c641`). Type against type: the f32 program
-against engines computing in f32, the bf16 program against bf16 engines, each suite row against competitors at its
-own precision. No gain is claimed across precisions.
+## Results
 
-**Correctness.** Every timed program passes its value gate on every GPU before it is timed: within the stated error
-bound on the default face, in any order of operations, and bit for bit with the interpreter in the development modes
-([ADR-0049](docs/decisions/ADR-0049-correctness-is-the-flow-and-the-bound.md)). One bf16 program
-(`px_llm_blkdec_b2_l16_bf16`) first read as outside its bound on the rented GPUs: the compiled result was right — bit
-for bit the program with the bf16 stores its `: bf16 | f32` permits — and the gate's bound was the unsound part, so
-the gate now checks a bound composed through every operation of the program
-([ADR-0041](docs/decisions/ADR-0041-compute-precision-permission-candidate.md)). The model's generated tokens are
-checked against the Hugging Face reference of the same class, run on the same box.
-
-<!-- results-headline:start -->
-
-**Kernel and layer suite**: Mapal ÷ the fastest competitor at the program's own precision, geomean over the 119 programs timed on every GPU, both sides timed at the program boundary.
-
-| GPU | Mapal ÷ fastest | programs faster / even / slower |
-| --- | ---: | ---: |
-| RTX 5080 | **0.876** | 46 / 44 / 30 |
-| RTX 3090 | **0.920** | 39 / 30 / 51 |
-| A100 | 1.006 | 57 / 11 / 51 |
-| RTX 4090 | **0.911** | 49 / 25 / 46 |
-| H100 | 1.101 | 30 / 8 / 82 |
-
-**Llama-3.2-1B, the full model**: Mapal ÷ the fastest engine of the same class, prompts 128 / 512 / 2048 (batch 1, 128 generated tokens, medians of 5).
-
-| GPU | class | time to first token | decode per token | at 512: Mapal vs the fastest engine |
-| --- | --- | ---: | ---: | --- |
-| RTX 5080 | f32 | **0.62** / **0.62** / **0.53** | **0.55** / **0.58** / **0.58** | 25.4 vs 41.0 ms (vLLM f32); 3.29 vs 5.72 ms / token (gpt-fast f32) |
-| RTX 5080 | bf16 | 1.13 / 1.05 / 1.15 | 1.10 / 1.10 / 1.06 | 14.1 vs 13.5 ms (llama.cpp bf16); 3.29 vs 2.98 ms / token (gpt-fast) |
-| RTX 3090 | f32 | 1.04 / 0.95 / **0.82** | **0.65** / **0.66** / **0.67** | 56.0 vs 58.8 ms (llama.cpp f32); 4.04 vs 6.15 ms / token (gpt-fast f32) |
-| RTX 3090 | bf16 | 1.55 / 1.17 / 1.30 | 1.23 / 1.23 / 1.25 | 23.8 vs 20.4 ms (SGLang); 4.01 vs 3.27 ms / token (gpt-fast) |
-| A100 | f32 | **0.73** / **0.52** / **0.43** | **0.86** / **0.91** / **0.89** | 40.0 vs 76.8 ms (vLLM f32); 3.82 vs 4.21 ms / token (gpt-fast f32) |
-| A100 | bf16 | 1.87 / 1.44 / 2.12 | 1.56 / 1.55 / 1.57 | 16.1 vs 11.1 ms (SGLang); 3.69 vs 2.38 ms / token (gpt-fast) |
-| RTX 4090 | f32 | **0.72** / **0.64** / **0.53** | **0.62** / **0.63** / **0.63** | 20.1 vs 31.6 ms (vLLM f32); 3.47 vs 5.54 ms / token (gpt-fast f32) |
-| RTX 4090 | bf16 | 1.44 / 1.16 / 1.24 | 1.18 / 1.19 / 1.19 | 11.9 vs 10.3 ms (gpt-fast); 3.47 vs 2.93 ms / token (gpt-fast) |
-| H100 | f32 | 1.04 / **0.74** / **0.50** | **0.93** / 0.95 / 0.95 | 21.8 vs 29.6 ms (HF eager f32); 2.06 vs 2.16 ms / token (gpt-fast f32) |
-| H100 | bf16 | 1.30 / 1.88 / 2.37 | 1.49 / 1.56 / 1.51 | 7.60 vs 4.04 ms (gpt-fast); 2.06 vs 1.32 ms / token (gpt-fast) |
-| H100, `wgmma` (another box) | bf16 | **0.75** / 1.25 / 1.58 | 1.49 / 1.49 / 1.45 | 5.60 vs 4.47 ms (gpt-fast); 2.00 vs 1.34 ms / token (gpt-fast) |
-
-Below 1: Mapal faster; bold: faster by more than 5%. Type to type: the **f32 class** is the program as written (f32 activations on the bf16 weights) against gpt-fast, vLLM, llama.cpp and Hugging Face computing in f32 with TF32 off (SGLang has no f32 path and TensorRT-LLM's f32 output is wrong: neither is compared); the **bf16 class** (`fold: bf16 | f32`, bf16 KV cache) against gpt-fast, vLLM, SGLang, TensorRT-LLM, llama.cpp and Hugging Face in bf16. llama.cpp in f16 is another 16-bit format and is not compared. The H100 `wgmma` row is the round's code plus the
-16-bit warpgroup tiles, measured on another H100 SXM against gpt-fast on that box (the H100's fastest bf16 engine in
-the round); the other engines were not rerun there.
-
-<!-- results-headline:end -->
-
-### The full model
-
-The readable [`examples/llama.mapal`](examples/llama.mapal) on all five GPUs against gpt-fast, vLLM, SGLang,
-TensorRT-LLM, llama.cpp and Hugging Face (eager, and static cache + `torch.compile`), in each precision class. Each
-bar is Mapal's time over the fastest engine of its class on that GPU; the leader is named on the right.
+The Llama-3.2-1B model above, against the fastest of gpt-fast, vLLM, SGLang, TensorRT-LLM, llama.cpp and Hugging
+Face on five NVIDIA GPUs, each compared at the same precision. A bar below 1.0 means Mapal is faster.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="benches/results/charts/llm-f32-dark.svg">
-  <img alt="Llama-3.2-1B, f32 class, five GPUs: Mapal's time over the fastest f32 engine's, time to first token and decode at a 512-token prompt" src="benches/results/charts/llm-f32-light.svg">
+  <img alt="Llama-3.2-1B at full precision (f32): Mapal's time over the fastest engine's, on five GPUs" src="benches/results/charts/llm-f32-light.svg">
 </picture>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="benches/results/charts/llm-bf16-dark.svg">
-  <img alt="Llama-3.2-1B, bf16 class, five GPUs: Mapal's time over the fastest bf16 engine's, time to first token and decode at a 512-token prompt" src="benches/results/charts/llm-bf16-light.svg">
+  <img alt="Llama-3.2-1B at half precision (bf16): Mapal's time over the fastest engine's, on five GPUs" src="benches/results/charts/llm-bf16-light.svg">
 </picture>
 
-- **f32 class** (the program as written: f32 activations on the bf16 weights): ahead of every f32 engine on decode
-  on all five GPUs (0.55–0.95×) and on time to first token from a 512-token prompt up (0.43–0.95×); at 128 tokens
-  4 % behind on the RTX 3090 and H100. Its generated tokens equal the Hugging Face f32 reference's, 128 of 128, at
-  every prompt length on every GPU. Peak GPU memory 2.7–3.5 GB, against 5.1 GB and more for every f32 engine.
-- **bf16 class** (`fold: bf16 | f32`, bf16 KV cache): behind the fastest bf16 engine on every GPU, closest on the
-  RTX 5080 (1.05–1.15× to the first token, 1.06–1.10× decode) and furthest on the A100 and H100 (up to 2.12× and
-  2.37× to the first token at 2048, 1.49–1.57× decode), where gpt-fast's CUDA-graph decode and the TensorRT-LLM /
-  SGLang prefill are strongest. Since this round the H100's 16-bit tiles run on its warpgroup matrix instruction
-  (`wgmma`): on another H100 SXM, against gpt-fast on the same box, the first token at 128 / 512 / 2048 went from
-  1.09 / 1.66 / 2.17× to 0.75 / 1.25 / 1.58× (2.70 / 5.60 / 18.11 ms against 3.58 / 4.47 / 11.45), decode unchanged
-  ([wgmma-16bit](benches/results/evidence/hopper/wgmma-16bit.md)). Its tokens leave the bf16 reference after a near
-  tie, as the bf16 engines' do among themselves (on the RTX 5080, 7 to 89 equal tokens at 512); on the RTX 5080 and
-  A100 they can vary from run to run, because the tensor tile adds partial sums in arrival order. Peak memory
-  2.7–3.3 GB, level with llama.cpp and HF eager, against 8.8–47 GB for the pooled servers (vLLM, SGLang,
-  TensorRT-LLM).
-- llama.cpp in f16 is another 16-bit format: recorded, compared with neither class. SGLang has no f32 path, and
-  TensorRT-LLM's f32 build gives wrong tokens: neither is in the f32 class.
+- **Full precision (f32):** the fastest on all five GPUs at generating text, and for prompts of 512 tokens or more.
+- **Half precision (bf16):** mostly still behind the fastest engine: within 5–15% on the RTX 5080, further behind on
+  the other GPUs. On the H100 it is now faster for short prompts; work is in progress.
+- **Memory:** 2.7–3.5 GB of GPU memory, level with the leanest engines and far below the serving engines.
 
-Every engine at every prompt length, the tokens and the peaks:
-[`full-model.json`](benches/results/evidence/full-model.json); the RTX 5080 with where each side's time goes and
-what is next: [`full-model.md`](benches/results/evidence/local-rtx-5080/full-model.md); the rented GPUs:
-[`cross-arch`](benches/results/evidence/cross-arch/README.md#b8429388--9be9886d-five-gpu-round-bf16-integration-every-competitor-leg-at-the-program-boundary-the-full-model).
-
-### The kernel and layer suite
-
-GEMMs and projections, MLP chains, attention and softmax, LLM layers, convolution and FIR, fan-in / fan-out and
-loops, on every GPU of the round, each program against the fastest of cuBLAS, cuBLASLt, CUTLASS, PyTorch eager and
-`torch.compile` (with and without CUDA graphs), SDPA, FlashAttention-2/3, FlashInfer, hand-written Triton, Liger
-and hand-written CUDA.
-
-Both sides are timed at the program boundary: the device idle, then the host clock around the call, its dispatch
-and launches inside. Against the kernel-event bracket of earlier rounds this moves every GPU 5–11 % in Mapal's
-favour (launch-bound torch legs); on that old bracket the rented GPUs read 1.011 / 1.134 / 0.964 / 1.233 (RTX 3090 /
-A100 / RTX 4090 / H100) against the previous round's 0.997 / 1.185 / 0.954 / 1.204 (`f1d3a04f`). Attention,
-softmax, convolution and elementwise chains lead on every GPU. GEMM cells and projections are the weak family:
-behind on the RTX 3090, A100 and H100 (1.05 / 1.16 / 1.37), and the TF32 rows (mostly GEMMs, against cuBLAS) and
-the bf16-weight rows (LLM layers, against `torch.compile`) trail on every GPU (1.15–1.72).
+Across 119 kernels and model layers (matrix products, attention, convolution, reductions and more), Mapal is
+faster on average than the best library or compiler on three of the five GPUs.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="benches/results/charts/suite-gpus-dark.svg">
-  <img alt="Geomean of Mapal time over the fastest same-precision competitor's time, per GPU" src="benches/results/charts/suite-gpus-light.svg">
+  <img alt="Average of Mapal's time over the fastest competitor's, per GPU" src="benches/results/charts/suite-gpus-light.svg">
 </picture>
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="benches/results/charts/suite-groups-dark.svg">
-  <img alt="The same geomean by workload family and by precision class, per GPU" src="benches/results/charts/suite-groups-light.svg">
-</picture>
+All numbers, how they were measured, and every engine: [`docs/performance/results.md`](docs/performance/results.md).
 
-Every row, its legs and its leader: [`matrix.md`](benches/results/evidence/matrix.md). The rented GPUs, their
-boxes and rounds: [`cross-arch`](benches/results/evidence/cross-arch/README.md). Earlier results (CPU against
-NumPy and OpenBLAS, the October four-GPU table, plan-cost, tile efficiency):
-[`docs/performance/earlier-readme-results.md`](docs/performance/earlier-readme-results.md). Method and history:
-[`docs/performance/`](docs/performance/).
+## Where it stands
 
-The charts and the table above are generated. To refresh them after a run, update
-[`matrix.json`](benches/results/evidence/matrix.json) (`benches/local/matrix.py`) and
-[`full-model.json`](benches/results/evidence/full-model.json), then run
-`python3 benches/results/charts/make_charts.py`.
+Working today: the language, an interpreter that defines it, a CPU backend, an NVIDIA GPU backend, and editor
+support for Neovim and VS Code. Next: a model of the hardware the compiler places programs on, an AMD backend, a
+PyTorch importer, and then hardware design (ASICs) from the same programs. A research compiler; no packaged release
+yet. Details: [`docs/STATUS.md`](docs/STATUS.md) and [`docs/roadmap.md`](docs/roadmap.md).
 
----
-
-## Roadmap
-
-0. **Now: the machine model** ([ADR-0050](docs/decisions/ADR-0050-the-machine-model-placement-by-one-cost-model.md)):
-   placement by one cost model over the dataflow's and the hardware's facts, matrix products first, then attention,
-   cells and folds, and the whole graph's co-schedule. **Format generics**
-   ([ADR-0051](docs/decisions/ADR-0051-format-generics-to-and-widen.md)): `x -> to<bf16>`, `x -> widen<f32>`, and
-   functions generic over their number formats.
-1. **An AMD backend.** The same graph and facts on a second GPU vendor: its compute units, wavefront width, LDS
-   and matrix instructions are one more translation into the machine model.
-2. **A PyTorch importer**, to bring existing models into Mapal.
-3. **Then the ecosystem around the language:** development → deployment → verification → synthesis, where the same
-   search also chooses an ASIC's own parameters (array sizes, memories) within a budget.
-
-Done so far, and how each step turned out, including what was tried and did not work:
-[`docs/sessions/`](docs/sessions/).
-
----
-
-## Status
-
-|                     |                                                                                                                                                                 |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Language core       | working: pipelines, top-level bindings, size-generic functions and types, guards, loops, `map` / `fold` / `zip` / `enumerate`, tuples, structs, fixed arrays |
-| Numbers             | `i32`, `i64`, `u8`, `f32`, `f64`; `bf16` / `f16` storage; `exp`, `sqrt`, `sin`, `cos`; reduced-precision products opt-in (`: tf32 \| f32`, `: bf16 \| f32`)   |
-| Effects             | `print` / `println`, `time`, `read`                                                                                                                             |
-| Interpreter         | working: _defines_ the language; every backend is tested against it                                                                                            |
-| CPU backend (LLVM)  | working: threading, vectorization, cache blocking                                                                                                               |
-| GPU backend (CUDA)  | working: value gates pass on the RTX 5080, RTX 3090, A100, RTX 4090 and H100 ([Current results](#current-results)); tensor cores, `wgmma` / TMA where the part has them |
-| FPGA backend        | not started                                                                                                                                                     |
-| Placement           | rules over physical properties decide today; the machine model (ADR-0050) is being built, off by default until measured                                       |
-| Command-line tool   | `mapal build`, `run`, `test`, `dump-ir`, `fmt`, `lsp`                                                                                                           |
-| Editors             | Neovim and VS Code: highlighting, formatting and the language server (definition, references, hover, rename, completion, diagnostics)                         |
-| Tests               | about 1,700 across the workspace; the GPU tests skip without a CUDA toolchain                                                                                   |
-| CI                  | `cargo fmt` + the full suite on Linux and macOS, per push; a skipped LLVM differential fails the run                                                            |
-
-**Checked against the interpreter.** On the default face, compiled values are checked against the interpreter within
-the stated bound, in whatever order the compiler chose. In the development modes (the exact faces,
-[ADR-0049](docs/decisions/ADR-0049-correctness-is-the-flow-and-the-bound.md)) every compiled program is checked to
-print exactly what the interpreter prints, for the examples and for programs from the random generator, at any
-thread count and on any device: the mode for testing and debugging.
-
-**Not in the language yet:** recursion, sum types, pattern matching, strings beyond printing and file paths,
-closures, dynamic arrays, modules. Functions generic over number formats are in progress (ADR-0051).
-
-Per-component state: [`docs/STATUS.md`](docs/STATUS.md). Research compiler; no packaged release.
-
----
-
-## Trying it
-
-Needs a recent Rust toolchain and `clang`; the GPU backend needs an NVIDIA GPU and CUDA.
+## Try it
 
 ```sh
-# the test suite = the correctness argument
-cargo test --workspace --release
-
-# the CLI and the runtime it links against
 cargo build --release -p mapal-cli -p mapal-rt
-target/release/mapal run --interp examples/pipeline.mapal   # the interpreter, the reference
-target/release/mapal run examples/fir.mapal                 # compiled for this machine
-target/release/mapal test examples/fir.mapal                # compiled vs the interpreter, byte for byte
-
-# the Llama example on a CUDA GPU (weights exported outside the repository)
-python3 benches/model/export_weights.py
-MAPAL_DATA_DIR=~/.cache/mapal/models/llama-3.2-1b-instruct/mapal \
-    target/release/mapal run --target=native-gpu examples/llama.mapal
+target/release/mapal run examples/softmax.mapal
 ```
 
-Start in [`examples/`](examples/): `pipeline.mapal` for syntax, `sepia.mapal` for most of the language,
-`fir.mapal` for a loop, `llama.mapal` for a whole model.
+More, including the GPU, the tests and editor setup: [`docs/getting-started.md`](docs/getting-started.md).
 
-### Formatting
+## Learn more
 
-```sh
-target/release/mapal fmt path/to/program.mapal           # format in place
-target/release/mapal fmt --check path/to/program.mapal   # check without writing
-target/release/mapal fmt --stdout path/to/program.mapal  # preview without writing
-```
-
-The formatter uses four spaces and expands brace bodies onto multiple lines, preserving comments and literal
-spelling. `mapal fmt -` reads stdin and writes stdout, so editors and generators share the same style. Invalid
-syntax is reported without replacing the source. LLVM and GPU tools are not needed for formatting.
-
-### Editor support
-
-Both editors get the language server (`mapal lsp`: go to definition, references, hover, rename,
-completion, diagnostics, semantic highlighting), highlighting, formatting through `mapal fmt`, and a file
-icon. Neither is published to a registry, so both load from disk.
-
-|                 | Neovim                                   | VS Code                                          |
-| --------------- | ---------------------------------------- | ------------------------------------------------ |
-| Language server | started for `*.mapal` (`vim.lsp.enable`) | bundled (linux-x64) and started by the extension |
-| Highlighting    | Vimscript syntax + semantic tokens       | TextMate grammar + semantic tokens               |
-| File icon       | font glyph                               | the real SVG logo                                |
-| Formatting      | `:MapalFormat`, `gggqG` or the server    | **Format Document**                              |
-| Details         | [`editors/nvim/`](editors/nvim/)         | [`editors/vscode/`](editors/vscode/)             |
-
-Both highlight with the same classes ([`editors/test/classes.tsv`](editors/test/classes.tsv)), and the same
-fixture tests the Vim syntax, the TextMate grammar and the server's semantic tokens.
-
-**Neovim** - with lazy.nvim:
-
-```lua
-{ dir = "/path/to/mapal/editors/nvim", lazy = false } -- icon at startup; starts `mapal lsp` for .mapal
-```
-
-or without a plugin manager:
-
-```lua
-vim.opt.runtimepath:append("/path/to/mapal/editors/nvim")
-require("mapal.icon").setup()          -- optional: nvim-web-devicons / mini.icons
-```
-
-**VS Code / Cursor** - on linux-x64 one install is the extension and the language server: the platform package
-bundles the `mapal` binary and the extension starts it.
-
-```sh
-cargo build --release -p mapal-cli
-(cd editors/vscode && npm install && npm run build)       # bundles the language client
-python3 editors/vscode/package-vsix.py --target linux-x64  # bundles target/release/mapal
-code --install-extension editors/vscode/mapal-lang-0.4.0-linux-x64.vsix --force   # or `cursor`
-```
-
-On other platforms, build the platform-neutral package (`package-vsix.py` without `--target`, giving
-`mapal-lang-0.4.0.vsix`) and install the CLI with `cargo install --path crates/mapal-cli --locked`. The bundled
-server is the binary as it was packaged: rebuild the `.vsix` after a language change. The extension runs the
-`mapal.executablePath` setting if set, else the bundled server, else `mapal` on `PATH`, and says which in its
-**Mapal** output channel.
-
-Then restart. A `.mapal` file should show **Mapal** in the status bar. Copying the folder into
-`~/.vscode/extensions` does _not_ work: VS Code reads `extensions.json` as its registry and ignores unregistered
-directories silently.
-
-For Neovim's language server and formatting, install the CLI with `cargo install --path crates/mapal-cli --locked`
-(or copy `target/release/mapal` onto your `PATH`), or point the plugin at your built `target/release/mapal` with
-`vim.g.mapal_executable` (in VS Code: `mapal.executablePath`).
-Formatting uses unsaved buffer text and supports format-on-save through the editor's configuration; see the
-plugin READMEs for setup.
-
-**The logo as a terminal glyph.** The Rust and C++ marks in a file tree are font glyphs, not images - Nerd Fonts
-ships those brand logos as characters. So Mapal's mark ships as a single-glyph font,
-[`assets/font/MapalIcons.ttf`](assets/font/): install it and add it as a terminal _fallback_ font, rather than us
-patching and redistributing someone else's Nerd Font. Then:
-
-```lua
-local icon = require("mapal.icon")
-icon.setup({ glyph = icon.logo })     -- the real mark at U+F8F0
-```
-
-Without it, the closest glyph the Nerd Font already has is used.
-
----
-
-## How the project works
-
-Everything is written down, including what turned out wrong:
-
-- [`docs/STATUS.md`](docs/STATUS.md) - what is built, with test counts
-- [`docs/decisions/`](docs/decisions/README.md) - every significant decision and the alternatives it rejected,
-  indexed (ADR = Architecture Decision Record)
-- [`docs/architecture/`](docs/architecture/) - how the compiler derives what it does
-- [`docs/performance/`](docs/performance/) and [`benches/results/`](benches/results/README.md) - every benchmark:
-  machine, method, evidence, failures
-- [`docs/sessions/`](docs/sessions/) - dated log of every work session, mistakes included
-
-**Contributing:** [`CONTRIBUTING.md`](CONTRIBUTING.md) - the model-first workflow, the measurement rules, and the
-[open ADRs](docs/decisions/README.md) anyone can pick up (dynamic arrays, type generics, sum types, an
-external-backend SDK, co-execution, `scan`). Recursion, modules and closures are not in the language yet and have
-no decision record - writing one is the contribution that unblocks the code. Forks welcome. One house rule: a
-change arrives with the evidence of what it did, and names the published numbers it moves.
-
----
+- [The Language Exposition](docs/language-exposition.html): Mapal by examples, then how the compiler works
+- [Syntax](docs/syntax.md): the language, form by form
+- [Decisions](docs/decisions/README.md): every design decision and what it replaced
+- [Contributing](CONTRIBUTING.md)
 
 ## License
 
-[Apache License 2.0 with the LLVM exception](LICENSE) - the license LLVM and Swift use, for the same reason.
-Apache-2.0 carries an explicit patent grant; the exception keeps the runtime Mapal links into your binaries from
-imposing attribution requirements on _your_ program's output.
+[Apache License 2.0 with the LLVM exception](LICENSE), the license LLVM and Swift use.
 
 <!----------------------------------{ Badges }---------------------------------->
 

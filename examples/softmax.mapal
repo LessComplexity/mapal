@@ -1,0 +1,27 @@
+// softmax: turn scores into probabilities that add up to 1.
+fn softmax<n>(scores: [f32; n]) -> [f32; n] {
+    n -> iota -> positions;
+    (scores[0], positions) -> fold {
+        top, i -> (scores[i] > top) -> {
+            -true-> scores[i];
+            -false-> top;
+        }
+    } -> largest;
+    positions -> map {
+        i -> scores[i] - largest -> exp
+    } -> weights;
+    (0.0, positions) -> fold {
+        sum, i -> sum + weights[i]
+    } -> total;
+    positions -> map {
+        i -> weights[i] / total
+    } -> ret;
+}
+
+fn main() {
+    [1.0, 2.0, 3.0, 4.0] -> softmax -> probabilities;
+    probabilities[0] -> println;
+    probabilities[1] -> println;
+    probabilities[2] -> println;
+    probabilities[3] -> println;
+}
