@@ -11,7 +11,7 @@
 //! binding it produces; node ids are the full dump's (`f{i}o{j}`), so the two
 //! views cross-reference.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 use slotmap::SecondaryMap;
 
@@ -35,6 +35,123 @@ pub struct FlowGraph {
     /// `(from, to, back)`: indexes into `nodes`; `back` when the dependence
     /// crosses a `LoopBack`.
     pub edges: Vec<(usize, usize, bool)>,
+    /// Parallel to `edges`: the morphisms the edge stands for, nearest the
+    /// target first (the steps that make the target from the source).
+    pub paths: Vec<Vec<MorphismId>>,
+}
+
+/// Plumbing morphisms carry no step of their own.
+fn is_plumbing(op: &Operation) -> bool {
+    matches!(
+        op,
+        Operation::Pair { .. }
+            | Operation::Proj { .. }
+            | Operation::Output
+            | Operation::LoopEnter
+            | Operation::LoopBack
+            | Operation::LoopExit
+    )
+}
+
+/// The plain word for a step.
+fn step_word(op: &Operation) -> String {
+    match op {
+        Operation::Add => "+".into(),
+        Operation::Sub => "−".into(),
+        Operation::Mul => "×".into(),
+        Operation::Div => "÷".into(),
+        Operation::Mod => "mod".into(),
+        Operation::Neg => "neg".into(),
+        Operation::Eq => "==".into(),
+        Operation::Neq => "!=".into(),
+        Operation::Lt => "<".into(),
+        Operation::Gt => ">".into(),
+        Operation::Le => "<=".into(),
+        Operation::Ge => ">=".into(),
+        Operation::And => "and".into(),
+        Operation::Or => "or".into(),
+        Operation::Not => "not".into(),
+        Operation::Phi => "guard".into(),
+        Operation::Call(_) => "call".into(),
+        Operation::Map { .. } => "map".into(),
+        Operation::Fold { .. } => "fold".into(),
+        Operation::Index => "index".into(),
+        Operation::Zip => "zip".into(),
+        Operation::Enumerate => "enumerate".into(),
+        Operation::Iota => "iota".into(),
+        Operation::Fill => "fill".into(),
+        Operation::Update => "update".into(),
+        Operation::Print { .. } => "print".into(),
+        Operation::TimeMs => "clock".into(),
+        Operation::Read => "read".into(),
+        Operation::Widen => "widen".into(),
+        Operation::Narrow => "narrow".into(),
+        Operation::Math(f) => f.label().into(),
+        _ => "value".into(),
+    }
+}
+
+impl FlowGraph {
+    /// The label of edge `i`: the source text of the expression the edge stands
+    /// for when `src` is given and a step on its path carries a span (trimmed
+    /// to 24 characters), else the composed step words (at most 3, in dataflow
+    /// order, joined with ` · `). Never empty.
+    pub fn edge_label(&self, ir: &CategoryIr, i: usize, src: Option<&str>) -> String {
+        let path = &self.paths[i];
+        if let Some(src) = src {
+            // A span covers an expression only on an `Index` (`a[row * n + k]`); the
+            // other steps' spans are their operator token. An edge into a site reads
+            // its operand inside the body: the body's index of that slot is its text.
+            let mut cands: Vec<MorphismId> = path.clone();
+            let slot = path.iter().find_map(|&m| match ir.morphism(m)?.op {
+                Operation::Pair { slot, .. } => Some(slot),
+                _ => None,
+            });
+            let body = path.iter().find_map(|&m| match ir.morphism(m)?.op {
+                Operation::Map { body, .. } | Operation::Fold { body, .. } => Some(body),
+                _ => None,
+            });
+            if let (Some(slot), Some(body)) = (slot, body) {
+                cands.extend(ir.body_index_reads(body, slot));
+            }
+            for m in cands {
+                let Some(mo) = ir.morphism(m) else { continue };
+                if mo.op != Operation::Index || mo.loc.is_empty() {
+                    continue;
+                }
+                let Some(t) = src.get(mo.loc.start as usize..mo.loc.end as usize) else {
+                    continue;
+                };
+                let t = t.split_whitespace().collect::<Vec<_>>().join(" ");
+                if t.is_empty() {
+                    continue;
+                }
+                return if t.chars().count() > 24 {
+                    let mut c: String = t.chars().take(23).collect();
+                    c.push('…');
+                    c
+                } else {
+                    t
+                };
+            }
+        }
+        let mut words: Vec<String> = Vec::new();
+        for &m in path.iter().rev() {
+            let Some(mo) = ir.morphism(m) else { continue };
+            if is_plumbing(&mo.op) {
+                continue;
+            }
+            let w = step_word(&mo.op);
+            if words.last() != Some(&w) {
+                words.push(w);
+            }
+        }
+        if words.is_empty() {
+            return "operand".into();
+        }
+        let from = words.len().saturating_sub(3);
+        words[from..].join(" · ")
+    }
 }
 
 struct Node {
@@ -115,6 +232,16 @@ impl CategoryIr {
     /// named and what each reads, `map` / `fold` bodies as subgraphs named by
     /// the binding they produce. Deterministic; passes [`crate::lint_mermaid`].
     pub fn to_mermaid_flow(&self) -> String {
+        self.flow_text(None)
+    }
+
+    /// [`Self::to_mermaid_flow`] with arrows labelled by the source text of the
+    /// expression they stand for (`src` is the program the graph was lowered from).
+    pub fn to_mermaid_flow_src(&self, src: &str) -> String {
+        self.flow_text(Some(src))
+    }
+
+    fn flow_text(&self, src: Option<&str>) -> String {
         let (nodes, g) = self.build_flow();
         let mut out = String::from("flowchart LR\n");
         let ctx = self.flow_ctx();
@@ -140,13 +267,16 @@ impl CategoryIr {
                 out.push_str("    end\n");
             }
         }
-        for &(a, b, back) in &g.edges {
+        for (k, &(a, b, back)) in g.edges.iter().enumerate() {
+            let label = g.edge_label(self, k, src);
+            let label = if back { format!("{label} ↩") } else { label };
             let (a, b) = (&nodes_ref(&nodes, &g, a), &nodes_ref(&nodes, &g, b));
-            if back {
-                out.push_str(&format!("    {} -- \"loop ↩\" --> {}\n", edge_id(a), edge_id(b)));
-            } else {
-                out.push_str(&format!("    {} --> {}\n", edge_id(a), edge_id(b)));
-            }
+            out.push_str(&format!(
+                "    {} -- \"{}\" --> {}\n",
+                edge_id(a),
+                escape(&label),
+                edge_id(b)
+            ));
         }
         out
     }
@@ -347,10 +477,12 @@ impl CategoryIr {
         // Pass 2: edges, walking back through plumbing from each node's reads.
         let mut g = FlowGraph::default();
         g.nodes = nodes.iter().map(|n| n.anchor).collect();
-        let mut seen: BTreeSet<(usize, usize, bool)> = BTreeSet::new();
+        let mut seen: std::collections::BTreeMap<(usize, usize, bool), Vec<MorphismId>> =
+            std::collections::BTreeMap::new();
         for (i, n) in nodes.iter().enumerate() {
-            let starts: Vec<(ObjectId, bool)> = match n.anchor {
-                FlowAnchor::Print(m) => vec![(self.morphism(m).unwrap().source, false)],
+            type P = Vec<MorphismId>;
+            let starts: Vec<(ObjectId, bool, P)> = match n.anchor {
+                FlowAnchor::Print(m) => vec![(self.morphism(m).unwrap().source, false, vec![m])],
                 FlowAnchor::Object(o) => {
                     if n.body.is_some() {
                         continue; // its operands are read inside the body
@@ -359,15 +491,15 @@ impl CategoryIr {
                         .iter()
                         .map(|&m| {
                             let mo = self.morphism(m).unwrap();
-                            (mo.source, mo.op == Operation::LoopBack)
+                            (mo.source, mo.op == Operation::LoopBack, vec![m])
                         })
                         .collect()
                 }
             };
             let mut visited: HashSet<(ObjectId, bool)> = HashSet::new();
-            let mut stack: Vec<(ObjectId, bool)> = starts;
+            let mut stack: Vec<(ObjectId, bool, P)> = starts;
             stack.reverse();
-            while let Some((y, back)) = stack.pop() {
+            while let Some((y, back, path)) = stack.pop() {
                 if !visited.insert((y, back)) {
                     continue;
                 }
@@ -377,20 +509,22 @@ impl CategoryIr {
                     continue;
                 }
                 if let Some(&d) = node_of.get(y) {
-                    seen.insert((d, i, back));
+                    seen.entry((d, i, back)).or_insert(path);
                     continue;
                 }
                 // An undrawn site result: its operands, not the body.
                 let f = self.owner(y);
                 if y == self.func(f).unwrap().input && ctx.is_body(f) {
                     for &site in ctx.sites.get(&f).into_iter().flatten() {
-                        stack.push((self.morphism(site).unwrap().source, back));
+                        stack.push((self.morphism(site).unwrap().source, back, path.clone()));
                     }
                     continue;
                 }
                 for &m in ctx.incoming[y].iter().rev() {
                     let mo = self.morphism(m).unwrap();
                     let b = back || mo.op == Operation::LoopBack;
+                    let mut np = path.clone();
+                    np.push(m);
                     if mo.source == self.func(f).unwrap().input && ctx.is_body(f) {
                         let slot = match mo.op {
                             Operation::Proj { index } => Some(index),
@@ -398,18 +532,46 @@ impl CategoryIr {
                         };
                         for &site in ctx.sites.get(&f).into_iter().flatten() {
                             for s in ctx.site_operands(site, slot) {
-                                stack.push((s, b));
+                                stack.push((s, b, np.clone()));
                             }
                         }
                     } else {
-                        stack.push((mo.source, b));
+                        stack.push((mo.source, b, np));
                     }
                 }
                 // y may itself be a body input read directly (no morphism).
             }
         }
-        g.edges = seen.into_iter().collect();
+        for (k, p) in seen {
+            g.edges.push(k);
+            g.paths.push(p);
+        }
         (nodes, g)
+    }
+
+    /// The `Index` morphisms of `body` whose array is the body's input slot `slot`
+    /// (read straight off the input projection).
+    fn body_index_reads(&self, body: FuncId, slot: u32) -> Vec<MorphismId> {
+        let Some(def) = self.func(body) else { return Vec::new() };
+        let mut out = Vec::new();
+        for (m, mo) in self.morphisms() {
+            if mo.op != Operation::Index || self.try_owner(mo.source) != Some(body) {
+                continue;
+            }
+            let arr = self.morphisms().find_map(|(_, p)| {
+                (p.target == mo.source && matches!(p.op, Operation::Pair { slot: 0, .. }))
+                    .then_some(p.source)
+            });
+            let reads = arr.is_some_and(|x| {
+                self.morphisms().any(|(_, q)| {
+                    q.target == x && q.source == def.input && q.op == (Operation::Proj { index: slot })
+                })
+            });
+            if reads {
+                out.push(m);
+            }
+        }
+        out
     }
 
     fn objects_of(&self, f: FuncId) -> Vec<ObjectId> {

@@ -356,14 +356,14 @@ flowchart LR
     end
     p0m0(["println"])
     p0m1(["println"])
-    f0o11 --&gt; f2o18
-    f0o15 --&gt; f2o18
-    f0o16 --&gt; f2o18
-    s0o19 --&gt; p0m0
-    s0o19 --&gt; p0m1
-    f2o14 --&gt; f2o18
-    f2o16 --&gt; f2o18
-    f2o18 --&gt; f2o1
+    f0o11 -- "a[row * n + k]" --&gt; f2o18
+    f0o15 -- "b[k * n + column]" --&gt; f2o18
+    f0o16 -- "fold" --&gt; f2o18
+    s0o19 -- "out[0]" --&gt; p0m0
+    s0o19 -- "out[n * n - 1]" --&gt; p0m1
+    f2o14 -- "fold" --&gt; f2o18
+    f2o16 -- "fold" --&gt; f2o18
+    f2o18 -- "+ · guard" --&gt; f2o1
 </div>
 <!-- exposition:gen end --></div></div>
     <div class="step"><div class="arrow">3</div><div>
@@ -2078,14 +2078,14 @@ flowchart LR
     end
     p0m0(["println"])
     p0m1(["println"])
-    f0o11 --&gt; f2o18
-    f0o15 --&gt; f2o18
-    f0o16 --&gt; f2o18
-    s0o19 --&gt; p0m0
-    s0o19 --&gt; p0m1
-    f2o14 --&gt; f2o18
-    f2o16 --&gt; f2o18
-    f2o18 --&gt; f2o1
+    f0o11 -- "a[row * n + k]" --&gt; f2o18
+    f0o15 -- "b[k * n + column]" --&gt; f2o18
+    f0o16 -- "fold" --&gt; f2o18
+    s0o19 -- "out[0]" --&gt; p0m0
+    s0o19 -- "out[n * n - 1]" --&gt; p0m1
+    f2o14 -- "fold" --&gt; f2o18
+    f2o16 -- "fold" --&gt; f2o18
+    f2o18 -- "+ · guard" --&gt; f2o1
 </div>
 <details class="gfull"><summary>The full graph, every object and operation (79 nodes)</summary>
 <div class="io-h">The full graph <span>mapal dump-ir --stage=rewritten --mermaid dense.mapal</span></div>

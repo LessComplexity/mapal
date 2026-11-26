@@ -606,7 +606,10 @@ fn dump_ir(a: &Args) -> Res<u8> {
         };
         match kind.as_str() {
             "full" => print!("{}", ir.to_mermaid()),
-            "flow" => print!("{}", ir.to_mermaid_flow()),
+            "flow" => match std::fs::read_to_string(&a.file) {
+                Ok(src) => print!("{}", ir.to_mermaid_flow_src(&src)),
+                Err(_) => print!("{}", ir.to_mermaid_flow()),
+            },
             k => return Err(usage(&format!("unknown mermaid form `{k}` (full|flow)"))),
         }
         return Ok(0);

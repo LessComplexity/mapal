@@ -48,7 +48,8 @@ fn programs() -> Vec<PathBuf> {
 }
 
 fn golden(name: &str, file: &str) {
-    let got = ir_of(&root().join(file), true).to_mermaid_flow();
+    let src = std::fs::read_to_string(root().join(file)).unwrap();
+    let got = ir_of(&root().join(file), true).to_mermaid_flow_src(&src);
     assert!(lint_mermaid(&got).is_empty(), "{name}: {:?}", lint_mermaid(&got));
     let path = root().join("crates/mapal-cli/tests/golden").join(format!("{name}.flow.mmd"));
     if std::env::var("MAPAL_BLESS").is_ok() {
@@ -131,4 +132,35 @@ fn every_flow_edge_is_a_dependence_path_in_the_full_graph() {
         }
     }
     assert!(edges > 100, "the property saw only {edges} edges");
+}
+
+/// Every arrow of the flow view is labelled; a label from source text is a
+/// substring of the program (whitespace collapsed, long text ellipsized).
+#[test]
+fn every_flow_edge_is_labelled_and_source_labels_come_from_the_source() {
+    let (mut edges, mut from_src) = (0, 0);
+    for p in programs() {
+        let src = std::fs::read_to_string(&p).unwrap();
+        let norm = src.split_whitespace().collect::<Vec<_>>().join(" ");
+        for rewritten in [false, true] {
+            let ir = ir_of(&p, rewritten);
+            let g = ir.flow_graph();
+            for k in 0..g.edges.len() {
+                let words = g.edge_label(&ir, k, None);
+                assert!(!words.trim().is_empty(), "{}: edge {k} unlabelled", p.display());
+                let l = g.edge_label(&ir, k, Some(&src));
+                assert!(!l.trim().is_empty(), "{}: edge {k} unlabelled", p.display());
+                let text = l.strip_suffix('…').unwrap_or(&l);
+                if l != words {
+                    from_src += 1;
+                    assert!(norm.contains(text), "{}: label `{l}` is not source text", p.display());
+                }
+                edges += 1;
+            }
+            for line in ir.to_mermaid_flow_src(&src).lines().filter(|l| l.contains("-->")) {
+                assert!(line.contains(" -- \""), "{}: unlabelled arrow `{line}`", p.display());
+            }
+        }
+    }
+    assert!(edges > 100 && from_src > 20, "saw {edges} edges, {from_src} from source");
 }
