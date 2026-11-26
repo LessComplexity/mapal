@@ -746,14 +746,87 @@ pub(crate) fn widen_target(name: &str) -> Option<mapal_ir::Ty> {
     }
 }
 
+/// The scalar type names (`resolve` in `tys`): the primitive types a program
+/// writes. Editor tooling (the language server, the static grammars' tests)
+/// reads this list instead of keeping its own.
+pub const SCALAR_TYPES: [&str; 10] = [
+    "i32", "i64", "u8", "f32", "f64", "bf16", "f16", "f8e4m3", "f8e5m2", "bool",
+];
+
+/// The precision members a `: compute` annotation admits (ADR-0041 D2,
+/// ADR-0043 D4) — the parser's `parse_compute` set.
+pub const PRECISION_MEMBERS: [&str; 4] = ["f32", "tf32", "bf16", "f16"];
+
+/// Every stage builtin by name — the print family, `time`, `read` and the pure
+/// builtins (collection ops, sources, the math builtins, widening and
+/// narrowing) — in the order editor tooling lists them. Each name satisfies
+/// exactly the predicate lowering dispatches on (test `builtin_names_dispatch`).
+pub fn builtin_names() -> Vec<&'static str> {
+    let mut names = vec![
+        "print",
+        "println",
+        "time",
+        "read",
+        "zip",
+        "enumerate",
+        "iota",
+        "fill",
+    ];
+    names.extend(mapal_ir::MathFn::ALL.iter().map(|f| f.name()));
+    names.extend([
+        "widen_i64",
+        "widen_f32",
+        "widen_f64",
+        "to_bf16",
+        "to_f16",
+        "to_f8e4m3",
+        "to_f8e5m2",
+    ]);
+    names
+}
+
+/// Whether `name` is a stage builtin (any of [`builtin_names`]).
+pub fn is_builtin(name: &str) -> bool {
+    is_print_builtin(name)
+        || is_pure_builtin(name)
+        || is_time_builtin(name)
+        || is_read_builtin(name)
+}
+
 /// Whether a name is reserved (L1009): stage builtins or a scalar type name.
 pub(crate) fn is_reserved(name: &str) -> bool {
     is_print_builtin(name)
         || is_pure_builtin(name)
         || is_time_builtin(name)
         || is_read_builtin(name)
-        || matches!(
-            name,
-            "i32" | "i64" | "u8" | "f32" | "f64" | "bf16" | "f16" | "f8e4m3" | "f8e5m2" | "bool"
-        )
+        || SCALAR_TYPES.contains(&name)
+}
+
+#[cfg(test)]
+mod builtin_list_tests {
+    use super::*;
+
+    /// The list editor tooling reads is exactly what lowering dispatches on.
+    #[test]
+    fn builtin_names_dispatch() {
+        let names = builtin_names();
+        for n in &names {
+            assert!(
+                is_builtin(n),
+                "`{n}` is listed but lowering does not dispatch it"
+            );
+            assert!(is_reserved(n), "`{n}` is listed but not reserved");
+        }
+        let mut sorted = names.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), names.len(), "a builtin is listed twice");
+        for t in SCALAR_TYPES {
+            assert!(is_reserved(t) && !is_builtin(t));
+        }
+        // Spot-check names lowering accepts that a stale list would miss.
+        for n in ["sqrt", "sin", "cos", "exp", "to_f8e5m2", "read", "time"] {
+            assert!(names.contains(&n), "`{n}` missing from builtin_names");
+        }
+    }
 }

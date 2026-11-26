@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
   "name": "Mapal",
   "scopeName": "source.mapal",
-  "comment": "Mirrors editors/nvim/syntax/mapal.vim. NOTE the precedence difference: TextMate takes the FIRST matching pattern, Vim the LAST, so this file is ordered most-specific first while the Vim file is ordered least-specific first. Any rule added to one must be added to the other, at the opposite end.",
+  "comment": "What a highlighter that sees one line at a time can know; the language server's semantic tokens (mapped back to these scopes by package.json semanticTokenScopes) know the rest. The classes and their scopes: editors/test/classes.tsv; every token of the shared fixture: editors/test/fixture.tokens.tsv (column `static`); test: editors/vscode/test/scope_test.py. PRECEDENCE: TextMate takes the EARLIEST match, the first listed on a tie, so this file is ordered most-specific first; the Vim file (last match wins) is ordered the other way round.",
   "patterns": [
     {
       "include": "#comments"
@@ -14,13 +14,19 @@
       "include": "#guards"
     },
     {
-      "include": "#labels"
-    },
-    {
       "include": "#fn-declaration"
     },
     {
+      "include": "#type-declaration"
+    },
+    {
+      "include": "#size-arguments"
+    },
+    {
       "include": "#reserved"
+    },
+    {
+      "include": "#mut-binding"
     },
     {
       "include": "#keywords"
@@ -32,6 +38,9 @@
       "include": "#binding"
     },
     {
+      "include": "#assign-binding"
+    },
+    {
       "include": "#arrows"
     },
     {
@@ -39,6 +48,9 @@
     },
     {
       "include": "#types"
+    },
+    {
+      "include": "#default-field"
     },
     {
       "include": "#operators"
@@ -70,15 +82,15 @@
       "patterns": [
         {
           "name": "constant.character.escape.mapal",
-          "match": "\\\\[nrt\"\\\\0]"
+          "match": "\\\\[nt\"\\\\]"
         }
       ]
     },
     "guards": {
-      "comment": "Guard arrows. The chrome (leading `-`, trailing `->`) is scoped as an arrow so it reads as flow plumbing; the discriminant inside gets the scope of what it IS. Must precede #arrows and #operators or the bare `-` wins.",
+      "comment": "Guard arrows (single lexemes, ADR-0010): the chrome reads as an arrow, the discriminant as what it is. The name right after one heads the arm's chain, a read: it is consumed here unscoped, or the binding / call rules would claim it (`-false-> b;`). Must precede #arrows and #operators or the bare `-` wins.",
       "patterns": [
         {
-          "match": "(-)(true|false)(->)",
+          "match": "(-)(true|false)(->)(?:\\s*(?!(?:enumerate|to_f8e4m3|to_f8e5m2|widen_f32|widen_f64|widen_i64|category|executor|println|to_bf16|f8e4m3|f8e5m2|to_f16|false|print|bf16|bool|fill|fold|iota|loop|read|sqrt|tf32|time|true|type|void|cos|exp|f16|f32|f64|i32|i64|map|mut|pub|ret|seq|sin|use|zip|fn|u8)\\b)([a-z_]\\w*))?",
           "captures": {
             "1": {
               "name": "keyword.operator.arrow.mapal"
@@ -92,7 +104,7 @@
           }
         },
         {
-          "match": "(-)([0-9]+)(->)",
+          "match": "(-)([0-9]+)(->)(?:\\s*(?!(?:enumerate|to_f8e4m3|to_f8e5m2|widen_f32|widen_f64|widen_i64|category|executor|println|to_bf16|f8e4m3|f8e5m2|to_f16|false|print|bf16|bool|fill|fold|iota|loop|read|sqrt|tf32|time|true|type|void|cos|exp|f16|f32|f64|i32|i64|map|mut|pub|ret|seq|sin|use|zip|fn|u8)\\b)([a-z_]\\w*))?",
           "captures": {
             "1": {
               "name": "keyword.operator.arrow.mapal"
@@ -106,7 +118,7 @@
           }
         },
         {
-          "match": "(-)(_)(->)",
+          "match": "(-)(_)(->)(?:\\s*(?!(?:enumerate|to_f8e4m3|to_f8e5m2|widen_f32|widen_f64|widen_i64|category|executor|println|to_bf16|f8e4m3|f8e5m2|to_f16|false|print|bf16|bool|fill|fold|iota|loop|read|sqrt|tf32|time|true|type|void|cos|exp|f16|f32|f64|i32|i64|map|mut|pub|ret|seq|sin|use|zip|fn|u8)\\b)([a-z_]\\w*))?",
           "captures": {
             "1": {
               "name": "keyword.operator.arrow.mapal"
@@ -118,99 +130,151 @@
               "name": "keyword.operator.arrow.mapal"
             }
           }
-        },
-        {
-          "comment": "Variant guard: -Some(x)-> / -None->. The tag is a type; a binder inside stays plain.",
-          "match": "(-)([A-Z]\\w*)(?:(\\()([^()]*)(\\)))?(->)",
-          "captures": {
-            "1": {
-              "name": "keyword.operator.arrow.mapal"
-            },
-            "2": {
-              "name": "entity.name.type.mapal"
-            },
-            "3": {
-              "name": "punctuation.section.parens.begin.mapal"
-            },
-            "5": {
-              "name": "punctuation.section.parens.end.mapal"
-            },
-            "6": {
-              "name": "keyword.operator.arrow.mapal"
-            }
-          }
-        },
-        {
-          "comment": "Destructuring guard: -[]-> / -[head, ...tail]->",
-          "match": "(-)(\\[)([^\\[\\]]*)(\\])(->)",
-          "captures": {
-            "1": {
-              "name": "keyword.operator.arrow.mapal"
-            },
-            "2": {
-              "name": "entity.name.type.mapal"
-            },
-            "4": {
-              "name": "entity.name.type.mapal"
-            },
-            "5": {
-              "name": "keyword.operator.arrow.mapal"
-            }
-          }
-        }
-      ]
-    },
-    "labels": {
-      "comment": "ADR-0012: labels carry a `:` sigil on both ends. The negative lookbehind keeps the second colon of `::` from starting a label. SCOPE CHOICE: `entity.name.label` is the semantically obvious scope and was the first one used, but VS Code's default themes style it #C8C8C8 against an editor foreground of #CCCCCC \u2014 a 4/255 difference, i.e. it renders as plain text and reads as 'labels are not highlighted'. `keyword.control` is themed #C586C0 and is defensible: a label IS control flow, and it matches the Vim file, which links labels to `Label` (a Statement-family group most colorschemes colour distinctly). Consistency across the two editors is the tiebreaker.",
-      "patterns": [
-        {
-          "match": "(?<!:)(:[a-zA-Z_]\\w*)(?=\\s*\\{)",
-          "captures": {
-            "1": {
-              "name": "keyword.control.label.mapal"
-            }
-          }
-        },
-        {
-          "match": "(?<=->)\\s*(?<!:)(:\\w+)(?=\\s*;)",
-          "captures": {
-            "1": {
-              "name": "keyword.control.label.mapal"
-            }
-          }
         }
       ]
     },
     "fn-declaration": {
-      "match": "\\b(fn)\\s+([a-zA-Z_]\\w*)",
+      "comment": "`fn name` and its size parameters `fn f<rows, columns>` (ADR-0047). A builtin or primitive name stays one (the Vim keywords win there too).",
+      "match": "\\b(fn)\\s+(?:(enumerate|to_f8e4m3|to_f8e5m2|widen_f32|widen_f64|widen_i64|println|to_bf16|to_f16|print|fill|iota|read|sqrt|time|cos|exp|sin|zip)\\b|(f8e4m3|f8e5m2|bf16|bool|tf32|f16|f32|f64|i32|i64|u8)\\b|([A-Za-z_]\\w*))(?:\\s*(<)([^<>]*)(>))?",
       "captures": {
         "1": {
-          "name": "keyword.declaration.function.mapal"
+          "name": "keyword.control.mapal"
         },
         "2": {
+          "name": "support.function.builtin.mapal"
+        },
+        "3": {
+          "name": "support.type.primitive.mapal"
+        },
+        "4": {
           "name": "entity.name.function.mapal"
+        },
+        "5": {
+          "name": "punctuation.definition.size.mapal"
+        },
+        "6": {
+          "patterns": [
+            {
+              "name": "variable.other.constant.size.mapal",
+              "match": "\\b[a-z_]\\w*\\b"
+            },
+            {
+              "name": "constant.numeric.integer.mapal",
+              "match": "\\b[0-9]+\\b"
+            },
+            {
+              "name": "keyword.operator.mapal",
+              "match": "[+\\-*]"
+            }
+          ]
+        },
+        "7": {
+          "name": "punctuation.definition.size.mapal"
+        }
+      }
+    },
+    "type-declaration": {
+      "comment": "`type Name` and its size parameters `type Matrix<rows, columns>` (ADR-0048 D4). A builtin or primitive name stays one (the Vim keywords win there too).",
+      "match": "\\b(type)\\s+(?:(enumerate|to_f8e4m3|to_f8e5m2|widen_f32|widen_f64|widen_i64|println|to_bf16|to_f16|print|fill|iota|read|sqrt|time|cos|exp|sin|zip)\\b|(f8e4m3|f8e5m2|bf16|bool|tf32|f16|f32|f64|i32|i64|u8)\\b|([A-Za-z_]\\w*))(?:\\s*(<)([^<>]*)(>))?",
+      "captures": {
+        "1": {
+          "name": "keyword.control.mapal"
+        },
+        "2": {
+          "name": "support.function.builtin.mapal"
+        },
+        "3": {
+          "name": "support.type.primitive.mapal"
+        },
+        "4": {
+          "name": "entity.name.type.mapal"
+        },
+        "5": {
+          "name": "punctuation.definition.size.mapal"
+        },
+        "6": {
+          "patterns": [
+            {
+              "name": "variable.other.constant.size.mapal",
+              "match": "\\b[a-z_]\\w*\\b"
+            },
+            {
+              "name": "constant.numeric.integer.mapal",
+              "match": "\\b[0-9]+\\b"
+            },
+            {
+              "name": "keyword.operator.mapal",
+              "match": "[+\\-*]"
+            }
+          ]
+        },
+        "7": {
+          "name": "punctuation.definition.size.mapal"
+        }
+      }
+    },
+    "size-arguments": {
+      "comment": "A size-generic type at its sizes, `Matrix<hidden_size, 64>` (ADR-0048 D4).",
+      "match": "\\b([A-Z]\\w*)(<)([^<>]*)(>)",
+      "captures": {
+        "1": {
+          "name": "entity.name.type.mapal"
+        },
+        "2": {
+          "name": "punctuation.definition.size.mapal"
+        },
+        "3": {
+          "patterns": [
+            {
+              "name": "variable.other.constant.size.mapal",
+              "match": "\\b[a-z_]\\w*\\b"
+            },
+            {
+              "name": "constant.numeric.integer.mapal",
+              "match": "\\b[0-9]+\\b"
+            },
+            {
+              "name": "keyword.operator.mapal",
+              "match": "[+\\-*]"
+            }
+          ]
+        },
+        "4": {
+          "name": "punctuation.definition.size.mapal"
         }
       }
     },
     "reserved": {
-      "comment": "ADR-0006/E5: `category` was the v0.1 spelling of `type` and is reserved-and-rejected. The editor teaches the error.",
+      "comment": "ADR-0006: `category` was the v0.1 spelling of `type`; reserved and rejected.",
       "name": "invalid.illegal.reserved.mapal",
       "match": "\\b(category)\\b"
     },
+    "mut-binding": {
+      "comment": "`mut name` binds (a statement `mut x: T <- e` or a stage `-> mut x`). Same exclusion as #call-position: a keyword, builtin or primitive type after `mut` stays what it is (#keywords).",
+      "match": "\\b(mut)\\s+(?!(?:enumerate|to_f8e4m3|to_f8e5m2|widen_f32|widen_f64|widen_i64|category|executor|println|to_bf16|f8e4m3|f8e5m2|to_f16|false|print|bf16|bool|fill|fold|iota|loop|read|sqrt|tf32|time|true|type|void|cos|exp|f16|f32|f64|i32|i64|map|mut|pub|ret|seq|sin|use|zip|fn|u8)\\b)([a-z_]\\w*)",
+      "captures": {
+        "1": {
+          "name": "keyword.control.mapal"
+        },
+        "2": {
+          "name": "variable.other.definition.mapal"
+        }
+      }
+    },
     "keywords": {
+      "comment": "The language's own lists: mapal-syntax KEYWORDS, mapal-lower builtin_names and SCALAR_TYPES (+ the `: compute` member tf32). Test: crates/mapal-lsp/tests/highlight.rs grammar_name_lists_are_the_languages.",
       "patterns": [
         {
           "name": "keyword.control.mapal",
-          "match": "\\b(fn|type|loop|seq|mut|void)\\b"
+          "match": "\\b(fn|type|mut|loop|seq|map|fold|executor|pub|use|void)\\b"
         },
         {
           "name": "keyword.control.return.mapal",
           "match": "\\b(ret)\\b"
         },
         {
-          "comment": "Kept in sync with the lowerer's builtin dispatch. A name missing here does not merely lose its colour \u2014 it falls through to #call-position and gets mis-scoped as a user function.",
           "name": "support.function.builtin.mapal",
-          "match": "\\b(map|fold|print|println|zip|enumerate|iota|fill|widen_i64|widen_f32|widen_f64|exp|sqrt|sin|cos|to_bf16|to_f16|time|read)\\b"
+          "match": "\\b(print|println|time|read|zip|enumerate|iota|fill|exp|sqrt|sin|cos|widen_i64|widen_f32|widen_f64|to_bf16|to_f16|to_f8e4m3|to_f8e5m2)\\b"
         },
         {
           "name": "constant.language.boolean.mapal",
@@ -218,13 +282,13 @@
         },
         {
           "name": "support.type.primitive.mapal",
-          "match": "\\b(i32|i64|u8|f32|f64|bf16|f16|bool)\\b"
+          "match": "\\b(i32|i64|u8|f32|f64|bf16|f16|f8e4m3|f8e5m2|bool|tf32)\\b"
         }
       ]
     },
     "call-position": {
-      "comment": "An identifier between two arrows is applied: `data -> f -> g -> ret;`. A binding/call rule written as `(?<=->)\\s*(ident)` starts its match at the WHITESPACE after the arrow \u2014 one column earlier than the keyword rule that matches the identifier itself. TextMate picks the earliest match, so without this exclusion the rule wins on position no matter how patterns are ordered, and `-> println;` scopes println as a variable. Keep this list in sync with #keywords; editors/vscode/test/scope_test.py asserts it.",
-      "match": "(?<=->)\\s*(?!(?:println|print|widen_i64|widen_f32|widen_f64|exp|sqrt|sin|cos|to_bf16|to_f16|enumerate|iota|fill|fold|map|zip|time|read|ret|loop|seq|mut|void|type|fn|true|false)\\b)([a-z_]\\w*)(?=\\s*->)",
+      "comment": "Between two arrows a name is applied: `data -> f -> g -> ret;`. The match starts at the whitespace after the arrow, one column EARLIER than #keywords, so it wins on position however the patterns are ordered: the exclusion keeps it off keywords, builtins and primitive types (scope_test.py checks it lists them all).",
+      "match": "(?<=->)\\s*(?!(?:enumerate|to_f8e4m3|to_f8e5m2|widen_f32|widen_f64|widen_i64|category|executor|println|to_bf16|f8e4m3|f8e5m2|to_f16|false|print|bf16|bool|fill|fold|iota|loop|read|sqrt|tf32|time|true|type|void|cos|exp|f16|f32|f64|i32|i64|map|mut|pub|ret|seq|sin|use|zip|fn|u8)\\b)([a-z_]\\w*)(?=\\s*->)",
       "captures": {
         "1": {
           "name": "entity.name.function.call.mapal"
@@ -232,8 +296,17 @@
       }
     },
     "binding": {
-      "comment": "A terminal arrow into a snake_case name BINDS it: `5 -> a;` introduces `a`. Unlike the Vim file this cannot special-case a terminal call to a declared fn (`-> myfn;`) \u2014 TextMate cannot know what has been declared, so those read as bindings here; the real answer for both editors is LSP semantic tokens (ADR-0008). A binding/call rule written as `(?<=->)\\s*(ident)` starts its match at the WHITESPACE after the arrow \u2014 one column earlier than the keyword rule that matches the identifier itself. TextMate picks the earliest match, so without this exclusion the rule wins on position no matter how patterns are ordered, and `-> println;` scopes println as a variable. Keep this list in sync with #keywords; editors/vscode/test/scope_test.py asserts it.",
-      "match": "(?<=->)\\s*(?!(?:println|print|widen_i64|widen_f32|widen_f64|exp|sqrt|sin|cos|to_bf16|to_f16|enumerate|iota|fill|fold|map|zip|time|read|ret|loop|seq|mut|void|type|fn|true|false)\\b)([a-z_]\\w*)(?=\\s*;)",
+      "comment": "`-> name;` and `-> name: T` bind (or rebind a `mut`). A terminal call of a function that returns nothing (`-> shout;`) looks the same; the language server tells them apart. Same exclusion as #call-position, same reason.",
+      "match": "(?<=->)\\s*(?!(?:enumerate|to_f8e4m3|to_f8e5m2|widen_f32|widen_f64|widen_i64|category|executor|println|to_bf16|f8e4m3|f8e5m2|to_f16|false|print|bf16|bool|fill|fold|iota|loop|read|sqrt|tf32|time|true|type|void|cos|exp|f16|f32|f64|i32|i64|map|mut|pub|ret|seq|sin|use|zip|fn|u8)\\b)([a-z_]\\w*)(?=\\s*(?:;|:(?!:)))",
+      "captures": {
+        "1": {
+          "name": "variable.other.definition.mapal"
+        }
+      }
+    },
+    "assign-binding": {
+      "comment": "`name <- value` binds.",
+      "match": "\\b([a-z_]\\w*)(?=\\s*<-)",
       "captures": {
         "1": {
           "name": "variable.other.definition.mapal"
@@ -258,13 +331,19 @@
       ]
     },
     "types": {
-      "comment": "PascalCase is the named-product-type convention (user-guide \u00a710.2).",
+      "comment": "PascalCase names are types.",
       "name": "entity.name.type.mapal",
       "match": "\\b[A-Z]\\w*\\b"
     },
+    "default-field": {
+      "comment": "ADR-0048 D5: `_`, a type's default interpretation.",
+      "name": "variable.language.default.mapal",
+      "match": "\\b_\\b"
+    },
     "operators": {
+      "comment": "`|` separates `: compute` members (`fold: bf16 | f32`).",
       "name": "keyword.operator.mapal",
-      "match": "==|!=|<=|>=|&&|\\|\\||[+\\-*/%=!<>]"
+      "match": "==|!=|<=|>=|&&|\\|\\||[+\\-*/%=!<>|]"
     }
   }
 }

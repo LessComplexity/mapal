@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Package this extension as a .vsix, with no npm dependency.
+"""Package this extension as a .vsix, without vsce.
 
 Why this exists: dropping a folder into ~/.vscode/extensions does NOT work on current
 VS Code or Cursor. They keep `extensions.json` in that directory as the authoritative
@@ -14,8 +14,12 @@ ZIP with three things in it, so this builds one directly:
     [Content_Types].xml      OPC content-type map (required, or install fails)
     extension/...            the extension itself
 
-    python3 editors/vscode/package-vsix.py
-    code --install-extension editors/vscode/mapal-lang-0.2.0.vsix
+    (cd editors/vscode && npm install && npm run build)   # dist/extension.js: the
+    python3 editors/vscode/package-vsix.py                # client, bundled with esbuild
+    code --install-extension editors/vscode/mapal-lang-<version>.vsix --force
+
+The language client (vscode-languageclient) is bundled into dist/extension.js, so the
+.vsix carries no node_modules.
 """
 
 import json
@@ -29,7 +33,7 @@ HERE = pathlib.Path(__file__).parent
 # a .vsix should not carry the packaging script or scratch files.
 PAYLOAD = [
     "package.json",
-    "extension.js",
+    "dist/extension.js",
     "language-configuration.json",
     "syntaxes/mapal.tmLanguage.json",
     "icons/mapal.svg",
@@ -42,7 +46,7 @@ VSIXMANIFEST = """<?xml version="1.0" encoding="utf-8"?>
     <Identity Language="en-US" Id="{name}" Version="{version}" Publisher="{publisher}" />
     <DisplayName>{display}</DisplayName>
     <Description xml:space="preserve">{description}</Description>
-    <Tags>flow,dataflow,compiler</Tags>
+    <Tags>mapal,dataflow,compiler,lsp</Tags>
     <Categories>Programming Languages</Categories>
     <GalleryFlags>Public</GalleryFlags>
     <Properties>
@@ -82,7 +86,13 @@ def main():
 
     missing = [p for p in PAYLOAD if not (HERE / p).exists()]
     if missing:
-        print(f"error: payload files missing: {missing}", file=sys.stderr)
+        hint = " (run `npm install && npm run build` in editors/vscode)" if "dist/extension.js" in missing else ""
+        print(f"error: payload files missing: {missing}{hint}", file=sys.stderr)
+        return 1
+    stale = [p for p in ("extension.js", "package.json")
+             if (HERE / p).stat().st_mtime > (HERE / "dist/extension.js").stat().st_mtime]
+    if stale:
+        print(f"error: dist/extension.js is older than {stale}; run `npm run build`", file=sys.stderr)
         return 1
 
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:

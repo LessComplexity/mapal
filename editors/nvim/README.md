@@ -1,21 +1,68 @@
 # Mapal — Neovim support
 
-Source formatting, regex syntax highlighting and filetype detection for `*.mapal`. Highlighting is best-effort and
-non-authoritative: a tree-sitter grammar is deferred until it can be derived from the real
-`mapal-syntax` parser (ADR-0008).
+The Mapal language server, syntax highlighting, formatting, filetype detection and the file icon for
+`*.mapal`.
 
 ```
 ftdetect/mapal.vim        *.mapal -> filetype=mapal
 ftplugin/mapal.lua        four-space indentation, :MapalFormat and gq
+plugin/mapal_lsp.lua      starts the language server for mapal buffers
+lua/mapal/lsp.lua         server registration + semantic-token colours
 lua/mapal/format.lua      buffer formatting through mapal fmt -
-syntax/mapal.vim          highlighting
+syntax/mapal.vim          highlighting without the server
 plugin/mapal_icon.lua     registers the file icon automatically, adds :MapalIcon
 lua/mapal/icon.lua        icon module (glyph, color, diagnostics)
-test/run.sh              assert highlighting and formatting
+test/run.sh               highlighting, the language server and formatting, headless
 ```
 
 Groups link to standard groups via `hi default link`, so your colorscheme drives the actual
 colors and can override any of them.
+
+## Language server
+
+`mapal lsp` is the compiler's own front end behind the Language Server Protocol (crate
+[`mapal-lsp`](../../crates/mapal-lsp/)): it parses with `mapal-syntax`, reports `mapal-lower` /
+`mapal-check` diagnostics, and resolves names by lowering's scoping rules — so `gd` on a name lands
+where the compiler says it is defined. It keeps working on a file mid-edit.
+
+| Key (LazyVim)        | Request                    | What it does in Mapal                                                       |
+| -------------------- | -------------------------- | --------------------------------------------------------------------------- |
+| `gd`                 | definition                 | functions, types, fields, top-level values, locals, parameters, size params |
+| `gr`                 | references                 | every use, the definition included                                          |
+| `gy`                 | type definition            | the `type` of a value                                                       |
+| `K`                  | hover                      | signature / type, the doc comment above it, builtin and type docs           |
+| `<leader>cr`         | rename                     | all occurrences; refuses keywords and builtin names                         |
+| `<leader>ss`         | document symbols           | functions, types (with fields), top-level values                            |
+| (insert)             | completion                 | names in scope, builtins, keywords; `value.` lists the fields               |
+| (always)             | diagnostics                | parse, lower and check errors, positioned                                   |
+| `<leader>cf`         | formatting                 | the same formatter as `mapal fmt`                                           |
+| (always)             | semantic tokens            | calls vs bindings, parameters, fields, top-level values, sizes              |
+
+The plugin registers the server with `vim.lsp.config` / `vim.lsp.enable` on Neovim ≥ 0.11 (any
+config that maps LSP keys on `LspAttach` — LazyVim does — picks it up), and with `vim.lsp.start` on
+`FileType` before that. It needs the CLI on `PATH` (or `vim.g.mapal_executable`, or the whole
+command in `vim.g.mapal_lsp_cmd = { "/path/to/mapal", "lsp" }`); without it the rest of the plugin
+works as before. `vim.g.mapal_lsp = false` turns the server off. Check it with `:checkhealth vim.lsp`
+or `:lua =vim.lsp.get_clients({ name = "mapal" })`.
+
+LazyVim's `gd` / `gy` / `gD` / `gI` are [Snacks](https://github.com/folke/snacks.nvim) pickers,
+which drop every result on the cursor's line (`include_current = false`). In Mapal a definition
+often shares its use's line — `acc, k -> acc + a[k]`, `fn f<rows>(x: [f32; rows])` — so the plugin
+sets `include_current = true` for those pickers when they open from a mapal buffer
+(`require("mapal.lsp").snacks()`; other filetypes keep Snacks' setting). fzf-lua's LazyVim mapping
+passes `ignore_current_line=true` itself; with fzf-lua, map `gd` to `vim.lsp.buf.definition` for
+mapal buffers.
+
+### One set of colours, two editors
+
+The syntax file highlights what one line can tell; the server knows the rest (whether `-> name;`
+calls a function or binds a value, which names are parameters, fields or top-level values). Each
+semantic token is linked back to the syntax group of its class (`lua/mapal/lsp.lua`), and VS Code
+maps the same tokens to the same classes' TextMate scopes, so a token is the same class in Neovim
+and VS Code, with or without the server. The classes and their group / scope / token:
+[`editors/test/classes.tsv`](../test/classes.tsv). The class of every token of a shared fixture:
+[`editors/test/fixture.tokens.tsv`](../test/fixture.tokens.tsv) — the Vim syntax, the TextMate
+grammar and the server are all tested against it.
 
 ## Install
 
@@ -113,36 +160,32 @@ Needs a [Nerd Font](https://www.nerdfonts.com/) either way.
 
 ## What gets highlighted
 
-| Construct                                                                       | Group                        | Links to                                  |
-| ------------------------------------------------------------------------------- | ---------------------------- | ----------------------------------------- |
-| `fn` `type` `loop` `seq` `mut` `void`                                           | `flowKeyword`                | `Keyword`                                 |
-| `map` `fold` `zip` `enumerate` `iota` `fill` `widen_*` `time` `print` `println` | `flowBuiltin`                | `Function`                                |
-| `ret`                                                                           | `flowRet`                    | `Special`                                 |
-| `i32 i64 u8 f32 f64 bool`, `PascalCase`                                         | `flowPrimType`/`flowTypeName` | `Type`                                    |
-| name after `fn`                                                                 | `flowFnName`                 | `Function`                                |
-| **`x -> name;`** — binds a variable                                             | **`flowBinding`**            | `Identifier`                              |
-| **`x -> myfn;`** / **`-> myfn ->`** — calls a declared `fn`                     | **`flowDeclaredFn`**         | `Function`                                |
-| `-> f ->` — call position                                                       | `flowFlowFn`                 | `Function`                                |
-| `->` `<-`                                                                       | `flowArrow`                  | `Statement` — composition *is* the language |
-| `-true->` `-42->` `-Some(x)->`                                                  | `flowGuardArrow` + contained | chrome `Statement`, discriminant by kind  |
-| `:label { }` and `-> :label;`                                                   | `flowLabel`                  | `Label`                                   |
-| `category`                                                                      | `flowReserved`               | `Error` — reserved-and-rejected (ADR-0006) |
+| Class                                     | Group              | Links to              | Server token                 |
+| ----------------------------------------- | ------------------ | --------------------- | ---------------------------- |
+| `fn type mut loop seq map fold`           | `flowKeyword`      | `Keyword`             |                              |
+| `ret`                                     | `flowRet`          | `Special`             |                              |
+| builtins (`iota`, `sqrt`, `read`, …)       | `flowBuiltin`      | `Function`            | `function.defaultLibrary`    |
+| `i32 f32 bf16 f8e4m3 bool tf32 …`         | `flowPrimType`     | `Type`                | `type.defaultLibrary`        |
+| name after `fn`                           | `flowFnName`       | `Function`            | `function.declaration`       |
+| a call (`-> f ->`, and `-> f;` with LSP)  | `flowFunction`     | `Function`            | `function`                   |
+| `PascalCase` types                        | `flowTypeName`     | `Type`                | `type`                       |
+| size parameters `<rows, columns>`         | `flowSizeParam`    | `Constant`            | `typeParameter`              |
+| top-level values (with LSP)               | `flowConstant`     | `Constant`            | `variable.readonly`          |
+| `-> name;` `mut name` `name <-` bindings  | `flowBinding`      | `Identifier`          | `variable.declaration` / `.modification` |
+| parameters (with LSP)                     | `flowParameter`    | `@variable.parameter` | `parameter`                  |
+| fields (with LSP)                         | `flowField`        | `@property`           | `property`                   |
+| `->` `<-`, guard chrome `-true->`         | `flowArrow` / `flowGuardArrow` | `Statement` — composition *is* the language | |
+| size-list brackets `<` `>`                | `flowSizeBracket`  | `Delimiter`           |                              |
+| `_` (a type's default interpretation)     | `flowDefaultField` | `Special`             |                              |
+| `category`                                | `flowReserved`     | `Error` (ADR-0006)    |                              |
 
-Guard arrows are split-colored on purpose: the **chrome** (leading `-`, trailing `->`) reads
-as flow plumbing, identical to a plain arrow, while the **discriminant** inside gets the color
-of what it is — `true`/`false` as `Boolean`, `42` as `Number`, `_` as `Special`, `Some` as
-`Type`.
+Guard arrows are split-colored on purpose: the **chrome** (leading `-`, trailing `->`) reads as
+flow plumbing, while the **discriminant** inside gets the color of what it is — `true`/`false` as
+`Boolean`, `42` as `Number`, `_` as `Special`. The name right after a guard arrow heads the arm's
+chain, so it stays plain (`-false-> b;` reads `b`).
 
-### The one genuinely ambiguous case
-
-`x -> name;` is lexically identical whether `name` is a **new variable** or a **call to a
-no-value function**. Nothing in the token stream separates them. The syntax file resolves it
-by scanning the buffer for `fn <name>` declarations and treating only those as calls;
-everything else is a binding. Re-scanned on `BufEnter`, `BufWritePost`, `TextChanged` and
-`InsertLeave`, so a newly written `fn` starts coloring its call sites immediately.
-
-A correct answer needs the compiler's own name resolution — LSP semantic tokens (ADR-0008).
-This is a heuristic that is right for every program in `examples/`.
+Without the server, `x -> name;` is lexically identical whether `name` is a new binding or a call
+to a function that returns nothing; the syntax file calls it a binding and the server corrects it.
 
 ## Tests
 
@@ -152,13 +195,14 @@ editors/test.sh              # both editors
 editors/nvim/test/run.sh     # this one only
 ```
 
-Asserts the group each token actually resolves to, and that no file in `examples/` lights up
-as an error. Formatting tests exercise the actual CLI on unsaved buffer text,
-`gq`, paths with spaces, invalid input, missing executables and concurrent edits.
-Exits non-zero on failure.
-
-Worth running after **any** edit to `syntax/mapal.vim`. That file depends on Vim's
-last-match-wins rule and its header warns against reordering; the test pins outcomes rather
-than ordering, so a reorder that changes behavior fails loudly instead of silently
-mis-painting code. It has already earned its place twice — it caught `iota` being mis-painted
-as a user function, and a false failure of its own from a substring match.
+- `syntax_test.lua` — every token of the shared fixture gets its class's group (621 tokens), a
+  builtin or primitive name where a definition goes keeps its class (as in the TextMate grammar),
+  and nothing in `examples/` lights up as an error.
+- `lsp_test.lua` — the plugin starts `mapal lsp`; `gd` (the definition request and
+  `vim.lsp.buf.definition()`'s jump) lands on a function, a type, a binding, a parameter, a field,
+  a top-level value, a size parameter, a struct-literal field and a loop's exit binding; `gr`, `K`,
+  rename, symbols and diagnostics answer; every fixture token is *painted* (semantic token over
+  syntax) as its class; with snacks.nvim installed (`$SNACKS_NVIM`, else lazy.nvim's checkout),
+  `gd` through `Snacks.picker.lsp_definitions()` jumps to a definition on the use's own line.
+- `format_test.lua` — the CLI on unsaved buffer text, `gq`, paths with spaces, invalid input,
+  missing executables and concurrent edits.
