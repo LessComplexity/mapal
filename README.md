@@ -385,10 +385,14 @@ bar is Mapal's time over the fastest engine of its class on that GPU; the leader
 - **bf16 class** (`fold: bf16 | f32`, bf16 KV cache): behind the fastest bf16 engine on every GPU, closest on the
   RTX 5080 (1.05–1.15× to the first token, 1.06–1.10× decode) and furthest on the A100 and H100 (up to 2.12× and
   2.37× to the first token at 2048, 1.49–1.57× decode), where gpt-fast's CUDA-graph decode and the TensorRT-LLM /
-  SGLang prefill are strongest. Its tokens leave the bf16 reference after a near tie, as the bf16 engines' do among
-  themselves (on the RTX 5080, 7 to 89 equal tokens at 512); on the RTX 5080 and A100 they can vary from run to run,
-  because the tensor tile adds partial sums in arrival order. Peak memory 2.7–3.3 GB, level with llama.cpp and HF
-  eager, against 8.8–47 GB for the pooled servers (vLLM, SGLang, TensorRT-LLM).
+  SGLang prefill are strongest. Since this round the H100's 16-bit tiles run on its warpgroup matrix instruction
+  (`wgmma`): on another H100 SXM, against gpt-fast on the same box, the first token at 128 / 512 / 2048 went from
+  1.09 / 1.66 / 2.17× to 0.75 / 1.25 / 1.58× (2.70 / 5.60 / 18.11 ms against 3.58 / 4.47 / 11.45), decode unchanged
+  ([wgmma-16bit](benches/results/evidence/hopper/wgmma-16bit.md)). Its tokens leave the bf16 reference after a near
+  tie, as the bf16 engines' do among themselves (on the RTX 5080, 7 to 89 equal tokens at 512); on the RTX 5080 and
+  A100 they can vary from run to run, because the tensor tile adds partial sums in arrival order. Peak memory
+  2.7–3.3 GB, level with llama.cpp and HF eager, against 8.8–47 GB for the pooled servers (vLLM, SGLang,
+  TensorRT-LLM).
 - llama.cpp in f16 is another 16-bit format: recorded, compared with neither class. SGLang has no f32 path, and
   TensorRT-LLM's f32 build gives wrong tokens: neither is in the f32 class.
 

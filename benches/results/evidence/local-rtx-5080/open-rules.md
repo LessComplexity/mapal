@@ -19,12 +19,18 @@ Scratch and replay scripts: `.claude/raw-evidence/local-rtx-5080/open-rules/`.
 | (6) tune | 4090 block decode 1.126 × rules, A100 prefill T8192 1.338 | open (below) | `MAPAL_GPU_PICK` | unchanged |
 
 `rung_replay.tsv` + `rules::tests::rung_rules_replay`: **211 lines — 116 picked, 68 null, 9 mixed, 18 open** (was 200:
-108 / 67 / 9 / 16). New: the 7a2b67bf round's wide-fma arms (8 lines); the H100 PCIe line split by face and size.
-Since then (the second sweep merge, `integration.md` § Second sweep merge): **230 lines — 130 picked, 71 null, 10 mixed,
-19 open**, the last two lines sweep-gemm-2's `streamk-price` replay (`sweep-gemm-2.md` §2). review-fixes-2
+108 / 67 / 9 / 16). New: the 7a2b67bf round's wide-fma arms (8 lines); the H100 PCIe line split by face and size. Since
+then (the second sweep merge, `integration.md` § Second sweep merge): **230 lines — 130 picked, 71 null, 10 mixed, 19
+open**, the last two lines sweep-gemm-2's `streamk-price` replay (`sweep-gemm-2.md` §2). review-fixes-2
 (`review-fixes-2.md` §3): the measured rungs without a line got one — **243 lines: 140 picked, 72 null, 10 mixed, 21
 open**; the two new open are round-store's m128 n28672 loss (the panel depth) and wgmma-ws's H100 m128 n4096 loss (the
-operand's re-read across waves).
+operand's re-read across waves). The hopper-wgmma integration (`cross-arch/README.md` § hopper-wgmma): **304 lines — 181
+picked, 83 null, 18 mixed, 22 open** — wgmma-16bit's two `wgmma16` H100 lines picked and its `ws-persist` H100 line
+mixed; `walk-reuse`'s eight `mma-walk` site lines (`walk=MxNxK`: the RTX 3090's and A100's lost walks from
+disasm-rented, six RTX 5080 projections; seven picked, one null) priced as `func::gpu::WALK_ARMS` records them — the
+walk's operand re-reads against the part's L2 keep (`MmaWalk::walk_bytes`) and `Gpu::dram_bound`; the site replay
+`mma_walk_replay` (17 measured walks, 14 picked, 3 open: the two forced 64 × 128 wins and the 3090's grid on the 5080, a
+2.5 % win inside the 5 % margin).
 
 ## (b) Formed but not realized
 

@@ -3356,6 +3356,8 @@ pub(crate) fn mma_walk(
         tile_cells: bm * bn,
         cells: site.rows * site.c,
         bytes: site.rows * site.k * m.ea + site.k * site.c * m.eb + site.rows * site.c * 4,
+        grid_x: site.c / bn,
+        slices: (bm * w.bk * w.ea, bn * w.bk * w.eb),
     };
     // `--gpu-on=mma-walk` walks every admitted site (the measurement and
     // emulator arm, as `streamk-epi`'s).
@@ -3381,7 +3383,10 @@ pub(crate) fn mma_walk(
 /// grid (`tiles`, each tile's flops), `cut` the `k` cut [`mma_pieces`] gives
 /// it; the walk: `tiles × panels` of `panel_flops` over `ctas` blocks of
 /// `iters` panels, `blocks_per_sm` sharing an SM; `tile_cells` a tile's
-/// outputs, `cells` the site's, `bytes` its operands and output.
+/// outputs, `cells` the site's, `bytes` its operands and output; `grid_x`
+/// the walk's tiles a block-row (tile `t` at row `t / grid_x`, column
+/// `t % grid_x`: the order [`Kernel::segment`] walks), `slices` the bytes of
+/// one panel of a tile's `a` (`bm·bk·ea`) and `b` (`bn·bk·eb`).
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct MmaWalk {
     pub ordered: (u64, u64),
@@ -3395,9 +3400,74 @@ pub(crate) struct MmaWalk {
     pub tile_cells: u64,
     pub cells: u64,
     pub bytes: u64,
+    pub grid_x: u64,
+    pub slices: (u64, u64),
 }
 
+/// hopper-wgmma `walk-reuse`: the panel offsets [`MmaWalk::operand_bytes`]
+/// samples along `k` (the walk's reader times shift with the offset where
+/// a reader crosses a block's boundary).
+const WALK_REUSE_SAMPLES: u64 = 8;
+
 impl MmaWalk {
+    /// hopper-wgmma `walk-reuse`: **the operand bytes the walk reads from
+    /// DRAM** — each operand panel slice once per run of its readers that
+    /// the L2 still holds between them. Block `c` runs units `[c·iters,
+    /// (c+1)·iters)` back to back, so tile `t`'s panel `κ` is read at unit
+    /// time `(t·panels + κ) mod iters`; the tiles of a block-row read the
+    /// same `a` slice, those of a column the same `b` slice — at times the
+    /// walk's rotation (`panels` against `iters`) scatters over the run. In
+    /// one unit the walk streams `ctas · (a + b slice)` bytes; a reader within
+    /// `keep / that` units of the previous one finds the slice in the L2
+    /// (`keep`: [`Gpu::l2_keep_bytes`], the largest cyclic working set the
+    /// part's L2 keeps — the measured property), a later one reads it again.
+    /// The ordered grid runs a wave's tiles at one panel offset, so its
+    /// readers share every slice (row-major's `b` distance is
+    /// [`Gpu::b_rereads`], C11); the walk's offsets differ block to block.
+    /// Measured (hopper `disasm-rented`): the RTX 3090's 2048 × 4096 × 4096
+    /// walk (6 MiB keep: readers 16 units apart, 2.7 MB a unit) read ~1 GB
+    /// for 50 MB of operands — 1275 µs against the ordered grid's 1082; the
+    /// RTX 5080's 64 MiB keep holds the very grid's (628 against 667).
+    pub fn operand_bytes(&self, keep: u64) -> u64 {
+        let gx = self.grid_x.max(1);
+        let gy = self.tiles / gx;
+        let (sa, sb) = self.slices;
+        let iters = self.iters.max(1);
+        let near = keep / (self.ctas * (sa + sb)).max(1);
+        let samples = self.panels.clamp(1, WALK_REUSE_SAMPLES);
+        let mut times: Vec<u64> = Vec::with_capacity(gx.max(gy) as usize);
+        // The runs of readers whose gap the L2 holds: one read each.
+        let runs = |times: &mut Vec<u64>| -> u64 {
+            times.sort_unstable();
+            1 + times.windows(2).filter(|w| w[1] - w[0] > near).count() as u64
+        };
+        let (mut reads_a, mut reads_b) = (0, 0);
+        for s in 0..samples {
+            let kappa = s * self.panels / samples;
+            let at = |t: u64| (t * self.panels + kappa) % iters;
+            for r in 0..gy {
+                times.clear();
+                times.extend((0..gx).map(|j| at(r * gx + j)));
+                reads_a += runs(&mut times);
+            }
+            for j in 0..gx {
+                times.clear();
+                times.extend((0..gy).map(|r| at(r * gx + j)));
+                reads_b += runs(&mut times);
+            }
+        }
+        (reads_a * sa + reads_b * sb) * self.panels / samples
+    }
+
+    /// The walk's DRAM bytes: [`Self::bytes`] with its operands read as
+    /// [`Self::operand_bytes`] reads them (each slice at least once).
+    pub fn walk_bytes(&self, keep: u64) -> u64 {
+        let gx = self.grid_x.max(1);
+        let (sa, sb) = self.slices;
+        let once = (self.tiles / gx * sa + gx * sb) * self.panels;
+        self.bytes + self.operand_bytes(keep).saturating_sub(once)
+    }
+
     /// The pieces of shared tiles: a tile whose `panels` units span blocks
     /// `c₀ … c₁` of the walk (`iters` units a block) has `c₁ − c₀ + 1` pieces
     /// when it is shared, none (a whole store) otherwise.
@@ -3422,7 +3492,9 @@ impl MmaWalk {
     /// epilogue group's) and its partials at the part's `red` rate
     /// (`atomic_ops_per_ns`: measured, the 512 × 2048 × 8192 bf16 cuts paid
     /// 8 / 16 µs for their 4 M / 8 M adds, the rate's 10 / 20). None is
-    /// below the operands' bytes at the DRAM rate.
+    /// below its reads at the DRAM rate: the ordered grid and its cut read
+    /// the operands once (a wave's tiles share each panel slice), the walk
+    /// as [`Self::walk_bytes`] reads them (hopper-wgmma `walk-reuse`).
     pub fn ns(&self, gpu: &Gpu, rate: u64) -> (f64, f64, f64) {
         let sms = gpu.sms.max(1);
         let per_sm = rate as f64 / sms as f64;
@@ -3460,14 +3532,24 @@ impl MmaWalk {
             + refill
             + zero(ws.max(self.cells * 4))
             + adds(self.shared_pieces() * self.tile_cells);
-        (ordered.max(floor), cut.max(floor), walk.max(floor))
+        let reads = self.walk_bytes(gpu.l2_keep_bytes()) as f64 / dram;
+        (ordered.max(floor), cut.max(floor), walk.max(reads))
     }
 
     /// The walk saves [`MMA_WALK_PM`] of the better of the ordered grid
-    /// and its cut.
+    /// and its cut — and its re-reads ([`Self::walk_bytes`]) do not make
+    /// a site DRAM-bound that reading its operands once is not
+    /// ([`Gpu::dram_bound`]: past [`crate::profile::DRAM_BOUND_PM`] of the products the
+    /// load latency is no longer hidden, so the pipe time the walk evens
+    /// out is not what bounds it — C11's line for row-major's `b` re-reads,
+    /// hopper-wgmma `walk-reuse`: the RTX 3090's and A100's walks, the RTX
+    /// 5080's 3072 × 4096 × 8192).
     pub fn pays(&self, gpu: &Gpu, rate: u64) -> bool {
         let (ordered, cut, walk) = self.ns(gpu, rate);
-        walk * 1000.0 <= MMA_WALK_PM as f64 * ordered.min(cut)
+        let flops = self.tiles * self.panels * self.panel_flops;
+        let rereads_bind = gpu.dram_bound(self.walk_bytes(gpu.l2_keep_bytes()), flops, rate)
+            && !gpu.dram_bound(self.bytes, flops, rate);
+        !rereads_bind && walk * 1000.0 <= MMA_WALK_PM as f64 * ordered.min(cut)
     }
 }
 
@@ -12367,6 +12449,261 @@ impl<'a> FnEmit<'a> {
     }
 }
 
+/// bf16 tensor-tile `mma-walk`: **one measured walk** — the part, the bf16
+/// site `m × n × k`, the ordered tile `(bm, bn)` and its `k` cut, the walk's
+/// tile `(bm, bn, bk, blocks an SM)`, its grid `(ctas, iters)` (0: the
+/// part's own, as [`mma_walk`] derives it), the residual epilogue's extra
+/// bytes, and the ordered grid's (or its cut's) / the walk's µs, each with
+/// its zero pass. `mma_walk_replay` replays every one; the rung table's
+/// `walk=` lines (`rules::rung_rules_replay`) read theirs.
+#[cfg(test)]
+pub(crate) struct WalkArm {
+    pub part: &'static TargetProfile,
+    pub mnk: [u64; 3],
+    pub ordered: [u64; 3],
+    pub tile: [u64; 4],
+    pub grid: (u64, u64),
+    pub extra: u64,
+    pub ord: f64,
+    pub walk: f64,
+}
+
+#[cfg(test)]
+impl WalkArm {
+    /// The arm's price on `gpu` (the part's, or a replay's with measured
+    /// box properties) and the part's bf16 matrix rate.
+    pub fn price(&self, gpu: &Gpu) -> (MmaWalk, u64) {
+        let rate = gpu
+            .caps
+            .matrix_op(MmaFmt::Bf16, Home::Regs)
+            .map(|op| gpu.matrix_flops_per_ns(&op))
+            .expect("a bf16 product");
+        let ([m, n, k], [om, on, cut], [bm, bn, bk, bps]) = (self.mnk, self.ordered, self.tile);
+        let tiles = (m / bm) * (n / bn);
+        let panels = k / bk;
+        let (ctas, iters) = match self.grid {
+            (0, _) => {
+                let iters = (tiles * panels).div_ceil(gpu.sms * bps);
+                ((tiles * panels).div_ceil(iters), iters)
+            }
+            g => g,
+        };
+        let price = MmaWalk {
+            ordered: ((m / om) * (n / on), 2 * om * on * k),
+            cut,
+            tiles,
+            panels,
+            panel_flops: 2 * bm * bn * bk,
+            blocks_per_sm: bps,
+            ctas,
+            iters,
+            tile_cells: bm * bn,
+            cells: m * n,
+            bytes: m * k * 2 + k * n * 2 + m * n * 4 + self.extra,
+            grid_x: n / bn,
+            slices: (bm * bk * 2, bn * bk * 2),
+        };
+        (price, rate)
+    }
+
+    /// The walk won beyond [`MMA_WALK_PM`].
+    pub fn won(&self) -> bool {
+        self.walk < MMA_WALK_PM as f64 / 1000.0 * self.ord
+    }
+}
+
+#[cfg(test)]
+const fn walk_arm(
+    part: &'static TargetProfile,
+    mnk: [u64; 3],
+    ordered: [u64; 3],
+    tile: [u64; 4],
+    grid: (u64, u64),
+    extra: u64,
+    (ord, walk): (f64, f64),
+) -> WalkArm {
+    WalkArm {
+        part,
+        mnk,
+        ordered,
+        tile,
+        grid,
+        extra,
+        ord,
+        walk,
+    }
+}
+
+/// The measured walks: `bf16-tensor-tile.md` (the RTX 5080's model
+/// projections, CUPTI medians, the first eight), hopper `disasm-rented.md`
+/// (the RTX 3090's suite row and the A100's down projection, same box ON /
+/// `--gpu-off=mma-walk`; the 3090's PTX JIT on the RTX 5080 at its grid),
+/// hopper-wgmma `walk-reuse` (three RTX 5080 projections past its L2 keep,
+/// ABBA × 3 ON / OFF, CUPTI medians; the OFF arm the rules' cut where the
+/// ordered tile's cut is 4; then three suite programs, ABBA × 4, the
+/// walk forced by `--gpu-on=mma-walk` against the rules' grid or cut).
+#[cfg(test)]
+pub(crate) const WALK_ARMS: [WalkArm; 17] = {
+    use crate::profile::{A100, RTX_3090, RTX_5080};
+    const T: [u64; 4] = [128, 128, 32, 2];
+    const O: [u64; 3] = [128, 128, 1];
+    [
+        walk_arm(
+            &RTX_5080,
+            [512, 2048, 8192],
+            [64, 128, 1],
+            T,
+            (0, 0),
+            0,
+            (216.0, 164.2),
+        ),
+        walk_arm(
+            &RTX_5080,
+            [512, 8192, 2048],
+            O,
+            T,
+            (0, 0),
+            0,
+            (192.7, 161.2),
+        ),
+        walk_arm(
+            &RTX_5080,
+            [2048, 2048, 8192],
+            O,
+            T,
+            (0, 0),
+            0,
+            (754.1, 626.5),
+        ),
+        walk_arm(
+            &RTX_5080,
+            [2048, 2048, 2048],
+            O,
+            T,
+            (0, 0),
+            0,
+            (193.1, 161.9),
+        ),
+        walk_arm(
+            &RTX_5080,
+            [2048, 8192, 2048],
+            O,
+            T,
+            (0, 0),
+            0,
+            (628.4, 685.1),
+        ),
+        walk_arm(
+            &RTX_5080,
+            [512, 512, 2048],
+            [32, 64, 1],
+            T,
+            (0, 0),
+            0,
+            (18.8, 19.3),
+        ),
+        walk_arm(
+            &RTX_5080,
+            [512, 2048, 2048],
+            [64, 128, 1],
+            T,
+            (0, 0),
+            0,
+            (56.6, 49.6),
+        ),
+        walk_arm(
+            &RTX_5080,
+            [2048, 512, 2048],
+            [64, 128, 1],
+            T,
+            (0, 0),
+            0,
+            (57.0, 48.7),
+        ),
+        walk_arm(
+            &RTX_3090,
+            [2048, 4096, 4096],
+            O,
+            T,
+            (0, 0),
+            0,
+            (1082.0, 1275.0 + 39.0),
+        ),
+        walk_arm(
+            &A100,
+            [2048, 2048, 8192],
+            O,
+            [128, 128, 64, 2],
+            (0, 0),
+            2048 * 2048 * 4,
+            (761.0, 788.0),
+        ),
+        walk_arm(
+            &RTX_5080,
+            [2048, 4096, 4096],
+            O,
+            T,
+            (164, 400),
+            0,
+            (666.6, 628.5 + 21.2),
+        ),
+        walk_arm(
+            &RTX_5080,
+            [3072, 4096, 8192],
+            O,
+            T,
+            (0, 0),
+            0,
+            (1836.0, 1829.2 + 39.8),
+        ),
+        walk_arm(
+            &RTX_5080,
+            [2048, 4096, 8192],
+            [128, 128, 4],
+            T,
+            (0, 0),
+            0,
+            (1297.9 + 21.0, 1184.7 + 21.0),
+        ),
+        walk_arm(
+            &RTX_5080,
+            [4096, 2048, 8192],
+            [128, 128, 4],
+            T,
+            (0, 0),
+            0,
+            (1292.9 + 20.8, 1198.4 + 20.7),
+        ),
+        walk_arm(
+            &RTX_5080,
+            [128, 6144, 4096],
+            [64, 128, 8],
+            T,
+            (0, 0),
+            0,
+            (75.3 + 2.0, 64.0 + 1.9),
+        ),
+        walk_arm(
+            &RTX_5080,
+            [128, 28672, 4096],
+            O,
+            [128, 128, 16, 2],
+            (0, 0),
+            0,
+            (332.8, 325.5 + 6.8),
+        ),
+        walk_arm(
+            &RTX_5080,
+            [2048, 6144, 4096],
+            O,
+            T,
+            (0, 0),
+            0,
+            (929.2, 1005.2 + 37.5),
+        ),
+    ]
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -13423,100 +13760,111 @@ mod tests {
     /// bf16 tensor-tile `mma-walk`: **every measured walk, replayed**
     /// (`bf16-tensor-tile.md`: the RTX 5080, bf16 `fold: bf16 | f32`, the
     /// model's projections, CUPTI medians of the ordered kernel against the
-    /// walk — `--gpu-on=mma-walk` where the price refuses it). The price
+    /// walk — `--gpu-on=mma-walk` where the price refuses it; hopper
+    /// `disasm-rented.md`: the RTX 3090's suite row and the A100's down
+    /// projection, same box ON / `--gpu-off=mma-walk`, and the 3090's PTX
+    /// JIT on the RTX 5080 at the 3090's grid; hopper-wgmma `walk-reuse`:
+    /// three RTX 5080 projections past its L2 keep, ABBA ON / OFF). The price
     /// ([`MmaWalk::pays`]) must walk where the walk won and keep the ordered
-    /// grid where it lost. Open: 512 × 2048 × 2048 and 2048 × 512 × 2048
-    /// (the ordered 64 × 128 tile of 32 × 32 warp tiles runs at 85 % of the
-    /// 128 × 128 tile's pipe rate, which the price reads as equal; the walk
-    /// won 0.876 / 0.854 where the price, at the pipe for both, sees 1.02):
-    /// the warp tile's realized efficiency is the missing property.
+    /// grid (or its cut) where it lost. The Ampere walks lost on their reads:
+    /// the walk's rotation puts an operand slice's readers 8–16 units apart
+    /// where the 3090's 6 MiB / the A100's 20 MiB keep hold 2–3 units of the
+    /// walk's stream, so the walk re-read ~1 GB of 50 / 67 MB of operands
+    /// (1275 + 39 µs against 1082; 788 against 761) — the loop itself is
+    /// the ordered kernel's (64 HMMA, 16 LDSM, 8 LDGSTS a trip in both; the
+    /// ordered kernel's static 128 HMMA is LLVM's peel of its last trip).
+    /// The 5080's 64 MiB keep holds the same grid's readers (628.5 + 21.2
+    /// against 666.6), but not 3072 × 4096 × 8192's `a` readers (33–38
+    /// units apart, 25 held): DRAM-bound, 1829 + 40 against 1836. Open:
+    /// 512 × 2048 × 2048 and 2048 × 512 × 2048 (the ordered 64 × 128 tile
+    /// of 32 × 32 warp tiles runs at 85 % of the 128 × 128 tile's pipe rate,
+    /// which the price reads as equal; the walk won 0.876 / 0.854 where the
+    /// price, at the pipe for both, sees 1.02): the warp tile's realized
+    /// efficiency is the missing property; and the 3090's grid on the 5080
+    /// (a 2.5 % win inside the price's 5 % margin).
     #[test]
     fn mma_walk_replay() {
-        use crate::profile::RTX_5080;
-        let gpu = RTX_5080.gpu().expect("a GPU");
-        let rate = gpu
-            .caps
-            .matrix_op(MmaFmt::Bf16, Home::Regs)
-            .map(|op| gpu.matrix_flops_per_ns(&op))
-            .expect("a bf16 product");
-        // m, n, k, the ordered tile (bm, bn), the walk's tile (bm, bn, bk,
-        // blocks an SM), ordered / walk µs.
-        let arms: [((u64, u64, u64), (u64, u64), [u64; 4], f64, f64); 8] = [
-            (
-                (512, 2048, 8192),
-                (64, 128),
-                [128, 128, 32, 2],
-                216.0,
-                164.2,
-            ),
-            (
-                (512, 8192, 2048),
-                (128, 128),
-                [128, 128, 32, 2],
-                192.7,
-                161.2,
-            ),
-            (
-                (2048, 2048, 8192),
-                (128, 128),
-                [128, 128, 32, 2],
-                754.1,
-                626.5,
-            ),
-            (
-                (2048, 2048, 2048),
-                (128, 128),
-                [128, 128, 32, 2],
-                193.1,
-                161.9,
-            ),
-            (
-                (2048, 8192, 2048),
-                (128, 128),
-                [128, 128, 32, 2],
-                628.4,
-                685.1,
-            ),
-            ((512, 512, 2048), (32, 64), [128, 128, 32, 2], 18.8, 19.3),
-            ((512, 2048, 2048), (64, 128), [128, 128, 32, 2], 56.6, 49.6),
-            ((2048, 512, 2048), (64, 128), [128, 128, 32, 2], 57.0, 48.7),
-        ];
-        const OPEN: [(u64, u64, u64); 2] = [(512, 2048, 2048), (2048, 512, 2048)];
         let mut open = Vec::new();
-        for ((m, n, k), (om, on), [bm, bn, bk, bps], ord, walk) in arms {
-            let tiles = (m / bm) * (n / bn);
-            let panels = k / bk;
-            let iters = (tiles * panels).div_ceil(gpu.sms * bps);
-            let price = MmaWalk {
-                ordered: ((m / om) * (n / on), 2 * om * on * k),
-                cut: 1,
-                tiles,
-                panels,
-                panel_flops: 2 * bm * bn * bk,
-                blocks_per_sm: bps,
-                ctas: (tiles * panels).div_ceil(iters),
-                iters,
-                tile_cells: bm * bn,
-                cells: m * n,
-                bytes: m * k * 2 + k * n * 2 + m * n * 4,
-            };
-            let (o, _, w) = price.ns(gpu, rate);
+        for a in &WALK_ARMS {
+            let gpu = a.part.gpu().expect("a GPU");
+            let (price, rate) = a.price(gpu);
+            let (o, c, w) = price.ns(gpu, rate);
+            let [m, n, k] = a.mnk;
             eprintln!(
-                "walk {m}x{n}x{k}: priced {:.1} / {:.1} us ({:.3}), measured {ord} / {walk} ({:.3})",
+                "walk {} {m}x{n}x{k}: priced {:.1} / {:.1} / {:.1} us ({:.3}; reads {:.0} MB), measured {} / {} ({:.3})",
+                a.part.name,
                 o / 1000.0,
+                c / 1000.0,
                 w / 1000.0,
-                w / o,
-                walk / ord
+                w / o.min(c),
+                price.walk_bytes(gpu.l2_keep_bytes()) as f64 / 1e6,
+                a.ord,
+                a.walk,
+                a.walk / a.ord
             );
-            if price.pays(gpu, rate) != (walk < MMA_WALK_PM as f64 / 1000.0 * ord) {
-                open.push((m, n, k));
+            if price.pays(gpu, rate) != a.won() {
+                open.push((a.part.name, a.mnk));
             }
         }
+        const OPEN: [(&str, [u64; 3]); 3] = [
+            ("rtx-5080", [512, 2048, 2048]),
+            ("rtx-5080", [2048, 512, 2048]),
+            // The 3090's grid on the 5080: the walk won 2.5 %, inside the
+            // 5 % the price asks.
+            ("rtx-5080", [2048, 4096, 4096]),
+        ];
         assert_eq!(
             open,
             OPEN.to_vec(),
             "measured walks the price does not pick"
         );
+    }
+
+    /// hopper-wgmma `walk-reuse`: **a walk's operand reads, against the
+    /// keep** — over generated grids (tiles, panels, the walk's blocks and
+    /// iters as [`mma_walk`] derives them), each slice is read at least
+    /// once and at most once a reader; a keep holding the whole walk's
+    /// stream reads every slice once; the reads never grow with the keep.
+    #[test]
+    fn walk_reuse_bounds() {
+        let mut runner =
+            proptest::test_runner::TestRunner::new(proptest::test_runner::Config::with_cases(64));
+        let shape = (1u64..=24, 1u64..=48, 2u64..=96, 40u64..=200);
+        runner
+            .run(&shape, |(gy, gx, panels, slots)| {
+                let tiles = gx * gy;
+                let iters = (tiles * panels).div_ceil(slots);
+                let ctas = (tiles * panels).div_ceil(iters);
+                let (sa, sb) = (128 * 32 * 2, 128 * 32 * 2);
+                let w = MmaWalk {
+                    ordered: (tiles, 1),
+                    cut: 1,
+                    tiles,
+                    panels,
+                    panel_flops: 1,
+                    blocks_per_sm: 2,
+                    ctas,
+                    iters,
+                    tile_cells: 128 * 128,
+                    cells: tiles * 128 * 128,
+                    bytes: (gy * sa + gx * sb) * panels,
+                    grid_x: gx,
+                    slices: (sa, sb),
+                };
+                let once = (gy * sa + gx * sb) * panels;
+                let every = tiles * (sa + sb) * panels;
+                let mut last = u64::MAX;
+                for keep in [0, 1 << 20, 6 << 20, 64 << 20, u64::MAX / 4] {
+                    let r = w.operand_bytes(keep);
+                    prop_assert!(once <= r && r <= every, "{r} outside [{once}, {every}]");
+                    prop_assert!(r <= last, "more reads with a larger keep");
+                    last = r;
+                }
+                prop_assert_eq!(w.operand_bytes(u64::MAX / 4), once);
+                prop_assert_eq!(w.walk_bytes(u64::MAX / 4), w.bytes);
+                Ok(())
+            })
+            .expect("walk reads within their bounds");
     }
 
     /// bugs-properties `cut-price`: **every measured `mma-combine` arm of

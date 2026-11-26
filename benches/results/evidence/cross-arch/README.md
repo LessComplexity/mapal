@@ -2114,3 +2114,81 @@ and TensorRT-LLM / SGLang prefill are strongest (A100 1.44–2.12× / 1.55–1.5
 Mapal's decode step is ~2.0–4.2 ms on every part while gpt-fast's single-graph step is 1.32–3.33 ms: the launch-bound
 step the RTX 5080 report attributes to the host's issue cost (`full-model.md`, "Decode is bound by the host's
 launches") is the larger share on the faster GPUs.
+
+## hopper-wgmma (16-bit warpgroup tiles on Hopper, the rented disasm, the walk's reads)
+
+Branch `local-rtx-5080`: merges of `hopper/wgmma16` (`779f4a15`, evidence [wgmma-16bit](../hopper/wgmma-16bit.md)) and
+`hopper/disasm` (`16f46432`, [disasm-rented](../hopper/disasm-rented.md)); `fix/bound-blkdec` was already in
+(`9a8bcd07`). Then the one Mapal regression the disasm found, attacked here (`walk-reuse`). No rental in this step; the
+two branches spent $1.83 (one H100 SXM, 47 min) and $2.63 (H100 / A100 / 4090 / 3090).
+
+**H100, the bf16 class on its warpgroup product** (`wgmma.m64nNk16` as geometry: `a` from shared memory or registers,
+`b` in either major, `Caps::matrix_group`, `rules::wgmma16_pays`, OFF `--gpu-off=wgmma16`; same H100 SXM box, gpt-fast
+on it):
+
+| prompt | TTFT before → after (ms) | gpt-fast (ms) | Mapal / gpt-fast before → after |
+|---|---|---:|---|
+| 128 | 3.92 → 2.70 | 3.58 | 1.09 → **0.75** |
+| 512 | 7.44 → 5.60 | 4.47 | 1.66 → 1.25 |
+| 2048 | 24.81 → 18.11 | 11.45 | 2.17 → 1.58 |
+
+Decode unchanged (1.98–2.06 against 1.33–1.42 ms a token). The 10 changed suite programs (the bf16 projections and the
+two bf16 prefills) 1.13–2.23× faster, 2048-row projections at 51–69 % of the measured 998 Tflop/s (cuBLAS 67–77 %); 72 /
+72 generated programs within the bound on the part, value gates 10 / 10, tokens on = off. The warp-specialized kernel
+launches alone (a horizontal merge passed its tensor maps by value: a fault; root cause open); `ws-persist` on the
+16-bit tile measured mixed (0.95–1.04) and stays off.
+
+**What got worse between rounds** (disasm-rented, same-box A/B of the f1d3a04f and b8429388 builds): new / old ≤ 1.02 on
+37 of 38 rows — the rest is the boxes (a clock-locked 4090 and slow hosts flattering the earlier round, 500 / 270 W
+power caps on its H100 / 3090, the H100 host's 10.7 µs synchronous copy-out, a noisy A100 with the tuner reverting on
+noise). The one Mapal regression, `mma-walk` on Ampere, is fixed below. Ranked causes of the bf16 class's gap: (1)
+16-bit tiles on `mma.sync` on Hopper — done above; (2) decode GEMVs load bf16 weights 2 bytes at a time (H100 41–65 % of
+DRAM; gpt-fast 16-byte loads); (3) attention on `mma.sync` with 2-byte K / V loads (2048: H100 6.87 vs 1.51 ms); (4) the
+per-token host round trip (513 KB of logits out, argmax on the host: H100 259 µs of a 2.02 ms step); (6) 340 decode
+launches a step on the H100 against gpt-fast's 200; (7) f32 activations in prefill elementwise cells; (8) TF32 `wgmma`
+operands rounded in a register pass.
+
+**The walk's reads (`walk-reuse`).** The disasm's reading of the 3090 SASS (static HMMA 128 → 64: "the walk's loop
+halves") is a static count: on sm_86 both loops run 64 HMMA, 16 LDSM and 8 LDGSTS a trip; the ordered kernel's other 64
+are LLVM's peel of its last trip (`opt` remark "peeled loop by 1 iterations"), the walk's one extra branch its issue
+under a run-time bound. What the walk changes is where an operand slice's readers sit: block `c` runs units `[c·iters,
+(c+1)·iters)`, so the tiles that share an `a` (`b`) slice read it at times the walk's rotation (`panels` against
+`iters`) scatters; between two readers the walk streams `ctas` slices a unit. The 3090's 6 MiB keep holds 2.4 units of
+that stream and its readers sit 16 apart: 990 MB read for 50 MB of operands, 1.11 ms at the DRAM rate against a 1.05 ms
+pipe (measured 1275 + 39 against the ordered grid's 1082 µs); the A100's 20 MiB, 3 units against 8: 1.1 GB (788 against
+761 µs); the 5080's 64 MiB holds the very 3090 grid's readers (628.5 + 21.2 against 666.6). The fix reads properties
+only: `MmaWalk::walk_bytes` (each slice once per run of readers the part's `l2_keep_bytes` holds), the walk priced no
+faster than its reads, and refused where its re-reads make the site DRAM-bound (`Gpu::dram_bound`, C11's line) when
+reading once does not. Rejected on the way: pricing every arm at its bytes over the `DRAM_BOUND_PM` rate refused
+`pt_pj_m128_n6144_k4096_bf16`'s walk on the 5080, which wins (below). Local RTX 5080 rows (ABBA, CUPTI, µs with zero
+passes; the replay lines `walk=MxNxK`, raw `.claude/raw-evidence/hopper/integrate/walk/`):
+
+| site | OFF (the rules' grid / cut) | walk | reads (once) | price |
+|---|---:|---:|---|---|
+| 3072 × 4096 × 8192 | 1836.0 | 1829.2 + 39.8 | 1.7 GB (168 MB): DRAM-bound | refuse ✓ |
+| 2048 × 4096 × 8192 | cut 4: 1297.9 + 21.0 | **1184.7 + 21.0** | 305 MB | walk ✓ |
+| 4096 × 2048 × 8192 | cut 4: 1292.9 + 20.8 | **1198.4 + 20.7** | 404 MB | walk ✓ |
+| `pt_pj_m128_n6144_k4096_bf16` | cut 8: 75.3 + 2.0 | **64.0 + 1.9** | 55 MB, once | walk ✓ |
+| `pt_pj_m2048_n6144_k4096_bf16` | **929.2** | 1005.2 + 37.5 | 190 MB | refuse ✓ |
+| `pt_pj_m128_n28672_k4096_bf16` | 332.8 | 325.5 + 6.8 | 251 MB, once | refuse (null) |
+
+Replay: `mma_walk_replay` 17 measured walks, 14 picked, 3 open (the two forced 64 × 128 wins: the warp tile's realized
+efficiency; the 3090 grid on the 5080, 2.5 % inside the 5 % margin); `rung_rules_replay` 304 lines: 181 picked, 83 null,
+18 mixed, 22 open. Emission against the pre-fix HEAD (211 suite programs, seven profiles): RTX 5080, 4090, A100, H100 /
+H100 PCIe unchanged; RTX 3090 `pt_pj_m2048_n4096_k4096_bf16` back to the ordered grid (the f1d3a04f kernel); RTX 5090
+`pt_pj_m2048_n4096_k14336_bf16` walk → cut 8 (2.1 GB of reads against 210 MB on its nominal 96 MiB keep: predicted, not
+measured). The A100 model's down projection (residual epilogue) back to the ordered grid. The RTX 5080 against
+`c808622c`: the 211 programs and the full model (both classes, 128 / 512 / 2048) emit the same text; tokens f32 128 /
+128 = HF f32, bf16 128 / 128 = HF bf16 at prompt 128. Tests: `walk_reuse_bounds` (64 generated grids: each slice read at
+least once and at most once a reader, monotone in the keep), `mma_walk_rules_on_generated_shapes` on five parts with the
+RTX 3090 (48 generated GEMMs: every taken walk ungated, 27 forced walks gated and kept ordered). Full workspace suite
+(`cargo test --release --workspace`, once): 1728 passed, 0 failed, 11 ignored.
+
+**Open.** The walk's order itself (blocks whose panel offsets align so readers meet within the keep) — what would make
+the walk pay on small-L2 parts; the 5090's measured keep and its one flipped program; the A100 down projection's
+two-round grid (256 tiles on 216 slots; an epilogue group takes no cut); from wgmma-16bit: attention on the warpgroup
+product (FA3-style; 7.0 of 18.4 ms of the H100's 2048 prefill against flex attention's 1.5), the projections' epilogue
+by TMA store, persistent walk and cluster multicast, small-`m` stage depth, the split forms, the merged-launch fault's
+root cause; from disasm-rented: causes 2–4 and 6–8, the host round trip as a measured property, a tuner revert only on
+pairs that agree beyond the null. The facts-table rows both branches propose for CLAUDE.md (`wgmma_half_per_clk`,
+`Caps::matrix_group`, `MatrixOp::mn_major`, `rules::wgmma16_pays`) are not applied here.

@@ -10,6 +10,13 @@
 //!   fewer warps than the ordered tile's), and its kernel adds the shared
 //!   tiles' partials (`atomicrmw fadd`) beside the whole tiles' plain store;
 //!   the OFF arm (`--gpu-off=mma-walk`) and the fixed order walk none.
+//! - **Reuse, every part** (hopper-wgmma `walk-reuse`). The walk's readers
+//!   of an operand slice sit where its rotation puts them; a slice the
+//!   part's L2 keep does not hold between two readers is read again. No
+//!   walk the price takes is made DRAM-bound by those re-reads where its
+//!   operands read once are not (`Gpu::dram_bound`), and every forced walk
+//!   (`--gpu-on=mma-walk`) that is, the default arm keeps ordered (some
+//!   generated shapes are gated: coverage > 0).
 //! - **Values, the emulator.** Runnable extents with the walk forced
 //!   (`--gpu-on=mma-walk`, the measurement arm): integer operands (exact in
 //!   bf16, sums exact in f32 in any order), plain GEMMs (the zeroed output's
@@ -28,7 +35,7 @@ mod emu;
 #[path = "../../../mapal-rewrite/tests/testgen/mod.rs"]
 mod testgen;
 
-const PARTS: [&str; 4] = ["rtx-5080", "rtx-4090", "a100", "h100"];
+const PARTS: [&str; 5] = ["rtx-5080", "rtx-4090", "rtx-3090", "a100", "h100"];
 
 fn lower(src: &str) -> CategoryIr {
     let po = mapal_syntax::parse(src);
@@ -133,6 +140,7 @@ struct Cover {
     walked: u64,
     kept: u64,
     shared: u64,
+    gated: u64,
 }
 
 impl std::ops::AddAssign for Cover {
@@ -141,6 +149,68 @@ impl std::ops::AddAssign for Cover {
         self.walked += o.walked;
         self.kept += o.kept;
         self.shared += o.shared;
+        self.gated += o.gated;
+    }
+}
+
+/// hopper-wgmma `walk-reuse`, the oracle: whether a walked plan's re-reads
+/// make its site DRAM-bound where reading its operands once does not. Block
+/// `c` runs units `[c·iters, (c+1)·iters)`, so tile `t`'s panel `κ` is read
+/// at unit time `(t·panels + κ) mod iters`; a block-row's tiles read one `a`
+/// slice, a column's one `b` slice, and a reader more than the keep's worth
+/// of the walk's stream (`ctas` slices of each operand a unit) after the
+/// previous one reads it again — sampled at eight panel offsets, as the
+/// price does.
+fn rereads_bind(t: &HashMap<String, String>, gpu: &Facts) -> bool {
+    let (bm, bn) = (
+        num(t, "warps_y") * num(t, "mt") * 16,
+        num(t, "warps_x") * num(t, "nt") * 8,
+    );
+    let (rows, c, k, bk) = (num(t, "rows"), num(t, "c"), num(t, "k"), num(t, "bk"));
+    let (gx, gy, panels) = (c / bn, rows / bm, k / bk);
+    let (ctas, iters) = (num(t, "ctas"), num(t, "iters"));
+    let (ea, eb) = (num(t, "ea"), num(t, "eb"));
+    let (sa, sb) = (bm * bk * ea, bn * bk * eb);
+    let near = gpu.keep() / (ctas * (sa + sb)).max(1);
+    let samples = panels.clamp(1, 8);
+    let runs = |mut ts: Vec<u64>| {
+        ts.sort_unstable();
+        1 + ts.windows(2).filter(|w| w[1] - w[0] > near).count() as u64
+    };
+    let mut read = 0;
+    for s in 0..samples {
+        let kappa = s * panels / samples;
+        let at = |tile: u64| (tile * panels + kappa) % iters;
+        for r in 0..gy {
+            read += runs((0..gx).map(|j| at(r * gx + j)).collect()) * sa;
+        }
+        for j in 0..gx {
+            read += runs((0..gy).map(|r| at(r * gx + j)).collect()) * sb;
+        }
+    }
+    let once_ops = (gy * sa + gx * sb) * panels;
+    let once = rows * k * ea + k * c * eb + rows * c * 4;
+    let walk = once + (read * panels / samples).saturating_sub(once_ops);
+    let flops = 2 * rows * c * k;
+    gpu.bound(walk, flops) && !gpu.bound(once, flops)
+}
+
+/// The part's properties the oracle reads.
+struct Facts(&'static str);
+
+impl Facts {
+    fn keep(&self) -> u64 {
+        resolve_profile(self.0)
+            .unwrap()
+            .gpu()
+            .unwrap()
+            .l2_keep_bytes()
+    }
+    fn bound(&self, bytes: u64, flops: u64) -> bool {
+        let g = resolve_profile(self.0).unwrap().gpu().unwrap();
+        // The part's warp 16-bit product, flops a ns.
+        let rate = g.sms * g.mma_half_per_clk * g.clock_khz / 1_000_000;
+        g.dram_bound(bytes, flops, rate)
     }
 }
 
@@ -201,6 +271,23 @@ fn check_plans(p: &testgen::GemmProg, part: &'static str) -> Cover {
         );
         c.shared +=
             u64::from((0..tiles).any(|x| x * panels / iters != ((x + 1) * panels - 1) / iters));
+        assert!(
+            !rereads_bind(t, &Facts(part)),
+            "{ctx}: the walk's re-reads make it DRAM-bound: {t:?}"
+        );
+    }
+    // A forced walk its re-reads bind: the default arm keeps the ordered
+    // grid (or its cut).
+    let forced = emission(&ir, part, &[], &["mma-walk"], &[]);
+    if mma_kernels(&forced)
+        .iter()
+        .any(|(t, _)| walked(t) && rereads_bind(t, &Facts(part)))
+    {
+        c.gated += 1;
+        assert!(
+            ks.iter().all(|(t, _)| !walked(t)),
+            "{ctx}: a walk its re-reads bind, taken"
+        );
     }
     assert!(
         ordered
@@ -240,6 +327,7 @@ fn mma_walk_rules_on_generated_shapes() {
         "the price walks some, keeps some: {c:?}"
     );
     assert!(c.shared > 0, "walks with shared tiles: {c:?}");
+    assert!(c.gated > 0, "walks the re-reads gate: {c:?}");
 }
 
 const MODES: [[(&str, &str); 2]; 3] = [

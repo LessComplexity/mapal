@@ -653,6 +653,9 @@ mod tests {
             let mut tiles = None;
             let mut stages = None;
             let mut tile_bytes = None;
+            // hopper-wgmma `walk-reuse`: a walked bf16 site `MxNxK`, priced
+            // as `func::gpu::WALK_ARMS` records it (`mma_walk_replay`).
+            let mut walk = None;
             for kv in cond.split(',') {
                 let Some((k, v)) = kv.split_once('=') else {
                     continue;
@@ -671,6 +674,10 @@ mod tests {
                     "tiles" => tiles = Some(v.parse::<u64>().expect("tiles")),
                     "stages" => stages = Some(v.parse::<u64>().expect("stages")),
                     "tile_bytes" => tile_bytes = Some(v.parse::<u64>().expect("tile_bytes")),
+                    "walk" => {
+                        let d: Vec<u64> = v.split('x').map(|x| x.parse().expect(line)).collect();
+                        walk = Some([d[0], d[1], d[2]]);
+                    }
                     // gapfix `stream-ld`: the bytes of an operand the grid
                     // reads once.
                     "read_once" => read_once = Some(v.parse::<u64>().expect("read_once")),
@@ -765,6 +772,16 @@ mod tests {
                         };
                         v = v && wgmma16_pays(&g, MmaFmt::Bf16, a).is_some();
                     }
+                    // hopper-wgmma `walk-reuse`: the site's walk price
+                    // (its reads against the part's L2 keep).
+                    if let (Some(site), "mma-walk") = (walk, e.rung) {
+                        let a = crate::func::gpu::WALK_ARMS
+                            .iter()
+                            .find(|a| a.part.name == e.part && a.mnk == site)
+                            .unwrap_or_else(|| panic!("{line}: no measured walk"));
+                        let (price, rate) = a.price(&g);
+                        v = v && price.pays(&g, rate);
+                    }
                     if let (Some(b), "stream-ld") = (read_once, e.rung) {
                         v = v && stream_ld_pays(&g, b);
                     }
@@ -818,7 +835,7 @@ mod tests {
         }
         assert_eq!(open, OPEN.to_vec(), "measurements the rules do not pick");
         // The counts the evidence file reports.
-        assert_eq!((picked, null, mixed, open.len()), (174, 82, 18, 22));
+        assert_eq!((picked, null, mixed, open.len()), (181, 83, 18, 22));
     }
 
     /// precision `split-rate`: the split is weighed against the FFMA tile's
