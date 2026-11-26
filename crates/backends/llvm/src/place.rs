@@ -1554,16 +1554,26 @@ impl Lowering for Emitter<'_> {
         // 16-bit warp tile walk too (`declare` keeps the walk to them). An
         // arm that turns a combine's rung off removes its kind (the
         // epilogue groups' realizations, `group_order`).
-        const ALL: [TravKind; 4] = [
+        const ALL: [TravKind; 5] = [
             TravKind::Ordered,
             TravKind::SplitAtomic,
             TravKind::SplitWorkspace,
             TravKind::Walk,
+            TravKind::Hybrid,
         ];
-        const NO_WS: [TravKind; 3] = [TravKind::Ordered, TravKind::SplitAtomic, TravKind::Walk];
-        const NO_ATOMIC: [TravKind; 3] =
-            [TravKind::Ordered, TravKind::SplitWorkspace, TravKind::Walk];
-        const WALKS: [TravKind; 2] = [TravKind::Ordered, TravKind::Walk];
+        const NO_WS: [TravKind; 4] = [
+            TravKind::Ordered,
+            TravKind::SplitAtomic,
+            TravKind::Walk,
+            TravKind::Hybrid,
+        ];
+        const NO_ATOMIC: [TravKind; 4] = [
+            TravKind::Ordered,
+            TravKind::SplitWorkspace,
+            TravKind::Walk,
+            TravKind::Hybrid,
+        ];
+        const WALKS: [TravKind; 3] = [TravKind::Ordered, TravKind::Walk, TravKind::Hybrid];
         const SPLITS: [TravKind; 3] = [
             TravKind::Ordered,
             TravKind::SplitAtomic,
@@ -2442,11 +2452,11 @@ pub const PLACE_NULL: f64 = 0.02;
 /// (`place_replay.rs` `place_band_is_the_replays_residuals` recomputes it;
 /// a term with fewer than three pairs takes `all`'s). Per mille.
 pub const PLACE_BAND_PM: [(&str, u64); 5] = [
-    ("all", 202),
-    ("compute", 196),
+    ("all", 163),
+    ("compute", 155),
     ("dram", 214),
     ("cache", 259),
-    ("latency", 202),
+    ("latency", 163),
 ];
 
 /// The search's options at the band and null above.

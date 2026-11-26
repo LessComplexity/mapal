@@ -1,8 +1,9 @@
-# machine-model — ADR-0050 step 1, commits C1–C3 (local RTX 5080)
+# machine-model — ADR-0050 step 1, commits C1–C5 (local RTX 5080)
 
 Spec: `docs/decisions/ADR-0050-the-machine-model-placement-by-one-cost-model.md`; design checks
 `.claude/sprints/machine-model/design-check.json`. Raw output (not in git): `.claude/raw-evidence/machine-model/`
-(`place_calib-rtx-5080-run1.txt`, `-keep2.txt`, `place-tests-*.txt`, `replay-*.txt`).
+(`place_calib-rtx-5080-run1.txt`, `-keep2.txt`, `place-tests-*.txt`, `replay-*.txt`; C4: `c4/r4/place.tsv`,
+`c4/r3gpu/`; C5: `c5/` — programs, builds, `abba.tsv`, `abba-layout1.tsv`, SASS).
 
 ## What landed
 
@@ -11,6 +12,8 @@ Spec: `docs/decisions/ADR-0050-the-machine-model-placement-by-one-cost-model.md`
 | C1 | crate `mapal-place`: machine / schedule / fact types with provenance, the evaluator, reuse closed forms, exact LRU trace simulator | P1–P4, P6, cited walks |
 | C2 | `crates/backends/llvm/src/place.rs`: `machine_of` for every GPU profile (provenance in `profile::PlaceFacts`), the five present emitters as lowerings (constraints, footprints, issue counts, ring in flight, coordinate domains), `schedule_of` / `launch_of`, the coverage probe | coverage test |
 | C3 | `place_replay.tsv` (136 arms, 68 sites) and `place_replay_scores`; `benches/local/place_calib.cu` run on this RTX 5080, its values stored as measured facts (`PLACE_RTX_5080`) | replay score, probes |
+| C4 (6cb71680) | `mapal_place::search` (branch and bound, best-first under the floor, the gate, minimax, opens, the band); the emitters' search spaces and declared constraints; the gate (`--place-gate=ptxas`); the rung `machine-place` (default off) at `launch_in` / `launch` / `resized`; `PLACE_BAND_PM` from the replay; R3 / R4 | search props, coverage, R3, R4 (below) |
+| C5 | the hybrid traversal: one launch, the walk over the raster order's first tiles, the whole waves over the rest, the zero pass a prefix where whole pieces store; its space, evaluator, reuse and LRU layout; values; the ABBA; `hyb-*` replay arms | values, ABBA, replay (below) |
 
 No emission changes: the coverage test's round trip is byte-identical on every program and profile (the probe is a
 test switch), so no PTX/SASS differs and no A/B is owed by this step (null by construction).
@@ -92,18 +95,162 @@ per-partition launch and reduce on four blocks).
 | `mapal_place::reuse::reads` (+ `lru::lru_bytes`) | a cache instance's missed bytes over a traversal by distinct bytes: lockstep exact (= LRU), the walk by the three-gap theorem, the hybrid, staggered starts |
 | `place::schedule_of` / `launch_of`, `Emitter` (`Lowering`) | the rules' launch as a schedule and back (byte-identical); each present emitter's declared constraints, footprint, issue counts per class per trip, ring in flight and coordinate domains (D5 steps 2–3) |
 | `profile::PlaceFacts` | a part's placement facts beyond `DeviceCost` (start timing, keeps per pattern, hit curve, L2 latency, efficiency points, latencies, sustained clock) and the provenance of every profile value |
+| `mapal_place::search` (`Ranked`, `Opts`; `tile_bound`, `lanes_bound`, `point_bound`, `evaluate_floor`) | ADR-0050 D5 (C4): the schedule the one evaluator prices lowest over every lowering's coordinate space — branch and bound on admissible bounds (peak compute, the panels into the units, operands once, the chains' efficiency at the most slots the lanes allow, the declared issue), best-first settling under the floor, dominance by the lowerings' own layout rules; the top 8 through the post-lowering gate; minimax over the facts' bounds, `flip` / `tie` opens; the incumbent kept within the error band |
+| `place::PLACE_BAND_PM` (test `place_band_is_the_replays_residuals`) | the model's error band per bounding term: the 80th percentile of the replay's pairwise ratio residuals (all 163 ‰, compute 155, DRAM 214, L2 259) — a pick replaces the rules' launch only beyond it |
+| `place::placed` / `placed_for` / `place_line` (rung `machine-place`; arms `--place-gate=ptxas`, `--place-trav=…`, `--place-tile`) | C4's seam: a tile site's launch and every kernel of its realization from the search (cached per site, part, face, arms, order); the `; mapal.place` line (schedule, price at the three bounds, the rules' price, kept, points / pruned / gated, terms, open) |
+| `Combine::StreamK { whole }`, `gpu::zero_bytes` (`Declared::whole_stores`) | C5's hybrid: one launch of `whole + ctas` blocks — the whole waves over the raster order's last `whole` tiles, the walk over its first `tiles − whole` — and the zero pass a prefix where whole pieces store |
 
-## What C4–C5 need
+## C4 — the search (what landed)
 
-- Search: `mapal_place::space::candidates(m, s, lows)` (steps 1–4, `crates/mapal-place/src/space.rs`) over
-  `place::Emitter` (`crates/backends/llvm/src/place.rs`, `impl Lowering for Emitter`; `slots()` enumerates the
-  coordinate domains depth-first, capped at 4096 — the branch and bound replaces the cap); rank by
-  `mapal_place::evaluate` at `Bound::Value`, open where `Slow` / `Fast` disagree; admissible bound
-  `mapal_place::lower_bound`.
-- Lowering a pick: `place::launch_of(site, profile, contract, arms, &schedule)` → `Launch`; the rung `machine-place`
-  goes where `gpu.rs` `launch_in` calls `launch` (the probe's hook points `launch_split` / `resized` show the two
-  places every launch passes).
-- The post-lowering gate: the declared registers (`Emitter::declare`) are the present emitters' own counts, capped
-  by `.minnctapersm`; the naive kernel's 32 is unverified — `ptxas -v` must check it.
-- Hybrid (C5): `Traversal::Hybrid` is evaluated and generated (`space::traversals`) but no lowering emits it yet
-  (`Emitter::traversals` lists none).
+| piece | where | check |
+| --- | --- | --- |
+| branch and bound over each lowering's coordinates (`Lowering::dims / search_domain / point / tile_of / lanes_of`), traversals per slot point, best-first settling, top-8 through the gate, minimax over Slow / Value / Fast, opens (`flip`: the slow and fast winners differ; `tie`: a runner-up within the 2 % null), the incumbent's price as the threshold from the start and kept within the band | `crates/mapal-place/src/search.rs` | `tests/search.rs`: B&B = the exhaustive argmin (12 generated sites, every point and traversal priced); P5 the pick invariant under every domain reversed, ±1 % noise on every rate moved 0 of 12 picks (each would have to be open); the gate takes the next; the band keeps / drops the incumbent |
+| the evaluation floor (every operand once, no reuse closed form; admissible as no term falls as misses rise) and memoized reuse closed forms (a pure function of grid and keep) | `eval.rs` `evaluate_floor`, `reuse.rs` | P4 unchanged; the RTX 5080's 128 × 4096 × 4096 f32 search 96 s → 6.8 s (release), 512 × 2048 × 2048 bf16 MMA 20 s → 1.2 s |
+| the present emitters' search spaces: the site's facts (formats the precision set admits, the stored layouts `bt` / `b_kmajor`, staged widths, the face's scalar step), the emitters' declared constraints (whole 16-byte copies a thread, `cp.async` rings of ≥ 2 stages, a narrow `a` register-staged, the walk on the staged FMA tile and the 16-bit warp tile only, no raster on the cell kernel, the warp-specialized tile's TMA boxes, a warpgroup `a` from shared memory exactly where stored in the format), dominance (pads and row lanes by the bank model: `kmajor_pad`, `gpu_tile_sync_a`, `conflict_free_pad` / `pair_pad` / `ldmatrix_pad`; `held`, register reallocation, split forms at their incumbent's), a slot of whole groups | `place.rs` `Emitter::narrowed`, `declare`; `gpu.rs` `fma_constraints`, `fma_layout` | the coverage test still holds with the new refusals: 4272 emissions, 162 725 rules' launches, **0 outside**, round trip byte-identical |
+| the post-lowering gate: the candidate's kernel text lowers (the emitter under `place::forced`, a refusal its panic) and, under `--place-gate=ptxas`, `llc` + `ptxas -v` with no spill and the registers within the file | `place.rs` `gate`, `ptxas_gate`; `gpu.rs` `lowered_text`, `kernel_module` | the smoke test: H100 PCIe 512 × 2048 × 2048 bf16 gated 8 warpgroup candidates whose `a` came from registers at 16-bit width (the emitter's assert) → that declared constraint added; R3 below |
+| the seam: `launch_in` (the rules' chain, `place::rules`, is the incumbent), `launch` and `resized` (every kernel of a realization runs the placed launch: the ordered kernel beside a combined pick keeps the rules' tile), a placed site's table is its pick | `gpu.rs` (~60 lines at `launch`, `launch_in`, `resized`, `site_cands`) | the OFF arm byte-identical (coverage round trip; `rules::rungs` leaves `machine-place` off, `GpuRungs::ALL` too — it replaces the chain, it is no rung of it) |
+
+The space: the slot tile, `bk`, the depth and the traversal are the search's on every lowering; the tile *family*
+choices the rules make inside a lowering (k-major `a`, the prefetch depth, whole-file `held`, split realizations of an
+`{f32}` product) are narrowed to the emitter's own derivation or the incumbent's — listed above, visible in
+`narrowed`. Persistence stays out (its round-robin jitter is unmeasured).
+
+**Search cost** (release; full search over all five lowerings with the rules' incumbent): 0.03–9 s a site, the
+32-site smoke test over the eight parts 55 s. The emission runs it only under the rung; a debug build's tests place
+fewer shapes.
+
+## C4 R3 — generated GEMMs on every profile
+
+`tests/machine_place.rs` `r3_generated_gemms_place_lower_and_assemble_on_every_part` (12 `testgen::GemmProg` at plan
+extents × f32 / TF32 set / `bf16 | f32` × the 8 profiles, `--gpu-on=machine-place --place-gate=ptxas`): 96
+emissions, every one lowered with a `; mapal.place` line on each placed site (96: 72 kept the rules' launch, 24
+replaced, 93 open), the OFF arm never placed; `llc -mcpu=<arch>` + `ptxas -arch=<arch> -v` on every device module:
+287 kernels with no spill — every kernel the search placed among them (asserted) — and 1 rules' kernel (kept) that
+spills on its own. **On this RTX 5080** (`.claude/raw-evidence/machine-model/c4/r3gpu/`, `run.sh`): 18 generated
+GEMMs (6 shapes × the three sets; integer operands, so every realization's sums are exact) built OFF and ON
+(`--place-gate=ptxas`) and run: the printed cells **equal on all 18**; 7 ran a replaced pick (FMA walks and ordered
+one-warp tiles, one 16-bit warp tile), 11 the kept rules' launch. (`mapal test --weakest` was the intent; its oracle
+does not finish these extents within a 4·10¹⁰ budget, so the exact-sum gate stands in.)
+
+## C4 R4 — the suite's emission, ON against OFF, per profile (at C5: its band and the hybrid in the space)
+
+`benches/local/place_diff.py` (raw `.claude/raw-evidence/machine-model/c4/r4/place.tsv`): the 35 timed-suite programs
+on the default face. "Moved": a kernel the ON arm launches is new or differs from OFF's of its name; "table": only the
+host and the dropped site-table candidates (a placed site's table is its pick). Sites: one `; mapal.place` line a
+placed site and order; "replaced" = the pick cleared the band against the rules' launch.
+
+| profile | programs moved / table / equal | sites kept / replaced / open | replaced by lowering / traversal | biggest predicted gains (rules → pick) |
+| --- | --- | --- | --- | --- |
+| cuda-ada | 7 / 21 / 7 | 31 / 9 / 38 | fma ord 4, split 1, walk 2; naive 2 | conv_2048_5 252 → 120 µs (naive, 16 cells a thread); indep_512 16.1 → 11.1 (FMA walk) |
+| rtx-4090 | 8 / 21 / 6 | 28 / 14 / 36 | fma ord 9, split 3; naive 2 | conv_2048_5 96.8 → 46.9; prefill 11.7 → 7.6 (FMA workspace split) |
+| h100 | 14 / 18 / 3 | 23 / 17 / 38 | fma ord 10, split 2, walk 1; mma split 2; naive 2 | pj_m16_n2048_k7168 137 → 21.9 (FMA walk); decode / causal 13.9 → 5.5 |
+| h100-pcie | 9 / 19 / 7 | 31 / 13 / 37 | fma ord 7, split 1, walk 3; naive 2 | prefill 22.0 → 8.9; mlp_512 20.7 → 8.5; conv 70.4 → 31.0 |
+| rtx-5090 | 12 / 20 / 3 | 26 / 14 / 37 | fma ord 8, split 1, walk 2; mma split 1; naive 2 | decode / causal / prefill 10.4 → 3.1 |
+| rtx-5080 | 10 / 20 / 5 | 27 / 12 / 36 | fma ord 8, walk 2; naive 2 | indep_512 / mlp_512 19.6 → 7.3 (FMA walk); conv 102 → 46.8 |
+| rtx-3090 | 19 / 10 / 6 | 22 / 24 / 44 | fma ord 13, walk 5; mma split 4; naive 2 | conv 176 → 85; decode 11.0 → 7.7 |
+| a100 | 5 / 9 / 21 | 32 / 6 / 36 | fma ord 1, split 1, walk 2; naive 2 | conv 155 → 75; prefill 29.1 → 20.3 |
+
+Why each change: the pick prices below the rules' beyond the band (16 % at compute, 21 % at DRAM). The common reasons,
+from the terms: (1) the one-thread-per-cell kernel at 16 cells a thread where the rules take fewer (conv's 2048 ×
+2048 × 25 window, every part: the rule `vec_cells` gates on the DRAM share an SM asks, the model prices the loads in
+flight a lane); (2) FMA tiles of one warp a slot at 8–19 slots an SM (`u9`–`u19`) — the model's efficiency is the
+latency rule on every part but the 5080 (marked), and one-group slots raise the occupancy the latency rule rewards;
+(3) walks and splits on under-filled grids. Most picks are **open** (a runner-up within the 2 % null, or a flip inside
+a marked fact): the model does not separate near-equal tiles, which the band then protects. None of these is measured
+yet: the ABBA of every moved program is C6's (the predictions here are the model's; the C3 replay shows its absolute
+times run 1.1–3 × under the measured ones on DRAM-bound and skinny sites).
+
+## C5 — the hybrid traversal
+
+**Lowering (one launch).** `Combine::StreamK { ctas, iters, whole }`: blocks `cta < whole` fold tile `tail + cta`
+whole (the whole waves, the raster order's last `whole = ⌊tiles / W⌋·W` tiles, `W` the footprint's slots); blocks
+`whole ..` walk `iters` units each of the first `tail = tiles − whole` tiles' `tail·P` units (`Kernel::segment`, the
+block's unit range a `select` on `cta < whole`; `ticket_split`'s blocks of a tile the same map). One launch, not
+two: the tail's blocks start as the last whole wave's slots free (no launch gap, no second grid to wait for), the
+kernel is the walk's own (its pieces, partial adds and tickets unchanged), and the host's call is stream-K's with
+`whole + ctas` blocks. The walked tiles first makes the zero pass a **prefix** of the output (the rows of the first
+`h·⌈tail / (gx·h)⌉` tile rows) where whole pieces store (`mma_walk_store`; the FMA tile adds every piece, so it zeroes
+all: `Declared::whole_stores`). The evaluator, the reuse closed form and the LRU trace follow the same layout (P1–P2
+hold). Space: `Traversal::Hybrid` at the footprint's occupancy, every raster height; emitted by the FMA (register-
+staged) and 16-bit warp-tile lowerings.
+
+**Values.** `tests/machine_place.rs` `c5_hybrid_values_through_the_emulator`: 2 generated GEMMs × (the 16-bit tile's
+hybrid at 512 × 6144 × 64 plain — 168 whole tiles, 24 walked —, the same as an epilogue group — the walked tiles'
+workspace and tickets —, and the best FMA hybrid at 256 × 2048 × 128): 6 hybrid kernels, each **equal to the
+interpreter in the 3 emulator modes** (integer operands: any order exact; a whole tile's block is the ordered
+kernel's fold). The ABBA arms below print the
+same cells as the rules' arm to ≤ 2.9e-5 relative (atomic orders and bf16 operands; the bound holds).
+
+**Intent vs realized (SASS, `ptxas -arch=sm_120 -v`, cuobjdump):**
+
+| kernel (2048 × 4096 × 4096 bf16, the rules' 128 × 128 warp tile) | registers | spill | HMMA | LDGSTS | RED | LDSM | instructions |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| ordered | 190 | 0 | 128 (2 loop copies) | 16 | 0 | 32 | 464 |
+| walk | 208 | 0 | 64 | 16 | 128 | 16 | 568 |
+| hybrid | 210 | 0 | 64 | 16 | 128 | 16 | 576 |
+
+Intent: the walk's loop body unchanged, the block map a few `select`s ahead of it — realized: +2 registers, +8
+instructions, the k loop identical (2048 × 2048 × 8192: the same counts).
+
+**ABBA on this RTX 5080** (walk-arm shapes of `place_replay.tsv`, `fold: bf16 | f32`, the rules' tile: R the rules,
+O ordered, W walked, H hybrid; CUPTI medians of 6 processes, R O W H then H W O R, GEMM kernel + its zero pass; raw
+`.claude/raw-evidence/machine-model/c5/`, `abba.tsv`):
+
+| site | R (rules) | O | W | **H** | H − R | H's zero | whole + walk |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 128 × 28672 × 4096 | 872.2 (ord) | = R | 892.0 | **848.6** | −2.7 % | 6.8 | 168 + 167 × 86 |
+| 512 × 8192 × 2048 | 168.6 (walk) | 194.1 | = R | **162.5** | −3.6 % | 4.0 | 168 + 166 × 34 |
+| 2048 × 2048 × 2048 | 168.4 (walk) | 195.0 | = R | **162.0** | −3.8 % | 3.3 | 168 + 166 × 34 |
+| 2048 × 2048 × 8192 | 627.7 (walk) | 748.5 | = R | **588.4** | −6.3 % | 3.2 | 168 + 167 × 135 |
+| 2048 × 4096 × 4096 | 668.5 (walk) | 686.4 | = R | **581.3** | −13.0 % | 1.5 | 504 + 147 × 7 |
+| 2048 × 4096 × 8192 | 1287.8 (walk) | 1363.5 | = R | **1146.7** | −11.0 % | 1.5 | 504 + 158 × 13 |
+| 2048 × 6144 × 4096 | 945.7 (ord) | 955.1 | 1016.1 | **871.0** | −7.9 % | 3.3 | 672 + 167 × 74 |
+| 2048 × 8192 × 2048 | 630.9 (ord) | = R | 739.6 | **581.8** | −7.8 % | 2.4 | 1008 + 147 × 7 |
+| 3072 × 4096 × 8192 | 1869.5 (ord) | 1885.8 | 2007.8 | **1714.5** | −8.3 % | 3.3 | 672 + 168 × 147 |
+| 4096 × 2048 × 8192 | 1304.1 (walk) | 1350.9 | = R | **1146.5** | −12.1 % | 1.0 | 504 + 158 × 13 |
+
+No hybrid where the grid has no whole wave or no tail (512 × 512 × 2048, 512 × 2048 × 2048, 2048 × 512 × 2048,
+128 × 6144 × 4096, 512 × 2048 × 8192: H = the rules'). The hybrid wins **all ten** sites it exists on, beyond the
+2 % null, both where the walk won (−4 to −13 %: no partial adds or zero pass over the whole waves) and where the walk
+lost to the ordered grid (2048 × 6144, 2048 × 8192 × 2048, 3072 × 4096 × 8192: −8 %; the walk's 38–58 µs zero pass
+and its spread readers are gone). The 2048 × 4096 × 4096 hybrid (581 µs) passes the gaps-disasm leader (590.6,
+CUTLASS 64x64_32x6). The first layout (the whole waves first, the full zero pass) measured −1.5 to −10.6 % on eight
+sites and **+3.0 %** on 2048 × 8192 × 2048, whose 58 µs zero pass of 64 MB the walked prefix's 2.4 µs replaced
+(`abba-layout1.tsv`) — the layout is the fix.
+
+**Replay** (`hyb-0..9` added, 32 arms): the model picks the hybrid on **9 of 10** (the rules, which have no hybrid,
+0); hyb-0 (128 × 28672 × 4096, H by 2.7 %) is open-listed: every arm priced ~3 × under its time (a DRAM-bound skinny
+site; the tile's realized memory rate under its ring is not a machine fact). **But the band keeps the rules on all
+ten**: the model prices the hybrid 1–3 % under the rules' arm where it measured 3–13 % — inside the 15.5 % compute
+band. So `machine-place` (default band) does not emit these hybrids yet; `--place-trav=hybrid --place-tile` does.
+The missing term is the walk's own: its partial adds and the zero pass as a burst at each piece's end, and the
+ordered grid's wave tail — the model underprices the ordered and walked arms' losses (open for C6).
+
+## Replay score after C5 (`place_replay_scores`, 78 sites)
+
+| family | model picked / missed / open / null | rules |
+| --- | --- | --- |
+| hyb (10) | 9 / 1 / 0 / 0 | 0 / 10 / 0 |
+| walk (17) | 11 / 3 / 1 / 2 | 13 / 2 / 2 |
+| cut (21) | 11 / 6 / 3 / 1 | 18 / 2 / 1 |
+| c11 (12) | 3 / 1 / 8 / 0 | 12 / 0 / 0 |
+| ws (4) | 0 / 4 / 0 / 0 | 4 / 0 / 0 |
+| kfill, skfill, depth, split (12) | 12 / 0 / 0 / 0 | 12 / 0 / 0 |
+| pc (2) | 1 / 0 / 1 / 0 | 2 / 0 / 0 |
+| **all** | **47 / 15 / 13 / 3** | **61 / 14 / 3** |
+
+`MODEL_FLOOR` 47, `REPLAY_OPEN` 15 (hyb-0 added with its term). The error band re-derived with the hybrid pairs:
+all 163 ‰ (90 pairs), compute 155 (49), DRAM 214 (19), L2 259 (21); issue and latency take all's.
+
+## Open for C6
+
+1. **The band keeps the measured winners.** The hybrid's 3–13 % and most of the walk's are inside the 16 % band:
+   the residuals that set it are the walk's (partial adds and zero pass as a burst at each piece's end, its segment
+   loop) and the DRAM-bound skinny sites' (the ring's realized memory rate). Shrinking those terms shrinks the band.
+2. **The ABBA of every R4-moved program** (local: the 5080's 10 programs; rented: the 3090's 19, the H100's 14,
+   the 5090's 12 — with the efficiency probe, since the moved FMA picks lean on the latency rule's marked efficiency).
+3. The split realizations of an `{f32}` product and the k-major / prefetch families are the incumbent's or the
+   emitter's own rule inside the search (narrowed, listed above); the walk's per-unit cost; movers (TMA against
+   `cp.async`); the tensor tile's efficiency at occupancy off the 5080 — C3's list.
+4. A placed site's table is its pick: the run-time confirmation among the search's top (D5) is not built.
+5. The search costs 1–9 s a site in release (the FMA lowering's 10–25 k points); a debug build is ~10 × slower.

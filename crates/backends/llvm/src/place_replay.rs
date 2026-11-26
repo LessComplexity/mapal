@@ -227,7 +227,7 @@ fn arm_ns(
 /// **The model's misses on the replay, each with the term it lacks**
 /// (`benches/results/evidence/local-rtx-5080/machine-model.md`): checked —
 /// a miss that turns into a pick must leave this list.
-const REPLAY_OPEN: [&str; 14] = [
+const REPLAY_OPEN: [&str; 15] = [
     // H100 TF32 128 x 4096 x 4096, raster or not: both arms bound by the L2
     // feed at one price; the measured 12 % is the copy engine's (movers are
     // not yet priced: TMA boxes against cp.async lane copies).
@@ -237,6 +237,11 @@ const REPLAY_OPEN: [&str; 14] = [
     // its occupancy on those parts is unmeasured (the RTX 5080's curve is
     // its own), and the cut's partial adds burst at each piece's end.
     "cut-0", "cut-1", "cut-10", "cut-2", "cut-8", "cut-9",
+    // RTX 5080 128 x 28672 x 4096 bf16 (ADR-0050 C5): the hybrid won by 2.7 %
+    // where the model prices it 2 % over the ordered grid — every arm priced
+    // ~3x under its time (a DRAM-bound skinny site: the tile's realized
+    // memory rate under its ring, `mma-fly`'s, is not a machine fact yet).
+    "hyb-0",
     // RTX 5080 walks the model prices under their ordered grids but the
     // ordered grid won (2048 x 6144 x 4096, 2048 x 8192 x 2048, 512 x 512 x
     // 2048): the walk's own per-unit cost — its segment loop, the shared
@@ -249,9 +254,10 @@ const REPLAY_OPEN: [&str; 14] = [
     "ws-0", "ws-1", "ws-2", "ws-3",
 ];
 
-/// The model's picks at C3 (the corpus as seeded): a floor, not a target —
-/// the rules pick 61 (`model >= rules` is ADR-0050 C6's bar).
-const MODEL_FLOOR: u64 = 38;
+/// The model's picks (C3's 38 on the seeded corpus; C5's hybrid arms add
+/// 9): a floor, not a target — the rules pick 61 (`model >= rules` is
+/// ADR-0050 C6's bar).
+const MODEL_FLOOR: u64 = 47;
 
 /// **ADR-0050 C3: `place_replay.tsv` scored** — per measured site, the
 /// measured winner (or null: within the null), the model's pick (the arm

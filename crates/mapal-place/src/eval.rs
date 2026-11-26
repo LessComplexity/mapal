@@ -559,8 +559,20 @@ fn evaluate_at(m: &Machine, s: &Site, x: &Schedule, d: &Declared, b: Bound, floo
         if m.dispatch.zero_bytes_per_ns.marked() {
             mark(&mut t, "dispatch.zero_bytes_per_ns".into());
         }
+        // A hybrid whose whole pieces store zeroes the rows its walked
+        // tiles span: the raster order's first `tiles − whole` (the
+        // lowering's layout); every piece adding, the whole output.
+        let zeroed = match x.trav {
+            Traversal::Hybrid { h, .. } if d.whole_stores => {
+                let whole = tiles / w * w;
+                let h = h.max(1);
+                let rows = (bm * h * (tiles - whole).div_ceil(gx * h)).min(batch * s.m);
+                rows * s.n * s.eo
+            }
+            _ => out_bytes,
+        };
         t.zero = m.dispatch.zero_ns.cost(b)
-            + out_bytes as f64 / m.dispatch.zero_bytes_per_ns.rate(b).max(1e-9);
+            + zeroed as f64 / m.dispatch.zero_bytes_per_ns.rate(b).max(1e-9);
     }
     // Fixed: the launches beyond their work (the reduce is its own).
     let launches = 1 + u64::from(ws_bytes > 0);

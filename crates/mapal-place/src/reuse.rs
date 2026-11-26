@@ -118,13 +118,17 @@ fn reads_uncached(g: &Grid, keep: u64) -> Reads {
         Order::Stagger { h, s, atomic } => stagger(g, h, s, atomic, keep),
         Order::Walk { h, ctas, iters } => walk(g, h, 0, tiles, ctas, iters, keep),
         Order::Hybrid { h, ctas, iters } => {
+            // The lowering's layout (ADR-0050 C5): the whole waves take the
+            // raster order's last `whole` tiles, the walk its first `tail`
+            // (the zero pass a prefix of the output).
             let whole = tiles / g.slots.max(1) * g.slots.max(1);
-            let a = lockstep(g, h, 1, false, 0, whole, keep);
+            let tail = tiles - whole;
+            let a = lockstep(g, h, 1, false, tail, whole, keep);
             // The last ordered wave's rows and columns: the tail's first
             // reader of one finds it where the rest of that wave and the
             // walk before the reader fit the keep.
             let w = g.slots.max(1);
-            let last: Vec<(u64, u64)> = (whole.saturating_sub(w)..whole)
+            let last: Vec<(u64, u64)> = (tiles.saturating_sub(w).max(tail)..tiles)
                 .map(|t| launch_tile(g.gx, g.gy, h, t))
                 .collect();
             let rows: std::collections::BTreeSet<u64> = last.iter().map(|x| x.0).collect();
@@ -134,7 +138,7 @@ fn reads_uncached(g: &Grid, keep: u64) -> Reads {
                 cols,
                 outs: last.len() as u64,
             };
-            let b = walk_after(g, h, whole, tiles - whole, ctas, iters, keep, Some(&prev));
+            let b = walk_after(g, h, 0, tail, ctas, iters, keep, Some(&prev));
             Reads {
                 a: a.a + b.a,
                 b: a.b + b.b,

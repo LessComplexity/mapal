@@ -1,4 +1,4 @@
-//! ADR-0050 C4: **`machine-place`** — the machine model's search as a
+//! ADR-0050 C4 / C5: **`machine-place`** — the machine model's search as a
 //! tile site's launch (`--gpu-on=machine-place`, default off), on programs
 //! from the generator (`testgen::GemmProg`: GEMMs it was not designed on):
 //!
@@ -8,13 +8,23 @@
 //!   arm's text has none and equals the default's; where `llc` and `ptxas`
 //!   are present the device module assembles for the part's architecture
 //!   with no spill (the post-lowering gate on: `--place-gate=ptxas`).
+//! - **C5, the hybrid's values.** The rules' tile under the hybrid
+//!   traversal (`--place-trav=hybrid --place-tile`: whole waves ordered,
+//!   the tail walked — one launch of `whole + ctas` blocks) and the best
+//!   hybrid of the FMA tile (`--place-trav=hybrid`): integer operands (exact
+//!   in every order), plain and as an epilogue group (the tail's tickets),
+//!   the emulated device equal to the interpreter in every emulator mode —
+//!   byte for byte, as every order is exact on these operands (a whole
+//!   tile's block is the ordered kernel's fold).
 
 use mapal_backend_llvm::{Emission, EmitOpts, GpuArms, emit_detailed};
+use mapal_interp::{Outcome, run};
 use mapal_ir::CategoryIr;
 use proptest::strategy::{Strategy, ValueTree};
 use proptest::test_runner::TestRunner;
 use std::collections::HashMap;
 
+mod emu;
 #[path = "../../../mapal-rewrite/tests/testgen/mod.rs"]
 mod testgen;
 
@@ -261,4 +271,80 @@ fn strip_place(dev: &str) -> String {
         .filter(|l| !l.starts_with("; mapal.place "))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+const MODES: [[(&str, &str); 2]; 3] = [
+    [("MAPAL_EMU_SERIAL", "1"), ("MAPAL_EMU_REVERSE", "0")],
+    [("MAPAL_EMU_SERIAL", "2"), ("MAPAL_EMU_REVERSE", "0")],
+    [("MAPAL_EMU_SERIAL", "0"), ("MAPAL_EMU_REVERSE", "1")],
+];
+
+fn num(p: &HashMap<String, String>, k: &str) -> u64 {
+    p.get(k).and_then(|v| v.parse().ok()).unwrap_or(0)
+}
+
+/// **C5: the hybrid's values through the emulator.** 2 generated GEMMs
+/// at runnable extents: `fold: bf16 | f32` at 512 × 6144 × 64 (the rules'
+/// 16-bit warp tile, 192 tiles on 168 slots: one whole wave, the first 24
+/// tiles walked) plain and as an epilogue group, and f32 at 256 × 2048 ×
+/// 128 (the best register-staged FMA tile's hybrid) — each kernel a hybrid
+/// (`whole=` on its plan line), the emulated device equal to the
+/// interpreter in every mode.
+#[test]
+fn c5_hybrid_values_through_the_emulator() {
+    let Some(cc) = emu::clang() else {
+        eprintln!("no clang: emulator runs skipped");
+        return;
+    };
+    let mut runner = TestRunner::deterministic();
+    let strat = testgen::gemm_prog_strategy();
+    let progs: Vec<testgen::GemmProg> = (0..2)
+        .map(|_| strat.new_tree(&mut runner).unwrap().current())
+        .collect();
+    let counts = testgen::par_check(&progs, |z, p| {
+        let mut hybrids = 0usize;
+        let cases: [(&str, (u64, u64, u64), bool, &[&str]); 3] = [
+            (
+                "bf16 | f32",
+                (512, 6144, 64),
+                false,
+                &["--place-trav=hybrid", "--place-tile"],
+            ),
+            (
+                "bf16 | f32",
+                (512, 6144, 64),
+                true,
+                &["--place-trav=hybrid", "--place-tile"],
+            ),
+            ("", (256, 2048, 128), false, &["--place-trav=hybrid"]),
+        ];
+        for (set, (m, n, k), epi, flags) in cases {
+            let src = face(
+                match epi {
+                    false => testgen::gemm_src_at(p, m, n, k),
+                    true => testgen::gemm_epi_src_at(p, m, n, k, z as u8),
+                },
+                set,
+            );
+            let ctx = format!("#{z} {set} {m}x{n}x{k} epi={epi}");
+            let ir = lower(&src);
+            let rr = run(&ir, 20_000_000_000);
+            assert!(matches!(rr.outcome, Outcome::Done(_)), "{:?}", rr.outcome);
+            let want = rr.output;
+            let on = emission(&ir, "rtx-5080", &["machine-place"], flags);
+            let ps = plans(&on);
+            let h = ps.iter().filter(|(f, _)| num(f, "whole") > 0).count();
+            assert!(h > 0, "{ctx}: the forced hybrid\n{:?}", ps);
+            hybrids += h;
+            let dev = on.device.clone().unwrap_or_default();
+            let built = emu::build_emulated(&cc, &on.text, &dev);
+            for (env, (got, _)) in MODES.iter().zip(built.run_each(&MODES)) {
+                assert_eq!(got, want, "{ctx} {env:?}\n{src}");
+            }
+        }
+        hybrids
+    });
+    let n: usize = counts.iter().sum();
+    eprintln!("hybrid values: {n} hybrid kernels, each equal to the interpreter in 3 modes");
+    assert!(n >= 4);
 }
