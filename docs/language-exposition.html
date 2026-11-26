@@ -6,14 +6,14 @@
 <meta name="color-scheme" content="dark light">
 <title>Mapal — Language Exposition</title>
 <meta name="description" content="Mapal by example: small programs and what the compiler derives from them, measured performance, the philosophy, the architecture as program + hardware =compile=> runnable, and the detailed reference.">
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.3/dist/mermaid.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
 <style>
   /* every color is a variable: dark is the default (data-theme="dark" on <html>); the header switch sets "light" */
   :root{
     --bg:#f7f9fb; --ink:#17202a; --ink-soft:#2b3b48; --muted:#4b5a68; --card:#ffffff; --line:#d5dfe5;
     --accent:#0f766e; --accent-ink:#ffffff; --accent-soft:#e3f3f0; --fact:#8a5a0a; --fact-soft:#fbf0d3;
     --chip-bg:#eef3f5; --header-bg:#ffffffee; --th-bg:#eef3f5; --row-alt:#f6f9fb; --warn:#9b2c2c; --warn-soft:#fdeeee;
-    --out-bg:#eef6f4; --out-ink:#14302b; --shadow:0 1px 2px #0001,0 6px 24px #0000000f; --maxw:1120px; --prose:70ch;
+    --out-bg:#eef6f4; --out-ink:#14302b; --shadow:0 1px 2px #0001,0 6px 24px #0000000f; --maxw:1648px; --prose:70ch;
   }
   :root[data-theme="dark"]{
     --bg:#0e141a; --ink:#e6edf3; --ink-soft:#c9d5de; --muted:#9fb1bf; --card:#151e26; --line:#2a3946;
@@ -74,6 +74,7 @@
   .demo .say{color:var(--ink-soft);margin:0 0 14px;font-size:19px}
   .demo-grid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:20px;align-items:start}
   .demo-grid>div{min-width:0}
+  @media(min-width:1500px){.demo-grid{grid-template-columns:minmax(0,2.1fr) minmax(0,1fr)}}
   .demo .derives{margin:14px 0 0;border-left:4px solid var(--accent);padding:2px 0 2px 14px;color:var(--ink-soft)}
   .demo .derives p{margin:4px 0}
   .hl-demo{margin:0}
@@ -165,6 +166,9 @@
   .becomes .dtabs{left:calc(50% - 22px)}
   .dtabs{margin:10px 0}
   .dtabs .dcap{margin:0 0 6px}
+  /* the page's own .node card (opacity .55) must not reach Mermaid's svg g.node */
+  .mermaid .node{opacity:1;transition:none;margin:0;padding:0;border:0;background:none;border-radius:0}
+  .mlive{margin:2px 0 10px;font-size:14px}
   .dtabs .mermaid{text-align:left}
   .chart svg{max-width:1280px;margin:0 auto}
   /* tables, callouts, details */
@@ -354,9 +358,38 @@ pre.hl-lines .ln::before{counter-increment:ln;content:counter(ln);display:inline
 <!-- exposition:gen end --></div></div>
     <div class="step"><div class="arrow">2</div><div><p style="margin:0 0 4px">The flow you wrote, as the compiler's own graph holds it, drawn in the two standard notations for it:</p>
 <!-- exposition:gen id=hero-flow kind=diagrams file=docs/exposition/dense.mapal begin -->
-<div class="dtabs"><div class="tabs" role="tablist" aria-label="How to draw the graph"><button type="button" role="tab" id="hero-flow-t0" aria-selected="true" aria-controls="hero-flow-p0">Category diagram</button><button type="button" role="tab" id="hero-flow-t1" aria-selected="false" aria-controls="hero-flow-p1" tabindex="-1">String diagram</button></div>
-<div class="pane" id="hero-flow-p0" role="tabpanel" aria-labelledby="hero-flow-t0"><p class="dcap">Objects are nodes and steps are arrows, as the spec draws a category: a product is one pairing from Γ, the context the function runs in.</p>
-<div class="io-h">The condensed form <span>mapal dump-ir --stage=rewritten --mermaid=category,condensed dense.mapal</span></div>
+<div class="dtabs"><div class="tabs" role="tablist" aria-label="How to draw the graph"><button type="button" role="tab" id="hero-flow-t0" aria-selected="true" aria-controls="hero-flow-p0">String diagram</button><button type="button" role="tab" id="hero-flow-t1" aria-selected="false" aria-controls="hero-flow-p1" tabindex="-1">Category diagram</button></div>
+<div class="pane" id="hero-flow-p0" role="tabpanel" aria-labelledby="hero-flow-t0"><p class="dcap">Steps are boxes and values are wires: a product is just several wires entering one box, and a value read twice splits at a Δ.</p>
+<div class="io-h">The default form <span>mapal dump-ir --mermaid dense.mapal</span></div>
+<div class="mermaid">
+flowchart LR
+    b0["read #quot;dense-a.bin#quot;"]
+    b1["read #quot;dense-b.bin#quot;"]
+    b2["iota"]
+    p0m0["out[0] · println"]
+    p0m1["out[n * n - 1] · println"]
+    d3(("Δ out"))
+    subgraph f0o19["map (+3 caps)"]
+        b6["#43; · guard"]
+        b7["÷"]
+        b8["mod"]
+        b9["a[row * n + k] ; b[k * n + column] ; fold"]
+        x6(("ret"))
+    end
+    b0 -- "① a: [f32; 4096]" --&gt; b9
+    b1 -- "② b: [f32; 4096]" --&gt; b9
+    b2 -- "③ along: [i32; 64]" --&gt; b9
+    f0o19 -- "out: [f32; 4096]" --&gt; d3
+    d3 -- "out" --&gt; p0m0
+    d3 -- "out" --&gt; p0m1
+    b6 -- "ret: f32" --&gt; x6
+    b7 -- "④ row: i32" --&gt; b9
+    b8 -- "⑤ column: i32" --&gt; b9
+    b9 -- "dot: f32" --&gt; b6
+</div>
+<p class="mlive"><a href="https://mermaid.live/edit#base64:eyJjb2RlIjoiZmxvd2NoYXJ0IExSXG4gICAgYjBbXCJyZWFkICNxdW90O2RlbnNlLWEuYmluI3F1b3Q7XCJdXG4gICAgYjFbXCJyZWFkICNxdW90O2RlbnNlLWIuYmluI3F1b3Q7XCJdXG4gICAgYjJbXCJpb3RhXCJdXG4gICAgcDBtMFtcIm91dFswXSDCtyBwcmludGxuXCJdXG4gICAgcDBtMVtcIm91dFtuICogbiAtIDFdIMK3IHByaW50bG5cIl1cbiAgICBkMygoXCLOlCBvdXRcIikpXG4gICAgc3ViZ3JhcGggZjBvMTlbXCJtYXAgKCszIGNhcHMpXCJdXG4gICAgICAgIGI2W1wiIzQzOyDCtyBndWFyZFwiXVxuICAgICAgICBiN1tcIsO3XCJdXG4gICAgICAgIGI4W1wibW9kXCJdXG4gICAgICAgIGI5W1wiYVtyb3cgKiBuICsga10gOyBiW2sgKiBuICsgY29sdW1uXSA7IGZvbGRcIl1cbiAgICAgICAgeDYoKFwicmV0XCIpKVxuICAgIGVuZFxuICAgIGIwIC0tIFwi4pGgIGE6IFtmMzI7IDQwOTZdXCIgLS0-IGI5XG4gICAgYjEgLS0gXCLikaEgYjogW2YzMjsgNDA5Nl1cIiAtLT4gYjlcbiAgICBiMiAtLSBcIuKRoiBhbG9uZzogW2kzMjsgNjRdXCIgLS0-IGI5XG4gICAgZjBvMTkgLS0gXCJvdXQ6IFtmMzI7IDQwOTZdXCIgLS0-IGQzXG4gICAgZDMgLS0gXCJvdXRcIiAtLT4gcDBtMFxuICAgIGQzIC0tIFwib3V0XCIgLS0-IHAwbTFcbiAgICBiNiAtLSBcInJldDogZjMyXCIgLS0-IHg2XG4gICAgYjcgLS0gXCLikaMgcm93OiBpMzJcIiAtLT4gYjlcbiAgICBiOCAtLSBcIuKRpCBjb2x1bW46IGkzMlwiIC0tPiBiOVxuICAgIGI5IC0tIFwiZG90OiBmMzJcIiAtLT4gYjYiLCJtZXJtYWlkIjoie1widGhlbWVcIjogXCJkYXJrXCJ9IiwiYXV0b1N5bmMiOnRydWUsInVwZGF0ZURpYWdyYW0iOnRydWV9" target="_blank" rel="noopener">Open in mermaid.live</a></p>
+</div><div class="pane" id="hero-flow-p1" role="tabpanel" aria-labelledby="hero-flow-t1" hidden><p class="dcap">Objects are nodes and steps are arrows, as the spec draws a category: a product is one pairing from Γ, the context the function runs in.</p>
+<div class="io-h">The condensed form <span>mapal dump-ir --mermaid=category,condensed dense.mapal</span></div>
 <div class="mermaid">
 flowchart LR
     f0o11(("a: [f32; 4096]"))
@@ -382,40 +415,13 @@ flowchart LR
     pr3 -- "Map (+3 caps)" --&gt; f0o19
     f0o19 -- "out[0]" --&gt; p0m0
     f0o19 -- "out[n * n - 1]" --&gt; p0m1
-    f2o18 -- "+ · guard" --&gt; f2o1
+    f2o18 -- "#43; · guard" --&gt; f2o1
     g2 -- "÷" --&gt; f2o14
     g2 -- "mod" --&gt; f2o16
     g2 -- "⟨Γ, row, column⟩" --&gt; pr9
     pr9 -- "a[row * n + k] ; b[k * n + column] ; fold" --&gt; f2o18
 </div>
-</div><div class="pane" id="hero-flow-p1" role="tabpanel" aria-labelledby="hero-flow-t1" hidden><p class="dcap">Steps are boxes and values are wires: a product is just several wires entering one box, and a value read twice splits at a Δ.</p>
-<div class="io-h">The condensed form <span>mapal dump-ir --stage=rewritten --mermaid=string,condensed dense.mapal</span></div>
-<div class="mermaid">
-flowchart LR
-    b0["read #quot;dense-a.bin#quot;"]
-    b1["read #quot;dense-b.bin#quot;"]
-    b2["iota"]
-    p0m0["out[0] · println"]
-    p0m1["out[n * n - 1] · println"]
-    d3(("Δ out"))
-    subgraph f0o19["map (+3 caps)"]
-        b6["+ · guard"]
-        b7["÷"]
-        b8["mod"]
-        b9["a[row * n + k] ; b[k * n + column] ; fold"]
-        x6(("ret"))
-    end
-    b0 -- "① a: [f32; 4096]" --&gt; b9
-    b1 -- "② b: [f32; 4096]" --&gt; b9
-    b2 -- "③ along: [i32; 64]" --&gt; b9
-    f0o19 -- "out: [f32; 4096]" --&gt; d3
-    d3 -- "out" --&gt; p0m0
-    d3 -- "out" --&gt; p0m1
-    b6 -- "ret: f32" --&gt; x6
-    b7 -- "④ row: i32" --&gt; b9
-    b8 -- "⑤ column: i32" --&gt; b9
-    b9 -- "dot: f32" --&gt; b6
-</div>
+<p class="mlive"><a href="https://mermaid.live/edit#base64:eyJjb2RlIjoiZmxvd2NoYXJ0IExSXG4gICAgZjBvMTEoKFwiYTogW2YzMjsgNDA5Nl1cIikpXG4gICAgZjBvMTUoKFwiYjogW2YzMjsgNDA5Nl1cIikpXG4gICAgZjBvMTYoKFwiYWxvbmc6IFtpMzI7IDY0XVwiKSlcbiAgICBmMG8xOSgoXCJvdXQ6IFtmMzI7IDQwOTZdXCIpKVxuICAgIHAwbTAoKFwicHJpbnRsblwiKSlcbiAgICBwMG0xKChcInByaW50bG5cIikpXG4gICAgZzAoKFwizpMgPSBpb1wiKSlcbiAgICBwcjMoW1wiW2YzMjsgNDA5Nl0gw5cgW2YzMjsgNDA5Nl0gw5cgW2kzMjsgNjRdXCJdKVxuICAgIHN1YmdyYXBoIGYyW1wibWFwIGJvZHkgb2Ygb3V0XCJdXG4gICAgICAgIGYybzEoKFwicmV0OiBmMzJcIikpXG4gICAgICAgIGYybzE0KChcInJvdzogaTMyXCIpKVxuICAgICAgICBmMm8xNigoXCJjb2x1bW46IGkzMlwiKSlcbiAgICAgICAgZjJvMTgoKFwiZG90OiBmMzJcIikpXG4gICAgICAgIGcyKChcIs6TID0gKFtpMzI7IDY0XSwgW2YzMjsgNDA5Nl0sIFtmMzI7IDQwOTZdLCBpMzIpXCIpKVxuICAgICAgICBwcjkoW1wizpMgw5cgaTMyIMOXIGkzMlwiXSlcbiAgICBlbmRcbiAgICBnMCAtLSBcInJlYWQgI3F1b3Q7ZGVuc2UtYS5iaW4jcXVvdDtcIiAtLT4gZjBvMTFcbiAgICBnMCAtLSBcInJlYWQgI3F1b3Q7ZGVuc2UtYi5iaW4jcXVvdDtcIiAtLT4gZjBvMTVcbiAgICBnMCAtLSBcImlvdGFcIiAtLT4gZjBvMTZcbiAgICBnMCAtLSBcIuKfqGEsIGIsIGFsb25n4p-pXCIgLS0-IHByM1xuICAgIHByMyAtLSBcIk1hcCAoKzMgY2FwcylcIiAtLT4gZjBvMTlcbiAgICBmMG8xOSAtLSBcIm91dFswXVwiIC0tPiBwMG0wXG4gICAgZjBvMTkgLS0gXCJvdXRbbiAqIG4gLSAxXVwiIC0tPiBwMG0xXG4gICAgZjJvMTggLS0gXCIjNDM7IMK3IGd1YXJkXCIgLS0-IGYybzFcbiAgICBnMiAtLSBcIsO3XCIgLS0-IGYybzE0XG4gICAgZzIgLS0gXCJtb2RcIiAtLT4gZjJvMTZcbiAgICBnMiAtLSBcIuKfqM6TLCByb3csIGNvbHVtbuKfqVwiIC0tPiBwcjlcbiAgICBwcjkgLS0gXCJhW3JvdyAqIG4gKyBrXSA7IGJbayAqIG4gKyBjb2x1bW5dIDsgZm9sZFwiIC0tPiBmMm8xOCIsIm1lcm1haWQiOiJ7XCJ0aGVtZVwiOiBcImRhcmtcIn0iLCJhdXRvU3luYyI6dHJ1ZSwidXBkYXRlRGlhZ3JhbSI6dHJ1ZX0" target="_blank" rel="noopener">Open in mermaid.live</a></p>
 </div></div>
 <!-- exposition:gen end --></div></div>
     <div class="step"><div class="arrow">3</div><div>
@@ -2116,7 +2122,346 @@ Gt                 lowered    1   rewritten    1
 Phi                lowered    1   rewritten    1
 Print              lowered    2   rewritten    2
 all operations     lowered   94   rewritten   90</code></pre></div>
-<div class="io-h">The flow <span>mapal dump-ir --stage=rewritten --mermaid=flow dense.mapal</span></div>
+<div class="io-h">The default diagram <span>mapal dump-ir --mermaid dense.mapal</span></div>
+<div class="mermaid">
+flowchart LR
+    b0["read #quot;dense-a.bin#quot;"]
+    b1["read #quot;dense-b.bin#quot;"]
+    b2["iota"]
+    p0m0["out[0] · println"]
+    p0m1["out[n * n - 1] · println"]
+    d3(("Δ out"))
+    subgraph f0o19["map (+3 caps)"]
+        b6["#43; · guard"]
+        b7["÷"]
+        b8["mod"]
+        b9["a[row * n + k] ; b[k * n + column] ; fold"]
+        x6(("ret"))
+    end
+    b0 -- "① a: [f32; 4096]" --&gt; b9
+    b1 -- "② b: [f32; 4096]" --&gt; b9
+    b2 -- "③ along: [i32; 64]" --&gt; b9
+    f0o19 -- "out: [f32; 4096]" --&gt; d3
+    d3 -- "out" --&gt; p0m0
+    d3 -- "out" --&gt; p0m1
+    b6 -- "ret: f32" --&gt; x6
+    b7 -- "④ row: i32" --&gt; b9
+    b8 -- "⑤ column: i32" --&gt; b9
+    b9 -- "dot: f32" --&gt; b6
+</div>
+<p class="mlive"><a href="https://mermaid.live/edit#base64:eyJjb2RlIjoiZmxvd2NoYXJ0IExSXG4gICAgYjBbXCJyZWFkICNxdW90O2RlbnNlLWEuYmluI3F1b3Q7XCJdXG4gICAgYjFbXCJyZWFkICNxdW90O2RlbnNlLWIuYmluI3F1b3Q7XCJdXG4gICAgYjJbXCJpb3RhXCJdXG4gICAgcDBtMFtcIm91dFswXSDCtyBwcmludGxuXCJdXG4gICAgcDBtMVtcIm91dFtuICogbiAtIDFdIMK3IHByaW50bG5cIl1cbiAgICBkMygoXCLOlCBvdXRcIikpXG4gICAgc3ViZ3JhcGggZjBvMTlbXCJtYXAgKCszIGNhcHMpXCJdXG4gICAgICAgIGI2W1wiIzQzOyDCtyBndWFyZFwiXVxuICAgICAgICBiN1tcIsO3XCJdXG4gICAgICAgIGI4W1wibW9kXCJdXG4gICAgICAgIGI5W1wiYVtyb3cgKiBuICsga10gOyBiW2sgKiBuICsgY29sdW1uXSA7IGZvbGRcIl1cbiAgICAgICAgeDYoKFwicmV0XCIpKVxuICAgIGVuZFxuICAgIGIwIC0tIFwi4pGgIGE6IFtmMzI7IDQwOTZdXCIgLS0-IGI5XG4gICAgYjEgLS0gXCLikaEgYjogW2YzMjsgNDA5Nl1cIiAtLT4gYjlcbiAgICBiMiAtLSBcIuKRoiBhbG9uZzogW2kzMjsgNjRdXCIgLS0-IGI5XG4gICAgZjBvMTkgLS0gXCJvdXQ6IFtmMzI7IDQwOTZdXCIgLS0-IGQzXG4gICAgZDMgLS0gXCJvdXRcIiAtLT4gcDBtMFxuICAgIGQzIC0tIFwib3V0XCIgLS0-IHAwbTFcbiAgICBiNiAtLSBcInJldDogZjMyXCIgLS0-IHg2XG4gICAgYjcgLS0gXCLikaMgcm93OiBpMzJcIiAtLT4gYjlcbiAgICBiOCAtLSBcIuKRpCBjb2x1bW46IGkzMlwiIC0tPiBiOVxuICAgIGI5IC0tIFwiZG90OiBmMzJcIiAtLT4gYjYiLCJtZXJtYWlkIjoie1widGhlbWVcIjogXCJkYXJrXCJ9IiwiYXV0b1N5bmMiOnRydWUsInVwZGF0ZURpYWdyYW0iOnRydWV9" target="_blank" rel="noopener">Open in mermaid.live</a></p>
+<details class="gfull"><summary>The full string diagram, every object and operation</summary>
+<div class="io-h">The full string diagram <span>mapal dump-ir --mermaid=string dense.mapal</span></div>
+<div class="zoombox"><div class="zbar"><button type="button" data-z="out" aria-label="Zoom out">&minus;</button><button type="button" data-z="in" aria-label="Zoom in">+</button><button type="button" data-z="fit">Fit</button></div>
+<div class="mermaid">
+flowchart LR
+    subgraph f0["fn main"]
+        m2["read"]
+        m3["π₁"]
+        m4["π₂"]
+        m7["read"]
+        m8["π₁"]
+        m9["π₂"]
+        m10["iota"]
+        m11["iota"]
+        m19["index"]
+        m22["println"]
+        m25["index"]
+        m28["println"]
+        ti0(("in"))
+        to0(("ret"))
+        t0o2(("•"))
+        t0o3(("•"))
+        t0o4(("•"))
+        t0o5(("•"))
+        t0o6(("•"))
+        t0o7(("•"))
+        d0o9(("Δ (io, [f32; 4096])"))
+        d0o13(("Δ (io, [f32; 4096])"))
+        d0o19(("Δ out"))
+        subgraph m16["map (+3 caps)"]
+            m60["π₁"]
+            m61["π₂"]
+            m62["π₃"]
+            m63["π₄"]
+            m66["÷"]
+            m69["mod"]
+            m79["#43;"]
+            m82["#gt;"]
+            m85["#43;"]
+            m89["guard"]
+            ti2(("in"))
+            to2(("ret"))
+            d2o0(("Δ ([i32; 64], [f32; 4096], [f32; 4096], i32)"))
+            t2o2(("•"))
+            t2o3(("•"))
+            t2o4(("•"))
+            t2o5(("•"))
+            t2o6(("•"))
+            t2o7(("•"))
+            t2o8(("•"))
+            d2o12(("Δ i32"))
+            d2o18(("Δ dot"))
+            subgraph m76["fold (+4 caps)"]
+                m30["π₁"]
+                m31["π₂"]
+                m32["π₃"]
+                m33["π₄"]
+                m34["π₅"]
+                m35["π₆"]
+                m38["×"]
+                m41["#43;"]
+                m44["index"]
+                m47["×"]
+                m50["#43;"]
+                m53["index"]
+                m56["×"]
+                m59["#43;"]
+                ti1(("in"))
+                to1(("ret"))
+                d1o0(("Δ ([f32; 4096], i32, [f32; 4096], i32, f32, i32)"))
+                t1o2(("•"))
+                t1o3(("•"))
+                d1o9(("Δ i32"))
+            end
+        end
+    end
+    ti0 -- "① io" --&gt; m2
+    ti1 -- "([f32; 4096], i32, [f32; 4096], i32, f32, i32)" --&gt; d1o0
+    d1o0 -- "([f32; 4096], i32, [f32; 4096], i32, f32, i32)" --&gt; m30
+    d1o0 -- "([f32; 4096], i32, [f32; 4096], i32, f32, i32)" --&gt; m31
+    d1o0 -- "([f32; 4096], i32, [f32; 4096], i32, f32, i32)" --&gt; m32
+    d1o0 -- "([f32; 4096], i32, [f32; 4096], i32, f32, i32)" --&gt; m33
+    d1o0 -- "([f32; 4096], i32, [f32; 4096], i32, f32, i32)" --&gt; m34
+    d1o0 -- "([f32; 4096], i32, [f32; 4096], i32, f32, i32)" --&gt; m35
+    m59 -- "ret: f32" --&gt; to1
+    ti2 -- "([i32; 64], [f32; 4096], [f32; 4096], i32)" --&gt; d2o0
+    d2o0 -- "([i32; 64], [f32; 4096], [f32; 4096], i32)" --&gt; m60
+    d2o0 -- "([i32; 64], [f32; 4096], [f32; 4096], i32)" --&gt; m61
+    d2o0 -- "([i32; 64], [f32; 4096], [f32; 4096], i32)" --&gt; m62
+    d2o0 -- "([i32; 64], [f32; 4096], [f32; 4096], i32)" --&gt; m63
+    m89 -- "ret: f32" --&gt; to2
+    t0o2 -- "② #quot;dense-a.bin#quot;" --&gt; m2
+    t0o3 -- "② #quot;dense-b.bin#quot;" --&gt; m7
+    t0o4 -- "64" --&gt; m10
+    t0o5 -- "4096" --&gt; m11
+    t0o6 -- "② 0" --&gt; m19
+    t0o7 -- "② 4095" --&gt; m25
+    m2 -- "(io, [f32; 4096])" --&gt; d0o9
+    d0o9 -- "(io, [f32; 4096])" --&gt; m3
+    d0o9 -- "(io, [f32; 4096])" --&gt; m4
+    m3 -- "① io" --&gt; m7
+    m4 -- "② a: [f32; 4096]" --&gt; m16
+    m7 -- "(io, [f32; 4096])" --&gt; d0o13
+    d0o13 -- "(io, [f32; 4096])" --&gt; m8
+    d0o13 -- "(io, [f32; 4096])" --&gt; m9
+    m8 -- "① io" --&gt; m22
+    m9 -- "③ b: [f32; 4096]" --&gt; m16
+    m10 -- "① along: [i32; 64]" --&gt; m16
+    m11 -- "④ [i32; 4096]" --&gt; m16
+    m16 -- "out: [f32; 4096]" --&gt; d0o19
+    d0o19 -- "① out" --&gt; m19
+    d0o19 -- "① out" --&gt; m25
+    m19 -- "② f32" --&gt; m22
+    m22 -- "① io" --&gt; m28
+    m25 -- "② f32" --&gt; m28
+    m28 -- "io" --&gt; to0
+    t1o2 -- "② 64" --&gt; m38
+    t1o3 -- "② 64" --&gt; m47
+    m30 -- "① [f32; 4096]" --&gt; m44
+    m31 -- "① i32" --&gt; m38
+    m32 -- "① [f32; 4096]" --&gt; m53
+    m33 -- "② i32" --&gt; m50
+    m34 -- "① f32" --&gt; m59
+    m35 -- "i32" --&gt; d1o9
+    d1o9 -- "② i32" --&gt; m41
+    d1o9 -- "① i32" --&gt; m47
+    m38 -- "① i32" --&gt; m41
+    m41 -- "② i32" --&gt; m44
+    m44 -- "① f32" --&gt; m56
+    m47 -- "① i32" --&gt; m50
+    m50 -- "② i32" --&gt; m53
+    m53 -- "② f32" --&gt; m56
+    m56 -- "② f32" --&gt; m59
+    t2o2 -- "② 64" --&gt; m66
+    t2o3 -- "② 64" --&gt; m69
+    t2o4 -- "⑤ 0.0" --&gt; m76
+    t2o5 -- "② 1.0" --&gt; m79
+    t2o6 -- "② 0.0" --&gt; m82
+    t2o7 -- "② 1.0" --&gt; m85
+    t2o8 -- "② 0.0" --&gt; m89
+    m60 -- "⑥ [i32; 64]" --&gt; m76
+    m61 -- "① [f32; 4096]" --&gt; m76
+    m62 -- "③ [f32; 4096]" --&gt; m76
+    m63 -- "i32" --&gt; d2o12
+    d2o12 -- "① i32" --&gt; m66
+    d2o12 -- "① i32" --&gt; m69
+    m66 -- "② row: i32" --&gt; m76
+    m69 -- "④ column: i32" --&gt; m76
+    m76 -- "dot: f32" --&gt; d2o18
+    d2o18 -- "① dot" --&gt; m79
+    d2o18 -- "① dot" --&gt; m85
+    m79 -- "① f32" --&gt; m82
+    m82 -- "③ bool" --&gt; m89
+    m85 -- "① f32" --&gt; m89
+</div>
+<p class="mlive"><a href="https://mermaid.live/edit#base64:eyJjb2RlIjoiZmxvd2NoYXJ0IExSXG4gICAgc3ViZ3JhcGggZjBbXCJmbiBtYWluXCJdXG4gICAgICAgIG0yW1wicmVhZFwiXVxuICAgICAgICBtM1tcIs-A4oKBXCJdXG4gICAgICAgIG00W1wiz4DigoJcIl1cbiAgICAgICAgbTdbXCJyZWFkXCJdXG4gICAgICAgIG04W1wiz4DigoFcIl1cbiAgICAgICAgbTlbXCLPgOKCglwiXVxuICAgICAgICBtMTBbXCJpb3RhXCJdXG4gICAgICAgIG0xMVtcImlvdGFcIl1cbiAgICAgICAgbTE5W1wiaW5kZXhcIl1cbiAgICAgICAgbTIyW1wicHJpbnRsblwiXVxuICAgICAgICBtMjVbXCJpbmRleFwiXVxuICAgICAgICBtMjhbXCJwcmludGxuXCJdXG4gICAgICAgIHRpMCgoXCJpblwiKSlcbiAgICAgICAgdG8wKChcInJldFwiKSlcbiAgICAgICAgdDBvMigoXCLigKJcIikpXG4gICAgICAgIHQwbzMoKFwi4oCiXCIpKVxuICAgICAgICB0MG80KChcIuKAolwiKSlcbiAgICAgICAgdDBvNSgoXCLigKJcIikpXG4gICAgICAgIHQwbzYoKFwi4oCiXCIpKVxuICAgICAgICB0MG83KChcIuKAolwiKSlcbiAgICAgICAgZDBvOSgoXCLOlCAoaW8sIFtmMzI7IDQwOTZdKVwiKSlcbiAgICAgICAgZDBvMTMoKFwizpQgKGlvLCBbZjMyOyA0MDk2XSlcIikpXG4gICAgICAgIGQwbzE5KChcIs6UIG91dFwiKSlcbiAgICAgICAgc3ViZ3JhcGggbTE2W1wibWFwICgrMyBjYXBzKVwiXVxuICAgICAgICAgICAgbTYwW1wiz4DigoFcIl1cbiAgICAgICAgICAgIG02MVtcIs-A4oKCXCJdXG4gICAgICAgICAgICBtNjJbXCLPgOKCg1wiXVxuICAgICAgICAgICAgbTYzW1wiz4DigoRcIl1cbiAgICAgICAgICAgIG02NltcIsO3XCJdXG4gICAgICAgICAgICBtNjlbXCJtb2RcIl1cbiAgICAgICAgICAgIG03OVtcIiM0MztcIl1cbiAgICAgICAgICAgIG04MltcIiNndDtcIl1cbiAgICAgICAgICAgIG04NVtcIiM0MztcIl1cbiAgICAgICAgICAgIG04OVtcImd1YXJkXCJdXG4gICAgICAgICAgICB0aTIoKFwiaW5cIikpXG4gICAgICAgICAgICB0bzIoKFwicmV0XCIpKVxuICAgICAgICAgICAgZDJvMCgoXCLOlCAoW2kzMjsgNjRdLCBbZjMyOyA0MDk2XSwgW2YzMjsgNDA5Nl0sIGkzMilcIikpXG4gICAgICAgICAgICB0Mm8yKChcIuKAolwiKSlcbiAgICAgICAgICAgIHQybzMoKFwi4oCiXCIpKVxuICAgICAgICAgICAgdDJvNCgoXCLigKJcIikpXG4gICAgICAgICAgICB0Mm81KChcIuKAolwiKSlcbiAgICAgICAgICAgIHQybzYoKFwi4oCiXCIpKVxuICAgICAgICAgICAgdDJvNygoXCLigKJcIikpXG4gICAgICAgICAgICB0Mm84KChcIuKAolwiKSlcbiAgICAgICAgICAgIGQybzEyKChcIs6UIGkzMlwiKSlcbiAgICAgICAgICAgIGQybzE4KChcIs6UIGRvdFwiKSlcbiAgICAgICAgICAgIHN1YmdyYXBoIG03NltcImZvbGQgKCs0IGNhcHMpXCJdXG4gICAgICAgICAgICAgICAgbTMwW1wiz4DigoFcIl1cbiAgICAgICAgICAgICAgICBtMzFbXCLPgOKCglwiXVxuICAgICAgICAgICAgICAgIG0zMltcIs-A4oKDXCJdXG4gICAgICAgICAgICAgICAgbTMzW1wiz4DigoRcIl1cbiAgICAgICAgICAgICAgICBtMzRbXCLPgOKChVwiXVxuICAgICAgICAgICAgICAgIG0zNVtcIs-A4oKGXCJdXG4gICAgICAgICAgICAgICAgbTM4W1wiw5dcIl1cbiAgICAgICAgICAgICAgICBtNDFbXCIjNDM7XCJdXG4gICAgICAgICAgICAgICAgbTQ0W1wiaW5kZXhcIl1cbiAgICAgICAgICAgICAgICBtNDdbXCLDl1wiXVxuICAgICAgICAgICAgICAgIG01MFtcIiM0MztcIl1cbiAgICAgICAgICAgICAgICBtNTNbXCJpbmRleFwiXVxuICAgICAgICAgICAgICAgIG01NltcIsOXXCJdXG4gICAgICAgICAgICAgICAgbTU5W1wiIzQzO1wiXVxuICAgICAgICAgICAgICAgIHRpMSgoXCJpblwiKSlcbiAgICAgICAgICAgICAgICB0bzEoKFwicmV0XCIpKVxuICAgICAgICAgICAgICAgIGQxbzAoKFwizpQgKFtmMzI7IDQwOTZdLCBpMzIsIFtmMzI7IDQwOTZdLCBpMzIsIGYzMiwgaTMyKVwiKSlcbiAgICAgICAgICAgICAgICB0MW8yKChcIuKAolwiKSlcbiAgICAgICAgICAgICAgICB0MW8zKChcIuKAolwiKSlcbiAgICAgICAgICAgICAgICBkMW85KChcIs6UIGkzMlwiKSlcbiAgICAgICAgICAgIGVuZFxuICAgICAgICBlbmRcbiAgICBlbmRcbiAgICB0aTAgLS0gXCLikaAgaW9cIiAtLT4gbTJcbiAgICB0aTEgLS0gXCIoW2YzMjsgNDA5Nl0sIGkzMiwgW2YzMjsgNDA5Nl0sIGkzMiwgZjMyLCBpMzIpXCIgLS0-IGQxbzBcbiAgICBkMW8wIC0tIFwiKFtmMzI7IDQwOTZdLCBpMzIsIFtmMzI7IDQwOTZdLCBpMzIsIGYzMiwgaTMyKVwiIC0tPiBtMzBcbiAgICBkMW8wIC0tIFwiKFtmMzI7IDQwOTZdLCBpMzIsIFtmMzI7IDQwOTZdLCBpMzIsIGYzMiwgaTMyKVwiIC0tPiBtMzFcbiAgICBkMW8wIC0tIFwiKFtmMzI7IDQwOTZdLCBpMzIsIFtmMzI7IDQwOTZdLCBpMzIsIGYzMiwgaTMyKVwiIC0tPiBtMzJcbiAgICBkMW8wIC0tIFwiKFtmMzI7IDQwOTZdLCBpMzIsIFtmMzI7IDQwOTZdLCBpMzIsIGYzMiwgaTMyKVwiIC0tPiBtMzNcbiAgICBkMW8wIC0tIFwiKFtmMzI7IDQwOTZdLCBpMzIsIFtmMzI7IDQwOTZdLCBpMzIsIGYzMiwgaTMyKVwiIC0tPiBtMzRcbiAgICBkMW8wIC0tIFwiKFtmMzI7IDQwOTZdLCBpMzIsIFtmMzI7IDQwOTZdLCBpMzIsIGYzMiwgaTMyKVwiIC0tPiBtMzVcbiAgICBtNTkgLS0gXCJyZXQ6IGYzMlwiIC0tPiB0bzFcbiAgICB0aTIgLS0gXCIoW2kzMjsgNjRdLCBbZjMyOyA0MDk2XSwgW2YzMjsgNDA5Nl0sIGkzMilcIiAtLT4gZDJvMFxuICAgIGQybzAgLS0gXCIoW2kzMjsgNjRdLCBbZjMyOyA0MDk2XSwgW2YzMjsgNDA5Nl0sIGkzMilcIiAtLT4gbTYwXG4gICAgZDJvMCAtLSBcIihbaTMyOyA2NF0sIFtmMzI7IDQwOTZdLCBbZjMyOyA0MDk2XSwgaTMyKVwiIC0tPiBtNjFcbiAgICBkMm8wIC0tIFwiKFtpMzI7IDY0XSwgW2YzMjsgNDA5Nl0sIFtmMzI7IDQwOTZdLCBpMzIpXCIgLS0-IG02MlxuICAgIGQybzAgLS0gXCIoW2kzMjsgNjRdLCBbZjMyOyA0MDk2XSwgW2YzMjsgNDA5Nl0sIGkzMilcIiAtLT4gbTYzXG4gICAgbTg5IC0tIFwicmV0OiBmMzJcIiAtLT4gdG8yXG4gICAgdDBvMiAtLSBcIuKRoSAjcXVvdDtkZW5zZS1hLmJpbiNxdW90O1wiIC0tPiBtMlxuICAgIHQwbzMgLS0gXCLikaEgI3F1b3Q7ZGVuc2UtYi5iaW4jcXVvdDtcIiAtLT4gbTdcbiAgICB0MG80IC0tIFwiNjRcIiAtLT4gbTEwXG4gICAgdDBvNSAtLSBcIjQwOTZcIiAtLT4gbTExXG4gICAgdDBvNiAtLSBcIuKRoSAwXCIgLS0-IG0xOVxuICAgIHQwbzcgLS0gXCLikaEgNDA5NVwiIC0tPiBtMjVcbiAgICBtMiAtLSBcIihpbywgW2YzMjsgNDA5Nl0pXCIgLS0-IGQwbzlcbiAgICBkMG85IC0tIFwiKGlvLCBbZjMyOyA0MDk2XSlcIiAtLT4gbTNcbiAgICBkMG85IC0tIFwiKGlvLCBbZjMyOyA0MDk2XSlcIiAtLT4gbTRcbiAgICBtMyAtLSBcIuKRoCBpb1wiIC0tPiBtN1xuICAgIG00IC0tIFwi4pGhIGE6IFtmMzI7IDQwOTZdXCIgLS0-IG0xNlxuICAgIG03IC0tIFwiKGlvLCBbZjMyOyA0MDk2XSlcIiAtLT4gZDBvMTNcbiAgICBkMG8xMyAtLSBcIihpbywgW2YzMjsgNDA5Nl0pXCIgLS0-IG04XG4gICAgZDBvMTMgLS0gXCIoaW8sIFtmMzI7IDQwOTZdKVwiIC0tPiBtOVxuICAgIG04IC0tIFwi4pGgIGlvXCIgLS0-IG0yMlxuICAgIG05IC0tIFwi4pGiIGI6IFtmMzI7IDQwOTZdXCIgLS0-IG0xNlxuICAgIG0xMCAtLSBcIuKRoCBhbG9uZzogW2kzMjsgNjRdXCIgLS0-IG0xNlxuICAgIG0xMSAtLSBcIuKRoyBbaTMyOyA0MDk2XVwiIC0tPiBtMTZcbiAgICBtMTYgLS0gXCJvdXQ6IFtmMzI7IDQwOTZdXCIgLS0-IGQwbzE5XG4gICAgZDBvMTkgLS0gXCLikaAgb3V0XCIgLS0-IG0xOVxuICAgIGQwbzE5IC0tIFwi4pGgIG91dFwiIC0tPiBtMjVcbiAgICBtMTkgLS0gXCLikaEgZjMyXCIgLS0-IG0yMlxuICAgIG0yMiAtLSBcIuKRoCBpb1wiIC0tPiBtMjhcbiAgICBtMjUgLS0gXCLikaEgZjMyXCIgLS0-IG0yOFxuICAgIG0yOCAtLSBcImlvXCIgLS0-IHRvMFxuICAgIHQxbzIgLS0gXCLikaEgNjRcIiAtLT4gbTM4XG4gICAgdDFvMyAtLSBcIuKRoSA2NFwiIC0tPiBtNDdcbiAgICBtMzAgLS0gXCLikaAgW2YzMjsgNDA5Nl1cIiAtLT4gbTQ0XG4gICAgbTMxIC0tIFwi4pGgIGkzMlwiIC0tPiBtMzhcbiAgICBtMzIgLS0gXCLikaAgW2YzMjsgNDA5Nl1cIiAtLT4gbTUzXG4gICAgbTMzIC0tIFwi4pGhIGkzMlwiIC0tPiBtNTBcbiAgICBtMzQgLS0gXCLikaAgZjMyXCIgLS0-IG01OVxuICAgIG0zNSAtLSBcImkzMlwiIC0tPiBkMW85XG4gICAgZDFvOSAtLSBcIuKRoSBpMzJcIiAtLT4gbTQxXG4gICAgZDFvOSAtLSBcIuKRoCBpMzJcIiAtLT4gbTQ3XG4gICAgbTM4IC0tIFwi4pGgIGkzMlwiIC0tPiBtNDFcbiAgICBtNDEgLS0gXCLikaEgaTMyXCIgLS0-IG00NFxuICAgIG00NCAtLSBcIuKRoCBmMzJcIiAtLT4gbTU2XG4gICAgbTQ3IC0tIFwi4pGgIGkzMlwiIC0tPiBtNTBcbiAgICBtNTAgLS0gXCLikaEgaTMyXCIgLS0-IG01M1xuICAgIG01MyAtLSBcIuKRoSBmMzJcIiAtLT4gbTU2XG4gICAgbTU2IC0tIFwi4pGhIGYzMlwiIC0tPiBtNTlcbiAgICB0Mm8yIC0tIFwi4pGhIDY0XCIgLS0-IG02NlxuICAgIHQybzMgLS0gXCLikaEgNjRcIiAtLT4gbTY5XG4gICAgdDJvNCAtLSBcIuKRpCAwLjBcIiAtLT4gbTc2XG4gICAgdDJvNSAtLSBcIuKRoSAxLjBcIiAtLT4gbTc5XG4gICAgdDJvNiAtLSBcIuKRoSAwLjBcIiAtLT4gbTgyXG4gICAgdDJvNyAtLSBcIuKRoSAxLjBcIiAtLT4gbTg1XG4gICAgdDJvOCAtLSBcIuKRoSAwLjBcIiAtLT4gbTg5XG4gICAgbTYwIC0tIFwi4pGlIFtpMzI7IDY0XVwiIC0tPiBtNzZcbiAgICBtNjEgLS0gXCLikaAgW2YzMjsgNDA5Nl1cIiAtLT4gbTc2XG4gICAgbTYyIC0tIFwi4pGiIFtmMzI7IDQwOTZdXCIgLS0-IG03NlxuICAgIG02MyAtLSBcImkzMlwiIC0tPiBkMm8xMlxuICAgIGQybzEyIC0tIFwi4pGgIGkzMlwiIC0tPiBtNjZcbiAgICBkMm8xMiAtLSBcIuKRoCBpMzJcIiAtLT4gbTY5XG4gICAgbTY2IC0tIFwi4pGhIHJvdzogaTMyXCIgLS0-IG03NlxuICAgIG02OSAtLSBcIuKRoyBjb2x1bW46IGkzMlwiIC0tPiBtNzZcbiAgICBtNzYgLS0gXCJkb3Q6IGYzMlwiIC0tPiBkMm8xOFxuICAgIGQybzE4IC0tIFwi4pGgIGRvdFwiIC0tPiBtNzlcbiAgICBkMm8xOCAtLSBcIuKRoCBkb3RcIiAtLT4gbTg1XG4gICAgbTc5IC0tIFwi4pGgIGYzMlwiIC0tPiBtODJcbiAgICBtODIgLS0gXCLikaIgYm9vbFwiIC0tPiBtODlcbiAgICBtODUgLS0gXCLikaAgZjMyXCIgLS0-IG04OSIsIm1lcm1haWQiOiJ7XCJ0aGVtZVwiOiBcImRhcmtcIn0iLCJhdXRvU3luYyI6dHJ1ZSwidXBkYXRlRGlhZ3JhbSI6dHJ1ZX0" target="_blank" rel="noopener">Open in mermaid.live</a></p>
+</div></details>
+<details class="gfull"><summary>The full category diagram, every object and operation</summary>
+<div class="io-h">The full category diagram <span>mapal dump-ir --mermaid=category dense.mapal</span></div>
+<div class="zoombox"><div class="zbar"><button type="button" data-z="out" aria-label="Zoom out">&minus;</button><button type="button" data-z="in" aria-label="Zoom in">+</button><button type="button" data-z="fit">Fit</button></div>
+<div class="mermaid">
+flowchart LR
+    subgraph f0["fn main"]
+        f0o0(("Γ = io"))
+        f0o1(("ret: io"))
+        f0o2(("#quot;dense-a.bin#quot;: str"))
+        f0o3(("#quot;dense-b.bin#quot;: str"))
+        f0o4(("64: i32"))
+        f0o5(("4096: i32"))
+        f0o6(("0: i32"))
+        f0o7(("4095: i32"))
+        f0o8(["io × str"])
+        f0o9(("(io, [f32; 4096])"))
+        f0o10(("io"))
+        f0o11(("a: [f32; 4096]"))
+        f0o12(["io × str"])
+        f0o13(("(io, [f32; 4096])"))
+        f0o14(("io"))
+        f0o15(("b: [f32; 4096]"))
+        f0o16(("along: [i32; 64]"))
+        f0o17(("[i32; 4096]"))
+        f0o18(["[i32; 64] × [f32; 4096] × [f32; 4096] × [i32; 4096]"])
+        f0o19(("out: [f32; 4096]"))
+        f0o20(["[f32; 4096] × i32"])
+        f0o21(("f32"))
+        f0o22(["io × f32"])
+        f0o23(("io"))
+        f0o24(["[f32; 4096] × i32"])
+        f0o25(("f32"))
+        f0o26(["io × f32"])
+        f0o27(("io"))
+        subgraph f2["map body of out"]
+            f2o0(("Γ = ([i32; 64], [f32; 4096], [f32; 4096], i32)"))
+            f2o1(("ret: f32"))
+            f2o2(("64: i32"))
+            f2o3(("64: i32"))
+            f2o4(("0.0: f32"))
+            f2o5(("1.0: f32"))
+            f2o6(("0.0: f32"))
+            f2o7(("1.0: f32"))
+            f2o8(("0.0: f32"))
+            f2o9(("[i32; 64]"))
+            f2o10(("[f32; 4096]"))
+            f2o11(("[f32; 4096]"))
+            f2o12(("i32"))
+            f2o13(["i32 × i32"])
+            f2o14(("row: i32"))
+            f2o15(["i32 × i32"])
+            f2o16(("column: i32"))
+            f2o17(["[f32; 4096] × i32 × [f32; 4096] × i32 × f32 × [i32; 64]"])
+            f2o18(("dot: f32"))
+            f2o19(["f32 × f32"])
+            f2o20(("f32"))
+            f2o21(["f32 × f32"])
+            f2o22(("bool"))
+            f2o23(["f32 × f32"])
+            f2o24(("f32"))
+            f2o25(["f32 × f32 × bool"])
+            subgraph f1["fold body of dot"]
+                f1o0(("Γ = ([f32; 4096], i32, [f32; 4096], i32, f32, i32)"))
+                f1o1(("ret: f32"))
+                f1o2(("64: i32"))
+                f1o3(("64: i32"))
+                f1o4(("[f32; 4096]"))
+                f1o5(("i32"))
+                f1o6(("[f32; 4096]"))
+                f1o7(("i32"))
+                f1o8(("f32"))
+                f1o9(("i32"))
+                f1o10(["i32 × i32"])
+                f1o11(("i32"))
+                f1o12(["i32 × i32"])
+                f1o13(("i32"))
+                f1o14(["[f32; 4096] × i32"])
+                f1o15(("f32"))
+                f1o16(["i32 × i32"])
+                f1o17(("i32"))
+                f1o18(["i32 × i32"])
+                f1o19(("i32"))
+                f1o20(["[f32; 4096] × i32"])
+                f1o21(("f32"))
+                f1o22(["f32 × f32"])
+                f1o23(("f32"))
+                f1o24(["f32 × f32"])
+            end
+        end
+    end
+    f0o0 -- "⟨Γ, #quot;dense-a.bin#quot;⟩" --&gt; f0o8
+    f0o8 -- "Read" --&gt; f0o9
+    f0o9 -- "π₁" --&gt; f0o10
+    f0o9 -- "π₂" --&gt; f0o11
+    f0o0 -- "⟨io, #quot;dense-b.bin#quot;⟩" --&gt; f0o12
+    f0o12 -- "Read" --&gt; f0o13
+    f0o13 -- "π₁" --&gt; f0o14
+    f0o13 -- "π₂" --&gt; f0o15
+    f0o4 -- "Iota" --&gt; f0o16
+    f0o5 -- "Iota" --&gt; f0o17
+    f0o0 -- "⟨along, a, b, [i32; 4096]⟩" --&gt; f0o18
+    f0o18 -- "Map (+3 caps)" --&gt; f0o19
+    f0o0 -- "⟨out, 0⟩" --&gt; f0o20
+    f0o20 -- "Index" --&gt; f0o21
+    f0o0 -- "⟨io, f32⟩" --&gt; f0o22
+    f0o22 -- "Println" --&gt; f0o23
+    f0o0 -- "⟨out, 4095⟩" --&gt; f0o24
+    f0o24 -- "Index" --&gt; f0o25
+    f0o0 -- "⟨io, f32⟩" --&gt; f0o26
+    f0o26 -- "Println" --&gt; f0o27
+    f0o27 -- "Output" --&gt; f0o1
+    f1o0 -- "π₁" --&gt; f1o4
+    f1o0 -- "π₂" --&gt; f1o5
+    f1o0 -- "π₃" --&gt; f1o6
+    f1o0 -- "π₄" --&gt; f1o7
+    f1o0 -- "π₅" --&gt; f1o8
+    f1o0 -- "π₆" --&gt; f1o9
+    f1o0 -- "⟨i32, 64⟩" --&gt; f1o10
+    f1o10 -- "Mul" --&gt; f1o11
+    f1o0 -- "⟨i32, i32⟩" --&gt; f1o12
+    f1o12 -- "Add" --&gt; f1o13
+    f1o0 -- "⟨[f32; 4096], i32⟩" --&gt; f1o14
+    f1o14 -- "Index" --&gt; f1o15
+    f1o0 -- "⟨i32, 64⟩" --&gt; f1o16
+    f1o16 -- "Mul" --&gt; f1o17
+    f1o0 -- "⟨i32, i32⟩" --&gt; f1o18
+    f1o18 -- "Add" --&gt; f1o19
+    f1o0 -- "⟨[f32; 4096], i32⟩" --&gt; f1o20
+    f1o20 -- "Index" --&gt; f1o21
+    f1o0 -- "⟨f32, f32⟩" --&gt; f1o22
+    f1o22 -- "Mul" --&gt; f1o23
+    f1o0 -- "⟨f32, f32⟩" --&gt; f1o24
+    f1o24 -- "Add" --&gt; f1o1
+    f2o0 -- "π₁" --&gt; f2o9
+    f2o0 -- "π₂" --&gt; f2o10
+    f2o0 -- "π₃" --&gt; f2o11
+    f2o0 -- "π₄" --&gt; f2o12
+    f2o0 -- "⟨i32, 64⟩" --&gt; f2o13
+    f2o13 -- "Div" --&gt; f2o14
+    f2o0 -- "⟨i32, 64⟩" --&gt; f2o15
+    f2o15 -- "Mod" --&gt; f2o16
+    f2o0 -- "⟨[f32; 4096], row, [f32; 4096], column, 0.0, [i32; 64]⟩" --&gt; f2o17
+    f2o17 -- "Fold (+4 caps)" --&gt; f2o18
+    f2o0 -- "⟨dot, 1.0⟩" --&gt; f2o19
+    f2o19 -- "Add" --&gt; f2o20
+    f2o0 -- "⟨f32, 0.0⟩" --&gt; f2o21
+    f2o21 -- "Gt" --&gt; f2o22
+    f2o0 -- "⟨dot, 1.0⟩" --&gt; f2o23
+    f2o23 -- "Add" --&gt; f2o24
+    f2o0 -- "⟨f32, 0.0, bool⟩" --&gt; f2o25
+    f2o25 -- "Phi" --&gt; f2o1
+</div>
+<p class="mlive"><a href="https://mermaid.live/edit#base64:eyJjb2RlIjoiZmxvd2NoYXJ0IExSXG4gICAgc3ViZ3JhcGggZjBbXCJmbiBtYWluXCJdXG4gICAgICAgIGYwbzAoKFwizpMgPSBpb1wiKSlcbiAgICAgICAgZjBvMSgoXCJyZXQ6IGlvXCIpKVxuICAgICAgICBmMG8yKChcIiNxdW90O2RlbnNlLWEuYmluI3F1b3Q7OiBzdHJcIikpXG4gICAgICAgIGYwbzMoKFwiI3F1b3Q7ZGVuc2UtYi5iaW4jcXVvdDs6IHN0clwiKSlcbiAgICAgICAgZjBvNCgoXCI2NDogaTMyXCIpKVxuICAgICAgICBmMG81KChcIjQwOTY6IGkzMlwiKSlcbiAgICAgICAgZjBvNigoXCIwOiBpMzJcIikpXG4gICAgICAgIGYwbzcoKFwiNDA5NTogaTMyXCIpKVxuICAgICAgICBmMG84KFtcImlvIMOXIHN0clwiXSlcbiAgICAgICAgZjBvOSgoXCIoaW8sIFtmMzI7IDQwOTZdKVwiKSlcbiAgICAgICAgZjBvMTAoKFwiaW9cIikpXG4gICAgICAgIGYwbzExKChcImE6IFtmMzI7IDQwOTZdXCIpKVxuICAgICAgICBmMG8xMihbXCJpbyDDlyBzdHJcIl0pXG4gICAgICAgIGYwbzEzKChcIihpbywgW2YzMjsgNDA5Nl0pXCIpKVxuICAgICAgICBmMG8xNCgoXCJpb1wiKSlcbiAgICAgICAgZjBvMTUoKFwiYjogW2YzMjsgNDA5Nl1cIikpXG4gICAgICAgIGYwbzE2KChcImFsb25nOiBbaTMyOyA2NF1cIikpXG4gICAgICAgIGYwbzE3KChcIltpMzI7IDQwOTZdXCIpKVxuICAgICAgICBmMG8xOChbXCJbaTMyOyA2NF0gw5cgW2YzMjsgNDA5Nl0gw5cgW2YzMjsgNDA5Nl0gw5cgW2kzMjsgNDA5Nl1cIl0pXG4gICAgICAgIGYwbzE5KChcIm91dDogW2YzMjsgNDA5Nl1cIikpXG4gICAgICAgIGYwbzIwKFtcIltmMzI7IDQwOTZdIMOXIGkzMlwiXSlcbiAgICAgICAgZjBvMjEoKFwiZjMyXCIpKVxuICAgICAgICBmMG8yMihbXCJpbyDDlyBmMzJcIl0pXG4gICAgICAgIGYwbzIzKChcImlvXCIpKVxuICAgICAgICBmMG8yNChbXCJbZjMyOyA0MDk2XSDDlyBpMzJcIl0pXG4gICAgICAgIGYwbzI1KChcImYzMlwiKSlcbiAgICAgICAgZjBvMjYoW1wiaW8gw5cgZjMyXCJdKVxuICAgICAgICBmMG8yNygoXCJpb1wiKSlcbiAgICAgICAgc3ViZ3JhcGggZjJbXCJtYXAgYm9keSBvZiBvdXRcIl1cbiAgICAgICAgICAgIGYybzAoKFwizpMgPSAoW2kzMjsgNjRdLCBbZjMyOyA0MDk2XSwgW2YzMjsgNDA5Nl0sIGkzMilcIikpXG4gICAgICAgICAgICBmMm8xKChcInJldDogZjMyXCIpKVxuICAgICAgICAgICAgZjJvMigoXCI2NDogaTMyXCIpKVxuICAgICAgICAgICAgZjJvMygoXCI2NDogaTMyXCIpKVxuICAgICAgICAgICAgZjJvNCgoXCIwLjA6IGYzMlwiKSlcbiAgICAgICAgICAgIGYybzUoKFwiMS4wOiBmMzJcIikpXG4gICAgICAgICAgICBmMm82KChcIjAuMDogZjMyXCIpKVxuICAgICAgICAgICAgZjJvNygoXCIxLjA6IGYzMlwiKSlcbiAgICAgICAgICAgIGYybzgoKFwiMC4wOiBmMzJcIikpXG4gICAgICAgICAgICBmMm85KChcIltpMzI7IDY0XVwiKSlcbiAgICAgICAgICAgIGYybzEwKChcIltmMzI7IDQwOTZdXCIpKVxuICAgICAgICAgICAgZjJvMTEoKFwiW2YzMjsgNDA5Nl1cIikpXG4gICAgICAgICAgICBmMm8xMigoXCJpMzJcIikpXG4gICAgICAgICAgICBmMm8xMyhbXCJpMzIgw5cgaTMyXCJdKVxuICAgICAgICAgICAgZjJvMTQoKFwicm93OiBpMzJcIikpXG4gICAgICAgICAgICBmMm8xNShbXCJpMzIgw5cgaTMyXCJdKVxuICAgICAgICAgICAgZjJvMTYoKFwiY29sdW1uOiBpMzJcIikpXG4gICAgICAgICAgICBmMm8xNyhbXCJbZjMyOyA0MDk2XSDDlyBpMzIgw5cgW2YzMjsgNDA5Nl0gw5cgaTMyIMOXIGYzMiDDlyBbaTMyOyA2NF1cIl0pXG4gICAgICAgICAgICBmMm8xOCgoXCJkb3Q6IGYzMlwiKSlcbiAgICAgICAgICAgIGYybzE5KFtcImYzMiDDlyBmMzJcIl0pXG4gICAgICAgICAgICBmMm8yMCgoXCJmMzJcIikpXG4gICAgICAgICAgICBmMm8yMShbXCJmMzIgw5cgZjMyXCJdKVxuICAgICAgICAgICAgZjJvMjIoKFwiYm9vbFwiKSlcbiAgICAgICAgICAgIGYybzIzKFtcImYzMiDDlyBmMzJcIl0pXG4gICAgICAgICAgICBmMm8yNCgoXCJmMzJcIikpXG4gICAgICAgICAgICBmMm8yNShbXCJmMzIgw5cgZjMyIMOXIGJvb2xcIl0pXG4gICAgICAgICAgICBzdWJncmFwaCBmMVtcImZvbGQgYm9keSBvZiBkb3RcIl1cbiAgICAgICAgICAgICAgICBmMW8wKChcIs6TID0gKFtmMzI7IDQwOTZdLCBpMzIsIFtmMzI7IDQwOTZdLCBpMzIsIGYzMiwgaTMyKVwiKSlcbiAgICAgICAgICAgICAgICBmMW8xKChcInJldDogZjMyXCIpKVxuICAgICAgICAgICAgICAgIGYxbzIoKFwiNjQ6IGkzMlwiKSlcbiAgICAgICAgICAgICAgICBmMW8zKChcIjY0OiBpMzJcIikpXG4gICAgICAgICAgICAgICAgZjFvNCgoXCJbZjMyOyA0MDk2XVwiKSlcbiAgICAgICAgICAgICAgICBmMW81KChcImkzMlwiKSlcbiAgICAgICAgICAgICAgICBmMW82KChcIltmMzI7IDQwOTZdXCIpKVxuICAgICAgICAgICAgICAgIGYxbzcoKFwiaTMyXCIpKVxuICAgICAgICAgICAgICAgIGYxbzgoKFwiZjMyXCIpKVxuICAgICAgICAgICAgICAgIGYxbzkoKFwiaTMyXCIpKVxuICAgICAgICAgICAgICAgIGYxbzEwKFtcImkzMiDDlyBpMzJcIl0pXG4gICAgICAgICAgICAgICAgZjFvMTEoKFwiaTMyXCIpKVxuICAgICAgICAgICAgICAgIGYxbzEyKFtcImkzMiDDlyBpMzJcIl0pXG4gICAgICAgICAgICAgICAgZjFvMTMoKFwiaTMyXCIpKVxuICAgICAgICAgICAgICAgIGYxbzE0KFtcIltmMzI7IDQwOTZdIMOXIGkzMlwiXSlcbiAgICAgICAgICAgICAgICBmMW8xNSgoXCJmMzJcIikpXG4gICAgICAgICAgICAgICAgZjFvMTYoW1wiaTMyIMOXIGkzMlwiXSlcbiAgICAgICAgICAgICAgICBmMW8xNygoXCJpMzJcIikpXG4gICAgICAgICAgICAgICAgZjFvMTgoW1wiaTMyIMOXIGkzMlwiXSlcbiAgICAgICAgICAgICAgICBmMW8xOSgoXCJpMzJcIikpXG4gICAgICAgICAgICAgICAgZjFvMjAoW1wiW2YzMjsgNDA5Nl0gw5cgaTMyXCJdKVxuICAgICAgICAgICAgICAgIGYxbzIxKChcImYzMlwiKSlcbiAgICAgICAgICAgICAgICBmMW8yMihbXCJmMzIgw5cgZjMyXCJdKVxuICAgICAgICAgICAgICAgIGYxbzIzKChcImYzMlwiKSlcbiAgICAgICAgICAgICAgICBmMW8yNChbXCJmMzIgw5cgZjMyXCJdKVxuICAgICAgICAgICAgZW5kXG4gICAgICAgIGVuZFxuICAgIGVuZFxuICAgIGYwbzAgLS0gXCLin6jOkywgI3F1b3Q7ZGVuc2UtYS5iaW4jcXVvdDvin6lcIiAtLT4gZjBvOFxuICAgIGYwbzggLS0gXCJSZWFkXCIgLS0-IGYwbzlcbiAgICBmMG85IC0tIFwiz4DigoFcIiAtLT4gZjBvMTBcbiAgICBmMG85IC0tIFwiz4DigoJcIiAtLT4gZjBvMTFcbiAgICBmMG8wIC0tIFwi4p-oaW8sICNxdW90O2RlbnNlLWIuYmluI3F1b3Q74p-pXCIgLS0-IGYwbzEyXG4gICAgZjBvMTIgLS0gXCJSZWFkXCIgLS0-IGYwbzEzXG4gICAgZjBvMTMgLS0gXCLPgOKCgVwiIC0tPiBmMG8xNFxuICAgIGYwbzEzIC0tIFwiz4DigoJcIiAtLT4gZjBvMTVcbiAgICBmMG80IC0tIFwiSW90YVwiIC0tPiBmMG8xNlxuICAgIGYwbzUgLS0gXCJJb3RhXCIgLS0-IGYwbzE3XG4gICAgZjBvMCAtLSBcIuKfqGFsb25nLCBhLCBiLCBbaTMyOyA0MDk2XeKfqVwiIC0tPiBmMG8xOFxuICAgIGYwbzE4IC0tIFwiTWFwICgrMyBjYXBzKVwiIC0tPiBmMG8xOVxuICAgIGYwbzAgLS0gXCLin6hvdXQsIDDin6lcIiAtLT4gZjBvMjBcbiAgICBmMG8yMCAtLSBcIkluZGV4XCIgLS0-IGYwbzIxXG4gICAgZjBvMCAtLSBcIuKfqGlvLCBmMzLin6lcIiAtLT4gZjBvMjJcbiAgICBmMG8yMiAtLSBcIlByaW50bG5cIiAtLT4gZjBvMjNcbiAgICBmMG8wIC0tIFwi4p-ob3V0LCA0MDk14p-pXCIgLS0-IGYwbzI0XG4gICAgZjBvMjQgLS0gXCJJbmRleFwiIC0tPiBmMG8yNVxuICAgIGYwbzAgLS0gXCLin6hpbywgZjMy4p-pXCIgLS0-IGYwbzI2XG4gICAgZjBvMjYgLS0gXCJQcmludGxuXCIgLS0-IGYwbzI3XG4gICAgZjBvMjcgLS0gXCJPdXRwdXRcIiAtLT4gZjBvMVxuICAgIGYxbzAgLS0gXCLPgOKCgVwiIC0tPiBmMW80XG4gICAgZjFvMCAtLSBcIs-A4oKCXCIgLS0-IGYxbzVcbiAgICBmMW8wIC0tIFwiz4DigoNcIiAtLT4gZjFvNlxuICAgIGYxbzAgLS0gXCLPgOKChFwiIC0tPiBmMW83XG4gICAgZjFvMCAtLSBcIs-A4oKFXCIgLS0-IGYxbzhcbiAgICBmMW8wIC0tIFwiz4DigoZcIiAtLT4gZjFvOVxuICAgIGYxbzAgLS0gXCLin6hpMzIsIDY04p-pXCIgLS0-IGYxbzEwXG4gICAgZjFvMTAgLS0gXCJNdWxcIiAtLT4gZjFvMTFcbiAgICBmMW8wIC0tIFwi4p-oaTMyLCBpMzLin6lcIiAtLT4gZjFvMTJcbiAgICBmMW8xMiAtLSBcIkFkZFwiIC0tPiBmMW8xM1xuICAgIGYxbzAgLS0gXCLin6hbZjMyOyA0MDk2XSwgaTMy4p-pXCIgLS0-IGYxbzE0XG4gICAgZjFvMTQgLS0gXCJJbmRleFwiIC0tPiBmMW8xNVxuICAgIGYxbzAgLS0gXCLin6hpMzIsIDY04p-pXCIgLS0-IGYxbzE2XG4gICAgZjFvMTYgLS0gXCJNdWxcIiAtLT4gZjFvMTdcbiAgICBmMW8wIC0tIFwi4p-oaTMyLCBpMzLin6lcIiAtLT4gZjFvMThcbiAgICBmMW8xOCAtLSBcIkFkZFwiIC0tPiBmMW8xOVxuICAgIGYxbzAgLS0gXCLin6hbZjMyOyA0MDk2XSwgaTMy4p-pXCIgLS0-IGYxbzIwXG4gICAgZjFvMjAgLS0gXCJJbmRleFwiIC0tPiBmMW8yMVxuICAgIGYxbzAgLS0gXCLin6hmMzIsIGYzMuKfqVwiIC0tPiBmMW8yMlxuICAgIGYxbzIyIC0tIFwiTXVsXCIgLS0-IGYxbzIzXG4gICAgZjFvMCAtLSBcIuKfqGYzMiwgZjMy4p-pXCIgLS0-IGYxbzI0XG4gICAgZjFvMjQgLS0gXCJBZGRcIiAtLT4gZjFvMVxuICAgIGYybzAgLS0gXCLPgOKCgVwiIC0tPiBmMm85XG4gICAgZjJvMCAtLSBcIs-A4oKCXCIgLS0-IGYybzEwXG4gICAgZjJvMCAtLSBcIs-A4oKDXCIgLS0-IGYybzExXG4gICAgZjJvMCAtLSBcIs-A4oKEXCIgLS0-IGYybzEyXG4gICAgZjJvMCAtLSBcIuKfqGkzMiwgNjTin6lcIiAtLT4gZjJvMTNcbiAgICBmMm8xMyAtLSBcIkRpdlwiIC0tPiBmMm8xNFxuICAgIGYybzAgLS0gXCLin6hpMzIsIDY04p-pXCIgLS0-IGYybzE1XG4gICAgZjJvMTUgLS0gXCJNb2RcIiAtLT4gZjJvMTZcbiAgICBmMm8wIC0tIFwi4p-oW2YzMjsgNDA5Nl0sIHJvdywgW2YzMjsgNDA5Nl0sIGNvbHVtbiwgMC4wLCBbaTMyOyA2NF3in6lcIiAtLT4gZjJvMTdcbiAgICBmMm8xNyAtLSBcIkZvbGQgKCs0IGNhcHMpXCIgLS0-IGYybzE4XG4gICAgZjJvMCAtLSBcIuKfqGRvdCwgMS4w4p-pXCIgLS0-IGYybzE5XG4gICAgZjJvMTkgLS0gXCJBZGRcIiAtLT4gZjJvMjBcbiAgICBmMm8wIC0tIFwi4p-oZjMyLCAwLjDin6lcIiAtLT4gZjJvMjFcbiAgICBmMm8yMSAtLSBcIkd0XCIgLS0-IGYybzIyXG4gICAgZjJvMCAtLSBcIuKfqGRvdCwgMS4w4p-pXCIgLS0-IGYybzIzXG4gICAgZjJvMjMgLS0gXCJBZGRcIiAtLT4gZjJvMjRcbiAgICBmMm8wIC0tIFwi4p-oZjMyLCAwLjAsIGJvb2zin6lcIiAtLT4gZjJvMjVcbiAgICBmMm8yNSAtLSBcIlBoaVwiIC0tPiBmMm8xIiwibWVybWFpZCI6IntcInRoZW1lXCI6IFwiZGFya1wifSIsImF1dG9TeW5jIjp0cnVlLCJ1cGRhdGVEaWFncmFtIjp0cnVlfQ" target="_blank" rel="noopener">Open in mermaid.live</a></p>
+</div></details>
+<div class="io-h">The flow <span>mapal dump-ir --mermaid=flow dense.mapal</span></div>
 <div class="mermaid">
 flowchart LR
     f0o11["a: [f32; 4096] ← read #quot;dense-a.bin#quot;"]
@@ -2137,10 +2482,11 @@ flowchart LR
     s0o19 -- "out[n * n - 1]" --&gt; p0m1
     f2o14 -- "fold" --&gt; f2o18
     f2o16 -- "fold" --&gt; f2o18
-    f2o18 -- "+ · guard" --&gt; f2o1
+    f2o18 -- "#43; · guard" --&gt; f2o1
 </div>
-<details class="gfull"><summary>The full graph, every object and operation (79 nodes)</summary>
-<div class="io-h">The full graph <span>mapal dump-ir --stage=rewritten --mermaid dense.mapal</span></div>
+<p class="mlive"><a href="https://mermaid.live/edit#base64:eyJjb2RlIjoiZmxvd2NoYXJ0IExSXG4gICAgZjBvMTFbXCJhOiBbZjMyOyA0MDk2XSDihpAgcmVhZCAjcXVvdDtkZW5zZS1hLmJpbiNxdW90O1wiXVxuICAgIGYwbzE1W1wiYjogW2YzMjsgNDA5Nl0g4oaQIHJlYWQgI3F1b3Q7ZGVuc2UtYi5iaW4jcXVvdDtcIl1cbiAgICBmMG8xNltcImFsb25nOiBbaTMyOyA2NF1cIl1cbiAgICBzdWJncmFwaCBzMG8xOVtcIm91dCA9IG1hcCBvdmVyIGNlbGxzXCJdXG4gICAgICAgIGYybzFbXCJyZXN1bHQ6IGYzMlwiXVxuICAgICAgICBmMm8xNFtcInJvdzogaTMyXCJdXG4gICAgICAgIGYybzE2W1wiY29sdW1uOiBpMzJcIl1cbiAgICAgICAgZjJvMThbXCJkb3Q6IGYzMiDCtyBmb2xkXCJdXG4gICAgZW5kXG4gICAgcDBtMChbXCJwcmludGxuXCJdKVxuICAgIHAwbTEoW1wicHJpbnRsblwiXSlcbiAgICBmMG8xMSAtLSBcImFbcm93ICogbiArIGtdXCIgLS0-IGYybzE4XG4gICAgZjBvMTUgLS0gXCJiW2sgKiBuICsgY29sdW1uXVwiIC0tPiBmMm8xOFxuICAgIGYwbzE2IC0tIFwiZm9sZFwiIC0tPiBmMm8xOFxuICAgIHMwbzE5IC0tIFwib3V0WzBdXCIgLS0-IHAwbTBcbiAgICBzMG8xOSAtLSBcIm91dFtuICogbiAtIDFdXCIgLS0-IHAwbTFcbiAgICBmMm8xNCAtLSBcImZvbGRcIiAtLT4gZjJvMThcbiAgICBmMm8xNiAtLSBcImZvbGRcIiAtLT4gZjJvMThcbiAgICBmMm8xOCAtLSBcIiM0MzsgwrcgZ3VhcmRcIiAtLT4gZjJvMSIsIm1lcm1haWQiOiJ7XCJ0aGVtZVwiOiBcImRhcmtcIn0iLCJhdXRvU3luYyI6dHJ1ZSwidXBkYXRlRGlhZ3JhbSI6dHJ1ZX0" target="_blank" rel="noopener">Open in mermaid.live</a></p>
+<details class="gfull"><summary>The stored graph, every object and operation (79 nodes)</summary>
+<div class="io-h">The stored graph <span>mapal dump-ir --mermaid=graph dense.mapal</span></div>
 <div class="zoombox"><div class="zbar"><button type="button" data-z="out" aria-label="Zoom out">&minus;</button><button type="button" data-z="in" aria-label="Zoom in">+</button><button type="button" data-z="fit">Fit</button></div>
 <div class="mermaid">
 flowchart LR
@@ -2320,315 +2666,7 @@ flowchart LR
         f2o25 -- "Phi" --&gt; f2o1
     end
 </div>
-</div></details>
-<details class="gfull"><summary>The full category diagram, every object and operation</summary>
-<div class="io-h">The full category diagram <span>mapal dump-ir --stage=rewritten --mermaid=category dense.mapal</span></div>
-<div class="zoombox"><div class="zbar"><button type="button" data-z="out" aria-label="Zoom out">&minus;</button><button type="button" data-z="in" aria-label="Zoom in">+</button><button type="button" data-z="fit">Fit</button></div>
-<div class="mermaid">
-flowchart LR
-    subgraph f0["fn main"]
-        f0o0(("Γ = io"))
-        f0o1(("ret: io"))
-        f0o2(("#quot;dense-a.bin#quot;: str"))
-        f0o3(("#quot;dense-b.bin#quot;: str"))
-        f0o4(("64: i32"))
-        f0o5(("4096: i32"))
-        f0o6(("0: i32"))
-        f0o7(("4095: i32"))
-        f0o8(["io × str"])
-        f0o9(("(io, [f32; 4096])"))
-        f0o10(("io"))
-        f0o11(("a: [f32; 4096]"))
-        f0o12(["io × str"])
-        f0o13(("(io, [f32; 4096])"))
-        f0o14(("io"))
-        f0o15(("b: [f32; 4096]"))
-        f0o16(("along: [i32; 64]"))
-        f0o17(("[i32; 4096]"))
-        f0o18(["[i32; 64] × [f32; 4096] × [f32; 4096] × [i32; 4096]"])
-        f0o19(("out: [f32; 4096]"))
-        f0o20(["[f32; 4096] × i32"])
-        f0o21(("f32"))
-        f0o22(["io × f32"])
-        f0o23(("io"))
-        f0o24(["[f32; 4096] × i32"])
-        f0o25(("f32"))
-        f0o26(["io × f32"])
-        f0o27(("io"))
-        subgraph f2["map body of out"]
-            f2o0(("Γ = ([i32; 64], [f32; 4096], [f32; 4096], i32)"))
-            f2o1(("ret: f32"))
-            f2o2(("64: i32"))
-            f2o3(("64: i32"))
-            f2o4(("0.0: f32"))
-            f2o5(("1.0: f32"))
-            f2o6(("0.0: f32"))
-            f2o7(("1.0: f32"))
-            f2o8(("0.0: f32"))
-            f2o9(("[i32; 64]"))
-            f2o10(("[f32; 4096]"))
-            f2o11(("[f32; 4096]"))
-            f2o12(("i32"))
-            f2o13(["i32 × i32"])
-            f2o14(("row: i32"))
-            f2o15(["i32 × i32"])
-            f2o16(("column: i32"))
-            f2o17(["[f32; 4096] × i32 × [f32; 4096] × i32 × f32 × [i32; 64]"])
-            f2o18(("dot: f32"))
-            f2o19(["f32 × f32"])
-            f2o20(("f32"))
-            f2o21(["f32 × f32"])
-            f2o22(("bool"))
-            f2o23(["f32 × f32"])
-            f2o24(("f32"))
-            f2o25(["f32 × f32 × bool"])
-            subgraph f1["fold body of dot"]
-                f1o0(("Γ = ([f32; 4096], i32, [f32; 4096], i32, f32, i32)"))
-                f1o1(("ret: f32"))
-                f1o2(("64: i32"))
-                f1o3(("64: i32"))
-                f1o4(("[f32; 4096]"))
-                f1o5(("i32"))
-                f1o6(("[f32; 4096]"))
-                f1o7(("i32"))
-                f1o8(("f32"))
-                f1o9(("i32"))
-                f1o10(["i32 × i32"])
-                f1o11(("i32"))
-                f1o12(["i32 × i32"])
-                f1o13(("i32"))
-                f1o14(["[f32; 4096] × i32"])
-                f1o15(("f32"))
-                f1o16(["i32 × i32"])
-                f1o17(("i32"))
-                f1o18(["i32 × i32"])
-                f1o19(("i32"))
-                f1o20(["[f32; 4096] × i32"])
-                f1o21(("f32"))
-                f1o22(["f32 × f32"])
-                f1o23(("f32"))
-                f1o24(["f32 × f32"])
-            end
-        end
-    end
-    f0o0 -- "⟨Γ, #quot;dense-a.bin#quot;⟩" --&gt; f0o8
-    f0o8 -- "Read" --&gt; f0o9
-    f0o9 -- "π₁" --&gt; f0o10
-    f0o9 -- "π₂" --&gt; f0o11
-    f0o0 -- "⟨io, #quot;dense-b.bin#quot;⟩" --&gt; f0o12
-    f0o12 -- "Read" --&gt; f0o13
-    f0o13 -- "π₁" --&gt; f0o14
-    f0o13 -- "π₂" --&gt; f0o15
-    f0o4 -- "Iota" --&gt; f0o16
-    f0o5 -- "Iota" --&gt; f0o17
-    f0o0 -- "⟨along, a, b, [i32; 4096]⟩" --&gt; f0o18
-    f0o18 -- "Map (+3 caps)" --&gt; f0o19
-    f0o0 -- "⟨out, 0⟩" --&gt; f0o20
-    f0o20 -- "Index" --&gt; f0o21
-    f0o0 -- "⟨io, f32⟩" --&gt; f0o22
-    f0o22 -- "Println" --&gt; f0o23
-    f0o0 -- "⟨out, 4095⟩" --&gt; f0o24
-    f0o24 -- "Index" --&gt; f0o25
-    f0o0 -- "⟨io, f32⟩" --&gt; f0o26
-    f0o26 -- "Println" --&gt; f0o27
-    f0o27 -- "Output" --&gt; f0o1
-    f1o0 -- "π₁" --&gt; f1o4
-    f1o0 -- "π₂" --&gt; f1o5
-    f1o0 -- "π₃" --&gt; f1o6
-    f1o0 -- "π₄" --&gt; f1o7
-    f1o0 -- "π₅" --&gt; f1o8
-    f1o0 -- "π₆" --&gt; f1o9
-    f1o0 -- "⟨i32, 64⟩" --&gt; f1o10
-    f1o10 -- "Mul" --&gt; f1o11
-    f1o0 -- "⟨i32, i32⟩" --&gt; f1o12
-    f1o12 -- "Add" --&gt; f1o13
-    f1o0 -- "⟨[f32; 4096], i32⟩" --&gt; f1o14
-    f1o14 -- "Index" --&gt; f1o15
-    f1o0 -- "⟨i32, 64⟩" --&gt; f1o16
-    f1o16 -- "Mul" --&gt; f1o17
-    f1o0 -- "⟨i32, i32⟩" --&gt; f1o18
-    f1o18 -- "Add" --&gt; f1o19
-    f1o0 -- "⟨[f32; 4096], i32⟩" --&gt; f1o20
-    f1o20 -- "Index" --&gt; f1o21
-    f1o0 -- "⟨f32, f32⟩" --&gt; f1o22
-    f1o22 -- "Mul" --&gt; f1o23
-    f1o0 -- "⟨f32, f32⟩" --&gt; f1o24
-    f1o24 -- "Add" --&gt; f1o1
-    f2o0 -- "π₁" --&gt; f2o9
-    f2o0 -- "π₂" --&gt; f2o10
-    f2o0 -- "π₃" --&gt; f2o11
-    f2o0 -- "π₄" --&gt; f2o12
-    f2o0 -- "⟨i32, 64⟩" --&gt; f2o13
-    f2o13 -- "Div" --&gt; f2o14
-    f2o0 -- "⟨i32, 64⟩" --&gt; f2o15
-    f2o15 -- "Mod" --&gt; f2o16
-    f2o0 -- "⟨[f32; 4096], row, [f32; 4096], column, 0.0, [i32; 64]⟩" --&gt; f2o17
-    f2o17 -- "Fold (+4 caps)" --&gt; f2o18
-    f2o0 -- "⟨dot, 1.0⟩" --&gt; f2o19
-    f2o19 -- "Add" --&gt; f2o20
-    f2o0 -- "⟨f32, 0.0⟩" --&gt; f2o21
-    f2o21 -- "Gt" --&gt; f2o22
-    f2o0 -- "⟨dot, 1.0⟩" --&gt; f2o23
-    f2o23 -- "Add" --&gt; f2o24
-    f2o0 -- "⟨f32, 0.0, bool⟩" --&gt; f2o25
-    f2o25 -- "Phi" --&gt; f2o1
-</div>
-</div></details>
-<details class="gfull"><summary>The full string diagram, every object and operation</summary>
-<div class="io-h">The full string diagram <span>mapal dump-ir --stage=rewritten --mermaid=string dense.mapal</span></div>
-<div class="zoombox"><div class="zbar"><button type="button" data-z="out" aria-label="Zoom out">&minus;</button><button type="button" data-z="in" aria-label="Zoom in">+</button><button type="button" data-z="fit">Fit</button></div>
-<div class="mermaid">
-flowchart LR
-    subgraph f0["fn main"]
-        m2["read"]
-        m3["π₁"]
-        m4["π₂"]
-        m7["read"]
-        m8["π₁"]
-        m9["π₂"]
-        m10["iota"]
-        m11["iota"]
-        m19["index"]
-        m22["println"]
-        m25["index"]
-        m28["println"]
-        ti0(("in"))
-        to0(("ret"))
-        t0o2(("•"))
-        t0o3(("•"))
-        t0o4(("•"))
-        t0o5(("•"))
-        t0o6(("•"))
-        t0o7(("•"))
-        d0o9(("Δ (io, [f32; 4096])"))
-        d0o13(("Δ (io, [f32; 4096])"))
-        d0o19(("Δ out"))
-        subgraph m16["map (+3 caps)"]
-            m60["π₁"]
-            m61["π₂"]
-            m62["π₃"]
-            m63["π₄"]
-            m66["÷"]
-            m69["mod"]
-            m79["+"]
-            m82["#gt;"]
-            m85["+"]
-            m89["guard"]
-            ti2(("in"))
-            to2(("ret"))
-            d2o0(("Δ ([i32; 64], [f32; 4096], [f32; 4096], i32)"))
-            t2o2(("•"))
-            t2o3(("•"))
-            t2o4(("•"))
-            t2o5(("•"))
-            t2o6(("•"))
-            t2o7(("•"))
-            t2o8(("•"))
-            d2o12(("Δ i32"))
-            d2o18(("Δ dot"))
-            subgraph m76["fold (+4 caps)"]
-                m30["π₁"]
-                m31["π₂"]
-                m32["π₃"]
-                m33["π₄"]
-                m34["π₅"]
-                m35["π₆"]
-                m38["×"]
-                m41["+"]
-                m44["index"]
-                m47["×"]
-                m50["+"]
-                m53["index"]
-                m56["×"]
-                m59["+"]
-                ti1(("in"))
-                to1(("ret"))
-                d1o0(("Δ ([f32; 4096], i32, [f32; 4096], i32, f32, i32)"))
-                t1o2(("•"))
-                t1o3(("•"))
-                d1o9(("Δ i32"))
-            end
-        end
-    end
-    ti0 -- "① io" --&gt; m2
-    ti1 -- "([f32; 4096], i32, [f32; 4096], i32, f32, i32)" --&gt; d1o0
-    d1o0 -- "([f32; 4096], i32, [f32; 4096], i32, f32, i32)" --&gt; m30
-    d1o0 -- "([f32; 4096], i32, [f32; 4096], i32, f32, i32)" --&gt; m31
-    d1o0 -- "([f32; 4096], i32, [f32; 4096], i32, f32, i32)" --&gt; m32
-    d1o0 -- "([f32; 4096], i32, [f32; 4096], i32, f32, i32)" --&gt; m33
-    d1o0 -- "([f32; 4096], i32, [f32; 4096], i32, f32, i32)" --&gt; m34
-    d1o0 -- "([f32; 4096], i32, [f32; 4096], i32, f32, i32)" --&gt; m35
-    m59 -- "ret: f32" --&gt; to1
-    ti2 -- "([i32; 64], [f32; 4096], [f32; 4096], i32)" --&gt; d2o0
-    d2o0 -- "([i32; 64], [f32; 4096], [f32; 4096], i32)" --&gt; m60
-    d2o0 -- "([i32; 64], [f32; 4096], [f32; 4096], i32)" --&gt; m61
-    d2o0 -- "([i32; 64], [f32; 4096], [f32; 4096], i32)" --&gt; m62
-    d2o0 -- "([i32; 64], [f32; 4096], [f32; 4096], i32)" --&gt; m63
-    m89 -- "ret: f32" --&gt; to2
-    t0o2 -- "② #quot;dense-a.bin#quot;" --&gt; m2
-    t0o3 -- "② #quot;dense-b.bin#quot;" --&gt; m7
-    t0o4 -- "64" --&gt; m10
-    t0o5 -- "4096" --&gt; m11
-    t0o6 -- "② 0" --&gt; m19
-    t0o7 -- "② 4095" --&gt; m25
-    m2 -- "(io, [f32; 4096])" --&gt; d0o9
-    d0o9 -- "(io, [f32; 4096])" --&gt; m3
-    d0o9 -- "(io, [f32; 4096])" --&gt; m4
-    m3 -- "① io" --&gt; m7
-    m4 -- "② a: [f32; 4096]" --&gt; m16
-    m7 -- "(io, [f32; 4096])" --&gt; d0o13
-    d0o13 -- "(io, [f32; 4096])" --&gt; m8
-    d0o13 -- "(io, [f32; 4096])" --&gt; m9
-    m8 -- "① io" --&gt; m22
-    m9 -- "③ b: [f32; 4096]" --&gt; m16
-    m10 -- "① along: [i32; 64]" --&gt; m16
-    m11 -- "④ [i32; 4096]" --&gt; m16
-    m16 -- "out: [f32; 4096]" --&gt; d0o19
-    d0o19 -- "① out" --&gt; m19
-    d0o19 -- "① out" --&gt; m25
-    m19 -- "② f32" --&gt; m22
-    m22 -- "① io" --&gt; m28
-    m25 -- "② f32" --&gt; m28
-    m28 -- "io" --&gt; to0
-    t1o2 -- "② 64" --&gt; m38
-    t1o3 -- "② 64" --&gt; m47
-    m30 -- "① [f32; 4096]" --&gt; m44
-    m31 -- "① i32" --&gt; m38
-    m32 -- "① [f32; 4096]" --&gt; m53
-    m33 -- "② i32" --&gt; m50
-    m34 -- "① f32" --&gt; m59
-    m35 -- "i32" --&gt; d1o9
-    d1o9 -- "② i32" --&gt; m41
-    d1o9 -- "① i32" --&gt; m47
-    m38 -- "① i32" --&gt; m41
-    m41 -- "② i32" --&gt; m44
-    m44 -- "① f32" --&gt; m56
-    m47 -- "① i32" --&gt; m50
-    m50 -- "② i32" --&gt; m53
-    m53 -- "② f32" --&gt; m56
-    m56 -- "② f32" --&gt; m59
-    t2o2 -- "② 64" --&gt; m66
-    t2o3 -- "② 64" --&gt; m69
-    t2o4 -- "⑤ 0.0" --&gt; m76
-    t2o5 -- "② 1.0" --&gt; m79
-    t2o6 -- "② 0.0" --&gt; m82
-    t2o7 -- "② 1.0" --&gt; m85
-    t2o8 -- "② 0.0" --&gt; m89
-    m60 -- "⑥ [i32; 64]" --&gt; m76
-    m61 -- "① [f32; 4096]" --&gt; m76
-    m62 -- "③ [f32; 4096]" --&gt; m76
-    m63 -- "i32" --&gt; d2o12
-    d2o12 -- "① i32" --&gt; m66
-    d2o12 -- "① i32" --&gt; m69
-    m66 -- "② row: i32" --&gt; m76
-    m69 -- "④ column: i32" --&gt; m76
-    m76 -- "dot: f32" --&gt; d2o18
-    d2o18 -- "① dot" --&gt; m79
-    d2o18 -- "① dot" --&gt; m85
-    m79 -- "① f32" --&gt; m82
-    m82 -- "③ bool" --&gt; m89
-    m85 -- "① f32" --&gt; m89
-</div>
+<p class="mlive"><a href="https://mermaid.live/edit#base64:eyJjb2RlIjoiZmxvd2NoYXJ0IExSXG4gICAgc3ViZ3JhcGggZjBbXCJmbiBtYWluXCJdXG4gICAgICAgIGYwbzAoKFwiaW9cIikpXG4gICAgICAgIGYwbzEoKFwicmV0OiBpb1wiKSlcbiAgICAgICAgZjBvMigoXCIjcXVvdDtkZW5zZS1hLmJpbiNxdW90Ozogc3RyXCIpKVxuICAgICAgICBmMG8zKChcIiNxdW90O2RlbnNlLWIuYmluI3F1b3Q7OiBzdHJcIikpXG4gICAgICAgIGYwbzQoKFwiNjQ6IGkzMlwiKSlcbiAgICAgICAgZjBvNSgoXCI0MDk2OiBpMzJcIikpXG4gICAgICAgIGYwbzYoKFwiMDogaTMyXCIpKVxuICAgICAgICBmMG83KChcIjQwOTU6IGkzMlwiKSlcbiAgICAgICAgZjBvOCgoXCIoaW8sIHN0cilcIikpXG4gICAgICAgIGYwbzkoKFwiKGlvLCBbZjMyOyA0MDk2XSlcIikpXG4gICAgICAgIGYwbzEwKChcImlvXCIpKVxuICAgICAgICBmMG8xMSgoXCJhOiBbZjMyOyA0MDk2XVwiKSlcbiAgICAgICAgZjBvMTIoKFwiKGlvLCBzdHIpXCIpKVxuICAgICAgICBmMG8xMygoXCIoaW8sIFtmMzI7IDQwOTZdKVwiKSlcbiAgICAgICAgZjBvMTQoKFwiaW9cIikpXG4gICAgICAgIGYwbzE1KChcImI6IFtmMzI7IDQwOTZdXCIpKVxuICAgICAgICBmMG8xNigoXCJhbG9uZzogW2kzMjsgNjRdXCIpKVxuICAgICAgICBmMG8xNygoXCJbaTMyOyA0MDk2XVwiKSlcbiAgICAgICAgZjBvMTgoKFwiKFtpMzI7IDY0XSwgW2YzMjsgNDA5Nl0sIFtmMzI7IDQwOTZdLCBbaTMyOyA0MDk2XSlcIikpXG4gICAgICAgIGYwbzE5KChcIm91dDogW2YzMjsgNDA5Nl1cIikpXG4gICAgICAgIGYwbzIwKChcIihbZjMyOyA0MDk2XSwgaTMyKVwiKSlcbiAgICAgICAgZjBvMjEoKFwiZjMyXCIpKVxuICAgICAgICBmMG8yMigoXCIoaW8sIGYzMilcIikpXG4gICAgICAgIGYwbzIzKChcImlvXCIpKVxuICAgICAgICBmMG8yNCgoXCIoW2YzMjsgNDA5Nl0sIGkzMilcIikpXG4gICAgICAgIGYwbzI1KChcImYzMlwiKSlcbiAgICAgICAgZjBvMjYoKFwiKGlvLCBmMzIpXCIpKVxuICAgICAgICBmMG8yNygoXCJpb1wiKSlcbiAgICAgICAgZjBvMCAtLSBcIlBhaXIgMC8yXCIgLS0-IGYwbzhcbiAgICAgICAgZjBvMiAtLSBcIlBhaXIgMS8yXCIgLS0-IGYwbzhcbiAgICAgICAgZjBvOCAtLSBcIlJlYWRcIiAtLT4gZjBvOVxuICAgICAgICBmMG85IC0tIFwiUHJvaiAwXCIgLS0-IGYwbzEwXG4gICAgICAgIGYwbzkgLS0gXCJQcm9qIDFcIiAtLT4gZjBvMTFcbiAgICAgICAgZjBvMTAgLS0gXCJQYWlyIDAvMlwiIC0tPiBmMG8xMlxuICAgICAgICBmMG8zIC0tIFwiUGFpciAxLzJcIiAtLT4gZjBvMTJcbiAgICAgICAgZjBvMTIgLS0gXCJSZWFkXCIgLS0-IGYwbzEzXG4gICAgICAgIGYwbzEzIC0tIFwiUHJvaiAwXCIgLS0-IGYwbzE0XG4gICAgICAgIGYwbzEzIC0tIFwiUHJvaiAxXCIgLS0-IGYwbzE1XG4gICAgICAgIGYwbzQgLS0gXCJJb3RhXCIgLS0-IGYwbzE2XG4gICAgICAgIGYwbzUgLS0gXCJJb3RhXCIgLS0-IGYwbzE3XG4gICAgICAgIGYwbzE2IC0tIFwiUGFpciAwLzRcIiAtLT4gZjBvMThcbiAgICAgICAgZjBvMTEgLS0gXCJQYWlyIDEvNFwiIC0tPiBmMG8xOFxuICAgICAgICBmMG8xNSAtLSBcIlBhaXIgMi80XCIgLS0-IGYwbzE4XG4gICAgICAgIGYwbzE3IC0tIFwiUGFpciAzLzRcIiAtLT4gZjBvMThcbiAgICAgICAgZjBvMTggLS0gXCJNYXAgKCszIGNhcHMpXCIgLS0-IGYwbzE5XG4gICAgICAgIGYwbzE5IC0tIFwiUGFpciAwLzJcIiAtLT4gZjBvMjBcbiAgICAgICAgZjBvNiAtLSBcIlBhaXIgMS8yXCIgLS0-IGYwbzIwXG4gICAgICAgIGYwbzIwIC0tIFwiSW5kZXhcIiAtLT4gZjBvMjFcbiAgICAgICAgZjBvMTQgLS0gXCJQYWlyIDAvMlwiIC0tPiBmMG8yMlxuICAgICAgICBmMG8yMSAtLSBcIlBhaXIgMS8yXCIgLS0-IGYwbzIyXG4gICAgICAgIGYwbzIyIC0tIFwiUHJpbnRsblwiIC0tPiBmMG8yM1xuICAgICAgICBmMG8xOSAtLSBcIlBhaXIgMC8yXCIgLS0-IGYwbzI0XG4gICAgICAgIGYwbzcgLS0gXCJQYWlyIDEvMlwiIC0tPiBmMG8yNFxuICAgICAgICBmMG8yNCAtLSBcIkluZGV4XCIgLS0-IGYwbzI1XG4gICAgICAgIGYwbzIzIC0tIFwiUGFpciAwLzJcIiAtLT4gZjBvMjZcbiAgICAgICAgZjBvMjUgLS0gXCJQYWlyIDEvMlwiIC0tPiBmMG8yNlxuICAgICAgICBmMG8yNiAtLSBcIlByaW50bG5cIiAtLT4gZjBvMjdcbiAgICAgICAgZjBvMjcgLS0gXCJPdXRwdXRcIiAtLT4gZjBvMVxuICAgIGVuZFxuICAgIHN1YmdyYXBoIGYxW1wiZm4gbWFpbjo6Zm9sZEAxXCJdXG4gICAgICAgIGYxbzAoKFwiKFtmMzI7IDQwOTZdLCBpMzIsIFtmMzI7IDQwOTZdLCBpMzIsIGYzMiwgaTMyKVwiKSlcbiAgICAgICAgZjFvMSgoXCJyZXQ6IGYzMlwiKSlcbiAgICAgICAgZjFvMigoXCI2NDogaTMyXCIpKVxuICAgICAgICBmMW8zKChcIjY0OiBpMzJcIikpXG4gICAgICAgIGYxbzQoKFwiW2YzMjsgNDA5Nl1cIikpXG4gICAgICAgIGYxbzUoKFwiaTMyXCIpKVxuICAgICAgICBmMW82KChcIltmMzI7IDQwOTZdXCIpKVxuICAgICAgICBmMW83KChcImkzMlwiKSlcbiAgICAgICAgZjFvOCgoXCJmMzJcIikpXG4gICAgICAgIGYxbzkoKFwiaTMyXCIpKVxuICAgICAgICBmMW8xMCgoXCIoaTMyLCBpMzIpXCIpKVxuICAgICAgICBmMW8xMSgoXCJpMzJcIikpXG4gICAgICAgIGYxbzEyKChcIihpMzIsIGkzMilcIikpXG4gICAgICAgIGYxbzEzKChcImkzMlwiKSlcbiAgICAgICAgZjFvMTQoKFwiKFtmMzI7IDQwOTZdLCBpMzIpXCIpKVxuICAgICAgICBmMW8xNSgoXCJmMzJcIikpXG4gICAgICAgIGYxbzE2KChcIihpMzIsIGkzMilcIikpXG4gICAgICAgIGYxbzE3KChcImkzMlwiKSlcbiAgICAgICAgZjFvMTgoKFwiKGkzMiwgaTMyKVwiKSlcbiAgICAgICAgZjFvMTkoKFwiaTMyXCIpKVxuICAgICAgICBmMW8yMCgoXCIoW2YzMjsgNDA5Nl0sIGkzMilcIikpXG4gICAgICAgIGYxbzIxKChcImYzMlwiKSlcbiAgICAgICAgZjFvMjIoKFwiKGYzMiwgZjMyKVwiKSlcbiAgICAgICAgZjFvMjMoKFwiZjMyXCIpKVxuICAgICAgICBmMW8yNCgoXCIoZjMyLCBmMzIpXCIpKVxuICAgICAgICBmMW8wIC0tIFwiUHJvaiAwXCIgLS0-IGYxbzRcbiAgICAgICAgZjFvMCAtLSBcIlByb2ogMVwiIC0tPiBmMW81XG4gICAgICAgIGYxbzAgLS0gXCJQcm9qIDJcIiAtLT4gZjFvNlxuICAgICAgICBmMW8wIC0tIFwiUHJvaiAzXCIgLS0-IGYxbzdcbiAgICAgICAgZjFvMCAtLSBcIlByb2ogNFwiIC0tPiBmMW84XG4gICAgICAgIGYxbzAgLS0gXCJQcm9qIDVcIiAtLT4gZjFvOVxuICAgICAgICBmMW81IC0tIFwiUGFpciAwLzJcIiAtLT4gZjFvMTBcbiAgICAgICAgZjFvMiAtLSBcIlBhaXIgMS8yXCIgLS0-IGYxbzEwXG4gICAgICAgIGYxbzEwIC0tIFwiTXVsXCIgLS0-IGYxbzExXG4gICAgICAgIGYxbzExIC0tIFwiUGFpciAwLzJcIiAtLT4gZjFvMTJcbiAgICAgICAgZjFvOSAtLSBcIlBhaXIgMS8yXCIgLS0-IGYxbzEyXG4gICAgICAgIGYxbzEyIC0tIFwiQWRkXCIgLS0-IGYxbzEzXG4gICAgICAgIGYxbzQgLS0gXCJQYWlyIDAvMlwiIC0tPiBmMW8xNFxuICAgICAgICBmMW8xMyAtLSBcIlBhaXIgMS8yXCIgLS0-IGYxbzE0XG4gICAgICAgIGYxbzE0IC0tIFwiSW5kZXhcIiAtLT4gZjFvMTVcbiAgICAgICAgZjFvOSAtLSBcIlBhaXIgMC8yXCIgLS0-IGYxbzE2XG4gICAgICAgIGYxbzMgLS0gXCJQYWlyIDEvMlwiIC0tPiBmMW8xNlxuICAgICAgICBmMW8xNiAtLSBcIk11bFwiIC0tPiBmMW8xN1xuICAgICAgICBmMW8xNyAtLSBcIlBhaXIgMC8yXCIgLS0-IGYxbzE4XG4gICAgICAgIGYxbzcgLS0gXCJQYWlyIDEvMlwiIC0tPiBmMW8xOFxuICAgICAgICBmMW8xOCAtLSBcIkFkZFwiIC0tPiBmMW8xOVxuICAgICAgICBmMW82IC0tIFwiUGFpciAwLzJcIiAtLT4gZjFvMjBcbiAgICAgICAgZjFvMTkgLS0gXCJQYWlyIDEvMlwiIC0tPiBmMW8yMFxuICAgICAgICBmMW8yMCAtLSBcIkluZGV4XCIgLS0-IGYxbzIxXG4gICAgICAgIGYxbzE1IC0tIFwiUGFpciAwLzJcIiAtLT4gZjFvMjJcbiAgICAgICAgZjFvMjEgLS0gXCJQYWlyIDEvMlwiIC0tPiBmMW8yMlxuICAgICAgICBmMW8yMiAtLSBcIk11bFwiIC0tPiBmMW8yM1xuICAgICAgICBmMW84IC0tIFwiUGFpciAwLzJcIiAtLT4gZjFvMjRcbiAgICAgICAgZjFvMjMgLS0gXCJQYWlyIDEvMlwiIC0tPiBmMW8yNFxuICAgICAgICBmMW8yNCAtLSBcIkFkZFwiIC0tPiBmMW8xXG4gICAgZW5kXG4gICAgc3ViZ3JhcGggZjJbXCJmbiBtYWluOjptYXBAMFwiXVxuICAgICAgICBmMm8wKChcIihbaTMyOyA2NF0sIFtmMzI7IDQwOTZdLCBbZjMyOyA0MDk2XSwgaTMyKVwiKSlcbiAgICAgICAgZjJvMSgoXCJyZXQ6IGYzMlwiKSlcbiAgICAgICAgZjJvMigoXCI2NDogaTMyXCIpKVxuICAgICAgICBmMm8zKChcIjY0OiBpMzJcIikpXG4gICAgICAgIGYybzQoKFwiMC4wOiBmMzJcIikpXG4gICAgICAgIGYybzUoKFwiMS4wOiBmMzJcIikpXG4gICAgICAgIGYybzYoKFwiMC4wOiBmMzJcIikpXG4gICAgICAgIGYybzcoKFwiMS4wOiBmMzJcIikpXG4gICAgICAgIGYybzgoKFwiMC4wOiBmMzJcIikpXG4gICAgICAgIGYybzkoKFwiW2kzMjsgNjRdXCIpKVxuICAgICAgICBmMm8xMCgoXCJbZjMyOyA0MDk2XVwiKSlcbiAgICAgICAgZjJvMTEoKFwiW2YzMjsgNDA5Nl1cIikpXG4gICAgICAgIGYybzEyKChcImkzMlwiKSlcbiAgICAgICAgZjJvMTMoKFwiKGkzMiwgaTMyKVwiKSlcbiAgICAgICAgZjJvMTQoKFwicm93OiBpMzJcIikpXG4gICAgICAgIGYybzE1KChcIihpMzIsIGkzMilcIikpXG4gICAgICAgIGYybzE2KChcImNvbHVtbjogaTMyXCIpKVxuICAgICAgICBmMm8xNygoXCIoW2YzMjsgNDA5Nl0sIGkzMiwgW2YzMjsgNDA5Nl0sIGkzMiwgZjMyLCBbaTMyOyA2NF0pXCIpKVxuICAgICAgICBmMm8xOCgoXCJkb3Q6IGYzMlwiKSlcbiAgICAgICAgZjJvMTkoKFwiKGYzMiwgZjMyKVwiKSlcbiAgICAgICAgZjJvMjAoKFwiZjMyXCIpKVxuICAgICAgICBmMm8yMSgoXCIoZjMyLCBmMzIpXCIpKVxuICAgICAgICBmMm8yMigoXCJib29sXCIpKVxuICAgICAgICBmMm8yMygoXCIoZjMyLCBmMzIpXCIpKVxuICAgICAgICBmMm8yNCgoXCJmMzJcIikpXG4gICAgICAgIGYybzI1KChcIihmMzIsIGYzMiwgYm9vbClcIikpXG4gICAgICAgIGYybzAgLS0gXCJQcm9qIDBcIiAtLT4gZjJvOVxuICAgICAgICBmMm8wIC0tIFwiUHJvaiAxXCIgLS0-IGYybzEwXG4gICAgICAgIGYybzAgLS0gXCJQcm9qIDJcIiAtLT4gZjJvMTFcbiAgICAgICAgZjJvMCAtLSBcIlByb2ogM1wiIC0tPiBmMm8xMlxuICAgICAgICBmMm8xMiAtLSBcIlBhaXIgMC8yXCIgLS0-IGYybzEzXG4gICAgICAgIGYybzIgLS0gXCJQYWlyIDEvMlwiIC0tPiBmMm8xM1xuICAgICAgICBmMm8xMyAtLSBcIkRpdlwiIC0tPiBmMm8xNFxuICAgICAgICBmMm8xMiAtLSBcIlBhaXIgMC8yXCIgLS0-IGYybzE1XG4gICAgICAgIGYybzMgLS0gXCJQYWlyIDEvMlwiIC0tPiBmMm8xNVxuICAgICAgICBmMm8xNSAtLSBcIk1vZFwiIC0tPiBmMm8xNlxuICAgICAgICBmMm8xMCAtLSBcIlBhaXIgMC82XCIgLS0-IGYybzE3XG4gICAgICAgIGYybzE0IC0tIFwiUGFpciAxLzZcIiAtLT4gZjJvMTdcbiAgICAgICAgZjJvMTEgLS0gXCJQYWlyIDIvNlwiIC0tPiBmMm8xN1xuICAgICAgICBmMm8xNiAtLSBcIlBhaXIgMy82XCIgLS0-IGYybzE3XG4gICAgICAgIGYybzQgLS0gXCJQYWlyIDQvNlwiIC0tPiBmMm8xN1xuICAgICAgICBmMm85IC0tIFwiUGFpciA1LzZcIiAtLT4gZjJvMTdcbiAgICAgICAgZjJvMTcgLS0gXCJGb2xkICgrNCBjYXBzKVwiIC0tPiBmMm8xOFxuICAgICAgICBmMm8xOCAtLSBcIlBhaXIgMC8yXCIgLS0-IGYybzE5XG4gICAgICAgIGYybzUgLS0gXCJQYWlyIDEvMlwiIC0tPiBmMm8xOVxuICAgICAgICBmMm8xOSAtLSBcIkFkZFwiIC0tPiBmMm8yMFxuICAgICAgICBmMm8yMCAtLSBcIlBhaXIgMC8yXCIgLS0-IGYybzIxXG4gICAgICAgIGYybzYgLS0gXCJQYWlyIDEvMlwiIC0tPiBmMm8yMVxuICAgICAgICBmMm8yMSAtLSBcIkd0XCIgLS0-IGYybzIyXG4gICAgICAgIGYybzE4IC0tIFwiUGFpciAwLzJcIiAtLT4gZjJvMjNcbiAgICAgICAgZjJvNyAtLSBcIlBhaXIgMS8yXCIgLS0-IGYybzIzXG4gICAgICAgIGYybzIzIC0tIFwiQWRkXCIgLS0-IGYybzI0XG4gICAgICAgIGYybzI0IC0tIFwiUGFpciAwLzNcIiAtLT4gZjJvMjVcbiAgICAgICAgZjJvOCAtLSBcIlBhaXIgMS8zXCIgLS0-IGYybzI1XG4gICAgICAgIGYybzIyIC0tIFwiUGFpciAyLzNcIiAtLT4gZjJvMjVcbiAgICAgICAgZjJvMjUgLS0gXCJQaGlcIiAtLT4gZjJvMVxuICAgIGVuZCIsIm1lcm1haWQiOiJ7XCJ0aGVtZVwiOiBcImRhcmtcIn0iLCJhdXRvU3luYyI6dHJ1ZSwidXBkYXRlRGlhZ3JhbSI6dHJ1ZX0" target="_blank" rel="noopener">Open in mermaid.live</a></p>
 </div></details>
 <!-- exposition:gen end -->
     </div>
@@ -2785,6 +2823,7 @@ mapal dump-ir  prog.mapal --stage=lowered     # sealed graph, as lowered
 mapal dump-ir  prog.mapal --stage=rewritten   # graph after rewriting
 mapal dump-ir  prog.mapal --stage=llvm        # emitted LLVM IR text
 mapal dump-ir  prog.mapal --stage=device      # emitted device (PTX) text, when placed
+mapal dump-ir  prog.mapal --mermaid           # the graph as a string diagram (=category, =graph, =flow)
 mapal test     prog.mapal              # differential: compiled vs the interpreter (development mode, bit for bit)
 mapal fmt      prog.mapal              # formatter (owns layout; --check to verify)</code></pre>
 <p>Useful flags while exploring: <code>--interp</code> (run the oracle instead of compiling), <code>--interp --bound</code> (print each value’s composed default-face error bound instead of the value), <code>--no-rewrite</code> (skip the optimizer), <code>--static=off</code> (no compile-time evaluation), <code>--emit-only</code> (stop after emission), <code>--target=&lt;profile&gt;</code> (e.g. <code>native</code>, <code>native-gpu</code>, <code>rtx-3090</code>), <code>--exact</code> / <code>--order=sequential|fixed</code> (development modes, §9.2), <code>--gpu-off=&lt;rung&gt;</code> / <code>--gpu-on=&lt;rung&gt;</code> (a GPU rule’s measurement arms, §9.3). If the CLI is not installed, every command works as <code>cargo run -p mapal-cli -- &lt;args&gt;</code>.</p>

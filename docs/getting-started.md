@@ -52,6 +52,7 @@ themselves, one by one: [syntax](syntax.md).
 | `mapal build file.mapal -o exe` | compile and link an executable (`--emit-only`: the LLVM IR, and the PTX for a GPU) |
 | `mapal test file.mapal` | the compiled program against the interpreter, byte for byte |
 | `mapal dump-ir file.mapal` | the program's graph at a stage (`--stage=lowered`, `rewritten`, `llvm`, `device`) |
+| `mapal dump-ir --mermaid file.mapal` | the program as a Mermaid string diagram (steps are boxes, named values are wires); `--mermaid=category` draws it as a commutative diagram, `--mermaid=graph` is the stored graph, `=flow` the named values; `string` / `category` take `,condensed` |
 | `mapal fmt files…` | format source ([below](#formatting)) |
 | `mapal lsp` | the language server, over stdin / stdout (editors start it) |
 

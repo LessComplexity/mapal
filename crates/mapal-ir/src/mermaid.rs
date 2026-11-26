@@ -176,6 +176,18 @@ pub(crate) fn edge_label(op: &Operation) -> String {
 
 /// Escape a label per §14 rule 1: `"` becomes `#quot;` before quoting.
 pub(crate) fn escape(s: &str) -> String {
+    // Mermaid 11 reads a label that starts like a markdown list item (`+`, `+ · guard`,
+    // `- x`, `* x`) as a list ("Unsupported markdown: list"): its first character goes
+    // as an entity.
+    let list = s.starts_with(['+', '-', '*']) && s[1..].chars().next().is_none_or(|c| c == ' ');
+    if list {
+        let ent = match s.as_bytes()[0] {
+            b'+' => "#43;",
+            b'-' => "#45;",
+            _ => "#42;",
+        };
+        return format!("{ent}{}", escape(&s[1..]));
+    }
     // `<` / `>` (an instance name `cell<4>`, ADR-0047) as entities, so a
     // renderer never reads them as markup.
     s.replace('"', "#quot;")

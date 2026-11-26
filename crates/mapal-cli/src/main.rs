@@ -28,12 +28,13 @@ const USAGE: &str = "usage: mapal <build|run|dump-ir|test|fmt|lsp> <file.mapal> 
   run      [--interp [--weakest | --bound]] [--budget N]  compile and execute (--interp: the oracle;
            --bound: the output with each float printed as its composed default-face bound)
   dump-ir  [--stage=lowered|rewritten|llvm|device]
-           [--mermaid[=full|flow|category|string][,condensed]]
+           [--mermaid[=string|category][,condensed]|=graph|=flow]
                                           the graph as Mermaid (lowered or rewritten; default rewritten):
-                                          full = every object, flow = the named values and what they read;
-                                          category = commutative-diagram style (objects, pairings from Γ, arrows),
-                                          string = string-diagram style (steps are boxes, values are wires);
-                                          ,condensed keeps only the named values and labels collapsed chains
+                                          bare --mermaid = the condensed string diagram (steps are boxes, named
+                                          values are wires); =string the full string diagram; =category (,condensed)
+                                          the commutative-diagram style (objects, pairings from Γ, arrows);
+                                          =graph the stored graph, every object and morphism; =flow the named
+                                          values and what they read
   test     [--budget N] [--timeout SECS]  the fixed face (or --exact) vs the oracle, byte for byte
            [--weakest]                    vs the exact face within the composed bound (ADR-0041 D5;
                                           implied where a product admits a reduced member)
@@ -167,7 +168,7 @@ fn parse_args(mut it: impl Iterator<Item = String>) -> Res<Args> {
             "--static=off" => a.static_eval = false,
             "--static=on" => a.static_eval = true,
             "-v" => a.verbose = true,
-            "--mermaid" => a.mermaid = Some("full".into()),
+            "--mermaid" => a.mermaid = Some("string,condensed".into()),
             _ if s.starts_with("--mermaid=") => a.mermaid = Some(s["--mermaid=".len()..].into()),
             _ if s.starts_with("--stage=") => a.stage = s["--stage=".len()..].into(),
             _ if !s.starts_with('-') && a.file.is_empty() => a.file = s,
@@ -615,7 +616,7 @@ fn dump_ir(a: &Args) -> Res<u8> {
         };
         let src = std::fs::read_to_string(&a.file).ok();
         let text = match (form, condensed) {
-            ("full", false) => ir.to_mermaid(),
+            ("graph" | "full", false) => ir.to_mermaid(),
             ("flow", false) => match &src {
                 Some(src) => ir.to_mermaid_flow_src(src),
                 None => ir.to_mermaid_flow(),
@@ -630,8 +631,8 @@ fn dump_ir(a: &Args) -> Res<u8> {
                 Some(src) => ir.to_mermaid_string_condensed_src(src),
                 None => ir.to_mermaid_string_condensed(),
             },
-            ("full" | "flow", true) => return Err(usage("`condensed` goes with category or string (flow is already condensed)")),
-            (k, _) => return Err(usage(&format!("unknown mermaid form `{k}` (full|flow|category|string)"))),
+            ("graph" | "full" | "flow", true) => return Err(usage("`condensed` goes with category or string (flow is already condensed)")),
+            (k, _) => return Err(usage(&format!("unknown mermaid form `{k}` (string|category|graph|flow)"))),
         };
         print!("{text}");
         return Ok(0);

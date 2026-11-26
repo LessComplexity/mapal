@@ -17,13 +17,13 @@ Kinds (attributes in brackets are optional):
     gpus     file [targets] [scale]         the same kernel under several GPU profiles (compile only)
     ptxmix   file [target] [scale]          PTX instruction mix of the emitted module + the inner-loop excerpt
     graph    file [short] [mermaid=1]        operation counts of the graph: as lowered, after rewriting; mermaid=1 adds the flow
-                                             view, the full `--mermaid` graph and the full category and string diagrams (zoom boxes, collapsed)
+                                             view, the stored graph (`--mermaid=graph`) and the full category and string diagrams (zoom boxes, collapsed)
     syntax   file                            token classes the language server reports
     llama    [target]                        kernel kinds of the whole Llama-3.2-1B emission
     chart    name                            an inline SVG chart (light and dark variants), ids made unique
     diagrams file                            the hero's two-tab switch: the condensed category and string diagrams
-                                             (`--mermaid=category,condensed`, `--mermaid=string,condensed`)
-    flow     file                            the flow view of the compiler's own graph: `mapal dump-ir --stage=rewritten --mermaid=flow`
+                                             (`--mermaid` = `--mermaid=string,condensed`, and `--mermaid=category,condensed`)
+    flow     file                            the flow view of the compiler's own graph: `mapal dump-ir --mermaid=flow`
     gpuline  file [target] [scale]          one plain sentence on the kernel the compiler made (compile only)
     perf     name=families|samples|cpu|ttft  the Performance section's charts and line, drawn by docs/tools/perf_charts.py
                                              from matrix.json, full-model.json and earlier-readme-results.md
@@ -41,6 +41,8 @@ Env:    MAPAL_BIN (default target/release/mapal)   MAPAL_LLC_DIR via the compile
 from __future__ import annotations
 
 import argparse
+import base64
+import json
 import difflib
 import html
 import os
@@ -299,7 +301,7 @@ def k_graph(a: dict) -> str:
     lines.append(f"all operations     lowered {sum(lo[1].values()):>4}   rewritten {sum(rw[1].values()):>4}")
     out = pre("\n".join(lines), label=f"The graph <span>mapal dump-ir --stage=lowered|rewritten {esc(Path(a['file']).name)}</span>")
     if a.get("mermaid"):
-        out += "\n" + flow_block(a) + "\n" + full_graph_block(a) + "\n" + full_diagram_blocks(a)
+        out += "\n" + condensed_block(a) + "\n" + full_diagram_blocks(a) + "\n" + flow_block(a) + "\n" + full_graph_block(a)
     return out
 
 
@@ -358,17 +360,25 @@ def k_perf(a: dict) -> str:
 def mermaid_of(path: Path, form: str, stage: str = "rewritten") -> str:
     """The compiler's own Mermaid text for the graph: `form` is `flow`, `full`, or `category` / `string`
     (each optionally `,condensed`)."""
-    flag = "--mermaid" if form == "full" else f"--mermaid={form}"
+    flag = "--mermaid=graph" if form == "full" else f"--mermaid={form}"
     return sh([exe(), "dump-ir", path.name, f"--stage={stage}", flag], cwd=path.parent).stdout.rstrip("\n")
 
 
+def live_url(text: str) -> str:
+    """mermaid.live's editor URL for a diagram (its `#base64:` state form, URL-safe, unpadded)."""
+    state = json.dumps({"code": text, "mermaid": json.dumps({"theme": "dark"}), "autoSync": True, "updateDiagram": True},
+                       ensure_ascii=False, separators=(",", ":"))
+    return "https://mermaid.live/edit#base64:" + base64.urlsafe_b64encode(state.encode()).decode().rstrip("=")
+
+
 def mermaid_div(text: str, cls: str = "mermaid") -> str:
-    return f'<div class="{cls}">\n{esc(text)}\n</div>'
+    return (f'<div class="{cls}">\n{esc(text)}\n</div>\n'
+            f'<p class="mlive"><a href="{live_url(text)}" target="_blank" rel="noopener">Open in mermaid.live</a></p>')
 
 
 def flow_block(a: dict) -> str:
     p = ROOT / a["file"]
-    cmd = f"mapal dump-ir --stage=rewritten --mermaid=flow {p.name}"
+    cmd = f"mapal dump-ir --mermaid=flow {p.name}"
     return (f'<div class="io-h">The flow <span>{esc(cmd)}</span></div>\n'
             + mermaid_div(mermaid_of(p, "flow")))
 
@@ -383,24 +393,26 @@ ZOOM_BAR = ('<div class="zoombox"><div class="zbar"><button type="button" data-z
 
 def full_graph_block(a: dict) -> str:
     p = ROOT / a["file"]
-    cmd = f"mapal dump-ir --stage=rewritten --mermaid {p.name}"
+    cmd = f"mapal dump-ir --mermaid=graph {p.name}"
     text = mermaid_of(p, "full")
     nodes = len(re.findall(r"\(\(", text))
-    return (f'<details class="gfull"><summary>The full graph, every object and operation ({nodes} nodes)</summary>\n'
-            f'<div class="io-h">The full graph <span>{esc(cmd)}</span></div>\n'
+    return (f'<details class="gfull"><summary>The stored graph, every object and operation ({nodes} nodes)</summary>\n'
+            f'<div class="io-h">The stored graph <span>{esc(cmd)}</span></div>\n'
             + ZOOM_BAR + mermaid_div(text) + "\n</div></details>")
 
 
-DIAGRAMS = (("category", "Category diagram",
-             "Objects are nodes and steps are arrows, as the spec draws a category: a product is one pairing from Γ, "
-             "the context the function runs in."),
-            ("string", "String diagram",
+DIAGRAMS = (("string", "String diagram",
              "Steps are boxes and values are wires: a product is just several wires entering one box, "
-             "and a value read twice splits at a Δ."))
+             "and a value read twice splits at a Δ."),
+            ("category", "Category diagram",
+             "Objects are nodes and steps are arrows, as the spec draws a category: a product is one pairing from Γ, "
+             "the context the function runs in."))
 
 
 def diagram_cmd(p: Path, form: str) -> str:
-    return f"mapal dump-ir --stage=rewritten --mermaid={form} {p.name}"
+    """The command that prints `form`; the condensed string diagram is the bare `--mermaid` default."""
+    flag = "--mermaid" if form == "string,condensed" else f"--mermaid={form}"
+    return f"mapal dump-ir {flag} {p.name}"
 
 
 def k_diagrams(a: dict) -> str:
@@ -414,10 +426,16 @@ def k_diagrams(a: dict) -> str:
     panes = "".join(
         f'<div class="pane" id="{n}-p{i}" role="tabpanel" aria-labelledby="{n}-t{i}"{"" if i == 0 else " hidden"}>'
         f'<p class="dcap">{note}</p>\n'
-        f'<div class="io-h">The condensed form <span>{esc(diagram_cmd(p, form + ",condensed"))}</span></div>\n'
+        f'<div class="io-h">The {"default" if i == 0 else "condensed"} form <span>{esc(diagram_cmd(p, form + ",condensed"))}</span></div>\n'
         + mermaid_div(mermaid_of(p, form + ",condensed")) + "\n</div>"
         for i, (form, _, note) in enumerate(DIAGRAMS))
     return (f'<div class="dtabs"><div class="tabs" role="tablist" aria-label="How to draw the graph">{bar}</div>\n{panes}</div>')
+
+
+def condensed_block(a: dict) -> str:
+    p = ROOT / a["file"]
+    return (f'<div class="io-h">The default diagram <span>{esc(diagram_cmd(p, "string,condensed"))}</span></div>\n'
+            + mermaid_div(mermaid_of(p, "string,condensed")))
 
 
 def full_diagram_blocks(a: dict) -> str:
