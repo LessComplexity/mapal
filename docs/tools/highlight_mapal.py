@@ -71,6 +71,9 @@ FIXTURE_TOKENS = ROOT / "editors" / "test" / "fixture.tokens.tsv"
 # ---------------------------------------------------------------------------------------------
 
 
+GITHUB_BLOB = "https://github.com/LessComplexity/mapal/blob/main/"
+
+
 def load_classes() -> dict[str, tuple[str, str, str]]:
     """`class -> (vim group, TextMate scope, lsp token)`, in the table's order."""
     out = {}
@@ -730,7 +733,7 @@ def render_inline(hl: Highlighter, rid: str, path: str, title: str) -> str:
     body = hl.html((ROOT / path).as_uri(), shown)
     count = shown.count("\n") + 1
     eol = ' data-eol="1"' if text.endswith("\n") else ""
-    href = os.path.relpath(ROOT / path, PAGE.parent)
+    href = GITHUB_BLOB + str(path)  # Pages serves only docs/: every repository file is a GitHub URL on main
     return (
         f'<figure class="hl-demo" id="{rid}"><pre class="hl" id="{rid}-src"><code>{body}</code></pre>'
         f'<figcaption><span>{html.escape(title)} — <a href="{html.escape(href)}"><code>{html.escape(path)}'
@@ -746,7 +749,7 @@ def render_file(hl: Highlighter, rid: str, path: str, title: str) -> str:
     numbered = "\n".join(f'<span class="ln">{line}</span>' for line in body.split("\n"))
     count = shown.count("\n") + 1
     eol = ' data-eol="1"' if text.endswith("\n") else ""
-    href = os.path.relpath(ROOT / path, PAGE.parent)
+    href = GITHUB_BLOB + str(path)  # Pages serves only docs/: every repository file is a GitHub URL on main
     return (
         f'\n<details class="hl-file" id="{rid}"><summary>{html.escape(title)} — '
         f"<code>{html.escape(path)}</code>, {count} lines</summary><div class=\"body\">\n"

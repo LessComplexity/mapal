@@ -399,6 +399,7 @@ def natural(svg: str, uid: str, key: str, theme: str) -> str:
     w = re.search(r'viewBox="[-\d.]+ [-\d.]+ ([\d.]+) [\d.]+"', svg).group(1)
     svg = svg.replace('width="100%"', f'width="{w}"', 1)
     svg = re.sub(r' style="max-width: [\d.]+px;"', "", svg, count=1)
+    svg = re.sub(r"-?\d+\.\d{3,}", lambda m: f"{float(m.group()):.2f}".rstrip("0").rstrip("."), svg)  # 2 decimals: the layout's float noise is most of the bytes
     return svg.replace(f"mmd-{key}", f"mmd-{key}-{theme}{uid}")
 
 
