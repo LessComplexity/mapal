@@ -28,6 +28,13 @@ const USAGE: &str = "usage: mapal <build|run|dump-ir|test|fmt|lsp> <file.mapal> 
   run      [--interp [--weakest | --bound]] [--budget N]  compile and execute (--interp: the oracle;
            --bound: the output with each float printed as its composed default-face bound)
   dump-ir  [--stage=lowered|rewritten|llvm|device]
+           [--mermaid[=string|category][,condensed]|=graph|=flow]
+                                          the graph as Mermaid (lowered or rewritten; default rewritten):
+                                          bare --mermaid = the condensed string diagram (steps are boxes, named
+                                          values are wires); =string the full string diagram; =category (,condensed)
+                                          the commutative-diagram style (objects, pairings from Γ, arrows);
+                                          =graph the stored graph, every object and morphism; =flow the named
+                                          values and what they read
   test     [--budget N] [--timeout SECS]  the fixed face (or --exact) vs the oracle, byte for byte
            [--weakest]                    vs the exact face within the composed bound (ADR-0041 D5;
                                           implied where a product admits a reduced member)
@@ -59,6 +66,8 @@ struct Args {
     budget: u64,
     timeout: u64,
     stage: String,
+    /// `dump-ir --mermaid[=full|flow]`: the graph as Mermaid text.
+    mermaid: Option<String>,
     rewrite: bool,
     /// ADR-0048 D3: compile-time evaluation (`static_plan` roots embedded).
     static_eval: bool,
@@ -125,6 +134,7 @@ fn parse_args(mut it: impl Iterator<Item = String>) -> Res<Args> {
         budget: 100_000_000,
         timeout: 60,
         stage: "llvm".into(),
+        mermaid: None,
         rewrite: true,
         static_eval: std::env::var("MAPAL_STATIC").map_or(true, |v| v != "off"),
         verbose: false,
@@ -158,6 +168,8 @@ fn parse_args(mut it: impl Iterator<Item = String>) -> Res<Args> {
             "--static=off" => a.static_eval = false,
             "--static=on" => a.static_eval = true,
             "-v" => a.verbose = true,
+            "--mermaid" => a.mermaid = Some("string,condensed".into()),
+            _ if s.starts_with("--mermaid=") => a.mermaid = Some(s["--mermaid=".len()..].into()),
             _ if s.starts_with("--stage=") => a.stage = s["--stage=".len()..].into(),
             _ if !s.starts_with('-') && a.file.is_empty() => a.file = s,
             _ => return Err(usage(&format!("unknown argument `{s}`"))),
@@ -591,6 +603,40 @@ fn bound_shape(bounds: &[mapal_interp::Bound]) -> String {
 
 fn dump_ir(a: &Args) -> Res<u8> {
     let ir = frontend(a)?;
+    if let Some(kind) = &a.mermaid {
+        let ir = match a.stage.as_str() {
+            "lowered" => ir,
+            "rewritten" | "llvm" => rewritten(a, ir),
+            s => return Err(usage(&format!("--mermaid draws the lowered or rewritten graph, not `{s}`"))),
+        };
+        let (form, condensed) = match kind.split_once(',') {
+            Some((f, "condensed")) => (f, true),
+            Some((_, c)) => return Err(usage(&format!("unknown mermaid option `{c}` (condensed)"))),
+            None => (kind.as_str(), false),
+        };
+        let src = std::fs::read_to_string(&a.file).ok();
+        let text = match (form, condensed) {
+            ("graph" | "full", false) => ir.to_mermaid(),
+            ("flow", false) => match &src {
+                Some(src) => ir.to_mermaid_flow_src(src),
+                None => ir.to_mermaid_flow(),
+            },
+            ("category", false) => ir.to_mermaid_category(),
+            ("string", false) => ir.to_mermaid_string(),
+            ("category", true) => match &src {
+                Some(src) => ir.to_mermaid_category_condensed_src(src),
+                None => ir.to_mermaid_category_condensed(),
+            },
+            ("string", true) => match &src {
+                Some(src) => ir.to_mermaid_string_condensed_src(src),
+                None => ir.to_mermaid_string_condensed(),
+            },
+            ("graph" | "full" | "flow", true) => return Err(usage("`condensed` goes with category or string (flow is already condensed)")),
+            (k, _) => return Err(usage(&format!("unknown mermaid form `{k}` (string|category|graph|flow)"))),
+        };
+        print!("{text}");
+        return Ok(0);
+    }
     match a.stage.as_str() {
         "lowered" => println!("{ir:#?}"),
         "rewritten" => println!("{:#?}", rewritten(a, ir)),

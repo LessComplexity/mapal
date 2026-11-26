@@ -835,22 +835,36 @@ fn trav_of(l: &Launch) -> Traversal {
             comb: Comb::Workspace,
             h,
         },
-        Combine::StreamK { ctas, iters } => Traversal::Walk { h, ctas, iters },
+        Combine::StreamK {
+            ctas,
+            iters,
+            whole: 0,
+        } => Traversal::Walk { h, ctas, iters },
+        Combine::StreamK { ctas, iters, .. } => Traversal::Hybrid { h, ctas, iters },
     }
 }
 
-fn combine_of(t: Traversal) -> Combine {
+/// The combine traversal `t` lowers to; a hybrid's whole waves are the
+/// `tiles` of the grid over `slots` (the footprint's).
+fn combine_of(t: Traversal, tiles: u64, slots: u64) -> Combine {
     match t {
-        Traversal::Ordered { .. } | Traversal::Persistent { .. } | Traversal::Hybrid { .. } => {
-            Combine::None
-        }
+        Traversal::Ordered { .. } | Traversal::Persistent { .. } => Combine::None,
+        Traversal::Hybrid { ctas, iters, .. } => Combine::StreamK {
+            ctas,
+            iters,
+            whole: tiles / slots.max(1) * slots.max(1),
+        },
         Traversal::Split {
             s,
             comb: Comb::Atomic,
             ..
         } => Combine::Atomic { s },
         Traversal::Split { s, .. } => Combine::Workspace { s },
-        Traversal::Walk { ctas, iters, .. } => Combine::StreamK { ctas, iters },
+        Traversal::Walk { ctas, iters, .. } => Combine::StreamK {
+            ctas,
+            iters,
+            whole: 0,
+        },
     }
 }
 
@@ -1138,7 +1152,7 @@ pub fn launch_of(
         }
     };
     let _ = contract;
-    let mut rungs = table_rungs(site, profile, arms, arithmetic);
+    let mut rungs = memo_rungs(site, profile, arms, arithmetic);
     for (n, v) in &x.params {
         let on = match *n {
             "rung+" => true,
@@ -1258,7 +1272,11 @@ pub fn launch_of(
         smem,
         raster: x.trav.raster().max(1),
         rungs,
-        combine: combine_of(x.trav),
+        combine: combine_of(
+            x.trav,
+            (site.rows / x.bm().max(1)) * (site.c / x.bn().max(1)),
+            gpu.sms * x.per_unit.max(1),
+        ),
         cells,
     }
 }
@@ -1531,26 +1549,156 @@ impl Lowering for Emitter<'_> {
     }
 
     fn traversals(&self) -> &'static [TravKind] {
-        match self.id {
-            // `wgmma`: no combine at all (a declared constraint).
-            WGMMA | WGMMA_WS => &[TravKind::Ordered],
-            _ => &[
-                TravKind::Ordered,
-                TravKind::SplitAtomic,
-                TravKind::SplitWorkspace,
-                TravKind::Walk,
-            ],
+        // The emitters' kernels: `wgmma` no combine at all; the one-thread
+        // -per-cell kernel and the warp tile split; the FMA tile and the
+        // 16-bit warp tile walk too (`declare` keeps the walk to them). An
+        // arm that turns a combine's rung off removes its kind (the
+        // epilogue groups' realizations, `group_order`).
+        const ALL: [TravKind; 5] = [
+            TravKind::Ordered,
+            TravKind::SplitAtomic,
+            TravKind::SplitWorkspace,
+            TravKind::Walk,
+            TravKind::Hybrid,
+        ];
+        const NO_WS: [TravKind; 4] = [
+            TravKind::Ordered,
+            TravKind::SplitAtomic,
+            TravKind::Walk,
+            TravKind::Hybrid,
+        ];
+        const NO_ATOMIC: [TravKind; 4] = [
+            TravKind::Ordered,
+            TravKind::SplitWorkspace,
+            TravKind::Walk,
+            TravKind::Hybrid,
+        ];
+        const WALKS: [TravKind; 3] = [TravKind::Ordered, TravKind::Walk, TravKind::Hybrid];
+        const SPLITS: [TravKind; 3] = [
+            TravKind::Ordered,
+            TravKind::SplitAtomic,
+            TravKind::SplitWorkspace,
+        ];
+        const ORDERED: [TravKind; 1] = [TravKind::Ordered];
+        const WS: [TravKind; 2] = [TravKind::Ordered, TravKind::SplitWorkspace];
+        const AT: [TravKind; 2] = [TravKind::Ordered, TravKind::SplitAtomic];
+        if matches!(self.id, WGMMA | WGMMA_WS) {
+            return &ORDERED;
+        }
+        let off = self.arms.off;
+        match (off.splitk, off.splitk_atomic, off.streamk) {
+            (false, false, false) => &ALL,
+            (true, false, false) => &NO_WS,
+            (false, true, false) => &NO_ATOMIC,
+            (true, true, false) => &WALKS,
+            (false, false, true) => &SPLITS,
+            (true, false, true) => &AT,
+            (false, true, true) => &WS,
+            (true, true, true) => &ORDERED,
         }
     }
 
+    /// The operations the search places the site on (D5 step 1): the
+    /// face's scalar step for the scalar kernels; for the tensor tiles each
+    /// matrix row of the lowering's issuing width whose format the site's
+    /// precision set admits ([`mapal_place::space::ops`]'s rule over the
+    /// part's rows: TF32 where the set holds it, a 16-bit format its
+    /// operands stage in, the accumulator meeting the set), on a separable
+    /// site with no radix, where the part copies (`cp.async`, `ldmatrix`
+    /// for 16 bits) and the family's rung is on. Both roles for `wgmma`.
     fn ops(&self, _m: &Machine, _s: &Site) -> Vec<(usize, bool)> {
-        self.domain(0, &[])
-            .into_iter()
-            .flat_map(|o| match self.id {
-                WGMMA | WGMMA_WS => vec![(o as usize, false), (o as usize, true)],
-                _ => vec![(o as usize, false)],
-            })
-            .collect()
+        let g = self.gpu();
+        let site = self.site;
+        let rungs = memo_rungs(site, self.profile, self.arms, Arithmetic::OrderedFma);
+        match self.id {
+            NAIVE | FMA => {
+                let op = if self.contract { OP_FFMA } else { OP_MULADD };
+                vec![(op, false)]
+            }
+            _ => {
+                let shaped = site.a.clane == 0 && site.b.ci == 0 && site.radix.is_none();
+                if !shaped || site.elem != Ty::f32() || !g.caps.cp_async {
+                    return Vec::new();
+                }
+                let group = matches!(self.id, WGMMA | WGMMA_WS);
+                let on = match self.id {
+                    MMA => rungs.mma,
+                    WGMMA => rungs.mma && rungs.wgmma,
+                    _ => rungs.mma && rungs.wgmma && rungs.wgmma_ws,
+                };
+                if !on || (group && !g.has_wgmma()) {
+                    return Vec::new();
+                }
+                let mut out = Vec::new();
+                for (j, o) in g.caps.matrix.iter().enumerate() {
+                    if (o.shape.threads > 32) != group || o.shape.threads <= 1 {
+                        continue;
+                    }
+                    let admitted = match o.fmt {
+                        MmaFmt::Tf32 => site.tf32 && rungs.tf32_tile && (group || o.shape.k == 8),
+                        f => {
+                            site.half.is_some_and(|h| MmaFmt::of_narrow(h) == f)
+                                && rungs.half_tile
+                                && o.acc_meets(-23)
+                                && gpu::mma_widths(site, f).is_some()
+                                && (group || (g.caps.ldmatrix && o.shape.k == 32 / f.bytes()))
+                        }
+                    };
+                    let shape = group || (o.shape.m == 16 && o.shape.n == 8);
+                    // A warpgroup product's `a` from shared memory where the
+                    // site stores it in the format, else from registers
+                    // (staged f32, rounded in the fragment load).
+                    let a_home = match (group, o.fmt) {
+                        (true, f) if f != MmaFmt::Tf32 => gpu::mma_widths(site, f)
+                            .is_some_and(|(ea, _)| (o.a == MHome::Smem) == (ea == f.bytes())),
+                        _ => true,
+                    };
+                    if !a_home {
+                        continue;
+                    }
+                    if admitted && shape && o.a == MHome::Regs || admitted && group {
+                        out.push((j + 2, false));
+                        if group {
+                            out.push((j + 2, true));
+                        }
+                    }
+                }
+                out.dedup();
+                out
+            }
+        }
+    }
+
+    fn dims(&self) -> usize {
+        self.coords().len()
+    }
+
+    fn search_domain(&self, _m: &Machine, _s: &Site, i: usize, pre: &[u64]) -> Vec<u64> {
+        self.narrowed(i, pre)
+    }
+
+    fn point(&self, _m: &Machine, _s: &Site, pre: &[u64], swap: bool) -> Option<Schedule> {
+        self.build(pre, swap)
+    }
+
+    fn lanes_of(&self, pre: &[u64], _swap: bool) -> Option<(u64, u64)> {
+        match self.id {
+            FMA if pre.len() >= 5 => Some((pre[3] * pre[4], pre[1] * pre[2])),
+            MMA if pre.len() >= 5 => Some((pre[3] * pre[4] * self.gpu().warp, pre[1] * pre[2])),
+            _ => None,
+        }
+    }
+
+    fn tile_of(&self, pre: &[u64], _swap: bool) -> Option<(u64, u64)> {
+        match self.id {
+            FMA if pre.len() >= 5 => Some((pre[4] * pre[1], pre[3] * pre[2])),
+            MMA if pre.len() >= 5 => Some((pre[3] * pre[1] * 16, pre[4] * pre[2] * 8)),
+            WGMMA | WGMMA_WS if pre.len() >= 8 => Some(match pre[7] {
+                1 => (pre[1], pre[2] * 64),
+                _ => (pre[2] * 64, pre[1]),
+            }),
+            _ => None,
+        }
     }
 
     fn slots(&self, m: &Machine, s: &Site, op: usize, swap: bool) -> Vec<Schedule> {
@@ -1600,6 +1748,32 @@ impl Lowering for Emitter<'_> {
         }
         if l.block > g.max_threads_per_block {
             return Err(Refusal::new("threads above a slot's"));
+        }
+        // ADR-0050 C4: the emitters' kernels for each traversal — the walk
+        // and the hybrid (`Kernel::segment`) on the register-staged FMA tile
+        // and the 16-bit warp tile without a split form; a raster on the
+        // block-indexed kernels (the one-thread-per-cell kernel numbers its
+        // cells).
+        let walked = matches!(x.trav, Traversal::Walk { .. } | Traversal::Hybrid { .. });
+        if walked {
+            let ok = match (l.tiled, l.mma) {
+                (Some(t), _) => t.stages < 2,
+                (None, Some(m)) => m.fmt != MmaFmt::Tf32 && m.split.is_none(),
+                _ => false,
+            };
+            if !ok {
+                return Err(Refusal::new("the walk runs the staged FMA or 16-bit tile"));
+            }
+        }
+        if self.id == NAIVE && x.trav.raster() > 1 {
+            return Err(Refusal::new("the cell kernel has no raster"));
+        }
+        if let Some(t) = l.tiled {
+            gpu::fma_constraints(site, &t, &l.rungs).map_err(Refusal::new)?;
+        }
+        if let Some(w) = l.wgmma.filter(|w| w.ws) {
+            gpu::ws_tensors(site, &w, g, l.rungs.tma_digits)
+                .ok_or_else(|| Refusal::new("no tensor boxes for the warp-specialized tile"))?;
         }
         let stages = x.depth();
         // `min-blocks`: the kernel asks for `per_unit` slots an SM
@@ -1662,6 +1836,7 @@ impl Lowering for Emitter<'_> {
                     chains: cells,
                     groups: NAIVE_THREADS / warp,
                     work: 0.0,
+                    whole_stores: false,
                 })
             }
             FMA => {
@@ -1672,7 +1847,29 @@ impl Lowering for Emitter<'_> {
                 if t.held > 0 && t.held < fma_held_regs(t.tm, t.tn, e) {
                     return Err(Refusal::new("held registers below the counted footprint"));
                 }
-                let lsu = gpu::lsu_per_panel(site, &t, &l.rungs, false) as f64;
+                let key = [
+                    t.tm,
+                    t.tn,
+                    t.tx,
+                    t.ty,
+                    t.bk,
+                    t.stages.min(2),
+                    u64::from(t.kmajor),
+                    t.pad_a,
+                    t.a_row_lanes,
+                ];
+                // Memoized only inside a search (one site, one rung table).
+                let active = SEARCHING.with(|c| c.get());
+                let hit = active
+                    .then(|| LSU.with(|c| c.borrow().get(&key).copied()))
+                    .flatten();
+                let lsu = hit.unwrap_or_else(|| {
+                    let v = gpu::lsu_per_panel(site, &t, &l.rungs, false);
+                    if active {
+                        LSU.with(|c| c.borrow_mut().insert(key, v));
+                    }
+                    v
+                }) as f64;
                 let ffma = (t.tm * t.tn * t.bk) as f64;
                 let regs = match t.held {
                     0 => {
@@ -1699,6 +1896,7 @@ impl Lowering for Emitter<'_> {
                     chains: t.tm * t.tn,
                     groups: t.threads().div_ceil(warp),
                     work: 0.0,
+                    whole_stores: false,
                 })
             }
             MMA => {
@@ -1747,6 +1945,9 @@ impl Lowering for Emitter<'_> {
                     chains: mt.mt * mt.nt,
                     groups: mt.warps_x * mt.warps_y,
                     work: (2 * bm * bn * bk) as f64 * products,
+                    // `mma_walk_store`: a whole piece stores as the ordered
+                    // kernel does.
+                    whole_stores: true,
                 })
             }
             _ => {
@@ -1797,6 +1998,7 @@ impl Lowering for Emitter<'_> {
                     chains: 1,
                     groups: w.groups * WARPGROUP_WARPS,
                     work: 0.0,
+                    whole_stores: false,
                 })
             }
         }
@@ -1804,6 +2006,254 @@ impl Lowering for Emitter<'_> {
 }
 
 impl Emitter<'_> {
+    /// **The search's domain of coordinate `i`** given `pre` (ADR-0050 C4):
+    /// [`Self::domain`] narrowed by the site's facts — an operand's stored
+    /// layout (`bt`, `b_kmajor`) and staged widths (`ea`, `eb`) are the
+    /// site's, tiles divide its extents, a slot's lanes fit a block, a
+    /// lane's accumulators its registers — and by dominance: a layout's pads
+    /// and lanes are the emitter's own conflict-free choice by the bank
+    /// model (no evaluator term reads them), a whole-file budget (`held`)
+    /// and a register reallocation (`regs_p`, `regs_c`) the counted
+    /// footprint, the split forms the rules' (an `{f32}` product's split
+    /// realization stays the incumbent's: open, ADR-0050 C6).
+    fn narrowed(&self, i: usize, pre: &[u64]) -> Vec<u64> {
+        let g = self.gpu();
+        let site = self.site;
+        let e = elem_bytes_of(&site.elem);
+        let threads_max = g.max_threads_per_block;
+        let rows = gpu::row_group(site);
+        let mut dom = self.domain(i, pre);
+        let name = self.coords()[i];
+        let divides = |n: u64, d: u64| d > 0 && n.is_multiple_of(d);
+        match (self.id, name) {
+            (FMA, "tn") => dom.retain(|&tn| fma_held_regs(pre[1], tn, e) <= g.regs_per_thread),
+            (FMA, "tx") => dom.retain(|&tx| divides(site.c, tx * pre[2])),
+            // A slot holds whole groups (the dispatch issues a group's lanes
+            // together; a partial group's lanes idle).
+            (FMA, "ty") => dom.retain(|&ty| {
+                ty * pre[3] <= threads_max
+                    && (ty * pre[3]).is_multiple_of(g.warp)
+                    && divides(rows, ty * pre[1])
+            }),
+            // Every thread copies an equal share of each panel.
+            (FMA, "bk") => {
+                let (bm, bn, threads) = (pre[4] * pre[1], pre[3] * pre[2], pre[3] * pre[4]);
+                dom.retain(|&bk| {
+                    (bm * bk).is_multiple_of(threads) && (bk * bn).is_multiple_of(threads)
+                });
+            }
+            // A streamed (`cp.async`) panel where the emitter streams it,
+            // and the stages the slot's shared memory holds.
+            (FMA, "stages") => {
+                let r = memo_rungs(site, self.profile, self.arms, Arithmetic::OrderedFma);
+                let streams = gpu::fma_streams(site, &r);
+                dom.retain(|&st| {
+                    let t = GpuTile {
+                        stages: st,
+                        ..self.fma_tile(pre)
+                    };
+                    st <= (site.k / pre[5].max(1)).max(1)
+                        && (st == 1 || streams)
+                        && t.smem_bytes(e) <= g.smem_per_block
+                })
+            }
+            (FMA, "kmajor") => {
+                if !(site.a.ck == 1 && pre[3] >= gpu::GPU_WAVEFRONT_BYTES / GPU_VEC_BYTES) {
+                    dom = vec![0];
+                }
+            }
+            (FMA, "pad_a") | (FMA, "a_row_lanes") => {
+                // The layout of the prefix's tile (one derivation for both
+                // coordinates and every stage count past the first).
+                let t = self.fma_tile(pre);
+                let key = [
+                    t.tm,
+                    t.tn,
+                    t.tx,
+                    t.ty,
+                    t.bk,
+                    t.stages.min(2),
+                    u64::from(t.kmajor),
+                ];
+                let l = LAYOUT
+                    .with(|c| c.borrow().get(&key).copied())
+                    .unwrap_or_else(|| {
+                        let r = memo_rungs(site, self.profile, self.arms, Arithmetic::OrderedFma);
+                        let l = gpu::fma_layout(site, self.profile, t, &r);
+                        let l = (l.pad_a, l.a_row_lanes);
+                        LAYOUT.with(|c| c.borrow_mut().insert(key, l));
+                        l
+                    });
+                dom = vec![match name {
+                    "pad_a" => l.0,
+                    _ => l.1,
+                }];
+            }
+            (FMA, "held") => dom = vec![0],
+            (MMA, "nt") => dom
+                .retain(|&nt| pre[1] * nt * 4 + crate::profile::MMA_ADDR_REGS <= g.regs_per_thread),
+            (MMA, "warps_y") => dom.retain(|&wy| divides(rows, wy * pre[1] * 16)),
+            (MMA, "warps_x") => dom.retain(|&wx| {
+                wx * pre[3] * g.warp <= threads_max && divides(site.c, wx * pre[2] * 8)
+            }),
+            // Whole 16-byte copies a thread of each panel.
+            (MMA, "bk") => {
+                let (ea, eb) = self.widths(pre[0]).unwrap_or((4, 4));
+                let (bm, bn) = (pre[3] * pre[1] * 16, pre[4] * pre[2] * 8);
+                let threads = pre[3] * pre[4] * g.warp;
+                let (la, lb) = (GPU_VEC_BYTES / ea, GPU_VEC_BYTES / eb);
+                dom.retain(|&bk| {
+                    (bm * bk / la).is_multiple_of(threads) && (bk * bn / lb).is_multiple_of(threads)
+                });
+            }
+            // A `cp.async` ring of two stages at least (one serializes the
+            // copy and the products: a count the evaluator does not price),
+            // within the slot's shared memory.
+            (MMA, "stages") => dom.retain(|&st| {
+                (st >= 2 || site.k / pre[5].max(1) == 1)
+                    && self
+                        .mma_tile(pre, st)
+                        .is_some_and(|t| t.smem_bytes() <= g.smem_per_block)
+            }),
+            (MMA, "bt") => dom = vec![u64::from(site.b.clane != 1)],
+            (MMA, "pad_a") | (MMA, "pad_b") => {
+                let pads = self.mma_pads(pre);
+                dom = match (name, pads) {
+                    (_, None) => vec![],
+                    ("pad_a", Some((a, _))) => vec![a],
+                    (_, Some((_, b))) => vec![b],
+                };
+            }
+            (MMA, "split") => dom = vec![0],
+            (MMA, "ea") | (MMA, "eb") | (_, "ea") | (_, "eb") => {
+                let (ea, eb) = self.widths(pre[0]).unwrap_or((0, 0));
+                dom = vec![if name == "ea" { ea } else { eb }];
+            }
+            (WGMMA | WGMMA_WS, "n") => dom.retain(|&n| n <= 256),
+            (WGMMA | WGMMA_WS, "bk") => {
+                let (_, eb) = self.widths(pre[0]).unwrap_or((4, 4));
+                dom.retain(|&bk| (bk * eb).is_multiple_of(128));
+            }
+            (WGMMA, "stages") => dom.retain(|&st| st >= crate::profile::WGMMA_MIN_STAGES),
+            // The warp-specialized ring: two stages at least (one only where
+            // one panel is the fold: the direct form).
+            (WGMMA_WS, "stages") => dom.retain(|&st| st >= 2 || site.k / pre[3].max(1) == 1),
+            (WGMMA | WGMMA_WS, "b_kmajor") => dom = vec![u64::from(site.b.clane != 1)],
+            (WGMMA | WGMMA_WS, "pad_b") => dom = vec![0],
+            (WGMMA | WGMMA_WS, "swap") => {
+                let (n, rows_g) = (pre[1], pre[2] * 64);
+                dom.retain(|&sw| match sw {
+                    1 => divides(site.rows, n) && divides(site.c, rows_g),
+                    _ => divides(site.rows, rows_g) && divides(site.c, n),
+                });
+            }
+            (WGMMA | WGMMA_WS, "regs_p") | (WGMMA | WGMMA_WS, "regs_c") => dom = vec![0],
+            _ => {}
+        }
+        // The largest tiles and panels first: the threshold the bound cuts
+        // at tightens early (the pick is the same in any order).
+        if matches!(
+            name,
+            "cells"
+                | "tm"
+                | "tn"
+                | "tx"
+                | "ty"
+                | "mt"
+                | "nt"
+                | "warps_y"
+                | "warps_x"
+                | "n"
+                | "groups"
+                | "bk"
+        ) {
+            dom.reverse();
+        }
+        dom
+    }
+
+    /// The warp tile's panel pads by the bank model (the emitter's rule,
+    /// `gpu_mma_panel_cands`): a TF32 panel's conflict-free pad, an f32
+    /// panel of a 16-bit product's pair pad, a 16-bit panel's `ldmatrix`
+    /// rows; `None` where no pad is conflict-free.
+    fn mma_pads(&self, pre: &[u64]) -> Option<(u64, u64)> {
+        use crate::profile::{conflict_free_pad, ldmatrix_pad, pair_pad};
+        let fmt = self.fmt(pre[0])?;
+        let (ea, eb) = self.widths(pre[0])?;
+        let (bk, bn) = (pre[5], pre[4] * pre[2] * 8);
+        let bt = self.site.b.clane != 1;
+        let pad_a = match (fmt, ea) {
+            (MmaFmt::Tf32, _) => conflict_free_pad(bk, |l| (l / 4, l % 4))?,
+            (_, 4) => pair_pad(bk)?,
+            _ => ldmatrix_pad(bk),
+        };
+        let pad_b = match (bt, fmt, eb) {
+            (false, MmaFmt::Tf32, _) => conflict_free_pad(bn, |l| (l % 4, l / 4))?,
+            (false, _, 4) => conflict_free_pad(bn, |l| (2 * (l % 4), l / 4))?,
+            (false, _, _) => ldmatrix_pad(bn),
+            (true, _, 4) => pair_pad(bk)?,
+            (true, _, _) => ldmatrix_pad(bk),
+        };
+        Some((pad_a, pad_b))
+    }
+
+    /// The warp tile of an MMA prefix (through `bk`) at `stages`.
+    fn mma_tile(&self, pre: &[u64], stages: u64) -> Option<GpuMmaTile> {
+        let (ea, eb) = self.widths(pre[0])?;
+        let (pad_a, pad_b) = self.mma_pads(pre)?;
+        Some(GpuMmaTile {
+            mt: pre[1],
+            nt: pre[2],
+            warps_y: pre[3],
+            warps_x: pre[4],
+            bk: pre[5],
+            stages,
+            pad_a,
+            pad_b,
+            blocks_per_sm: 0,
+            fmt: self.fmt(pre[0])?,
+            ea,
+            eb,
+            bt: self.site.b.clane != 1,
+            split: None,
+        })
+    }
+
+    /// The matrix row's format of operation id `op` (`None`: a scalar op).
+    fn fmt(&self, op: u64) -> Option<MmaFmt> {
+        self.gpu()
+            .caps
+            .matrix
+            .get((op as usize).wrapping_sub(2))
+            .map(|o| o.fmt)
+    }
+
+    /// The panel widths the site's operands stage at on operation `op`: a
+    /// 16-bit format's ([`gpu::mma_widths`]), TF32's four bytes.
+    fn widths(&self, op: u64) -> Option<(u64, u64)> {
+        match self.fmt(op)? {
+            MmaFmt::Tf32 => Some((4, 4)),
+            f => gpu::mma_widths(self.site, f),
+        }
+    }
+
+    /// The FMA tile of an FMA prefix (through `kmajor`), its layout unset.
+    fn fma_tile(&self, c: &[u64]) -> GpuTile {
+        GpuTile {
+            tm: c[1],
+            tn: c[2],
+            tx: c[3],
+            ty: c[4],
+            bk: c[5],
+            blocks_per_sm: 0,
+            stages: c.get(6).copied().unwrap_or(1),
+            pad_a: 0,
+            a_row_lanes: 0,
+            held: 0,
+            kmajor: c.get(7) == Some(&1),
+        }
+    }
+
     /// A schedule from coordinates (the enumeration's point), or `None`
     /// where the coordinates name no tile of this lowering.
     fn build(&self, c: &[u64], swap: bool) -> Option<Schedule> {
@@ -1989,6 +2439,513 @@ impl Emitter<'_> {
     }
 }
 
+// ---- the search's seam (ADR-0050 C4) --------------------------------------------
+
+/// The measurements' null the search separates candidates by
+/// (`place_replay.tsv`'s `null` column: 2 %).
+pub const PLACE_NULL: f64 = 0.02;
+
+/// **The model's error band** (ADR-0050 D5): per bounding term of the
+/// pick's longest phase, the 80th percentile of the replay's relative
+/// residuals — `|(model_a / model_b) / (measured_a / measured_b) − 1|` over
+/// each measured site's arm pairs, the pair's faster arm's term
+/// (`place_replay.rs` `place_band_is_the_replays_residuals` recomputes it;
+/// a term with fewer than three pairs takes `all`'s). Per mille.
+pub const PLACE_BAND_PM: [(&str, u64); 5] = [
+    ("all", 163),
+    ("compute", 155),
+    ("dram", 214),
+    ("cache", 259),
+    ("latency", 163),
+];
+
+/// The search's options at the band and null above.
+pub fn place_opts() -> mapal_place::Opts {
+    mapal_place::Opts {
+        top: 8,
+        band: PLACE_BAND_PM
+            .iter()
+            .map(|(t, pm)| (t.to_string(), *pm as f64 / 1e3))
+            .collect(),
+        null: PLACE_NULL,
+        reverse: false,
+        kinds: Vec::new(),
+    }
+}
+
+thread_local! {
+    /// The launch every launch the emitter derives is replaced by while the
+    /// post-lowering gate lowers a candidate ([`forced`]).
+    static FORCED: std::cell::RefCell<Option<Launch>> = const { std::cell::RefCell::new(None) };
+    /// The table rungs of the sites being searched, by site, part, arms and
+    /// arithmetic ([`memo_rungs`]; cleared when a search ends).
+    static RUNGS: std::cell::RefCell<Vec<(TileSite, &'static str, crate::GpuArms, Arithmetic, crate::GpuRungs)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+    /// The searches made, by site, part, face, arms and order.
+    static PICKS: std::cell::RefCell<std::collections::HashMap<String, Option<Placed>>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+    /// The FMA tile layouts of the site being searched ([`Emitter::narrowed`];
+    /// cleared when a search ends).
+    static LAYOUT: std::cell::RefCell<std::collections::HashMap<[u64; 7], (u64, u64)>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+    /// The FMA tiles' shared-memory instructions a panel of the site being
+    /// searched (the bank model's, [`gpu::lsu_per_panel`]; cleared with it).
+    static LSU: std::cell::RefCell<std::collections::HashMap<[u64; 9], u64>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+    /// The rule chain is being derived ([`rules`]): no placement inside.
+    static RULES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// A search is running (the per-site memos are valid).
+    static SEARCHING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Each part's machine, by its properties.
+    static MACHINES: std::cell::RefCell<std::collections::HashMap<String, Machine>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// `f` with every launch the emitter derives replaced by `l` (the gate's
+/// lowering of a candidate; the coverage probe's hooks read it).
+pub(crate) fn forced<T>(l: &Launch, f: impl FnOnce() -> T) -> T {
+    let prev = FORCED.with(|c| c.replace(Some(*l)));
+    let out = f();
+    FORCED.with(|c| *c.borrow_mut() = prev);
+    out
+}
+
+fn forced_now() -> Option<Launch> {
+    FORCED.with(|c| *c.borrow())
+}
+
+/// `f` with the rule chain alone (no placement inside: the incumbent and
+/// the search's own derivations).
+pub(crate) fn rules<T>(f: impl FnOnce() -> T) -> T {
+    let prev = RULES.with(|c| c.replace(true));
+    let out = f();
+    RULES.with(|c| c.set(prev));
+    out
+}
+
+fn rules_now() -> bool {
+    RULES.with(|c| c.get())
+}
+
+/// [`table_rungs`], memoized while a search runs (every candidate's
+/// `launch_of` reads them).
+fn memo_rungs(
+    site: &TileSite,
+    profile: &TargetProfile,
+    arms: crate::GpuArms,
+    a: Arithmetic,
+) -> crate::GpuRungs {
+    let hit = RUNGS.with(|c| {
+        c.borrow()
+            .iter()
+            .find(|(s, p, r, x, _)| *p == profile.name && *r == arms && *x == a && s == site)
+            .map(|e| e.4)
+    });
+    if let Some(r) = hit {
+        return r;
+    }
+    let r = table_rungs(site, profile, arms, a);
+    RUNGS.with(|c| {
+        let mut c = c.borrow_mut();
+        if c.len() > 64 {
+            c.clear();
+        }
+        c.push((site.clone(), profile.name, arms, a, r));
+    });
+    r
+}
+
+/// The part's machine (translated once a process).
+fn machine(p: &TargetProfile) -> Option<Machine> {
+    let key = format!("{}|{:?}", p.name, p.gpu());
+    if let Some(m) = MACHINES.with(|c| c.borrow().get(&key).cloned()) {
+        return Some(m);
+    }
+    let m = machine_of(p)?;
+    MACHINES.with(|c| c.borrow_mut().insert(key, m.clone()));
+    Some(m)
+}
+
+/// **A placed site** (ADR-0050 C4): the launch the emission takes (the
+/// pick's, or the rules' where the pick does not clear the band), the
+/// search's best per realization (the kernels beside the pick), and the
+/// `; mapal.place` line.
+#[derive(Clone, Debug)]
+pub(crate) struct Placed {
+    pub launch: Launch,
+    pub plan: String,
+    pub line: String,
+    pub open: bool,
+    pub kept: bool,
+}
+
+/// The `--place-gate=ptxas` arm: the post-lowering gate also assembles each
+/// candidate (`llc`, `ptxas -v` where present): a spill, or registers above
+/// the declared count's cap, refuses it.
+fn ptxas_gate(p: &TargetProfile, text: &str, d: &Declared, threads: u64) -> Result<(), String> {
+    use std::process::Command;
+    let have = |t: &str| Command::new(t).arg("--version").output().is_ok();
+    if !have("llc") || !have("ptxas") {
+        return Ok(());
+    }
+    let arch = p.gpu().map_or("sm_80", |g| g.arch);
+    let dir = std::env::temp_dir().join(format!(
+        "mapal-place-gate-{}-{:016x}",
+        std::process::id(),
+        gpu::fnv_text(text)
+    ));
+    let _ = std::fs::create_dir_all(&dir);
+    let (ll, ptx, cubin) = (dir.join("k.ll"), dir.join("k.ptx"), dir.join("k.cubin"));
+    std::fs::write(&ll, gpu::kernel_module(text)).map_err(|e| e.to_string())?;
+    let mut llc = Command::new("llc");
+    llc.args(["-O3", &format!("-mcpu={arch}"), "-nvptx-fma-level=0"]);
+    if let Some(x) = crate::Ptx::declared(&gpu::kernel_module(text)) {
+        llc.arg(format!("-mattr={}", x.mattr()));
+    }
+    let ok = llc
+        .arg(&ll)
+        .arg("-o")
+        .arg(&ptx)
+        .status()
+        .map_err(|e| e.to_string())?;
+    if !ok.success() {
+        let _ = std::fs::remove_dir_all(&dir);
+        return Err("llc refused the kernel".into());
+    }
+    let out = Command::new("ptxas")
+        .args([&format!("-arch={arch}"), "-v"])
+        .arg(&ptx)
+        .arg("-o")
+        .arg(&cubin)
+        .output()
+        .map_err(|e| e.to_string())?;
+    let _ = std::fs::remove_dir_all(&dir);
+    let log = String::from_utf8_lossy(&out.stderr).to_string();
+    if !out.status.success() {
+        return Err(format!(
+            "ptxas refused: {}",
+            log.lines().next().unwrap_or("")
+        ));
+    }
+    let regs: u64 = log
+        .split("Used ")
+        .nth(1)
+        .and_then(|r| r.split(' ').next())
+        .and_then(|r| r.parse().ok())
+        .unwrap_or(0);
+    if !log.contains("0 bytes spill stores, 0 bytes spill loads") {
+        return Err(format!("ptxas spills ({regs} registers)"));
+    }
+    let g = p.gpu().expect("a GPU profile");
+    if regs * threads > g.regs_per_sm || regs > g.regs_per_thread {
+        return Err(format!("{regs} registers above the file"));
+    }
+    let _ = d;
+    Ok(())
+}
+
+/// The post-lowering gate (D5): the candidate's launch lowers to a kernel
+/// (the emitter's own derivation under [`forced`]; a refusal is its panic),
+/// and under `--place-gate=ptxas` assembles without a spill.
+fn gate(
+    site: &TileSite,
+    p: &TargetProfile,
+    contract: bool,
+    arms: crate::GpuArms,
+    x: &Schedule,
+    d: &Declared,
+) -> Result<(), String> {
+    let l = launch_of(site, p, contract, arms, x);
+    let text = gpu::lowered_text(site, p, contract, arms, &l)?;
+    if arms.place_gate {
+        ptxas_gate(p, &text, d, l.block)?;
+    }
+    Ok(())
+}
+
+/// The search key of a site.
+fn key(
+    site: &TileSite,
+    p: &TargetProfile,
+    contract: bool,
+    arms: crate::GpuArms,
+    order: crate::Order,
+) -> String {
+    format!("{site:?}|{}|{contract}|{arms:?}|{order:?}", p.name)
+}
+
+/// **Search** a site (cached): the machine's pick over every emitter's
+/// space, the rules' launch `rules` the incumbent.
+fn search_site(
+    site: &TileSite,
+    p: &TargetProfile,
+    contract: bool,
+    arms: crate::GpuArms,
+    order: crate::Order,
+    rules: &Launch,
+) -> Option<Placed> {
+    let k = key(site, p, contract, arms, order);
+    if let Some(hit) = PICKS.with(|c| c.borrow().get(&k).cloned()) {
+        return hit;
+    }
+    LAYOUT.with(|c| c.borrow_mut().clear());
+    LSU.with(|c| c.borrow_mut().clear());
+    let was = SEARCHING.with(|c| c.replace(true));
+    let placed = self::rules(|| search_uncached(site, p, contract, arms, order, rules));
+    SEARCHING.with(|c| c.set(was));
+    // No candidate through the gate (nor the incumbent as a schedule of the
+    // space): the rules' launch, said so on the line.
+    let placed = placed.or_else(|| {
+        p.gpu().map(|_| Placed {
+            launch: *rules,
+            plan: "rules".into(),
+            line: format!(
+                "; mapal.place site={:016x} order={order:?} sched=rules kept=1 open=[none: no \
+                 schedule of the space passed the gate]\n",
+                gpu::kernel_id(site, p, contract)
+            ),
+            open: true,
+            kept: true,
+        })
+    });
+    RUNGS.with(|c| c.borrow_mut().clear());
+    LAYOUT.with(|c| c.borrow_mut().clear());
+    LSU.with(|c| c.borrow_mut().clear());
+    PICKS.with(|c| c.borrow_mut().insert(k, placed.clone()));
+    placed
+}
+
+fn search_uncached(
+    site: &TileSite,
+    p: &TargetProfile,
+    contract: bool,
+    arms: crate::GpuArms,
+    order: crate::Order,
+    rules: &Launch,
+) -> Option<Placed> {
+    let m = machine(p)?;
+    let s = site_of(site, contract, order);
+    let emitters = Emitter::all(site, p, contract, arms);
+    let lows: Vec<&dyn Lowering> = emitters.iter().map(|e| e as &dyn Lowering).collect();
+    let inc = emitters
+        .iter()
+        .position(|e| e.id == lowering_of(rules))
+        .map(|i| (i, schedule_of(site, p, arms, rules)));
+    let mut g = |x: &Schedule, d: &Declared| gate(site, p, contract, arms, x, d);
+    let r = match (arms.place_trav, arms.place_tile) {
+        (0, false) => mapal_place::search(&m, &s, &lows, &place_opts(), inc, &mut g)?,
+        _ => forced_search(&m, &s, &emitters, arms, inc, &mut g)?,
+    };
+    let launch = match r.kept {
+        true => *rules,
+        false => launch_of(site, p, contract, arms, &r.pick.x),
+    };
+    let id = gpu::kernel_id(site, p, contract);
+    let line = format!(
+        "; mapal.place site={id:016x} order={order:?} sched={} ns={:.0} slow={:.0} fast={:.0} \
+         kept={} best={}:{:.0} rules={} points={} evaluated={} pruned={} refused={} gated={} \
+         terms=[{}] open=[{}]\n",
+        r.pick.x.plan(),
+        r.pick.ns[1],
+        r.pick.ns[0],
+        r.pick.ns[2],
+        u8::from(r.kept),
+        r.best.x.plan(),
+        r.best.value(),
+        r.incumbent
+            .as_ref()
+            .map_or("-".into(), |c| format!("{:.0}", c.value())),
+        r.stats.points,
+        r.stats.evaluated,
+        r.stats.pruned,
+        r.stats.refused,
+        r.stats.gated.len(),
+        r.pick.t.line(),
+        r.open.join("; ")
+    );
+    Some(Placed {
+        launch,
+        plan: r.pick.x.plan(),
+        line,
+        open: !r.open.is_empty(),
+        kept: r.kept,
+    })
+}
+
+/// The traversal kind `--place-trav` names (0: any).
+#[allow(dead_code)]
+fn trav_kind(code: u8, t: Traversal) -> bool {
+    match (code, t) {
+        (0, _) => true,
+        (1, Traversal::Ordered { .. }) => true,
+        (2, Traversal::Split { .. }) => true,
+        (3, Traversal::Walk { .. }) => true,
+        (4, Traversal::Hybrid { .. }) => true,
+        _ => false,
+    }
+}
+
+/// The search under the measurement arms `--place-trav` / `--place-tile`:
+/// every lowering's space with only that traversal kind, or the rules' slot
+/// schedule `inc` under every traversal of the kind — the lowest priced
+/// through the gate, never kept to the incumbent (an A/B arm).
+fn forced_search(
+    m: &Machine,
+    s: &Site,
+    emitters: &[Emitter],
+    arms: crate::GpuArms,
+    inc: Option<(usize, Schedule)>,
+    gate: &mut dyn FnMut(&Schedule, &Declared) -> Result<(), String>,
+) -> Option<mapal_place::Ranked> {
+    /// One emitter, its slot space the rules' slot alone (`--place-tile`).
+    struct Slot<'a, 'b> {
+        e: &'b Emitter<'a>,
+        x: Schedule,
+    }
+    impl Lowering for Slot<'_, '_> {
+        fn id(&self) -> &'static str {
+            self.e.id()
+        }
+        fn traversals(&self) -> &'static [TravKind] {
+            self.e.traversals()
+        }
+        fn ops(&self, _m: &Machine, _s: &Site) -> Vec<(usize, bool)> {
+            vec![(self.x.op, self.x.swap)]
+        }
+        fn slots(&self, _m: &Machine, _s: &Site, _op: usize, _swap: bool) -> Vec<Schedule> {
+            vec![Schedule {
+                trav: Traversal::Ordered { h: 1 },
+                ..self.x.clone()
+            }]
+        }
+        fn declare(&self, m: &Machine, s: &Site, x: &Schedule) -> Result<Declared, Refusal> {
+            self.e.declare(m, s, x)
+        }
+    }
+    let kinds = match arms.place_trav {
+        1 => vec![TravKind::Ordered],
+        2 => vec![TravKind::SplitAtomic, TravKind::SplitWorkspace],
+        3 => vec![TravKind::Walk],
+        4 => vec![TravKind::Hybrid],
+        _ => Vec::new(),
+    };
+    let opts = mapal_place::Opts {
+        band: vec![("all".into(), 0.0)],
+        kinds,
+        ..place_opts()
+    };
+    match (arms.place_tile, inc) {
+        (true, Some((i, x))) => {
+            let one = Slot { e: &emitters[i], x };
+            mapal_place::search(m, s, &[&one], &opts, None, gate)
+        }
+        (true, None) => None,
+        (false, _) => {
+            let lows: Vec<&dyn Lowering> = emitters.iter().map(|e| e as &dyn Lowering).collect();
+            mapal_place::search(m, s, &lows, &opts, None, gate)
+        }
+    }
+}
+
+/// The order an emission's kernels are drawn under where no order is
+/// passed (`plan_pick`'s).
+fn arms_order(arms: crate::GpuArms) -> crate::Order {
+    match arms.free {
+        true => crate::Order::Free,
+        false => crate::Order::Sequential,
+    }
+}
+
+/// **`machine-place` at [`gpu::launch_in`]**: the machine model's pick for
+/// `site` under `order`, the rules' launch `rules` its incumbent (kept
+/// within the band, and wherever the search finds nothing).
+pub(crate) fn placed(
+    site: &TileSite,
+    p: &TargetProfile,
+    contract: bool,
+    arms: crate::GpuArms,
+    order: crate::Order,
+    rules: Launch,
+) -> Launch {
+    if forced_now().is_some() || rules_now() || p.gpu().is_none() {
+        return rules;
+    }
+    search_site(site, p, contract, arms, order, &rules).map_or(rules, |x| x.launch)
+}
+
+/// **`machine-place` at the kernel of realization `combine`** (every launch
+/// passes [`gpu::launch_for`]'s resize): the pick of an order whose
+/// realization is `combine`, else the rules' `r` (the ordered kernel beside
+/// a combined pick keeps the rules' tile; a column-major store the rules'
+/// tile takes stays possible).
+pub(crate) fn placed_for(
+    site: &TileSite,
+    p: &TargetProfile,
+    contract: bool,
+    arms: crate::GpuArms,
+    combine: Combine,
+    r: Launch,
+) -> Launch {
+    if forced_now().is_some() || rules_now() || p.gpu().is_none() {
+        return r;
+    }
+    let first = arms_order(arms);
+    let orders = [
+        first,
+        crate::Order::Free,
+        crate::Order::Fixed,
+        crate::Order::Sequential,
+    ];
+    for (i, o) in orders.into_iter().enumerate() {
+        let k = key(site, p, contract, arms, o);
+        let hit = match PICKS.with(|c| c.borrow().get(&k).cloned()) {
+            Some(h) => h,
+            // The emission's own order: search it (the rules' launch of
+            // that order its incumbent).
+            None if i == 0 => {
+                let rules = self::rules(|| gpu::launch_in_rules(site, p, contract, arms, o));
+                search_site(site, p, contract, arms, o, &rules)
+            }
+            None => None,
+        };
+        if let Some(x) = hit
+            && x.launch.combine == combine
+            && (!gpu::col_store(&r, site) || gpu::col_store(&x.launch, site))
+        {
+            return x.launch;
+        }
+    }
+    r
+}
+
+/// The `; mapal.place` line of the kernel of realization `combine` (empty
+/// where no search placed it).
+pub(crate) fn place_line(
+    site: &TileSite,
+    p: &TargetProfile,
+    contract: bool,
+    arms: crate::GpuArms,
+    combine: Combine,
+) -> String {
+    if forced_now().is_some() {
+        return String::new();
+    }
+    for o in [
+        arms_order(arms),
+        crate::Order::Free,
+        crate::Order::Fixed,
+        crate::Order::Sequential,
+    ] {
+        let k = key(site, p, contract, arms, o);
+        if let Some(Some(x)) = PICKS.with(|c| c.borrow().get(&k).cloned())
+            && x.launch.combine == combine
+        {
+            return x.line;
+        }
+    }
+    String::new()
+}
+
 /// The rules' launch's emitter id.
 pub fn lowering_of(l: &Launch) -> &'static str {
     match (l.wgmma, l.mma, l.tiled) {
@@ -2037,6 +2994,9 @@ pub(crate) fn probe(
     arms: crate::GpuArms,
     l: Launch,
 ) -> Launch {
+    if let Some(f) = forced_now() {
+        return f;
+    }
     PROBE.with(|p| {
         let mut p = p.borrow_mut();
         let Some(p) = p.as_mut() else {
@@ -2129,6 +3089,93 @@ mod tests {
         // as the RTX 5080's measured one.
         let m = machine_of(crate::profile::resolve("rtx-5090").unwrap()).unwrap();
         assert!(m.dispatch.launches[0].ns.marked());
+    }
+
+    /// **ADR-0050 C4: the search on every GPU profile** — f32, TF32 and
+    /// bf16 GEMM sites of several shapes: a pick on each (or the rules' kept
+    /// within the band), every candidate it lowers through the gate, its
+    /// `launch_of` a launch the emitter's text takes; the walk's stats
+    /// printed (`PLACE_SEARCH=1`).
+    #[test]
+    fn the_search_places_gemm_sites_on_every_profile() {
+        let shapes: &[(u64, u64, u64, &str)] = &[
+            (128, 4096, 4096, "f32"),
+            (1024, 1024, 1024, "tf32"),
+            (512, 2048, 2048, "bf16"),
+            (2048, 4096, 4096, "bf16"),
+        ];
+        // A debug build places two parts' two shapes; `--release` all.
+        let debug = cfg!(debug_assertions);
+        for name in PROFILES
+            .into_iter()
+            .filter(|n| !debug || ["rtx-5080", "h100"].contains(n))
+        {
+            let p = crate::profile::resolve(name).unwrap();
+            for &(m, n, k, fmt) in shapes.iter().filter(|s| !debug || s.0 <= 512) {
+                let site = crate::place_replay::replay_site(m, n, k, fmt, false);
+                let arms = crate::GpuArms {
+                    free: true,
+                    site_cands: 1,
+                    ..crate::GpuArms::default()
+                };
+                let rules = gpu::launch_in_rules(&site, p, true, arms, crate::Order::Free);
+                let t = std::time::Instant::now();
+                let placed = search_site(&site, p, true, arms, crate::Order::Free, &rules)
+                    .expect("a placement");
+                let dt = t.elapsed();
+                let text = gpu::lowered_text(&site, p, true, arms, &placed.launch);
+                assert!(text.is_ok(), "{name} {m}x{n}x{k} {fmt}: {}", placed.plan);
+                if std::env::var("PLACE_SEARCH").is_ok() {
+                    eprintln!(
+                        "{name} {m}x{n}x{k} {fmt} {dt:.2?} kept={} {}",
+                        placed.kept,
+                        placed.line.trim_end()
+                    );
+                }
+            }
+        }
+    }
+
+    /// The search's walk per lowering on one site (`PLACE_SEARCH=1`).
+    #[test]
+    fn search_cost_per_lowering() {
+        if std::env::var("PLACE_SEARCH").is_err() {
+            return;
+        }
+        let p = crate::profile::resolve("rtx-5080").unwrap();
+        for (m, n, k, fmt) in [(128, 4096, 4096, "f32"), (512, 2048, 2048, "bf16")] {
+            let site = crate::place_replay::replay_site(m, n, k, fmt, false);
+            let arms = crate::GpuArms {
+                free: true,
+                site_cands: 1,
+                ..crate::GpuArms::default()
+            };
+            let mach = machine_of(p).unwrap();
+            let s = site_of(&site, true, crate::Order::Free);
+            let rules = gpu::launch_in_rules(&site, p, true, arms, crate::Order::Free);
+            let x = schedule_of(&site, p, arms, &rules);
+            for e in Emitter::all(&site, p, true, arms) {
+                let t = std::time::Instant::now();
+                let inc = (e.id == lowering_of(&rules)).then(|| (0, x.clone()));
+                SEARCHING.with(|c| c.set(true));
+                LSU.with(|c| c.borrow_mut().clear());
+                LAYOUT.with(|c| c.borrow_mut().clear());
+                let r =
+                    mapal_place::search(&mach, &s, &[&e], &place_opts(), inc, &mut |_, _| Ok(()));
+                SEARCHING.with(|c| c.set(false));
+                eprintln!(
+                    "{m}x{n}x{k} {fmt} {}: {:.2?} {:?} {}",
+                    e.id,
+                    t.elapsed(),
+                    r.as_ref().map(|r| r.stats.clone()),
+                    r.map_or("-".into(), |r| format!(
+                        "{} {:.0}",
+                        r.pick.x.plan(),
+                        r.pick.value()
+                    ))
+                );
+            }
+        }
     }
 
     /// The suite's programs: every committed algorithm and ladder program.

@@ -23,6 +23,12 @@
       "include": "#size-arguments"
     },
     {
+      "include": "#stage-arguments"
+    },
+    {
+      "include": "#stage-arguments-call"
+    },
+    {
       "include": "#reserved"
     },
     {
@@ -90,7 +96,7 @@
       "comment": "Guard arrows (single lexemes, ADR-0010): the chrome reads as an arrow, the discriminant as what it is. The name right after one heads the arm's chain, a read: it is consumed here unscoped, or the binding / call rules would claim it (`-false-> b;`). Must precede #arrows and #operators or the bare `-` wins.",
       "patterns": [
         {
-          "match": "(-)(true|false)(->)(?:\\s*(?!(?:enumerate|to_f8e4m3|to_f8e5m2|widen_f32|widen_f64|widen_i64|category|executor|println|to_bf16|f8e4m3|f8e5m2|to_f16|false|print|bf16|bool|fill|fold|iota|loop|read|sqrt|tf32|time|true|type|void|cos|exp|f16|f32|f64|i32|i64|map|mut|pub|ret|seq|sin|use|zip|fn|u8)\\b)([a-z_]\\w*))?",
+          "match": "(-)(true|false)(->)(?:\\s*(?!(?:enumerate|to|widen|to_f8e4m3|to_f8e5m2|widen_f32|widen_f64|widen_i64|category|executor|println|to_bf16|f8e4m3|f8e5m2|to_f16|false|print|bf16|bool|fill|fold|iota|loop|read|sqrt|tf32|time|true|type|void|cos|exp|f16|f32|f64|i32|i64|map|mut|pub|ret|seq|sin|use|zip|fn|u8)\\b)([a-z_]\\w*))?",
           "captures": {
             "1": {
               "name": "keyword.operator.arrow.mapal"
@@ -104,7 +110,7 @@
           }
         },
         {
-          "match": "(-)([0-9]+)(->)(?:\\s*(?!(?:enumerate|to_f8e4m3|to_f8e5m2|widen_f32|widen_f64|widen_i64|category|executor|println|to_bf16|f8e4m3|f8e5m2|to_f16|false|print|bf16|bool|fill|fold|iota|loop|read|sqrt|tf32|time|true|type|void|cos|exp|f16|f32|f64|i32|i64|map|mut|pub|ret|seq|sin|use|zip|fn|u8)\\b)([a-z_]\\w*))?",
+          "match": "(-)([0-9]+)(->)(?:\\s*(?!(?:enumerate|to|widen|to_f8e4m3|to_f8e5m2|widen_f32|widen_f64|widen_i64|category|executor|println|to_bf16|f8e4m3|f8e5m2|to_f16|false|print|bf16|bool|fill|fold|iota|loop|read|sqrt|tf32|time|true|type|void|cos|exp|f16|f32|f64|i32|i64|map|mut|pub|ret|seq|sin|use|zip|fn|u8)\\b)([a-z_]\\w*))?",
           "captures": {
             "1": {
               "name": "keyword.operator.arrow.mapal"
@@ -118,7 +124,7 @@
           }
         },
         {
-          "match": "(-)(_)(->)(?:\\s*(?!(?:enumerate|to_f8e4m3|to_f8e5m2|widen_f32|widen_f64|widen_i64|category|executor|println|to_bf16|f8e4m3|f8e5m2|to_f16|false|print|bf16|bool|fill|fold|iota|loop|read|sqrt|tf32|time|true|type|void|cos|exp|f16|f32|f64|i32|i64|map|mut|pub|ret|seq|sin|use|zip|fn|u8)\\b)([a-z_]\\w*))?",
+          "match": "(-)(_)(->)(?:\\s*(?!(?:enumerate|to|widen|to_f8e4m3|to_f8e5m2|widen_f32|widen_f64|widen_i64|category|executor|println|to_bf16|f8e4m3|f8e5m2|to_f16|false|print|bf16|bool|fill|fold|iota|loop|read|sqrt|tf32|time|true|type|void|cos|exp|f16|f32|f64|i32|i64|map|mut|pub|ret|seq|sin|use|zip|fn|u8)\\b)([a-z_]\\w*))?",
           "captures": {
             "1": {
               "name": "keyword.operator.arrow.mapal"
@@ -135,7 +141,7 @@
     },
     "fn-declaration": {
       "comment": "`fn name` and its size parameters `fn f<rows, columns>` (ADR-0047). A builtin or primitive name stays one (the Vim keywords win there too).",
-      "match": "\\b(fn)\\s+(?:(enumerate|to_f8e4m3|to_f8e5m2|widen_f32|widen_f64|widen_i64|println|to_bf16|to_f16|print|fill|iota|read|sqrt|time|cos|exp|sin|zip)\\b|(f8e4m3|f8e5m2|bf16|bool|tf32|f16|f32|f64|i32|i64|u8)\\b|([A-Za-z_]\\w*))(?:\\s*(<)([^<>]*)(>))?",
+      "match": "\\b(fn)\\s+(?:(enumerate|to|widen|to_f8e4m3|to_f8e5m2|widen_f32|widen_f64|widen_i64|println|to_bf16|to_f16|print|fill|iota|read|sqrt|time|cos|exp|sin|zip)\\b|(f8e4m3|f8e5m2|bf16|bool|tf32|f16|f32|f64|i32|i64|u8)\\b|([A-Za-z_]\\w*))(?:\\s*(<)([^<>]*)(>))?",
       "captures": {
         "1": {
           "name": "keyword.control.mapal"
@@ -154,6 +160,14 @@
         },
         "6": {
           "patterns": [
+            {
+              "name": "support.type.primitive.mapal",
+              "match": "\\b(?:float|narrow|int|number)\\b"
+            },
+            {
+              "name": "support.type.primitive.mapal",
+              "match": "\\b(?:i32|i64|u8|f32|f64|bf16|f16|f8e4m3|f8e5m2)\\b"
+            },
             {
               "name": "variable.other.constant.size.mapal",
               "match": "\\b[a-z_]\\w*\\b"
@@ -175,7 +189,7 @@
     },
     "type-declaration": {
       "comment": "`type Name` and its size parameters `type Matrix<rows, columns>` (ADR-0048 D4). A builtin or primitive name stays one (the Vim keywords win there too).",
-      "match": "\\b(type)\\s+(?:(enumerate|to_f8e4m3|to_f8e5m2|widen_f32|widen_f64|widen_i64|println|to_bf16|to_f16|print|fill|iota|read|sqrt|time|cos|exp|sin|zip)\\b|(f8e4m3|f8e5m2|bf16|bool|tf32|f16|f32|f64|i32|i64|u8)\\b|([A-Za-z_]\\w*))(?:\\s*(<)([^<>]*)(>))?",
+      "match": "\\b(type)\\s+(?:(enumerate|to|widen|to_f8e4m3|to_f8e5m2|widen_f32|widen_f64|widen_i64|println|to_bf16|to_f16|print|fill|iota|read|sqrt|time|cos|exp|sin|zip)\\b|(f8e4m3|f8e5m2|bf16|bool|tf32|f16|f32|f64|i32|i64|u8)\\b|([A-Za-z_]\\w*))(?:\\s*(<)([^<>]*)(>))?",
       "captures": {
         "1": {
           "name": "keyword.control.mapal"
@@ -194,6 +208,14 @@
         },
         "6": {
           "patterns": [
+            {
+              "name": "support.type.primitive.mapal",
+              "match": "\\b(?:float|narrow|int|number)\\b"
+            },
+            {
+              "name": "support.type.primitive.mapal",
+              "match": "\\b(?:i32|i64|u8|f32|f64|bf16|f16|f8e4m3|f8e5m2)\\b"
+            },
             {
               "name": "variable.other.constant.size.mapal",
               "match": "\\b[a-z_]\\w*\\b"
@@ -226,6 +248,10 @@
         "3": {
           "patterns": [
             {
+              "name": "support.type.primitive.mapal",
+              "match": "\\b(?:i32|i64|u8|f32|f64|bf16|f16|f8e4m3|f8e5m2)\\b"
+            },
+            {
               "name": "variable.other.constant.size.mapal",
               "match": "\\b[a-z_]\\w*\\b"
             },
@@ -244,6 +270,73 @@
         }
       }
     },
+    "stage-arguments": {
+      "comment": "A stage's explicit arguments `x -> to<bf16>`, `widen<f32>`, `store<8, bf16>` (ADR-0051 D2). The match starts at the whitespace after the arrow, like #call-position, so it wins over #keywords on position.",
+      "match": "(?<=->)\\s*(to|widen)(<)([^<>]*)(>)",
+      "captures": {
+        "1": {
+          "name": "support.function.builtin.mapal"
+        },
+        "2": {
+          "name": "punctuation.definition.size.mapal"
+        },
+        "3": {
+          "patterns": [
+            {
+              "name": "support.type.primitive.mapal",
+              "match": "\\b(?:i32|i64|u8|f32|f64|bf16|f16|f8e4m3|f8e5m2)\\b"
+            },
+            {
+              "name": "variable.other.constant.size.mapal",
+              "match": "\\b[a-z_]\\w*\\b"
+            },
+            {
+              "name": "constant.numeric.integer.mapal",
+              "match": "\\b[0-9]+\\b"
+            },
+            {
+              "name": "keyword.operator.mapal",
+              "match": "[+\\-*]"
+            }
+          ]
+        },
+        "4": {
+          "name": "punctuation.definition.size.mapal"
+        }
+      }
+    },
+    "stage-arguments-call": {
+      "comment": "The same for a function of the program, `x -> store<8, bf16>`: the name is the language server's to class, the brackets and arguments are the static grammars'.",
+      "match": "(?<=->)\\s*(?:[a-z_]\\w*)(<)([^<>]*)(>)",
+      "captures": {
+        "1": {
+          "name": "punctuation.definition.size.mapal"
+        },
+        "2": {
+          "patterns": [
+            {
+              "name": "support.type.primitive.mapal",
+              "match": "\\b(?:i32|i64|u8|f32|f64|bf16|f16|f8e4m3|f8e5m2)\\b"
+            },
+            {
+              "name": "variable.other.constant.size.mapal",
+              "match": "\\b[a-z_]\\w*\\b"
+            },
+            {
+              "name": "constant.numeric.integer.mapal",
+              "match": "\\b[0-9]+\\b"
+            },
+            {
+              "name": "keyword.operator.mapal",
+              "match": "[+\\-*]"
+            }
+          ]
+        },
+        "3": {
+          "name": "punctuation.definition.size.mapal"
+        }
+      }
+    },
     "reserved": {
       "comment": "ADR-0006: `category` was the v0.1 spelling of `type`; reserved and rejected.",
       "name": "invalid.illegal.reserved.mapal",
@@ -251,7 +344,7 @@
     },
     "mut-binding": {
       "comment": "`mut name` binds (a statement `mut x: T <- e` or a stage `-> mut x`). Same exclusion as #call-position: a keyword, builtin or primitive type after `mut` stays what it is (#keywords).",
-      "match": "\\b(mut)\\s+(?!(?:enumerate|to_f8e4m3|to_f8e5m2|widen_f32|widen_f64|widen_i64|category|executor|println|to_bf16|f8e4m3|f8e5m2|to_f16|false|print|bf16|bool|fill|fold|iota|loop|read|sqrt|tf32|time|true|type|void|cos|exp|f16|f32|f64|i32|i64|map|mut|pub|ret|seq|sin|use|zip|fn|u8)\\b)([a-z_]\\w*)",
+      "match": "\\b(mut)\\s+(?!(?:enumerate|to|widen|to_f8e4m3|to_f8e5m2|widen_f32|widen_f64|widen_i64|category|executor|println|to_bf16|f8e4m3|f8e5m2|to_f16|false|print|bf16|bool|fill|fold|iota|loop|read|sqrt|tf32|time|true|type|void|cos|exp|f16|f32|f64|i32|i64|map|mut|pub|ret|seq|sin|use|zip|fn|u8)\\b)([a-z_]\\w*)",
       "captures": {
         "1": {
           "name": "keyword.control.mapal"
@@ -274,7 +367,7 @@
         },
         {
           "name": "support.function.builtin.mapal",
-          "match": "\\b(print|println|time|read|zip|enumerate|iota|fill|exp|sqrt|sin|cos|widen_i64|widen_f32|widen_f64|to_bf16|to_f16|to_f8e4m3|to_f8e5m2)\\b"
+          "match": "\\b(print|println|time|read|zip|enumerate|iota|fill|exp|sqrt|sin|cos|to|widen|widen_i64|widen_f32|widen_f64|to_bf16|to_f16|to_f8e4m3|to_f8e5m2)\\b"
         },
         {
           "name": "constant.language.boolean.mapal",
@@ -288,7 +381,7 @@
     },
     "call-position": {
       "comment": "Between two arrows a name is applied: `data -> f -> g -> ret;`. The match starts at the whitespace after the arrow, one column EARLIER than #keywords, so it wins on position however the patterns are ordered: the exclusion keeps it off keywords, builtins and primitive types (scope_test.py checks it lists them all).",
-      "match": "(?<=->)\\s*(?!(?:enumerate|to_f8e4m3|to_f8e5m2|widen_f32|widen_f64|widen_i64|category|executor|println|to_bf16|f8e4m3|f8e5m2|to_f16|false|print|bf16|bool|fill|fold|iota|loop|read|sqrt|tf32|time|true|type|void|cos|exp|f16|f32|f64|i32|i64|map|mut|pub|ret|seq|sin|use|zip|fn|u8)\\b)([a-z_]\\w*)(?=\\s*->)",
+      "match": "(?<=->)\\s*(?!(?:enumerate|to|widen|to_f8e4m3|to_f8e5m2|widen_f32|widen_f64|widen_i64|category|executor|println|to_bf16|f8e4m3|f8e5m2|to_f16|false|print|bf16|bool|fill|fold|iota|loop|read|sqrt|tf32|time|true|type|void|cos|exp|f16|f32|f64|i32|i64|map|mut|pub|ret|seq|sin|use|zip|fn|u8)\\b)([a-z_]\\w*)(?=\\s*->)",
       "captures": {
         "1": {
           "name": "entity.name.function.call.mapal"
@@ -297,7 +390,7 @@
     },
     "binding": {
       "comment": "`-> name;` and `-> name: T` bind (or rebind a `mut`). A terminal call of a function that returns nothing (`-> shout;`) looks the same; the language server tells them apart. Same exclusion as #call-position, same reason.",
-      "match": "(?<=->)\\s*(?!(?:enumerate|to_f8e4m3|to_f8e5m2|widen_f32|widen_f64|widen_i64|category|executor|println|to_bf16|f8e4m3|f8e5m2|to_f16|false|print|bf16|bool|fill|fold|iota|loop|read|sqrt|tf32|time|true|type|void|cos|exp|f16|f32|f64|i32|i64|map|mut|pub|ret|seq|sin|use|zip|fn|u8)\\b)([a-z_]\\w*)(?=\\s*(?:;|:(?!:)))",
+      "match": "(?<=->)\\s*(?!(?:enumerate|to|widen|to_f8e4m3|to_f8e5m2|widen_f32|widen_f64|widen_i64|category|executor|println|to_bf16|f8e4m3|f8e5m2|to_f16|false|print|bf16|bool|fill|fold|iota|loop|read|sqrt|tf32|time|true|type|void|cos|exp|f16|f32|f64|i32|i64|map|mut|pub|ret|seq|sin|use|zip|fn|u8)\\b)([a-z_]\\w*)(?=\\s*(?:;|:(?!:)))",
       "captures": {
         "1": {
           "name": "variable.other.definition.mapal"

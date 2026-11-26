@@ -21,3 +21,4 @@ benches/results/evidence/**/run-*
 # VS Code extension: npm install / npm run build output
 editors/vscode/node_modules/
 editors/vscode/dist/
+docs/exposition/.scaled-*.mapal

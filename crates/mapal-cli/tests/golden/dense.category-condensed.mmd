@@ -1,0 +1,29 @@
+flowchart LR
+    f0o11(("a: [f32; 4096]"))
+    f0o15(("b: [f32; 4096]"))
+    f0o16(("along: [i32; 64]"))
+    f0o19(("out: [f32; 4096]"))
+    p0m0(("println"))
+    p0m1(("println"))
+    g0(("Γ = io"))
+    pr3(["[f32; 4096] × [f32; 4096] × [i32; 64]"])
+    subgraph f2["map body of out"]
+        f2o1(("ret: f32"))
+        f2o14(("row: i32"))
+        f2o16(("column: i32"))
+        f2o18(("dot: f32"))
+        g2(("Γ = ([i32; 64], [f32; 4096], [f32; 4096], i32)"))
+        pr9(["Γ × i32 × i32"])
+    end
+    g0 -- "read #quot;dense-a.bin#quot;" --> f0o11
+    g0 -- "read #quot;dense-b.bin#quot;" --> f0o15
+    g0 -- "iota" --> f0o16
+    g0 -- "⟨a, b, along⟩" --> pr3
+    pr3 -- "Map (+3 caps)" --> f0o19
+    f0o19 -- "out[0]" --> p0m0
+    f0o19 -- "out[n * n - 1]" --> p0m1
+    f2o18 -- "#43; · guard" --> f2o1
+    g2 -- "÷" --> f2o14
+    g2 -- "mod" --> f2o16
+    g2 -- "⟨Γ, row, column⟩" --> pr9
+    pr9 -- "a[row * n + k] ; b[k * n + column] ; fold" --> f2o18

@@ -18,9 +18,10 @@ pub mod lru;
 pub mod machine;
 pub mod reuse;
 pub mod schedule;
+pub mod search;
 pub mod space;
 
-pub use eval::{Phase, Terms, efficiency, evaluate, lower_bound};
+pub use eval::{Phase, Terms, efficiency, evaluate, evaluate_floor, lower_bound};
 pub use fact::{Bound, Fact, Row, Src};
 pub use lower::{Declared, Lowering, Refusal, TravKind};
 pub use machine::{
@@ -30,3 +31,4 @@ pub use machine::{
 };
 pub use reuse::{Grid, Order, Reads};
 pub use schedule::{Bind, Comb, Fold, Home, Level, Schedule, Site, Traversal};
+pub use search::{Cand, Opts, Ranked, Stats, point_bound, search, tile_bound};

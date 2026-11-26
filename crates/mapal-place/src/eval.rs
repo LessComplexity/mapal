@@ -180,6 +180,19 @@ pub fn efficiency(m: &Machine, op: usize, chains: f64, groups: f64, b: Bound) ->
 /// **Evaluate** schedule `x` of site `s` on machine `m` with its lowering's
 /// declared counts `d`, every fact at bound `b`.
 pub fn evaluate(m: &Machine, s: &Site, x: &Schedule, d: &Declared, b: Bound) -> Terms {
+    evaluate_at(m, s, x, d, b, false)
+}
+
+/// **The evaluation's floor** (the search's cheap admissible bound, D5):
+/// [`evaluate`] with the device cache missing every operand byte exactly
+/// once — no term falls as misses rise (memory bytes, the miss ratio's
+/// latency and fill), so no schedule's time is below it; it skips the
+/// reuse closed forms (a walk's per-reader windows).
+pub fn evaluate_floor(m: &Machine, s: &Site, x: &Schedule, d: &Declared, b: Bound) -> Terms {
+    evaluate_at(m, s, x, d, b, true)
+}
+
+fn evaluate_at(m: &Machine, s: &Site, x: &Schedule, d: &Declared, b: Bound, floor: bool) -> Terms {
     let mut t = Terms::default();
     let mark = |t: &mut Terms, what: String| {
         if !t.marked.contains(&what) {
@@ -316,17 +329,24 @@ pub fn evaluate(m: &Machine, s: &Site, x: &Schedule, d: &Declared, b: Bound) -> 
         };
         reuse::reads(&grid(order, false), keep)
     };
-    let mut reads = starts
-        .iter()
-        .map(|&st| reads_of(st))
-        .max_by_key(|r| match b {
-            Bound::Fast => u64::MAX - r.operands(),
-            _ => r.operands(),
-        })
-        .unwrap_or_default();
     // Warm operands: resident from the previous call where they fit.
     let once_a = gy * panels * sa;
     let once_b = gx * panels * sb;
+    let mut reads = match floor {
+        true => Reads {
+            a: once_a,
+            b: once_b,
+            out: tiles * so,
+        },
+        false => starts
+            .iter()
+            .map(|&st| reads_of(st))
+            .max_by_key(|r| match b {
+                Bound::Fast => u64::MAX - r.operands(),
+                _ => r.operands(),
+            })
+            .unwrap_or_default(),
+    };
     if s.warm[0] && once_a <= keep {
         reads.a = reads.a.saturating_sub(once_a);
     }
@@ -429,7 +449,8 @@ pub fn evaluate(m: &Machine, s: &Site, x: &Schedule, d: &Declared, b: Bound) -> 
     match x.trav {
         Traversal::Ordered { .. } | Traversal::Split { .. } | Traversal::Persistent { .. } => {
             let blocks = tiles * s_parts;
-            let needed = reuse::needed(
+            let needed = needed_of(
+                floor,
                 &grid(
                     Order::Walk {
                         h: 1,
@@ -471,7 +492,11 @@ pub fn evaluate(m: &Machine, s: &Site, x: &Schedule, d: &Declared, b: Bound) -> 
                 / 2.0
                 / u.min(ctas.div_ceil(units)).max(1) as f64;
             p.dram = dram_bytes as f64 / dram_bw;
-            let shared = shared_pieces(tiles, panels, iters);
+            let shared = if floor {
+                0
+            } else {
+                shared_pieces(tiles, panels, iters)
+            };
             p.atomics = (shared * bm * bn) as f64 / atomic_rate.max(1e-9);
             t.phases.push(p.close());
         }
@@ -480,7 +505,8 @@ pub fn evaluate(m: &Machine, s: &Site, x: &Schedule, d: &Declared, b: Bound) -> 
             let tail = tiles - whole;
             let frac = |n: u64| n as f64 / tiles as f64;
             if whole > 0 {
-                let needed = reuse::needed(
+                let needed = needed_of(
+                    floor,
                     &grid(
                         Order::Walk {
                             h: 1,
@@ -513,7 +539,11 @@ pub fn evaluate(m: &Machine, s: &Site, x: &Schedule, d: &Declared, b: Bound) -> 
                     (tail * panels * (sa + sb)) as f64,
                 );
                 p.dram = dram_bytes as f64 * frac(tail) / dram_bw;
-                let shared = shared_pieces(tail, panels, iters);
+                let shared = if floor {
+                    0
+                } else {
+                    shared_pieces(tail, panels, iters)
+                };
                 p.atomics = (shared * bm * bn) as f64 / atomic_rate.max(1e-9);
                 t.phases.push(p.close());
             }
@@ -529,8 +559,20 @@ pub fn evaluate(m: &Machine, s: &Site, x: &Schedule, d: &Declared, b: Bound) -> 
         if m.dispatch.zero_bytes_per_ns.marked() {
             mark(&mut t, "dispatch.zero_bytes_per_ns".into());
         }
+        // A hybrid whose whole pieces store zeroes the rows its walked
+        // tiles span: the raster order's first `tiles − whole` (the
+        // lowering's layout); every piece adding, the whole output.
+        let zeroed = match x.trav {
+            Traversal::Hybrid { h, .. } if d.whole_stores => {
+                let whole = tiles / w * w;
+                let h = h.max(1);
+                let rows = (bm * h * (tiles - whole).div_ceil(gx * h)).min(batch * s.m);
+                rows * s.n * s.eo
+            }
+            _ => out_bytes,
+        };
         t.zero = m.dispatch.zero_ns.cost(b)
-            + out_bytes as f64 / m.dispatch.zero_bytes_per_ns.rate(b).max(1e-9);
+            + zeroed as f64 / m.dispatch.zero_bytes_per_ns.rate(b).max(1e-9);
     }
     // Fixed: the launches beyond their work (the reduce is its own).
     let launches = 1 + u64::from(ws_bytes > 0);
@@ -547,6 +589,15 @@ pub fn evaluate(m: &Machine, s: &Site, x: &Schedule, d: &Declared, b: Bound) -> 
     }
     t.ns = t.phases.iter().map(|p| p.ns).sum::<f64>() + t.combine + t.zero + t.fixed;
     t
+}
+
+/// [`reuse::needed`], or unbounded on the floor (every request then waits
+/// on the cache's latency alone: the latency terms' least).
+fn needed_of(floor: bool, g: &Grid, h: u64, s: u64) -> u64 {
+    match floor {
+        true => u64::MAX,
+        false => reuse::needed(g, h, s),
+    }
 }
 
 /// The pieces of shared tiles of a walk: a tile whose `panels` units span

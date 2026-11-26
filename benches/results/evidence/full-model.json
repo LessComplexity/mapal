@@ -660,6 +660,8 @@
       "reruns": [
         {
           "what": "wgmma16: the 16-bit tiles on the warpgroup matrix instruction (779f4a15); bf16 class only",
+          "label": "`wgmma` (another box)",
+          "note": "The H100 `wgmma` row is the round's code plus the 16-bit warpgroup tiles, measured on another H100 SXM against gpt-fast on that box (the H100's fastest bf16 engine in the round); the other engines were not rerun there.",
           "box": "another vast.ai H100 SXM; gpt-fast (the H100's best bf16 engine in the round above) run on the same box",
           "report": "benches/results/evidence/hopper/wgmma-16bit.md",
           "date": "2026-11-26",

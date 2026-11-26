@@ -123,6 +123,13 @@ fn static_name(
     if kind(prev(1)) == Some(TokenKind::KwFn) {
         return "function-declaration";
     }
+    // ADR-0051 D1: a kind word after the colon of a declared parameter.
+    if in_size
+        && matches!(w, "float" | "narrow" | "int" | "number")
+        && kind(prev(1)) == Some(TokenKind::Colon)
+    {
+        return "primitive";
+    }
     if in_size {
         return "size";
     }
@@ -180,8 +187,9 @@ fn rows(src: &str) -> Vec<Row> {
             },
         });
     };
-    // Size lists: `<` after `fn name` / `type Name`, or after a PascalCase
-    // name (a generic type's sizes), to its `>`.
+    // Size lists: `<` after `fn name` / `type Name`, after a PascalCase
+    // name (a generic type's sizes) or after a stage name behind an arrow
+    // (`-> to<bf16>`, ADR-0051 D2), to its `>`.
     let mut size_depth = 0usize;
     for (i, t) in toks.iter().enumerate() {
         let text = &src[t.span.start as usize..t.span.end as usize];
@@ -193,7 +201,11 @@ fn rows(src: &str) -> Vec<Row> {
             && i >= 1
             && toks[i - 1].kind == TokenKind::Ident
             && (prev_text(1).is_some_and(|p| p.starts_with(|c: char| c.is_ascii_uppercase()))
-                || (i >= 2 && matches!(toks[i - 2].kind, TokenKind::KwFn | TokenKind::KwType)));
+                || (i >= 2
+                    && matches!(
+                        toks[i - 2].kind,
+                        TokenKind::KwFn | TokenKind::KwType | TokenKind::Arrow
+                    )));
         match t.kind {
             TokenKind::Ident => {
                 let class = named.get(&t.span.start).map_or(

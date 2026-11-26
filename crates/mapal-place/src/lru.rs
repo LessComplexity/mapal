@@ -42,9 +42,11 @@ pub fn trace(g: &Grid) -> Vec<(Key, u64)> {
         }
         Order::Hybrid { h, ctas, iters } => {
             zero(&mut out);
+            // The whole waves over the raster order's last `whole` tiles,
+            // then the walk over its first `tail` (the lowering's layout).
             let whole = tiles / g.slots.max(1) * g.slots.max(1);
-            lockstep_trace(g, h, 1, false, 0, whole, &mut out);
-            walk_trace(g, h, whole, tiles - whole, ctas, iters, &mut out);
+            lockstep_trace(g, h, 1, false, tiles - whole, whole, &mut out);
+            walk_trace(g, h, 0, tiles - whole, ctas, iters, &mut out);
         }
     }
     out

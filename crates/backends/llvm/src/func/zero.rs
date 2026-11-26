@@ -353,7 +353,11 @@ impl<'a> FnEmit<'a> {
             {
                 continue;
             }
-            let atomic = gpu::site_cands(
+            // The bytes the adds touch: the whole output, or a hybrid
+            // walk's prefix (ADR-0050 C5, `gpu::zero_bytes`); the most any
+            // candidate needs.
+            let all = self.array_bytes(&self.obj_ty(target));
+            let zeroed = gpu::site_cands(
                 site,
                 self.profile,
                 self.contract,
@@ -362,19 +366,29 @@ impl<'a> FnEmit<'a> {
                 false,
             )
             .iter()
-            .map(|c| c.launch.combine)
-            .chain([
-                gpu::launch_in(site, self.profile, self.contract, self.gpu_arms, self.order)
-                    .combine,
-            ])
-            .any(|c| {
+            .map(|c| c.launch)
+            .chain([gpu::launch_in(
+                site,
+                self.profile,
+                self.contract,
+                self.gpu_arms,
+                self.order,
+            )])
+            .filter(|l| {
                 matches!(
-                    c,
+                    l.combine,
                     gpu::Combine::Atomic { .. } | gpu::Combine::StreamK { .. }
                 )
-            });
-            if atomic {
-                out.insert(m, self.array_bytes(&self.obj_ty(target)));
+            })
+            .map(|l| match l.combine {
+                gpu::Combine::StreamK { whole, .. } if whole > 0 => {
+                    gpu::zero_bytes(site, &l).min(all)
+                }
+                _ => all,
+            })
+            .max();
+            if let Some(bytes) = zeroed {
+                out.insert(m, bytes);
             }
         }
         out

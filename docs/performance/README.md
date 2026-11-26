@@ -1,9 +1,10 @@
 # Performance results
 
-Start with [current GPU results](gpu/current-results.md). Reports are organized by the question they answer; raw evidence lives under [benchmark results](../../benches/results/README.md).
+Start with the [current results](results.md): the five-GPU round behind the README's charts, the full model and the kernel suite, with the generated headline tables. Earlier GPU studies: [GPU results](gpu/current-results.md). Reports are organized by the question they answer; raw evidence lives under [benchmark results](../../benches/results/README.md).
 
 | Topic | Read here | What it covers |
 | --- | --- | --- |
+| Current results | [Results](results.md) | The latest round: the full model and the kernel and layer suite on five GPUs, correctness, the charts |
 | GPU kernel comparisons | [Kernels](gpu/kernels/README.md) | Mapal, cuBLAS and CUTLASS; small-M alternatives; arithmetic guarantees |
 | Composed and large workloads | [Workloads](gpu/workloads/README.md) | Residual MLP, PyTorch, 16K matrices and model-shaped projections |
 | GPU memory and lifetime | [Memory](gpu/memory/README.md) | Allocation elimination, arenas, retention and ordering |

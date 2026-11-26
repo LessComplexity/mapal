@@ -10,7 +10,7 @@ use mapal_place::{Lowering, Site};
 
 /// A replay site: `pj`-style (`a` row-major `m × k`, `b` stored `n × k`)
 /// for the projections, `mm`-style (`b` row-major `k × n`) for the cells.
-fn replay_site(m: u64, n: u64, k: u64, fmt: &str, mm: bool) -> TileSite {
+pub(crate) fn replay_site(m: u64, n: u64, k: u64, fmt: &str, mm: bool) -> TileSite {
     use mapal_ir::{NarrowFloat, TileRead, Value};
     let narrow = |on: bool| on.then_some(NarrowFloat::Bf16);
     let (na, nb) = match fmt {
@@ -134,18 +134,35 @@ fn arm_launch(site: &TileSite, p: &'static TargetProfile, plan: &str) -> Option<
     }
     let (gx, gy) = (site.c / m.bn(), site.rows / m.bm());
     let tiles = gx * gy;
-    let combine = match f[6] {
+    // `<traversal>.h<h>`: the raster group height (1 without).
+    let (trav, h) = f[6]
+        .split_once(".h")
+        .map_or((f[6], 1), |(t, h)| (t, h.parse().unwrap_or(1)));
+    let combine = match trav {
         "ord" => Combine::None,
         t if t.starts_with("cut") => Combine::Atomic { s: num(t, "cut") },
+        // ADR-0050 C5: whole waves of the footprint's slots ordered, the
+        // tail walked over them.
+        "hybrid" => {
+            let w = g.sms * u;
+            let whole = tiles / w * w;
+            let (ctas, iters) = mapal_place::reuse::walk_grid((tiles - whole) * (site.k / bk), w);
+            Combine::StreamK { ctas, iters, whole }
+        }
         "walk" => {
             let (ctas, iters) = mapal_place::reuse::walk_grid(tiles * (site.k / bk), g.sms * u);
-            Combine::StreamK { ctas, iters }
+            Combine::StreamK {
+                ctas,
+                iters,
+                whole: 0,
+            }
         }
         t => {
             let (c, i) = t.strip_prefix("walk")?.split_once('x')?;
             Combine::StreamK {
                 ctas: c.parse().ok()?,
                 iters: i.parse().ok()?,
+                whole: 0,
             }
         }
     };
@@ -162,7 +179,7 @@ fn arm_launch(site: &TileSite, p: &'static TargetProfile, plan: &str) -> Option<
         gy,
         block: m.threads(g.warp),
         smem: m.smem_bytes(),
-        raster: 1,
+        raster: h,
         rungs: table_rungs(site, p, arms, arithmetic),
         combine,
         cells: 1,
@@ -210,7 +227,7 @@ fn arm_ns(
 /// **The model's misses on the replay, each with the term it lacks**
 /// (`benches/results/evidence/local-rtx-5080/machine-model.md`): checked —
 /// a miss that turns into a pick must leave this list.
-const REPLAY_OPEN: [&str; 14] = [
+const REPLAY_OPEN: [&str; 15] = [
     // H100 TF32 128 x 4096 x 4096, raster or not: both arms bound by the L2
     // feed at one price; the measured 12 % is the copy engine's (movers are
     // not yet priced: TMA boxes against cp.async lane copies).
@@ -220,6 +237,11 @@ const REPLAY_OPEN: [&str; 14] = [
     // its occupancy on those parts is unmeasured (the RTX 5080's curve is
     // its own), and the cut's partial adds burst at each piece's end.
     "cut-0", "cut-1", "cut-10", "cut-2", "cut-8", "cut-9",
+    // RTX 5080 128 x 28672 x 4096 bf16 (ADR-0050 C5): the hybrid won by 2.7 %
+    // where the model prices it 2 % over the ordered grid — every arm priced
+    // ~3x under its time (a DRAM-bound skinny site: the tile's realized
+    // memory rate under its ring, `mma-fly`'s, is not a machine fact yet).
+    "hyb-0",
     // RTX 5080 walks the model prices under their ordered grids but the
     // ordered grid won (2048 x 6144 x 4096, 2048 x 8192 x 2048, 512 x 512 x
     // 2048): the walk's own per-unit cost — its segment loop, the shared
@@ -232,9 +254,10 @@ const REPLAY_OPEN: [&str; 14] = [
     "ws-0", "ws-1", "ws-2", "ws-3",
 ];
 
-/// The model's picks at C3 (the corpus as seeded): a floor, not a target —
-/// the rules pick 61 (`model >= rules` is ADR-0050 C6's bar).
-const MODEL_FLOOR: u64 = 38;
+/// The model's picks (C3's 38 on the seeded corpus; C5's hybrid arms add
+/// 9): a floor, not a target — the rules pick 61 (`model >= rules` is
+/// ADR-0050 C6's bar).
+const MODEL_FLOOR: u64 = 47;
 
 /// **ADR-0050 C3: `place_replay.tsv` scored** — per measured site, the
 /// measured winner (or null: within the null), the model's pick (the arm
@@ -420,4 +443,104 @@ fn place_replay_scores() {
         misses, open,
         "the model's misses are the committed open list"
     );
+}
+
+/// Every replayed site's arms: its family, null, and per arm its name,
+/// measured time and the model's three-bound price with its terms.
+#[allow(clippy::type_complexity)]
+fn replay_evals() -> Vec<(
+    String,
+    String,
+    f64,
+    Vec<(String, f64, Option<([f64; 3], mapal_place::Terms)>)>,
+)> {
+    let text = include_str!("place_replay.tsv");
+    let mut sites: std::collections::BTreeMap<String, Vec<Vec<&str>>> = Default::default();
+    for l in text
+        .lines()
+        .filter(|l| !l.starts_with('#') && !l.is_empty())
+    {
+        let f: Vec<&str> = l.split('\t').collect();
+        sites.entry(f[0].to_string()).or_default().push(f);
+    }
+    let mut out = Vec::new();
+    for (id, arms) in &sites {
+        let fam = id.split('-').next().unwrap().to_string();
+        let f0 = &arms[0];
+        let p = crate::profile::resolve(f0[1]).expect("a part");
+        let (m, n, k): (u64, u64, u64) = (
+            f0[2].parse().unwrap(),
+            f0[3].parse().unwrap(),
+            f0[4].parse().unwrap(),
+        );
+        let mm = fam == "kfill" || fam == "skfill" || fam == "pc" || fam == "split";
+        let site = replay_site(m, n, k, f0[5], mm);
+        let warm = [f0[12].contains("warm=a"), f0[12].contains("warm=b")];
+        let evals = arms
+            .iter()
+            .map(|a| {
+                let ev = arm_launch(&site, p, a[8]).and_then(|l| arm_ns(&site, p, &l, warm));
+                (a[7].to_string(), a[9].parse().unwrap(), ev)
+            })
+            .collect();
+        out.push((id.clone(), fam, f0[10].parse().unwrap(), evals));
+    }
+    out
+}
+
+/// **ADR-0050 D5: the model's error band is the replay's residuals** — per
+/// measured site, each arm against the measured winner: the model's ratio
+/// over the measured one, `|(model_b / model_a) / (measured_b / measured_a)
+/// − 1|`, grouped by the bounding term of the winner's longest phase; per
+/// term (three pairs at least, else `all`'s) the 80th percentile, per
+/// mille — equal to [`crate::place::PLACE_BAND_PM`] (re-derived when the
+/// evaluator or the corpus changes).
+#[test]
+fn place_band_is_the_replays_residuals() {
+    let mut by: std::collections::BTreeMap<String, Vec<f64>> = Default::default();
+    for (_, _, _, evals) in replay_evals() {
+        let Some(best) = evals
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| e.2.is_some())
+            .min_by(|a, b| a.1.1.total_cmp(&b.1.1))
+            .map(|(i, _)| i)
+        else {
+            continue;
+        };
+        let (_, ta, Some((pa, terms))) = &evals[best] else {
+            continue;
+        };
+        let term = terms
+            .phases
+            .iter()
+            .max_by(|a, b| a.ns.total_cmp(&b.ns))
+            .map_or("all", |p| p.bound())
+            .to_string();
+        for (i, (_, tb, eb)) in evals.iter().enumerate() {
+            let Some((pb, _)) = eb else { continue };
+            if i == best {
+                continue;
+            }
+            let r = ((pb[1] / pa[1]) / (tb / ta) - 1.0).abs();
+            by.entry(term.clone()).or_default().push(r);
+            by.entry("all".into()).or_default().push(r);
+        }
+    }
+    let pct = |v: &mut Vec<f64>| {
+        v.sort_by(|a, b| a.total_cmp(b));
+        let i = ((v.len() as f64 * 0.8).ceil() as usize).clamp(1, v.len()) - 1;
+        (v[i] * 1e3).round() as u64
+    };
+    let all = pct(by.get_mut("all").expect("replayed pairs"));
+    let mut got: Vec<(String, u64)> = Vec::new();
+    for (t, v) in by.iter_mut() {
+        let b = if v.len() >= 3 { pct(v) } else { all };
+        eprintln!("band {t}: {b} per mille over {} pairs", v.len());
+        got.push((t.clone(), b));
+    }
+    for (t, pm) in crate::place::PLACE_BAND_PM {
+        let want = got.iter().find(|(n, _)| n == t).map_or(all, |(_, b)| *b);
+        assert_eq!(pm, want, "band {t}: committed {pm}, the replay's {want}");
+    }
 }

@@ -110,8 +110,8 @@ async function main() {
   const fixture = open("editors/test/fixture.mapal");
   const cases = [
     [llama, "a function call", "-> decoder_layer -> result", 3, "fn decoder_layer"],
-    [llama, "a type use", "cache: KeyValueCache)", 7, "type KeyValueCache"],
-    [llama, "a field", "cache.keys[key_row", 6, "    keys: [f32; cache_size],"],
+    [llama, "a type use", "cache: KeyValueCache<element>,", 7, "type KeyValueCache"],
+    [llama, "a field", "cache.keys[key_row", 6, "    keys: [element; cache_size],"],
     [fixture, "a size parameter", "-> [f32; rows]", 9, "fn scale<rows"],
     [fixture, "a top-level value", "t -> t * width", 9, "64 -> width;"],
   ];

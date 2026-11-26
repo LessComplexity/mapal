@@ -19,7 +19,7 @@
 /// `k` panels a tile, `slots` slots resident at once, slice bytes `sa` (an
 /// `a` row panel), `sb` (a `b` column panel), `so` (an output tile), the
 /// order, and whether a zero pass streams the output through the cache first.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Grid {
     pub gx: u64,
     pub gy: u64,
@@ -33,7 +33,7 @@ pub struct Grid {
 }
 
 /// The traversal's access order.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Order {
     /// Waves of `slots` blocks in step, launch order by raster `h`, `s`
     /// partitions of `k` above the tiles (partition-major), their partials
@@ -85,21 +85,50 @@ pub fn walk_grid(units: u64, slots: u64) -> (u64, u64) {
     (units.div_ceil(iters), iters)
 }
 
-/// The bytes a cache of `keep` bytes misses on `g`, by its closed form.
+thread_local! {
+    /// [`reads`] and [`needed`] by grid and keep: a search prices many
+    /// schedules over one grid (its depths, layouts and occupancies).
+    static READS: std::cell::RefCell<std::collections::HashMap<(Grid, u64), Reads>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+    static NEEDED: std::cell::RefCell<std::collections::HashMap<(Grid, u64, u64), u64>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// The bytes a cache of `keep` bytes misses on `g`, by its closed form
+/// (memoized: a pure function of the grid and the keep).
 pub fn reads(g: &Grid, keep: u64) -> Reads {
+    if let Some(r) = READS.with(|c| c.borrow().get(&(*g, keep)).copied()) {
+        return r;
+    }
+    let r = reads_uncached(g, keep);
+    READS.with(|c| {
+        let mut c = c.borrow_mut();
+        if c.len() > 1 << 16 {
+            c.clear();
+        }
+        c.insert((*g, keep), r);
+    });
+    r
+}
+
+fn reads_uncached(g: &Grid, keep: u64) -> Reads {
     let tiles = g.gx * g.gy;
     let mut r = match g.order {
         Order::Lockstep { h, s, atomic } => lockstep(g, h, s, atomic, 0, tiles, keep),
         Order::Stagger { h, s, atomic } => stagger(g, h, s, atomic, keep),
         Order::Walk { h, ctas, iters } => walk(g, h, 0, tiles, ctas, iters, keep),
         Order::Hybrid { h, ctas, iters } => {
+            // The lowering's layout (ADR-0050 C5): the whole waves take the
+            // raster order's last `whole` tiles, the walk its first `tail`
+            // (the zero pass a prefix of the output).
             let whole = tiles / g.slots.max(1) * g.slots.max(1);
-            let a = lockstep(g, h, 1, false, 0, whole, keep);
+            let tail = tiles - whole;
+            let a = lockstep(g, h, 1, false, tail, whole, keep);
             // The last ordered wave's rows and columns: the tail's first
             // reader of one finds it where the rest of that wave and the
             // walk before the reader fit the keep.
             let w = g.slots.max(1);
-            let last: Vec<(u64, u64)> = (whole.saturating_sub(w)..whole)
+            let last: Vec<(u64, u64)> = (tiles.saturating_sub(w).max(tail)..tiles)
                 .map(|t| launch_tile(g.gx, g.gy, h, t))
                 .collect();
             let rows: std::collections::BTreeSet<u64> = last.iter().map(|x| x.0).collect();
@@ -109,7 +138,7 @@ pub fn reads(g: &Grid, keep: u64) -> Reads {
                 cols,
                 outs: last.len() as u64,
             };
-            let b = walk_after(g, h, whole, tiles - whole, ctas, iters, keep, Some(&prev));
+            let b = walk_after(g, h, 0, tail, ctas, iters, keep, Some(&prev));
             Reads {
                 a: a.a + b.a,
                 b: a.b + b.b,
@@ -130,6 +159,21 @@ pub fn reads(g: &Grid, keep: u64) -> Reads {
 /// wave, so the fraction of these fetched from memory is the fraction of
 /// requests that wait on memory's latency.
 pub fn needed(g: &Grid, h: u64, s: u64) -> u64 {
+    if let Some(n) = NEEDED.with(|c| c.borrow().get(&(*g, h, s)).copied()) {
+        return n;
+    }
+    let n = needed_uncached(g, h, s);
+    NEEDED.with(|c| {
+        let mut c = c.borrow_mut();
+        if c.len() > 1 << 16 {
+            c.clear();
+        }
+        c.insert((*g, h, s), n);
+    });
+    n
+}
+
+fn needed_uncached(g: &Grid, h: u64, s: u64) -> u64 {
     let s = s.max(1);
     let tiles = g.gx * g.gy;
     let pb = g.panels / s;

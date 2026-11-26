@@ -88,7 +88,7 @@ impl CategoryIr {
 }
 
 /// The text inside a node, before quoting/escaping (DESIGN §14).
-fn node_label(obj: &crate::graph::Object) -> String {
+pub(crate) fn node_label(obj: &crate::graph::Object) -> String {
     let ty = ty_label(&obj.ty);
     let base = match (&obj.value, obj.kind, &obj.name) {
         // Constants: `value: ty`.
@@ -107,7 +107,7 @@ fn node_label(obj: &crate::graph::Object) -> String {
 }
 
 /// A constant value rendered for a label; `Str` is escaped + truncated (20).
-fn value_label(v: &Value) -> String {
+pub(crate) fn value_label(v: &Value) -> String {
     match v {
         Value::I32(x) => x.to_string(),
         Value::I64(x) => x.to_string(),
@@ -128,7 +128,7 @@ fn value_label(v: &Value) -> String {
 }
 
 /// The edge label for an operation (DESIGN §14).
-fn edge_label(op: &Operation) -> String {
+pub(crate) fn edge_label(op: &Operation) -> String {
     match op {
         Operation::Pair { slot, arity } => format!("Pair {slot}/{arity}"),
         Operation::Proj { index } => format!("Proj {index}"),
@@ -175,7 +175,19 @@ fn edge_label(op: &Operation) -> String {
 }
 
 /// Escape a label per §14 rule 1: `"` becomes `#quot;` before quoting.
-fn escape(s: &str) -> String {
+pub(crate) fn escape(s: &str) -> String {
+    // Mermaid 11 reads a label that starts like a markdown list item (`+`, `+ · guard`,
+    // `- x`, `* x`) as a list ("Unsupported markdown: list"): its first character goes
+    // as an entity.
+    let list = s.starts_with(['+', '-', '*']) && s[1..].chars().next().is_none_or(|c| c == ' ');
+    if list {
+        let ent = match s.as_bytes()[0] {
+            b'+' => "#43;",
+            b'-' => "#45;",
+            _ => "#42;",
+        };
+        return format!("{ent}{}", escape(&s[1..]));
+    }
     // `<` / `>` (an instance name `cell<4>`, ADR-0047) as entities, so a
     // renderer never reads them as markup.
     s.replace('"', "#quot;")
@@ -241,12 +253,40 @@ pub fn lint_mermaid(s: &str) -> Vec<String> {
             continue;
         }
         if is_edge_line(t) {
-            // edge: A -- "label" --> B
-            if !t.contains("-- \"") || !t.contains("\" -->") {
+            // edge: A -- "label" --> B; the flow view's plain `A --> B` is the
+            // one unlabeled form (no quote anywhere on the line).
+            let plain = !t.contains('"') && t.split(" --> ").count() == 2;
+            if !plain && (!t.contains("-- \"") || !t.contains("\" -->")) {
                 errs.push(format!("edge label not double-quoted: {t}"));
             }
         } else if is_node_line(t) && !has_balanced_quoted_label(t) {
             errs.push(format!("node label not double-quoted: {t}"));
+        }
+    }
+
+    // Every edge endpoint is a declared node or subgraph.
+    let mut declared = std::collections::HashSet::new();
+    for line in s.lines() {
+        let t = line.trim();
+        if let Some(rest) = t.strip_prefix("subgraph ") {
+            declared.insert(rest.split('[').next().unwrap_or("").trim().to_string());
+        } else if is_node_line(t) {
+            let id: String = t.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+            declared.insert(id);
+        }
+    }
+    for line in s.lines() {
+        let t = line.trim();
+        if is_edge_line(t) {
+            let (a, b) = t.split_once(" -- ").map_or_else(
+                || t.split_once(" --> ").unwrap_or((t, "")),
+                |(a, rest)| (a, rest.rsplit(" --> ").next().unwrap_or("")),
+            );
+            for id in [a.trim(), b.trim()] {
+                if !declared.contains(id) {
+                    errs.push(format!("edge endpoint `{id}` is not declared: {t}"));
+                }
+            }
         }
     }
 
@@ -260,7 +300,7 @@ fn is_node_line(t: &str) -> bool {
         && !t.starts_with("flowchart")
         && !t.starts_with("subgraph")
         && !is_edge_line(t)
-        && t.contains("((")
+        && (t.contains("((") || t.contains("[\""))
 }
 
 /// Whether a (trimmed) line declares an edge.

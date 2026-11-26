@@ -205,6 +205,12 @@ pub fn apply(opts: &mut EmitOpts, a: &str) -> Result<bool, String> {
         }
         // plan-cost: the candidate plans' `; mapal.cand` lines.
         "--plan-cands" => opts.gpu.cands = true,
+        "--place-gate=ptxas" => opts.gpu.place_gate = true,
+        "--place-tile" => opts.gpu.place_tile = true,
+        "--place-trav=ordered" => opts.gpu.place_trav = 1,
+        "--place-trav=split" => opts.gpu.place_trav = 2,
+        "--place-trav=walk" => opts.gpu.place_trav = 3,
+        "--place-trav=hybrid" => opts.gpu.place_trav = 4,
         // per-site-choice: the most candidates a site's table holds (1 = the
         // rules' launch alone, the emission before candidates).
         _ if a.starts_with("--cands=") => {

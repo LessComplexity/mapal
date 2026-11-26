@@ -7,7 +7,8 @@
 # warp tensor tile), or `rules[:+rung,-rung]` (the emitter's launch now under those arms — the arm as measured where
 # the emitter has not drifted since; `crates/backends/llvm/src/place.rs` test `place_replay_scores`). Seeded from
 # WALK_ARMS (17), mma_cut_replay (21), k-fill / streamk-fill, C11 l2-gate, wgmma-ws, plan-cost's losers, mma-depth
-# and split-tile (rung_replay.tsv's lines).
+# and split-tile (rung_replay.tsv's lines); `hyb-*` (ADR-0050 C5): the rules' 16-bit tile ordered, walked and hybrid
+# (`<trav>.h<h>`: the raster height) on the walk-arm shapes, ABBA on this RTX 5080.
 # id	part	m	n	k	fmt	order	arm	plan	us	null	rules	box	source
 walk-0	rtx-5080	512	2048	8192	bf16	free	ordered	mma:bf16:2.8.2.2:bk32:st0:u2:ord	216.0	0.02		-	bf16-tensor-tile.md
 walk-0	rtx-5080	512	2048	8192	bf16	free	walk	mma:bf16:4.8.2.2:bk32:st0:u2:walk	164.2	0.02	rules	-	bf16-tensor-tile.md
@@ -145,3 +146,35 @@ split-0	rtx-5080	2048	4096	4096	f32	free	+split-tile	rules:+split-tile	4101.8	0.
 split-0	rtx-5080	2048	4096	4096	f32	free	rules	rules	1830.6	0.02	rules	-	f32-tensor-cores ABBA tf32x3
 split-1	rtx-5080	128	4096	4096	f32	free	+split-tile	rules:+split-tile	301.2	0.02		-	f32-tensor-cores ABBA tf32x3
 split-1	rtx-5080	128	4096	4096	f32	free	rules	rules	143.3	0.02	rules	-	f32-tensor-cores ABBA tf32x3
+hyb-0	rtx-5080	128	28672	4096	bf16	free	rules	mma:bf16:4.8.2.2:bk16:st4:u2:ord	872.2	0.02	rules	-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-0	rtx-5080	128	28672	4096	bf16	free	walk	mma:bf16:4.8.2.2:bk16:st4:u2:walk	892.0	0.02		-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-0	rtx-5080	128	28672	4096	bf16	free	hybrid	mma:bf16:4.8.2.2:bk16:st4:u2:hybrid	848.6	0.02		-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-1	rtx-5080	512	8192	2048	bf16	free	rules	mma:bf16:4.8.2.2:bk32:st2:u2:walk	168.6	0.02	rules	-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-1	rtx-5080	512	8192	2048	bf16	free	ordered	mma:bf16:4.8.2.2:bk32:st2:u2:ord	194.1	0.02		-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-1	rtx-5080	512	8192	2048	bf16	free	hybrid	mma:bf16:4.8.2.2:bk32:st2:u2:hybrid	162.5	0.02		-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-2	rtx-5080	2048	2048	2048	bf16	free	rules	mma:bf16:4.8.2.2:bk32:st2:u2:walk	168.4	0.02	rules	-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-2	rtx-5080	2048	2048	2048	bf16	free	ordered	mma:bf16:4.8.2.2:bk32:st2:u2:ord.h4	195.0	0.02		-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-2	rtx-5080	2048	2048	2048	bf16	free	hybrid	mma:bf16:4.8.2.2:bk32:st2:u2:hybrid.h2	162.0	0.02		-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-3	rtx-5080	2048	2048	8192	bf16	free	rules	mma:bf16:4.8.2.2:bk32:st2:u2:walk	627.7	0.02	rules	-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-3	rtx-5080	2048	2048	8192	bf16	free	ordered	mma:bf16:4.8.2.2:bk32:st2:u2:ord	748.5	0.02		-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-3	rtx-5080	2048	2048	8192	bf16	free	hybrid	mma:bf16:4.8.2.2:bk32:st2:u2:hybrid.h2	588.4	0.02		-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-4	rtx-5080	2048	4096	4096	bf16	free	rules	mma:bf16:4.8.2.2:bk32:st2:u2:walk	668.5	0.02	rules	-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-4	rtx-5080	2048	4096	4096	bf16	free	ordered	mma:bf16:4.8.2.2:bk32:st2:u2:ord.h4	686.4	0.02		-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-4	rtx-5080	2048	4096	4096	bf16	free	hybrid	mma:bf16:4.8.2.2:bk32:st2:u2:hybrid	581.3	0.02		-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-5	rtx-5080	2048	4096	8192	bf16	free	rules	mma:bf16:4.8.2.2:bk32:st2:u2:walk	1287.8	0.02	rules	-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-5	rtx-5080	2048	4096	8192	bf16	free	ordered	mma:bf16:4.8.2.2:bk32:st2:u2:ord.h16	1363.5	0.02		-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-5	rtx-5080	2048	4096	8192	bf16	free	hybrid	mma:bf16:4.8.2.2:bk32:st2:u2:hybrid	1146.7	0.02		-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-6	rtx-5080	2048	6144	4096	bf16	free	rules	mma:bf16:4.8.2.2:bk32:st2:u2:ord	945.7	0.02	rules	-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-6	rtx-5080	2048	6144	4096	bf16	free	ordered	mma:bf16:4.8.2.2:bk32:st2:u2:ord.h2	955.1	0.02		-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-6	rtx-5080	2048	6144	4096	bf16	free	walk	mma:bf16:4.8.2.2:bk32:st2:u2:walk	1016.1	0.02		-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-6	rtx-5080	2048	6144	4096	bf16	free	hybrid	mma:bf16:4.8.2.2:bk32:st2:u2:hybrid.h2	871.0	0.02		-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-7	rtx-5080	2048	8192	2048	bf16	free	rules	mma:bf16:4.8.2.2:bk32:st2:u2:ord	630.9	0.02	rules	-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-7	rtx-5080	2048	8192	2048	bf16	free	walk	mma:bf16:4.8.2.2:bk32:st2:u2:walk	739.6	0.02		-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-7	rtx-5080	2048	8192	2048	bf16	free	hybrid	mma:bf16:4.8.2.2:bk32:st2:u2:hybrid	581.8	0.02		-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-8	rtx-5080	3072	4096	8192	bf16	free	rules	mma:bf16:4.8.2.2:bk32:st2:u2:ord	1869.5	0.02	rules	-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-8	rtx-5080	3072	4096	8192	bf16	free	ordered	mma:bf16:4.8.2.2:bk32:st2:u2:ord.h8	1885.8	0.02		-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-8	rtx-5080	3072	4096	8192	bf16	free	walk	mma:bf16:4.8.2.2:bk32:st2:u2:walk	2007.8	0.02		-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-8	rtx-5080	3072	4096	8192	bf16	free	hybrid	mma:bf16:4.8.2.2:bk32:st2:u2:hybrid	1714.5	0.02		-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-9	rtx-5080	4096	2048	8192	bf16	free	rules	mma:bf16:4.8.2.2:bk32:st2:u2:walk	1304.1	0.02	rules	-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-9	rtx-5080	4096	2048	8192	bf16	free	ordered	mma:bf16:4.8.2.2:bk32:st2:u2:ord	1350.9	0.02		-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)
+hyb-9	rtx-5080	4096	2048	8192	bf16	free	hybrid	mma:bf16:4.8.2.2:bk32:st2:u2:hybrid	1146.5	0.02		-	machine-model.md C5 (CUPTI medians of 6, ABBA, GEMM + its zero pass)

@@ -1,0 +1,22 @@
+// A dense layer: a matrix product, a bias and a ReLU. What to compute, not how.
+64 -> n;
+
+fn main() {
+    "dense-a.bin" -> read -> a: [f32; n * n];
+    "dense-b.bin" -> read -> b: [f32; n * n];
+    n -> iota -> along;
+    n * n -> iota -> map {
+        c ->
+        c / n -> row;
+        c % n -> column;
+        (0.0, along) -> fold {
+            sum, k -> sum + a[row * n + k] * b[k * n + column]
+        } -> dot;
+        (dot + 1.0 > 0.0) -> {
+            -true-> dot + 1.0;
+            -false-> 0.0;
+        }
+    } -> out;
+    out[0] -> println;
+    out[n * n - 1] -> println;
+}

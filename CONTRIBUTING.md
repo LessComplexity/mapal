@@ -22,6 +22,7 @@ measured, not argued with.
 
 ## Contents
 
+- [How the project works](#how-the-project-works)
 - [Ways to contribute](#ways-to-contribute)
 - [Before you write code: the model comes first](#before-you-write-code-the-model-comes-first)
 - [Where the open work is](#where-the-open-work-is)
@@ -32,6 +33,29 @@ measured, not argued with.
 - [Docs you update in the same change](#docs-you-update-in-the-same-change)
 - [Setup and the gates](#setup-and-the-gates)
 - [Commits, PRs, licensing](#commits-prs-licensing)
+
+---
+
+## How the project works
+
+Everything is written down, including what turned out wrong:
+
+- [`docs/STATUS.md`](docs/STATUS.md) - what is built, with test counts
+- [`docs/decisions/`](docs/decisions/README.md) - every significant decision and the alternatives it rejected,
+  indexed (ADR = Architecture Decision Record)
+- [`docs/architecture/`](docs/architecture/) - how the compiler derives what it does
+- [`docs/performance/`](docs/performance/) and [`benches/results/`](benches/results/README.md) - every benchmark:
+  machine, method, evidence, failures; the latest round in [`docs/performance/results.md`](docs/performance/results.md)
+- [`docs/sessions/`](docs/sessions/) - dated log of every work session, mistakes included
+- [`docs/getting-started.md`](docs/getting-started.md) (build, run, test, editors),
+  [`docs/syntax.md`](docs/syntax.md) (the language, form by form), [`docs/philosophy.md`](docs/philosophy.md) (the
+  ideas and the decisions behind them) and [`docs/roadmap.md`](docs/roadmap.md) (what comes next)
+
+**Contributing:** this page - the model-first workflow, the measurement rules, and the
+[open ADRs](#where-the-open-work-is) anyone can pick up (dynamic arrays, type generics, sum types, an
+external-backend SDK, co-execution, `scan`). Recursion, modules and closures are not in the language yet and have
+no decision record - writing one is the contribution that unblocks the code. Forks welcome. One house rule: a
+change arrives with the evidence of what it did, and names the published numbers it moves.
 
 ---
 
@@ -258,8 +282,10 @@ tests skip without `nvcc`; compiling still catches emitter-wiring breaks).
   the same three things this page is about.
 - Keep unrelated changes out of the diff. Reformatting plus a behavior change in one PR means
   neither can be reviewed.
-- **Licensing**: contributions are accepted under the repo's
-  [Apache-2.0 with the LLVM exception](LICENSE) (Apache-2.0 §5, inbound = outbound). No CLA.
+- **Licensing**: [Apache License 2.0 with the LLVM exception](LICENSE) - the license LLVM and Swift use, for the
+  same reason. Apache-2.0 carries an explicit patent grant; the exception keeps the runtime Mapal links into your
+  binaries from imposing attribution requirements on _your_ program's output. Contributions are accepted under the
+  repo's license (Apache-2.0 §5, inbound = outbound). No CLA.
 - Be the kind of collaborator described in the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 Disagreement is welcome and expected — this project has been wrong in public repeatedly. Bring
