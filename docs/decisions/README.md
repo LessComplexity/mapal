@@ -100,6 +100,8 @@ ADR-NNNN-short-slug-candidate.md    while the decision is still open
 | [0047](ADR-0047-size-generic-functions.md) | Size-generic functions — `fn f<n, m>(…)`, sizes inferred at each call, one fixed-size function per size tuple | 2026-11-25 | accepted-for-implementation (implemented) |
 | [0048](ADR-0048-top-level-bindings-compile-time-evaluation.md) | Top-level bindings, compile-time evaluation by dataflow, `_` as a type's default interpretation, size-generic types | 2026-11-25 | accepted-for-implementation (implemented) |
 | [0049](ADR-0049-correctness-is-the-flow-and-the-bound.md) | Correctness is the flow and the bound — bit-identity is a development tool, not a language promise | 2026-11-26 | accepted |
+| [0050](ADR-0050-the-machine-model-placement-by-one-cost-model.md) | The machine model — hardware as abstract compute and placement facts; the dataflow placed on it by one cost model | 2026-11-26 | accepted |
+| [0051](ADR-0051-format-generics-to-and-widen.md) | Format generics — `to<target>` and `widen<target>`, format parameters, explicit arguments at a stage | 2026-11-26 | accepted |
 
 Errata **E1–E5** predate the ADR numbering; ADR-0002 … ADR-0006 encode them one-for-one. The
 historical ledger — including which errata were patched back into the spec text — is the

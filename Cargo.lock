@@ -501,6 +501,7 @@ dependencies = [
  "mapal-interp",
  "mapal-ir",
  "mapal-lower",
+ "mapal-place",
  "mapal-rewrite",
  "mapal-rt",
  "mapal-syntax",
@@ -582,6 +583,13 @@ dependencies = [
  "mapal-syntax",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "mapal-place"
+version = "0.0.1"
+dependencies = [
+ "proptest",
 ]
 
 [[package]]

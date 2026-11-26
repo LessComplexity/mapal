@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/mapal-syntax",
     "crates/mapal-ir",
+    "crates/mapal-place",
     "crates/mapal-lower",
     "crates/mapal-check",
     "crates/mapal-interp",

@@ -272,7 +272,7 @@ pub(crate) fn rungs_at(
 /// [`rungs_at`] for one site: cross-arch `row-split` priced over the site's
 /// row — a retained row's pass streams its `k · c` operand
 /// ([`crate::rules::row_split_pays`]); a forced arm stays forced.
-fn site_rungs(
+pub(crate) fn site_rungs(
     profile: &TargetProfile,
     wps: u64,
     face: Face,
@@ -873,7 +873,7 @@ pub(crate) enum Arithmetic {
 }
 
 impl Arithmetic {
-    fn scalar(site: &TileSite, contract: bool, free: bool, pairs: bool) -> Self {
+    pub(crate) fn scalar(site: &TileSite, contract: bool, free: bool, pairs: bool) -> Self {
         // fold-algebra: a tile site's step is `acc + a·b` with the product read
         // once — a `step_algebra` FMA pair by construction — and the host fuses
         // every such pair under `contract` (`FnEmit::emit_arith`, the same
@@ -895,7 +895,7 @@ impl Arithmetic {
         }
     }
 
-    fn face(self) -> Face {
+    pub(crate) fn face(self) -> Face {
         match self {
             Self::SeparateMulAdd => Face::Exact,
             Self::OrderedFma => Face::Contract,
@@ -1003,6 +1003,20 @@ pub(crate) fn launch(
 /// `blocks · split` grid ([`TargetProfile::gpu_tile_split`]). 1 = [`launch`].
 /// `full` (tile-efficiency T1): the split grid keeps the full register tile.
 pub(crate) fn launch_split(
+    site: &TileSite,
+    profile: &TargetProfile,
+    contract: bool,
+    arms: crate::GpuArms,
+    split: u64,
+    full: bool,
+) -> Launch {
+    // ADR-0050 C2: the coverage probe sees every launch the rules make (a
+    // test switch; off, the identity).
+    let l = launch_split_rules(site, profile, contract, arms, split, full);
+    crate::place::probe(site, profile, contract, arms, l)
+}
+
+fn launch_split_rules(
     site: &TileSite,
     profile: &TargetProfile,
     contract: bool,
@@ -1597,7 +1611,7 @@ pub(crate) fn launch_split(
 /// The grid a site's fill is keyed by (`launch`'s `wps`): the S52 geometry
 /// (no S53 geometry rung) — the table's rows were measured on grids
 /// classified by it — or the one-thread-per-cell grid.
-fn fill_grid(site: &TileSite, profile: &TargetProfile) -> (u64, u64) {
+pub(crate) fn fill_grid(site: &TileSite, profile: &TargetProfile) -> (u64, u64) {
     let shaped = site.a.clane == 0 && site.b.ci == 0;
     let base = shaped
         .then(|| profile.gpu_tile(site.rows, site.c, site.k, &site.elem, false, false))
@@ -2326,6 +2340,18 @@ fn plan_pick(
 /// ([`launch_split`]) — kept only when the re-sized panel still cuts each
 /// partition's `k / S` whole (the split kernel walks `kext / bk` panels).
 fn resized(
+    site: &TileSite,
+    profile: &TargetProfile,
+    contract: bool,
+    arms: crate::GpuArms,
+    l: Launch,
+    combine: Combine,
+) -> Launch {
+    let r = resized_rules(site, profile, contract, arms, l, combine);
+    crate::place::probe(site, profile, contract, arms, r)
+}
+
+fn resized_rules(
     site: &TileSite,
     profile: &TargetProfile,
     contract: bool,
@@ -3929,7 +3955,7 @@ pub(crate) fn vec_fit(site: &TileSite, gpu: &Gpu, rungs: &crate::GpuRungs) -> u6
 }
 
 /// Bytes of one `mbarrier` (a stage's transaction barrier).
-const BULK_BAR_BYTES: u64 = 8;
+pub(crate) const BULK_BAR_BYTES: u64 = 8;
 
 /// **TMA `bulk-stage`: the staging rule** — the warp TF32 `mma` tile's
 /// panels are copied by the part's bulk-copy engine
@@ -4103,7 +4129,7 @@ pub(crate) fn ws_tensors(
 }
 
 /// The one-thread-per-cell grid at `cells` cells a thread.
-fn cell_blocks(site: &TileSite, cells: u64) -> u64 {
+pub(crate) fn cell_blocks(site: &TileSite, cells: u64) -> u64 {
     (site.rows * site.c).div_ceil(NAIVE_THREADS * cells)
 }
 
@@ -4166,7 +4192,7 @@ fn stream_split(
     .unwrap_or_else(|| at(1))
 }
 
-fn elem_bytes_of(elem: &Ty) -> u64 {
+pub(crate) fn elem_bytes_of(elem: &Ty) -> u64 {
     match elem {
         Ty::Float { bits } => u64::from(*bits) / 8,
         _ => 4,
