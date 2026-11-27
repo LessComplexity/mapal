@@ -221,6 +221,9 @@ warpgroup row and its TMA boxes against `cp.async`, the ws arms' missing mover t
 and misses). Then the rented A/B of the R4-moved programs (`benches/local/gpu_changed.sh <out> --on machine-place
 --arch <profile>` + the box's `gpu_run.sh`).
 
+The round ran: `benches/results/evidence/cost-rental/cost-rental.md` (five parts' primitives, the replay 32 / 59,
+the ABBA per part, four lowering bugs fixed; the default stays OFF).
+
 ## Proposed CLAUDE.md facts-table rows (not applied — CLAUDE.md changes need the user)
 
 | query | what it proves |
