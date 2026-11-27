@@ -115,8 +115,8 @@ __device__ __forceinline__ unsigned long long desc(const void *p) {
         "0, 0; }"                                                                                                      \
         : ACC64(i), ACC64B(i)                                                                                          \
         : "l"(da), "l"(db), "r"(1))
-#define WG_K(C)                                                                                                        \
-    extern "C" __global__ void __launch_bounds__(128) wgmma_c##C(float *out, int iters, long long *cyc) {             \
+#define WG_K(C, LB)                                                                                                     \
+    extern "C" __global__ void __launch_bounds__(LB) wgmma_c##C(float *out, int iters, long long *cyc) {             \
         __shared__ __align__(1024) unsigned char sm[16384];                                                            \
         for (int i = threadIdx.x; i < 16384; i += blockDim.x) sm[i] = (unsigned char)(i * 7 + (out[0] != 0));          \
         float d[C][64];                                                                                                \
@@ -137,6 +137,8 @@ __device__ __forceinline__ unsigned long long desc(const void *p) {
         if (s == 12345.f) out[1] = s;                                                                                  \
         if (threadIdx.x == 0) atomicMax((unsigned long long *)cyc + blockIdx.x % 1024, (unsigned long long)(t1 - t0)); \
     }
-WG_K(1)
-WG_K(2)
+// One block an SM of 1 .. 4 warpgroups (the sweep's groups): c=1's accumulators fit 512 lanes; c=2's (128 registers
+// a lane) 256 — a larger block is refused (no point).
+WG_K(1, 512)
+WG_K(2, 256)
 #endif

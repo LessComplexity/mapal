@@ -2506,7 +2506,7 @@ fn split_cells(site: &TileSite, profile: &TargetProfile, l: Launch, s: u64) -> L
 
 /// The launch a kernel of realization `combine` is emitted with: under
 /// `fill-wave` a split kernel's tile is the split grid's ([`launch_split`]).
-fn launch_for(
+pub(crate) fn launch_for(
     site: &TileSite,
     profile: &TargetProfile,
     contract: bool,

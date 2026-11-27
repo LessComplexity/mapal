@@ -48,6 +48,7 @@
 #include <functional>
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 #define CK(x)                                                                              \
@@ -366,6 +367,8 @@ static std::map<std::string, std::vector<double>> clat;
 
 // A compute sweep: warps a scheduler 0.25 .. 8 (one block an SM of 4·wps warps; a quarter: one warp an SM), each
 // point's clock64 span (the block's longest), three runs (the last kept); `launch` runs `threads` lanes a block.
+// A driver-API point the block cannot hold (its launch bounds, registers): refused, no point (the sweep goes on).
+static bool eff_launch_failed = false;
 static void eff_sweep(const char *op, int chains, std::function<void(int, float *, int, long long *)> launch,
                       double flops_per_trip_warp, int lanes_per_group = 32, std::vector<double> wpss = {}) {
   float *out;
@@ -385,7 +388,7 @@ static void eff_sweep(const char *op, int chains, std::function<void(int, float 
       CK(cudaMemset(cyc, 0, 1024 * 8));
       launch(threads, out, iters, cyc);
       // A footprint the SM cannot hold (registers): no point.
-      fits = cudaGetLastError() == cudaSuccess;
+      fits = cudaGetLastError() == cudaSuccess && !std::exchange(eff_launch_failed, false);
       CK(cudaDeviceSynchronize());
       if (chains == 1 && groups == 1 && rep > 0) {
         long long h0;
@@ -1119,7 +1122,7 @@ static void prim_run() {
         eff_sweep("mma.m16n8k32.e4m3", c,
                   [f](int threads, float *o, int iters, long long *cy) {
                     void *a[] = {&o, &iters, &cy};
-                    CU(cuLaunchKernel(f, sms, 1, 1, threads, 1, 1, 0, 0, a, 0));
+                    eff_launch_failed |= cuLaunchKernel(f, sms, 1, 1, threads, 1, 1, 0, 0, a, 0) != CUDA_SUCCESS;
                   },
                   2.0 * 16 * 8 * 32);
       }
@@ -1134,7 +1137,7 @@ static void prim_run() {
         eff_sweep("wg.m64n128k16.bf16", c,
                   [f](int threads, float *o, int iters, long long *cy) {
                     void *a[] = {&o, &iters, &cy};
-                    CU(cuLaunchKernel(f, sms, 1, 1, threads, 1, 1, 0, 0, a, 0));
+                    eff_launch_failed |= cuLaunchKernel(f, sms, 1, 1, threads, 1, 1, 0, 0, a, 0) != CUDA_SUCCESS;
                   },
                   2.0 * 64 * 128 * 16, 128, {1, 2, 3, 4});
       }

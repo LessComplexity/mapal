@@ -1006,6 +1006,36 @@ impl WarmScope {
     }
 }
 
+thread_local! {
+    /// The emission's order ([`OrderScope`]): the order its host launches
+    /// place each site under.
+    static ORDER: std::cell::Cell<Option<crate::Order>> = const { std::cell::Cell::new(None) };
+}
+
+/// The emission's order for [`placed_for`]: the kernel of a realization is
+/// the pick of the order the host placed the site under, whichever of the
+/// two is emitted first (cost-rental: the H100's fixed-order 16 x 2048 x
+/// 7168 cell launched the pick's split grid over the rules' kernel —
+/// wrong values — where the kernel text came before the host's search).
+pub struct OrderScope {
+    prev: Option<crate::Order>,
+}
+
+impl OrderScope {
+    pub fn new(order: crate::Order) -> Self {
+        OrderScope {
+            prev: ORDER.with(|o| o.replace(Some(order))),
+        }
+    }
+}
+
+impl Drop for OrderScope {
+    fn drop(&mut self) {
+        let prev = self.prev.take();
+        ORDER.with(|o| o.set(prev));
+    }
+}
+
 impl Drop for WarmScope {
     fn drop(&mut self) {
         let prev = self.prev.take();
@@ -2266,6 +2296,18 @@ impl Lowering for Emitter<'_> {
                     return Err(Refusal::new("stages >= 3 (S53 ring)"));
                 }
                 let o = g.caps.matrix[x.op - 2];
+                // The direct product `c = a·b` reads `b`'s stage as a
+                // descriptor operand in either major, which only an
+                // instruction with `MatrixOp::mn_major` reads; a K-major-only
+                // one (TF32, fp8 wgmma) takes the transposed product, as the
+                // rules lower it (`GpuWgmmaTile::direct`). cost-rental: the
+                // H100's search picked a direct TF32 tile and ptxas refused
+                // its `wgmma.mma_async` (pt_mlp_2048_tf32).
+                if w.direct && !o.mn_major {
+                    return Err(Refusal::new(
+                        "a K-major-only instruction takes the transposed product",
+                    ));
+                }
                 let ksteps = (bk / o.shape.k.max(1)) as f64;
                 let acc = 64 * w.n / (WARPGROUP_WARPS * warp);
                 // Under `setmaxnreg` the roles split the block's pool: the
@@ -2769,11 +2811,11 @@ pub const PLACE_NULL: f64 = 0.02;
 /// (`place_replay.rs` `place_band_is_the_replays_residuals` recomputes it;
 /// a term with fewer than three pairs takes `all`'s). Per mille.
 pub const PLACE_BAND_PM: [(&str, u64); 5] = [
-    ("all", 176),
-    ("compute", 143),
+    ("all", 160),
+    ("compute", 127),
     ("dram", 217),
-    ("cache", 247),
-    ("latency", 176),
+    ("cache", 253),
+    ("latency", 160),
 ];
 
 /// The search's options at the band and null above.
@@ -3191,7 +3233,14 @@ pub(crate) fn placed(
     if forced_now().is_some() || rules_now() || p.gpu().is_none() {
         return rules;
     }
-    search_site(site, p, contract, arms, order, &rules).map_or(rules, |x| x.launch)
+    // The host launches the kernel the device emits ([`placed_for`]): a
+    // pick that cannot store column-major where the rules' tile can keeps
+    // the rules' tile there, so it does here too (cost-rental: the A100's
+    // 1024 x 256 x 256 site launched the pick's 32 x 32 grid over the rules'
+    // 64 x 32 kernel — an illegal address, no output).
+    search_site(site, p, contract, arms, order, &rules)
+        .filter(|x| !gpu::col_store(&rules, site) || gpu::col_store(&x.launch, site))
+        .map_or(rules, |x| x.launch)
 }
 
 /// **`machine-place` at the kernel of realization `combine`** (every launch
@@ -3210,7 +3259,7 @@ pub(crate) fn placed_for(
     if forced_now().is_some() || rules_now() || p.gpu().is_none() {
         return r;
     }
-    let first = arms_order(arms);
+    let first = ORDER.with(|o| o.get()).unwrap_or_else(|| arms_order(arms));
     let orders = [
         first,
         crate::Order::Free,
@@ -3233,7 +3282,12 @@ pub(crate) fn placed_for(
             && x.launch.combine == combine
             && (!gpu::col_store(&r, site) || gpu::col_store(&x.launch, site))
         {
-            return x.launch;
+            // A kept pick is the rules' launch, and at the kernel the rules'
+            // launch of this realization is `r` (its own resize: the register
+            // rule, a walk's full tile) — never the host's copy of it, which
+            // differs (cost-rental: the RTX 3090's `decode_1024_256` site; test
+            // `placed_host_launch_is_the_device_kernel`).
+            return if x.kept { r } else { x.launch };
         }
     }
     r
@@ -3412,11 +3466,166 @@ mod tests {
         assert!(m.dispatch.launches[0].ns.marked());
     }
 
-    /// **ADR-0050 review: the one-thread-per-cell kernel's declared
-    /// registers cover what `ptxas` allocates** at every cell count the
-    /// search may give a thread (1–16, f32 and bf16 `b`), so the footprint's
-    /// occupancy is never above the kernel's. `PLACE_NAIVE_REGS=1` prints
-    /// the table; without `llc` / `ptxas`, nothing to check.
+    /// **The host launches the kernel the device emits** (cost-rental): on
+    /// every GPU part, each placed ordered site of the attention programs
+    /// launches the geometry its kernel is emitted with — the A100's
+    /// 1024 x 256 x 256 site launched the pick's 32 x 32 grid over the rules'
+    /// 64 x 32 kernel (the rules' tile stores column-major, the pick's not).
+    #[test]
+    fn placed_host_launch_is_the_device_kernel() {
+        let mut arms = crate::GpuArms {
+            free: true,
+            site_cands: 1,
+            ..crate::GpuArms::default()
+        };
+        let plain = arms;
+        *arms.on.rung("machine-place").expect("the rung") = true;
+        let (mut ordered, mut kept) = (0, 0);
+        for prog in [
+            "pt_decode_1024_256",
+            "pt_causal_1024_256",
+            "pt_mlp_2048",
+            "pt_twin_2048",
+        ] {
+            let src = std::fs::read_to_string(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join(format!("../../../benches/algorithms/{prog}.mapal")),
+            )
+            .expect("the program");
+            let po = mapal_syntax::parse(&src);
+            let ir =
+                mapal_rewrite::rewrite(mapal_lower::lower(&src, &po.program).expect("lowers")).ir;
+            for name in [
+                "rtx-3090", "a100", "rtx-4090", "h100", "rtx-5090", "rtx-5080",
+            ] {
+                let p = crate::profile::resolve(name).unwrap();
+                for (site, _) in &warm_sites(&ir, p.gpu().unwrap().l2_keep_bytes()) {
+                    let host = gpu::launch_in(site, p, true, arms, crate::Order::Free);
+                    // A site the search kept runs the OFF arm's kernel, of
+                    // any realization (the H100's kept 2048² walk).
+                    let rules = self::rules(|| {
+                        gpu::launch_in_rules(site, p, true, arms, crate::Order::Free)
+                    });
+                    if search_site(site, p, true, arms, crate::Order::Free, &rules)
+                        .is_some_and(|x| x.kept)
+                    {
+                        kept += 1;
+                        let mut dev = gpu::launch_for(site, p, true, arms, host.combine);
+                        let off = gpu::launch_for(site, p, true, plain, host.combine);
+                        dev.rungs.machine_place = false;
+                        assert_eq!(
+                            dev, off,
+                            "{prog} on {name}: a kept site's kernel is the OFF arm's"
+                        );
+                    }
+                    if host.combine != Combine::None {
+                        continue;
+                    }
+                    ordered += 1;
+                    let dev = gpu::launch_for(site, p, true, arms, Combine::None);
+                    assert_eq!(
+                        (host.tiled, host.mma, host.wgmma),
+                        (dev.tiled, dev.mma, dev.wgmma),
+                        "{prog} on {name}: the launched geometry is the kernel's"
+                    );
+                }
+            }
+        }
+        assert!(ordered > 0 && kept > 0, "ordered and kept sites placed");
+        // The fixed face of the 16 x 2048 x 7168 cell, its kernel emitted
+        // before the host's search (the emission's order): the H100's split
+        // pick and its kernel.
+        let fixed = crate::GpuArms {
+            free: false,
+            ..arms
+        };
+        let site = crate::place_replay::replay_site(16, 2048, 7168, "f32", true);
+        for name in [
+            "rtx-3090", "a100", "rtx-4090", "h100", "rtx-5090", "rtx-5080",
+        ] {
+            let p = crate::profile::resolve(name).unwrap();
+            let _order = OrderScope::new(crate::Order::Fixed);
+            let rules = gpu::launch_in_rules(&site, p, false, fixed, crate::Order::Fixed);
+            let pick = search_site(&site, p, false, fixed, crate::Order::Fixed, &rules);
+            let combine = pick.map_or(rules.combine, |x| x.launch.combine);
+            PICKS.with(|c| c.borrow_mut().clear());
+            let dev = gpu::launch_for(&site, p, false, fixed, combine);
+            let host = gpu::launch_in(&site, p, false, fixed, crate::Order::Fixed);
+            if host.combine == combine {
+                assert_eq!(
+                    (host.tiled, host.mma, host.wgmma),
+                    (dev.tiled, dev.mma, dev.wgmma),
+                    "the fixed cell on {name}: the launched geometry is the kernel's"
+                );
+            }
+        }
+    }
+
+    /// **The warpgroup lowering's declared constraint** (cost-rental): a
+    /// K-major-only instruction (TF32) takes the transposed product.
+    #[test]
+    fn tf32_wgmma_direct_product_refused() {
+        // cost-rental: on the H100 the search's direct TF32 warpgroup tile
+        // was invalid PTX (`wgmma.mma_async` arguments mismatch): a
+        // K-major-only instruction reads a lanes-major `b` only through the
+        // transposed product. The rules' tile stays admitted; the same tile
+        // made direct is refused.
+        let src = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../benches/algorithms/pt_mlp_2048_tf32.mapal"),
+        )
+        .expect("the TF32 program");
+        let po = mapal_syntax::parse(&src);
+        let ir = mapal_rewrite::rewrite(mapal_lower::lower(&src, &po.program).expect("lowers")).ir;
+        let p = crate::profile::resolve("h100").unwrap();
+        let m = machine_of(p).unwrap();
+        let arms = crate::GpuArms {
+            free: true,
+            site_cands: 1,
+            ..crate::GpuArms::default()
+        };
+        let sites = warm_sites(&ir, p.gpu().unwrap().l2_keep_bytes());
+        let mut seen = 0;
+        for (site, _) in &sites {
+            let rules = gpu::launch_in_rules(site, p, true, arms, crate::Order::Free);
+            let Some(w) = rules.wgmma else { continue };
+            if w.fmt != crate::profile::MmaFmt::Tf32 {
+                continue;
+            }
+            seen += 1;
+            assert!(!w.direct, "the rules' TF32 tile is the transposed product");
+            let e = Emitter {
+                id: if w.ws { WGMMA_WS } else { WGMMA },
+                site,
+                profile: p,
+                contract: true,
+                arms,
+            };
+            let s = site_of(site, true, crate::Order::Free);
+            let at = |w| {
+                let x = schedule_of(
+                    site,
+                    p,
+                    arms,
+                    &Launch {
+                        wgmma: Some(w),
+                        ..rules
+                    },
+                );
+                e.declare(&m, &s, &x)
+            };
+            assert!(at(w).is_ok(), "the rules' tile admitted");
+            assert!(
+                at(crate::profile::GpuWgmmaTile { direct: true, ..w }).is_err(),
+                "a direct TF32 tile refused"
+            );
+        }
+        assert!(
+            seen > 0,
+            "the program has a TF32 warpgroup site on the H100"
+        );
+    }
+
     /// **The vector-cells kernel's declared constraint** (cost-model ABBA):
     /// on the 2048 x 2048 x 25 window program's own tile sites (mixed-radix
     /// `b`), the one-thread-per-cell lowering refuses more than one cell a
@@ -3471,6 +3680,11 @@ mod tests {
         );
     }
 
+    /// **ADR-0050 review: the one-thread-per-cell kernel's declared
+    /// registers cover what `ptxas` allocates** at every cell count the
+    /// search may give a thread (1–16, f32 and bf16 `b`), so the footprint's
+    /// occupancy is never above the kernel's. `PLACE_NAIVE_REGS=1` prints
+    /// the table; without `llc` / `ptxas`, nothing to check.
     #[test]
     fn naive_declared_registers_cover_ptxas() {
         use std::process::Command;

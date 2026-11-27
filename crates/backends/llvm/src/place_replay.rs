@@ -316,18 +316,18 @@ fn place_replay_sites_are_distinct() {
 /// null, or one the facts' intervals flip at some corner, is open, never
 /// counted here or as a pick.
 const REPLAY_OPEN: [&str; 9] = [
-    // RTX 3090 2048³ TF32: the uncut grid won (5.9 %); the model prices the
-    // cut 15 % under it by wave quantization. The 3090 measured no cost
-    // model primitive: its reductions, stores and movers are derived from
-    // its other facts (marked) — the missing facts are its own `prim` rows
-    // (the rental round's `place_calib.sh`).
-    "cut-0",
-    // A100 128 x 4096 x 14336 (bf16, TF32) and 2048 x 4096 x 14336 bf16: the
-    // cut won (9.6 / 25 / 8.3 %); the model prices the uncut 3–6 % under it
-    // at the L2's device rate. The uncut grid (128 tiles on 108 SMs) does not
-    // draw that rate: the L2's realized rate at the grid's in-flight bytes —
-    // the `prim` sweep's points on the part (unmeasured: rental).
-    "cut-10", "cut-8", "cut-9",
+    // 128 x 4096 x 14336 on three parts with every primitive measured
+    // (cost-rental): the A100 (bf16, TF32: cut 8 won by 9.6 / 25 %), the
+    // RTX 4090 (bf16: cut 2 won by 8 %) and the RTX 3090 (bf16: the uncut
+    // grid won by 7.8 %) — the model ranks each the other way. In every
+    // case the losing arm's other flows sit close under its bound (the
+    // A100's uncut: the L2 168 µs against the ring's latency 134 and the
+    // scratchpad 124; the 4090's uncut: DRAM 127 against latency 123; the
+    // 3090's cut: L2 218 against compute 207 and DRAM 197) while the
+    // winner's are apart: the steady state takes the max of the flows (a
+    // perfect overlap), and near-equal flows do not overlap perfectly. The
+    // overlap of concurrent flows is unmeasured (a two-flow probe: open).
+    "cut-12", "cut-2", "cut-8", "cut-9",
     // RTX 5080 128 x 28672 x 4096 bf16: every arm ~2.9x under its time at the
     // DRAM roofline. The panel stream's measured rate by run (0.35–0.5x at a
     // 32-byte run, `PrimOf::Panel`) would explain it, but c11-0's `-raster`
@@ -353,11 +353,13 @@ const REPLAY_OPEN: [&str; 9] = [
 /// The model's picks under the search's own rule (C5's corpus, duplicates
 /// merged, ties and flips at any corner open): a floor, not a target — the
 /// rules pick 59 (`model >= rules` is ADR-0050 C6's bar). The cost model's
-/// pipeline calculation (cost-model.md) scores 28: the residual of the
-/// absolute times fell (median |log| 0.126 → 0.107) while the ranking of
-/// near-equal arms did not improve (36 open: ties within the null and flips
-/// at marked facts; the misses above).
-const MODEL_FLOOR: u64 = 28;
+/// pipeline calculation (cost-model.md) scored 28 with the RTX 5080's
+/// primitives alone; with every rented part's measured too (cost-rental:
+/// RTX 3090, A100, RTX 4090, H100, RTX 5090) it scores 32 — the 3090 and the
+/// 4090 now 5 each (the rules 6 / 4), 32 open (ties within the null: the
+/// H100's warpgroup arms, the c11 rasters, the depth rung, the hybrid
+/// against the walk) and the misses above.
+const MODEL_FLOOR: u64 = 32;
 
 /// **ADR-0050 C3: `place_replay.tsv` scored** — per measured site, the
 /// measured winner (or null: within the null), the model's pick (the arm
