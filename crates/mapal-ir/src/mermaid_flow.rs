@@ -175,9 +175,7 @@ pub(crate) struct Ctx<'a> {
 
 impl Ctx<'_> {
     pub(crate) fn is_body(&self, f: FuncId) -> bool {
-        self.ir
-            .func(f)
-            .is_some_and(|d| d.kind != FuncKind::Named)
+        self.ir.func(f).is_some_and(|d| d.kind != FuncKind::Named)
     }
 
     fn site_body(op: &Operation) -> Option<FuncId> {
@@ -420,7 +418,10 @@ impl CategoryIr {
                         None,
                     )
                 } else if obj.kind == ObjectKind::LoopMerge {
-                    (format!("⟲ {}: {ty}", name.as_deref().unwrap_or("state")), None)
+                    (
+                        format!("⟲ {}: {ty}", name.as_deref().unwrap_or("state")),
+                        None,
+                    )
                 } else if let Some(n) = name {
                     (format!("{n}: {ty}"), None)
                 } else {
@@ -448,7 +449,11 @@ impl CategoryIr {
                             anchor: FlowAnchor::Print(m),
                             func: f,
                             id: format!("p{}m{print_k}", ctx.func_ix[&f]),
-                            label: if newline { "println".into() } else { "print".into() },
+                            label: if newline {
+                                "println".into()
+                            } else {
+                                "print".into()
+                            },
                             body: None,
                         });
                         print_k += 1;
@@ -552,7 +557,9 @@ impl CategoryIr {
     /// The `Index` morphisms of `body` whose array is the body's input slot `slot`
     /// (read straight off the input projection).
     fn body_index_reads(&self, body: FuncId, slot: u32) -> Vec<MorphismId> {
-        let Some(def) = self.func(body) else { return Vec::new() };
+        let Some(def) = self.func(body) else {
+            return Vec::new();
+        };
         let mut out = Vec::new();
         for (m, mo) in self.morphisms() {
             if mo.op != Operation::Index || self.try_owner(mo.source) != Some(body) {
@@ -564,7 +571,9 @@ impl CategoryIr {
             });
             let reads = arr.is_some_and(|x| {
                 self.morphisms().any(|(_, q)| {
-                    q.target == x && q.source == def.input && q.op == (Operation::Proj { index: slot })
+                    q.target == x
+                        && q.source == def.input
+                        && q.op == (Operation::Proj { index: slot })
                 })
             });
             if reads {
@@ -635,7 +644,11 @@ fn draw(nodes: &[Node], f: FuncId, ind: usize, out: &mut String, declared: &mut 
         declared.insert(i);
         match (&n.body, n.anchor) {
             (Some(b), _) => {
-                out.push_str(&format!("{pad}subgraph {}[\"{}\"]\n", n.id, escape(&n.label)));
+                out.push_str(&format!(
+                    "{pad}subgraph {}[\"{}\"]\n",
+                    n.id,
+                    escape(&n.label)
+                ));
                 draw(nodes, *b, ind + 1, out, declared);
                 out.push_str(&format!("{pad}end\n"));
             }

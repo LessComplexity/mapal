@@ -12,7 +12,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::graph::{CategoryIr, FuncId, FuncKind, MorphismId, Object, ObjectId, ObjectKind, Operation};
+use crate::graph::{
+    CategoryIr, FuncId, FuncKind, MorphismId, Object, ObjectId, ObjectKind, Operation,
+};
 use crate::mermaid::{edge_label, node_label, value_label};
 use crate::mermaid_diagram::{Diagram, EdgeKind, NodeKind};
 use crate::mermaid_flow::{FlowAnchor, Node, is_plumbing, step_word};
@@ -22,7 +24,11 @@ use crate::ty::ty_label;
 /// name, else the type; the function's input is `Γ`.
 pub(crate) fn component_name(ir: &CategoryIr, o: ObjectId) -> String {
     let obj = ir.object(o).unwrap();
-    if ir.try_owner(o).and_then(|f| ir.func(f)).is_some_and(|d| d.input == o) {
+    if ir
+        .try_owner(o)
+        .and_then(|f| ir.func(f))
+        .is_some_and(|d| d.input == o)
+    {
         return "Γ".into();
     }
     object_short(obj)
@@ -62,11 +68,19 @@ pub(crate) fn chain_words(ir: &CategoryIr, ctx: &crate::mermaid_flow::Ctx, o: Ob
     }
     words.reverse();
     let from = words.len().saturating_sub(3);
-    if words.is_empty() { "operand".into() } else { words[from..].join(" · ") }
+    if words.is_empty() {
+        "operand".into()
+    } else {
+        words[from..].join(" · ")
+    }
 }
 
 fn site_word(op: &Operation) -> &'static str {
-    if matches!(op, Operation::Map { .. }) { "map" } else { "fold" }
+    if matches!(op, Operation::Map { .. }) {
+        "map"
+    } else {
+        "fold"
+    }
 }
 
 impl CategoryIr {
@@ -93,7 +107,12 @@ impl CategoryIr {
         let mut sub_of: HashMap<FuncId, usize> = HashMap::new();
         for (f, def) in self.funcs() {
             if def.kind == FuncKind::Named {
-                let s = d.sub(format!("f{}", ctx.func_ix[&f]), format!("fn {}", def.name), 0, None);
+                let s = d.sub(
+                    format!("f{}", ctx.func_ix[&f]),
+                    format!("fn {}", def.name),
+                    0,
+                    None,
+                );
                 sub_of.insert(f, s);
             }
         }
@@ -109,7 +128,8 @@ impl CategoryIr {
                 let (parent, label) = match site {
                     Some(m) => {
                         let mo = self.morphism(m).unwrap();
-                        let Some(&p) = self.try_owner(mo.source).and_then(|g| sub_of.get(&g)) else {
+                        let Some(&p) = self.try_owner(mo.source).and_then(|g| sub_of.get(&g))
+                        else {
                             pending = true;
                             continue;
                         };
@@ -147,8 +167,10 @@ impl CategoryIr {
             let (label, kind) = if self.func(f).unwrap().input == o {
                 (format!("Γ = {}", ty_label(&obj.ty)), NodeKind::Context)
             } else if let Some(p) = pairs.get(&o) {
-                let l: Vec<String> =
-                    p.iter().map(|&(_, s)| ty_label(&self.object(s).unwrap().ty)).collect();
+                let l: Vec<String> = p
+                    .iter()
+                    .map(|&(_, s)| ty_label(&self.object(s).unwrap().ty))
+                    .collect();
                 (l.join(" × "), NodeKind::Product)
             } else {
                 (node_label(obj), NodeKind::Object)
@@ -165,8 +187,10 @@ impl CategoryIr {
                 Operation::Pair { .. } => {
                     if paired.insert(m.target) {
                         let f = self.owner(m.target);
-                        let names: Vec<String> =
-                            pairs[&m.target].iter().map(|&(_, s)| component_name(self, s)).collect();
+                        let names: Vec<String> = pairs[&m.target]
+                            .iter()
+                            .map(|&(_, s)| component_name(self, s))
+                            .collect();
                         let e = d.edge(
                             &id(self.func(f).unwrap().input),
                             &id(m.target),
@@ -177,11 +201,21 @@ impl CategoryIr {
                     }
                 }
                 Operation::Proj { index } => {
-                    let e = d.edge(&id(m.source), &id(m.target), format!("π{}", sub_digits(index + 1)), EdgeKind::Projection);
+                    let e = d.edge(
+                        &id(m.source),
+                        &id(m.target),
+                        format!("π{}", sub_digits(index + 1)),
+                        EdgeKind::Projection,
+                    );
                     d.edges[e].morph = Some(mid);
                 }
                 op => {
-                    let e = d.edge(&id(m.source), &id(m.target), edge_label(&op), EdgeKind::Morphism);
+                    let e = d.edge(
+                        &id(m.source),
+                        &id(m.target),
+                        edge_label(&op),
+                        EdgeKind::Morphism,
+                    );
                     d.edges[e].morph = Some(mid);
                 }
             }
@@ -194,23 +228,36 @@ impl CategoryIr {
         let (nodes, g) = self.build_flow();
         let ctx = self.flow_ctx();
         let mut d = Diagram::default();
-        let named: Vec<FuncId> =
-            self.funcs().filter(|(_, x)| x.kind == FuncKind::Named).map(|(f, _)| f).collect();
+        let named: Vec<FuncId> = self
+            .funcs()
+            .filter(|(_, x)| x.kind == FuncKind::Named)
+            .map(|(f, _)| f)
+            .collect();
         let wrap = named.len() > 1;
         let mut sub_of: HashMap<FuncId, usize> = HashMap::new();
         for &f in &named {
             if wrap && nodes.iter().any(|n| n.func == f) {
-                let s = d.sub(format!("f{}", ctx.func_ix[&f]), format!("fn {}", self.func(f).unwrap().name), 0, None);
+                let s = d.sub(
+                    format!("f{}", ctx.func_ix[&f]),
+                    format!("fn {}", self.func(f).unwrap().name),
+                    0,
+                    None,
+                );
                 sub_of.insert(f, s);
             } else {
                 sub_of.insert(f, 0);
             }
         }
         // The site node of each drawn body (its binding names the subgraph).
-        let host: HashMap<FuncId, usize> =
-            nodes.iter().enumerate().filter_map(|(i, n)| n.body.map(|b| (b, i))).collect();
+        let host: HashMap<FuncId, usize> = nodes
+            .iter()
+            .enumerate()
+            .filter_map(|(i, n)| n.body.map(|b| (b, i)))
+            .collect();
         let site_op = |i: usize| -> Option<(MorphismId, Operation)> {
-            let FlowAnchor::Object(o) = nodes[i].anchor else { return None };
+            let FlowAnchor::Object(o) = nodes[i].anchor else {
+                return None;
+            };
             ctx.incoming[o].iter().find_map(|&m| {
                 let op = self.morphism(m).unwrap().op;
                 matches!(op, Operation::Map { .. } | Operation::Fold { .. }).then_some((m, op))
@@ -224,9 +271,13 @@ impl CategoryIr {
                 if sub_of.contains_key(&b) {
                     continue;
                 }
-                let Some(&p) = sub_of.get(&nodes[i].func) else { continue };
+                let Some(&p) = sub_of.get(&nodes[i].func) else {
+                    continue;
+                };
                 let word = site_op(i).map_or("map", |(_, op)| site_word(&op));
-                let FlowAnchor::Object(o) = nodes[i].anchor else { continue };
+                let FlowAnchor::Object(o) = nodes[i].anchor else {
+                    continue;
+                };
                 let label = match &self.object(o).unwrap().name {
                     Some(n) => format!("{word} body of {n}"),
                     None => format!("{word} body"),
@@ -314,7 +365,12 @@ impl CategoryIr {
                             FlowAnchor::Object(o) => Some(o),
                             _ => None,
                         };
-                        d.edge(&gid, &pid, format!("⟨{}⟩", names.join(", ")), EdgeKind::Pairing);
+                        d.edge(
+                            &gid,
+                            &pid,
+                            format!("⟨{}⟩", names.join(", ")),
+                            EdgeKind::Pairing,
+                        );
                         d.edge(&pid, &target, label, EdgeKind::Morphism);
                     }
                 }
@@ -322,7 +378,9 @@ impl CategoryIr {
             }
             let inc = &incoming[i];
             if inc.is_empty() {
-                let FlowAnchor::Object(o) = n.anchor else { continue };
+                let FlowAnchor::Object(o) = n.anchor else {
+                    continue;
+                };
                 if ctx.incoming[o].is_empty() {
                     continue;
                 }
@@ -374,7 +432,12 @@ impl CategoryIr {
                     _ => None,
                 };
                 let names: Vec<&str> = srcs.iter().map(|s| s.1.as_str()).collect();
-                d.edge(&gid, &pid, format!("⟨{}⟩", names.join(", ")), EdgeKind::Pairing);
+                d.edge(
+                    &gid,
+                    &pid,
+                    format!("⟨{}⟩", names.join(", ")),
+                    EdgeKind::Pairing,
+                );
                 let labels: Vec<&str> = srcs.iter().map(|s| s.3.as_str()).collect();
                 let mut uniq: Vec<&str> = Vec::new();
                 for l in labels.iter().flat_map(|l| l.split(" ; ")) {

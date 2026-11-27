@@ -271,7 +271,10 @@ pub fn lint_mermaid(s: &str) -> Vec<String> {
         if let Some(rest) = t.strip_prefix("subgraph ") {
             declared.insert(rest.split('[').next().unwrap_or("").trim().to_string());
         } else if is_node_line(t) {
-            let id: String = t.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+            let id: String = t
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
             declared.insert(id);
         }
     }

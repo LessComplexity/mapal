@@ -19,7 +19,12 @@ fn root() -> PathBuf {
 fn ir_of(file: &Path, rewritten: bool) -> CategoryIr {
     let src = std::fs::read_to_string(file).unwrap();
     let po = mapal_syntax::parse(&src);
-    assert!(po.diagnostics.is_empty(), "{}: {:?}", file.display(), po.diagnostics);
+    assert!(
+        po.diagnostics.is_empty(),
+        "{}: {:?}",
+        file.display(),
+        po.diagnostics
+    );
     let dir = std::fs::canonicalize(file.parent().unwrap()).unwrap();
     let ir = mapal_lower::lower(&src, &po.program)
         .unwrap_or_else(|d| panic!("{}: lower {d:?}", file.display()))
@@ -38,7 +43,9 @@ fn programs() -> Vec<PathBuf> {
         for e in std::fs::read_dir(root().join(d)).unwrap() {
             let p = e.unwrap().path();
             // vector.mapal is outside Mapal-Core (P0001): it does not lower.
-            if p.extension().is_some_and(|x| x == "mapal") && p.file_name().unwrap() != "vector.mapal" {
+            if p.extension().is_some_and(|x| x == "mapal")
+                && p.file_name().unwrap() != "vector.mapal"
+            {
                 v.push(p);
             }
         }
@@ -50,13 +57,22 @@ fn programs() -> Vec<PathBuf> {
 fn golden(name: &str, file: &str) {
     let src = std::fs::read_to_string(root().join(file)).unwrap();
     let got = ir_of(&root().join(file), true).to_mermaid_flow_src(&src);
-    assert!(lint_mermaid(&got).is_empty(), "{name}: {:?}", lint_mermaid(&got));
-    let path = root().join("crates/mapal-cli/tests/golden").join(format!("{name}.flow.mmd"));
+    assert!(
+        lint_mermaid(&got).is_empty(),
+        "{name}: {:?}",
+        lint_mermaid(&got)
+    );
+    let path = root()
+        .join("crates/mapal-cli/tests/golden")
+        .join(format!("{name}.flow.mmd"));
     if std::env::var("MAPAL_BLESS").is_ok() {
         std::fs::write(&path, &got).unwrap();
     }
     let want = std::fs::read_to_string(&path).expect("golden missing (MAPAL_BLESS=1)");
-    assert_eq!(got, want, "{name}: flow view changed (MAPAL_BLESS=1 to accept)");
+    assert_eq!(
+        got, want,
+        "{name}: flow view changed (MAPAL_BLESS=1 to accept)"
+    );
 }
 
 #[test]
@@ -76,7 +92,11 @@ fn every_program_lints_clean_in_both_forms_and_stages() {
             let ir = ir_of(&p, rewritten);
             for (form, text) in [("full", ir.to_mermaid()), ("flow", ir.to_mermaid_flow())] {
                 let lints = lint_mermaid(&text);
-                assert!(lints.is_empty(), "{} {form} rewritten={rewritten}: {lints:?}", p.display());
+                assert!(
+                    lints.is_empty(),
+                    "{} {form} rewritten={rewritten}: {lints:?}",
+                    p.display()
+                );
             }
             assert_eq!(ir.to_mermaid_flow(), ir.to_mermaid_flow(), "deterministic");
         }
@@ -147,20 +167,39 @@ fn every_flow_edge_is_labelled_and_source_labels_come_from_the_source() {
             let g = ir.flow_graph();
             for k in 0..g.edges.len() {
                 let words = g.edge_label(&ir, k, None);
-                assert!(!words.trim().is_empty(), "{}: edge {k} unlabelled", p.display());
+                assert!(
+                    !words.trim().is_empty(),
+                    "{}: edge {k} unlabelled",
+                    p.display()
+                );
                 let l = g.edge_label(&ir, k, Some(&src));
                 assert!(!l.trim().is_empty(), "{}: edge {k} unlabelled", p.display());
                 let text = l.strip_suffix('…').unwrap_or(&l);
                 if l != words {
                     from_src += 1;
-                    assert!(norm.contains(text), "{}: label `{l}` is not source text", p.display());
+                    assert!(
+                        norm.contains(text),
+                        "{}: label `{l}` is not source text",
+                        p.display()
+                    );
                 }
                 edges += 1;
             }
-            for line in ir.to_mermaid_flow_src(&src).lines().filter(|l| l.contains("-->")) {
-                assert!(line.contains(" -- \""), "{}: unlabelled arrow `{line}`", p.display());
+            for line in ir
+                .to_mermaid_flow_src(&src)
+                .lines()
+                .filter(|l| l.contains("-->"))
+            {
+                assert!(
+                    line.contains(" -- \""),
+                    "{}: unlabelled arrow `{line}`",
+                    p.display()
+                );
             }
         }
     }
-    assert!(edges > 100 && from_src > 20, "saw {edges} edges, {from_src} from source");
+    assert!(
+        edges > 100 && from_src > 20,
+        "saw {edges} edges, {from_src} from source"
+    );
 }

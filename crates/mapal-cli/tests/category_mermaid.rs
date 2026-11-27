@@ -20,7 +20,12 @@ fn root() -> PathBuf {
 fn ir_of(file: &Path, rewritten: bool) -> CategoryIr {
     let src = std::fs::read_to_string(file).unwrap();
     let po = mapal_syntax::parse(&src);
-    assert!(po.diagnostics.is_empty(), "{}: {:?}", file.display(), po.diagnostics);
+    assert!(
+        po.diagnostics.is_empty(),
+        "{}: {:?}",
+        file.display(),
+        po.diagnostics
+    );
     let dir = std::fs::canonicalize(file.parent().unwrap()).unwrap();
     let ir = mapal_lower::lower(&src, &po.program)
         .unwrap_or_else(|d| panic!("{}: lower {d:?}", file.display()))
@@ -39,7 +44,9 @@ fn programs() -> Vec<PathBuf> {
         for e in std::fs::read_dir(root().join(d)).unwrap() {
             let p = e.unwrap().path();
             // vector.mapal is outside Mapal-Core (P0001): it does not lower.
-            if p.extension().is_some_and(|x| x == "mapal") && p.file_name().unwrap() != "vector.mapal" {
+            if p.extension().is_some_and(|x| x == "mapal")
+                && p.file_name().unwrap() != "vector.mapal"
+            {
                 v.push(p);
             }
         }
@@ -52,7 +59,10 @@ fn programs() -> Vec<PathBuf> {
 fn forms(ir: &CategoryIr, src: &str) -> [(&'static str, String); 4] {
     [
         ("category", ir.to_mermaid_category()),
-        ("category-condensed", ir.to_mermaid_category_condensed_src(src)),
+        (
+            "category-condensed",
+            ir.to_mermaid_category_condensed_src(src),
+        ),
         ("string", ir.to_mermaid_string()),
         ("string-condensed", ir.to_mermaid_string_condensed_src(src)),
     ]
@@ -62,8 +72,14 @@ fn golden(name: &str, file: &str) {
     let src = std::fs::read_to_string(root().join(file)).unwrap();
     let ir = ir_of(&root().join(file), true);
     for (form, got) in forms(&ir, &src) {
-        assert!(lint_mermaid(&got).is_empty(), "{name} {form}: {:?}", lint_mermaid(&got));
-        let path = root().join("crates/mapal-cli/tests/golden").join(format!("{name}.{form}.mmd"));
+        assert!(
+            lint_mermaid(&got).is_empty(),
+            "{name} {form}: {:?}",
+            lint_mermaid(&got)
+        );
+        let path = root()
+            .join("crates/mapal-cli/tests/golden")
+            .join(format!("{name}.{form}.mmd"));
         if std::env::var("MAPAL_BLESS").is_ok() {
             std::fs::write(&path, &got).unwrap();
         }
@@ -95,9 +111,16 @@ fn every_program_lints_clean_in_all_four_forms_and_both_stages() {
             let ir = ir_of(&p, rewritten);
             for (form, text) in forms(&ir, &src) {
                 let lints = lint_mermaid(&text);
-                assert!(lints.is_empty(), "{} {form} rewritten={rewritten}: {lints:?}", p.display());
+                assert!(
+                    lints.is_empty(),
+                    "{} {form} rewritten={rewritten}: {lints:?}",
+                    p.display()
+                );
                 let again = forms(&ir, &src);
-                assert!(again.iter().any(|(f, t)| *f == form && *t == text), "{form} is deterministic");
+                assert!(
+                    again.iter().any(|(f, t)| *f == form && *t == text),
+                    "{form} is deterministic"
+                );
             }
         }
     }
@@ -120,10 +143,19 @@ fn category_arrows_have_one_source_and_one_target_and_products_come_from_gamma()
             let ir = ir_of(&p, rewritten);
             let d = ir.category_diagram();
             let (nodes, _) = ends(&d);
-            let by_id: HashMap<&str, &mapal_ir::DNode> = d.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+            let by_id: HashMap<&str, &mapal_ir::DNode> =
+                d.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
             for e in &d.edges {
-                let ctx = format!("{} rewritten={rewritten}: {} -> {}", p.display(), e.from, e.to);
-                assert!(nodes.contains(e.from.as_str()) && nodes.contains(e.to.as_str()), "{ctx}");
+                let ctx = format!(
+                    "{} rewritten={rewritten}: {} -> {}",
+                    p.display(),
+                    e.from,
+                    e.to
+                );
+                assert!(
+                    nodes.contains(e.from.as_str()) && nodes.contains(e.to.as_str()),
+                    "{ctx}"
+                );
                 let to = by_id[e.to.as_str()];
                 if to.kind == NodeKind::Product {
                     assert_eq!(e.kind, EdgeKind::Pairing, "{ctx}: an arrow into a product");
@@ -142,11 +174,29 @@ fn category_arrows_have_one_source_and_one_target_and_products_come_from_gamma()
                 .filter(|(_, m)| matches!(m.op, Operation::Pair { .. }))
                 .map(|(_, m)| m.target)
                 .collect();
-            let n_pair = d.edges.iter().filter(|e| e.kind == EdgeKind::Pairing).count();
+            let n_pair = d
+                .edges
+                .iter()
+                .filter(|e| e.kind == EdgeKind::Pairing)
+                .count();
             assert_eq!(n_pair, products.len(), "{}: pairings", p.display());
-            let n_other = ir.morphisms().filter(|(_, m)| !matches!(m.op, Operation::Pair { .. })).count();
-            assert_eq!(d.edges.len() - n_pair, n_other, "{}: one arrow per morphism", p.display());
-            assert_eq!(d.nodes.iter().filter(|n| n.kind == NodeKind::Context).count(), ir.funcs().count());
+            let n_other = ir
+                .morphisms()
+                .filter(|(_, m)| !matches!(m.op, Operation::Pair { .. }))
+                .count();
+            assert_eq!(
+                d.edges.len() - n_pair,
+                n_other,
+                "{}: one arrow per morphism",
+                p.display()
+            );
+            assert_eq!(
+                d.nodes
+                    .iter()
+                    .filter(|n| n.kind == NodeKind::Context)
+                    .count(),
+                ir.funcs().count()
+            );
         }
     }
     assert!(pairings > 100, "saw {pairings} pairings");
@@ -161,12 +211,22 @@ fn condensed_category_keeps_the_laws() {
         let ir = ir_of(&p, true);
         let d = ir.category_condensed_diagram(Some(&src));
         let (nodes, _) = ends(&d);
-        let by_id: HashMap<&str, &mapal_ir::DNode> = d.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+        let by_id: HashMap<&str, &mapal_ir::DNode> =
+            d.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
         for e in &d.edges {
-            assert!(nodes.contains(e.from.as_str()) && nodes.contains(e.to.as_str()), "{}: {e:?}", p.display());
+            assert!(
+                nodes.contains(e.from.as_str()) && nodes.contains(e.to.as_str()),
+                "{}: {e:?}",
+                p.display()
+            );
             if by_id[e.to.as_str()].kind == NodeKind::Product {
                 assert_eq!(e.kind, EdgeKind::Pairing, "{}: {e:?}", p.display());
-                assert_eq!(by_id[e.from.as_str()].kind, NodeKind::Context, "{}: {e:?}", p.display());
+                assert_eq!(
+                    by_id[e.from.as_str()].kind,
+                    NodeKind::Context,
+                    "{}: {e:?}",
+                    p.display()
+                );
             }
         }
     }
@@ -191,13 +251,17 @@ fn string_every_morphism_is_one_box_and_every_object_one_wire() {
                         && (nodes.contains(e.to.as_str()) || subs.contains(e.to.as_str())),
                     "{at}: {e:?}"
                 );
-                assert!(matches!(e.kind, EdgeKind::Wire | EdgeKind::Branch), "{at}: {e:?}");
+                assert!(
+                    matches!(e.kind, EdgeKind::Wire | EdgeKind::Branch),
+                    "{at}: {e:?}"
+                );
                 assert!(!e.label.contains("Pair "), "{at}");
             }
             for (m, mo) in ir.morphisms() {
                 let n = d.nodes.iter().filter(|x| x.morph == Some(m)).count()
                     + d.subs.iter().filter(|x| x.morph == Some(m)).count();
-                let want = usize::from(!matches!(mo.op, Operation::Pair { .. } | Operation::Output));
+                let want =
+                    usize::from(!matches!(mo.op, Operation::Pair { .. } | Operation::Output));
                 assert_eq!(n, want, "{at}: morphism {:?}", mo.op);
                 boxes += want;
             }
@@ -206,31 +270,66 @@ fn string_every_morphism_is_one_box_and_every_object_one_wire() {
                 .filter(|(_, m)| matches!(m.op, Operation::Pair { .. }))
                 .map(|(_, m)| m.target)
                 .collect();
-            let identity: HashSet<_> =
-                ir.morphisms().filter(|(_, m)| m.op == Operation::Output).map(|(_, m)| m.target).collect();
+            let identity: HashSet<_> = ir
+                .morphisms()
+                .filter(|(_, m)| m.op == Operation::Output)
+                .map(|(_, m)| m.target)
+                .collect();
             for (o, obj) in ir.objects() {
                 if ir.try_owner(o).is_none() {
                     continue;
                 }
-                let main = d.edges.iter().filter(|e| e.kind == EdgeKind::Wire && e.obj == Some(o)).count();
-                let branches = d.edges.iter().filter(|e| e.kind == EdgeKind::Branch && e.obj == Some(o)).count();
-                let split = d.nodes.iter().filter(|n| n.kind == NodeKind::Split && n.obj == Some(o)).count();
+                let main = d
+                    .edges
+                    .iter()
+                    .filter(|e| e.kind == EdgeKind::Wire && e.obj == Some(o))
+                    .count();
+                let branches = d
+                    .edges
+                    .iter()
+                    .filter(|e| e.kind == EdgeKind::Branch && e.obj == Some(o))
+                    .count();
+                let split = d
+                    .nodes
+                    .iter()
+                    .filter(|n| n.kind == NodeKind::Split && n.obj == Some(o))
+                    .count();
                 if products.contains(&o) || identity.contains(&o) {
                     assert_eq!(main + split, 0, "{at}: product / identity {o:?} has a wire");
                     continue;
                 }
-                assert_eq!(main, 1, "{at}: object {:?} ({:?}) has {main} wires", obj.name, obj.kind);
+                assert_eq!(
+                    main, 1,
+                    "{at}: object {:?} ({:?}) has {main} wires",
+                    obj.name, obj.kind
+                );
                 // branches: the copy's, plus a merge's feeds (a loop state has two writers)
-                let merge = d.nodes.iter().filter(|n| n.kind == NodeKind::Merge && n.obj == Some(o)).count();
+                let merge = d
+                    .nodes
+                    .iter()
+                    .filter(|n| n.kind == NodeKind::Merge && n.obj == Some(o))
+                    .count();
                 if split == 1 {
                     splits += 1;
-                    assert!(branches >= 2 + if merge == 1 { 2 } else { 0 }, "{at}: copy of one reader");
+                    assert!(
+                        branches >= 2 + if merge == 1 { 2 } else { 0 },
+                        "{at}: copy of one reader"
+                    );
                 } else {
                     assert_eq!(split, 0);
-                    assert_eq!(branches, if merge == 1 { ir.in_edges(o).len() } else { 0 }, "{at}: stray branches");
+                    assert_eq!(
+                        branches,
+                        if merge == 1 { ir.in_edges(o).len() } else { 0 },
+                        "{at}: stray branches"
+                    );
                 }
                 if obj.kind == ObjectKind::Constant {
-                    assert!(d.nodes.iter().any(|n| n.kind == NodeKind::Terminal && n.obj == Some(o)), "{at}: constant end");
+                    assert!(
+                        d.nodes
+                            .iter()
+                            .any(|n| n.kind == NodeKind::Terminal && n.obj == Some(o)),
+                        "{at}: constant end"
+                    );
                 }
                 wires += 1;
             }
@@ -238,5 +337,8 @@ fn string_every_morphism_is_one_box_and_every_object_one_wire() {
             assert!(d.nodes.iter().all(|n| !n.label.contains("Pair")), "{at}");
         }
     }
-    assert!(boxes > 500 && wires > 500 && splits > 50, "saw {boxes} boxes, {wires} wires, {splits} copies");
+    assert!(
+        boxes > 500 && wires > 500 && splits > 50,
+        "saw {boxes} boxes, {wires} wires, {splits} copies"
+    );
 }

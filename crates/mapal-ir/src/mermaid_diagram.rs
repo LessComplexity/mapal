@@ -81,7 +81,12 @@ pub struct Diagram {
 impl Default for Diagram {
     fn default() -> Self {
         Diagram {
-            subs: vec![DSub { id: String::new(), label: String::new(), parent: 0, morph: None }],
+            subs: vec![DSub {
+                id: String::new(),
+                label: String::new(),
+                parent: 0,
+                morph: None,
+            }],
             nodes: Vec::new(),
             edges: Vec::new(),
         }
@@ -89,19 +94,48 @@ impl Default for Diagram {
 }
 
 impl Diagram {
-    pub fn sub(&mut self, id: String, label: String, parent: usize, morph: Option<MorphismId>) -> usize {
-        self.subs.push(DSub { id, label, parent, morph });
+    pub fn sub(
+        &mut self,
+        id: String,
+        label: String,
+        parent: usize,
+        morph: Option<MorphismId>,
+    ) -> usize {
+        self.subs.push(DSub {
+            id,
+            label,
+            parent,
+            morph,
+        });
         self.subs.len() - 1
     }
 
     pub fn node(&mut self, id: String, label: String, kind: NodeKind, sub: usize) -> usize {
-        self.nodes.push(DNode { id, label, kind, sub, obj: None, morph: None });
+        self.nodes.push(DNode {
+            id,
+            label,
+            kind,
+            sub,
+            obj: None,
+            morph: None,
+        });
         self.nodes.len() - 1
     }
 
     pub fn edge(&mut self, from: &str, to: &str, label: String, kind: EdgeKind) -> usize {
-        let label = if label.trim().is_empty() { "·".to_string() } else { label };
-        self.edges.push(DEdge { from: from.into(), to: to.into(), label, kind, obj: None, morph: None });
+        let label = if label.trim().is_empty() {
+            "·".to_string()
+        } else {
+            label
+        };
+        self.edges.push(DEdge {
+            from: from.into(),
+            to: to.into(),
+            label,
+            kind,
+            obj: None,
+            morph: None,
+        });
         self.edges.len() - 1
     }
 
@@ -110,7 +144,12 @@ impl Diagram {
         let mut out = String::from("flowchart LR\n");
         self.draw_sub(0, 0, &mut out);
         for e in &self.edges {
-            out.push_str(&format!("    {} -- \"{}\" --> {}\n", e.from, escape(&e.label), e.to));
+            out.push_str(&format!(
+                "    {} -- \"{}\" --> {}\n",
+                e.from,
+                escape(&e.label),
+                e.to
+            ));
         }
         out
     }
@@ -118,7 +157,11 @@ impl Diagram {
     fn draw_sub(&self, s: usize, depth: usize, out: &mut String) {
         let pad = "    ".repeat(depth + 1);
         if s != 0 {
-            out.push_str(&format!("{pad}subgraph {}[\"{}\"]\n", self.subs[s].id, escape(&self.subs[s].label)));
+            out.push_str(&format!(
+                "{pad}subgraph {}[\"{}\"]\n",
+                self.subs[s].id,
+                escape(&self.subs[s].label)
+            ));
         }
         let inner = if s == 0 { depth } else { depth + 1 };
         let ipad = "    ".repeat(inner + 1);

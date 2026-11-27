@@ -607,11 +607,17 @@ fn dump_ir(a: &Args) -> Res<u8> {
         let ir = match a.stage.as_str() {
             "lowered" => ir,
             "rewritten" | "llvm" => rewritten(a, ir),
-            s => return Err(usage(&format!("--mermaid draws the lowered or rewritten graph, not `{s}`"))),
+            s => {
+                return Err(usage(&format!(
+                    "--mermaid draws the lowered or rewritten graph, not `{s}`"
+                )));
+            }
         };
         let (form, condensed) = match kind.split_once(',') {
             Some((f, "condensed")) => (f, true),
-            Some((_, c)) => return Err(usage(&format!("unknown mermaid option `{c}` (condensed)"))),
+            Some((_, c)) => {
+                return Err(usage(&format!("unknown mermaid option `{c}` (condensed)")));
+            }
             None => (kind.as_str(), false),
         };
         let src = std::fs::read_to_string(&a.file).ok();
@@ -631,8 +637,16 @@ fn dump_ir(a: &Args) -> Res<u8> {
                 Some(src) => ir.to_mermaid_string_condensed_src(src),
                 None => ir.to_mermaid_string_condensed(),
             },
-            ("graph" | "full" | "flow", true) => return Err(usage("`condensed` goes with category or string (flow is already condensed)")),
-            (k, _) => return Err(usage(&format!("unknown mermaid form `{k}` (string|category|graph|flow)"))),
+            ("graph" | "full" | "flow", true) => {
+                return Err(usage(
+                    "`condensed` goes with category or string (flow is already condensed)",
+                ));
+            }
+            (k, _) => {
+                return Err(usage(&format!(
+                    "unknown mermaid form `{k}` (string|category|graph|flow)"
+                )));
+            }
         };
         print!("{text}");
         return Ok(0);
