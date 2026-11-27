@@ -43,18 +43,30 @@ def lines_of(rel: str) -> tuple[str, ...]:
         return ()
 
 
-def candidates(rel: str, kind: str) -> list[str]:
-    """The file itself plus its sibling directory of the same stem (or, for C, the directory's .c/.h files)."""
-    out: list[str] = []
+C_SUFFIXES = (".c", ".h", ".inc")
+ROOT_FILES = ("lib.rs", "main.rs", "mod.rs")
+
+
+def tiers(rel: str, kind: str) -> list[list[str]]:
+    """Where to look, nearest first; the first tier with a match wins. Files get split into submodules, so an
+    item named under `x.rs` may now live in `x/**` — and under a crate root or `mod.rs`, anywhere in its
+    directory. C files split into `.inc` parts beside them."""
     p = ROOT / rel
-    if kind == "cfn":  # the named file first; its directory's other .c/.h files only when it has no such function
-        return [rel] + [str(f.relative_to(ROOT)) for f in sorted(p.parent.glob("*")) if f.suffix in (".c", ".h") and str(f.relative_to(ROOT)) != rel]
-    if p.is_file():
-        out.append(rel)
+    rels = lambda fs: [str(f.relative_to(ROOT)) for f in fs if str(f.relative_to(ROOT)) != rel]
+    if p.suffix in C_SUFFIXES:
+        return [[rel], rels(sorted(f for f in p.parent.glob("*") if f.suffix in C_SUFFIXES))]
+    out = [[rel]] if p.is_file() else []
     stem = p.with_suffix("")
     if p.suffix == ".rs" and stem.is_dir():
-        out += [str(f.relative_to(ROOT)) for f in sorted(stem.rglob("*.rs"))]
+        out.append(rels(sorted(stem.rglob("*.rs"))))
+    if p.name in ROOT_FILES:
+        out.append(rels(sorted(p.parent.rglob("*.rs"))))
     return out
+
+
+def candidates(rel: str, kind: str) -> list[str]:
+    """Every file any tier names (diagnostics only)."""
+    return [f for t in tiers(rel, kind) for f in t]
 
 
 def strip_generics(name: str) -> str:
@@ -72,7 +84,7 @@ def find_items(files: list[str], kind: str, name: str) -> list[tuple[str, int]]:
         words = r"\s+".join(re.escape(w) for w in name.split())
         rx = re.compile(rf"^(?P<ind>\s*)(?:unsafe\s+)?impl(?:<[^>]*>)?\s+(?:!?{words})\b")
     elif kind in KINDS:
-        c_def = r"\s*\{" if files and files[0].endswith((".c", ".h")) else ""  # C: a definition has its brace
+        c_def = r"\s*\{" if files and files[0].endswith(C_SUFFIXES) else ""  # C: a definition has its brace
         rx = re.compile(rf"^(?P<ind>\s*)(?:static\s+)?{VIS}{KINDS[kind]}\s+{nm}\b{c_def}")
     else:
         return []
@@ -143,21 +155,26 @@ def resolve(at: str) -> list[tuple[str, int]]:
     rel, kind, name, nth = parsed
     if kind == "file":
         return [(rel, 1)] if (ROOT / rel).is_file() else []
-    files = candidates(rel, kind)
-    if kind == "method":
-        owner, _, meth = name.rpartition("::")
-        hits = find_method(files, owner, meth)
-    elif kind == "variant":
-        enum, _, var = name.partition("::")
-        hits = find_variant(files, enum, var)
-    elif kind == "cfn":
-        hits = []
-        for f in files:  # own file first
-            hits = find_cfn([f], name)
-            if hits:
-                break
-    else:
-        hits = find_items(files, kind, name)
+    hits: list[tuple[str, int]] = []
+    for files in tiers(rel, kind):
+        if kind == "method":
+            owner, _, meth = name.rpartition("::")
+            hits = find_method(files, owner, meth)
+        elif kind == "variant":
+            enum, _, var = name.partition("::")
+            hits = find_variant(files, enum, var)
+        elif kind == "cfn":
+            for f in files:  # one file at a time: a runtime and its emulator share function names
+                hits = find_cfn([f], name)
+                if hits:
+                    break
+        else:
+            hits = find_items(files, kind, name)
+        if hits:
+            break
+    is_test = lambda f: f.endswith("tests.rs") or "/tests/" in f
+    if len(hits) > 1 and not is_test(rel):  # a definition beats a test helper of the same name
+        hits = [h for h in hits if not is_test(h[0])] or hits
     if nth:
         return hits[nth - 1:nth]
     return hits

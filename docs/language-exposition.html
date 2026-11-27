@@ -325,7 +325,7 @@ pre.hl-lines .ln::before{counter-increment:ln;content:counter(ln);display:inline
 <header class="top">
   <a class="brand" href="#top" aria-label="Mapal, top of page"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" aria-hidden="true" focusable="false"> <g fill="none" stroke="#14B8A6" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"> <path d="M22 22 H42" /> <path d="M22 58 H42" /> <path d="M42 22 V58" /> <path d="M42 40 H60" /> <circle cx="14" cy="22" r="7" /> <circle cx="14" cy="58" r="7" /> <circle cx="67" cy="40" r="7" fill="#14B8A6" /> </g> </svg><span>Mapal</span></a>
   <nav aria-label="Sections">
-    <a href="#demos">Examples</a><a href="#performance">Performance</a><a href="#philosophy">Philosophy</a><a href="#architecture">Architecture</a><a href="#components">Components</a><a href="#artifacts">Artifacts</a><a href="#different">Different</a><a href="#depth">In depth</a>
+    <a href="#demos">Examples</a><a href="#performance">Performance</a><a href="#philosophy">Philosophy</a><a href="#architecture">Architecture</a><a href="#components">Components</a><a href="#artifacts">Artifacts</a><a href="#different">Different</a><a href="#depth">In depth</a><a href="architecture-map.html">Map</a>
   </nav>
   <button type="button" class="themebtn" id="themebtn" aria-label="Switch between dark and light theme">Light theme</button>
 </header>
@@ -2065,7 +2065,7 @@ the 33 flow kernels each carry several steps (130 steps in all)</code></pre></di
 
 <section class="band" id="architecture"><div class="wrap">
   <h2><span class="no">4</span>The architecture as an equation</h2>
-  <p class="lede">Code becomes a dataflow graph plus the facts deduced from it. Hardware becomes compute units plus storages. Put together, and compiled, they give something runnable.</p>
+  <p class="lede">Code becomes a dataflow graph plus the facts deduced from it. Hardware becomes compute units plus storages. Put together, and compiled, they give something runnable. Every component, the data it reads and makes, and where each piece lives in the code: the <a href="architecture-map.html">Architecture Map</a>.</p>
   <div class="equation" id="eq" role="group" aria-label="Animated diagram: program and hardware compiled into a runnable" tabindex="0">
     <div class="lanes">
       <div class="lane"><h4>The program</h4>

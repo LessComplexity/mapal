@@ -116,7 +116,8 @@ More, including the GPU, the tests and editor setup: [`docs/getting-started.md`]
 
 ## Learn more
 
-- [The Language Exposition](docs/language-exposition.html): Mapal by examples, then how the compiler works
+- [The Language Exposition](https://lesscomplexity.github.io/mapal/language-exposition.html): Mapal by examples, then how the compiler works
+- [Architecture Map](https://lesscomplexity.github.io/mapal/architecture-map.html): the compiler as data — every component, its categories and transformations, each linked to its code
 - [Syntax](docs/syntax.md): the language, form by form
 - [Decisions](docs/decisions/README.md): every design decision and what it replaced
 - [Contributing](CONTRIBUTING.md)

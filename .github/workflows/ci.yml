@@ -59,6 +59,11 @@ jobs:
       - name: File size
         run: scripts/check_file_size.sh
 
+      # The Architecture Map names every item by file and item: each must still resolve to exactly one
+      # definition, and the page must be regenerated when map.json or a location changes. Python only.
+      - name: Architecture map
+        run: python3 docs/tools/archmap.py --check
+
       - name: Formatting
         run: cargo fmt --all --check
 
