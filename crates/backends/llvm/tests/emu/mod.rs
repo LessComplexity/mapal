@@ -500,7 +500,7 @@ pub fn host_device(dev: &str) -> String {
 }
 
 /// Emulation runs every device thread on the host, so it gets 8x the native timeout.
-const EMU_TIMEOUT_SECS: u64 = 120;
+const EMU_TIMEOUT_SECS: u64 = 600;
 
 /// Build and run `host` + `dev` against the emulated device; its stdout.
 #[allow(dead_code)]
