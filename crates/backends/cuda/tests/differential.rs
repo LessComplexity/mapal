@@ -275,6 +275,60 @@ fn classify(tag: &str, want_out: &Option<String>, want_code: i32, got: &RunOut) 
 /// (120 s compile, 15 s run). Panics — naming the program, with stderr and
 /// the full source — on nvcc failure or compile timeout (an emitter bug or a
 /// broken box; llvm's clang-failure panic carried over).
+/// Bytes one test program's CUDA context and buffers are budgeted on the GPU.
+const GPU_BYTES_PER_RUN: u64 = 512 << 20;
+
+/// How many compiled programs may run on the GPU at once: `MAPAL_GPU_JOBS`
+/// if set, else the GPU's free memory (queried once) over
+/// [`GPU_BYTES_PER_RUN`], at least 1. Fanning the runs out to every CPU
+/// (64 on a Threadripper) exhausts a 16 GB card at context creation —
+/// `cudaMalloc(d_trap): out of memory` on every program, an infra failure,
+/// never a parity one.
+fn gpu_jobs() -> usize {
+    static JOBS: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *JOBS.get_or_init(|| {
+        if let Some(n) = std::env::var("MAPAL_GPU_JOBS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+        {
+            return std::cmp::max(n, 1);
+        }
+        let free_mib = Command::new("nvidia-smi")
+            .args(["--query-gpu=memory.free", "--format=csv,noheader,nounits"])
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .and_then(|s| s.lines().next().and_then(|l| l.trim().parse::<u64>().ok()));
+        match free_mib {
+            Some(m) => std::cmp::max(((m << 20) / GPU_BYTES_PER_RUN) as usize, 1),
+            None => 4,
+        }
+    })
+}
+
+/// A held GPU run slot; released on drop.
+struct GpuSlot;
+
+static GPU_SLOTS: (Mutex<usize>, std::sync::Condvar) = (Mutex::new(0), std::sync::Condvar::new());
+
+fn gpu_slot() -> GpuSlot {
+    let (lock, cv) = &GPU_SLOTS;
+    let mut busy = lock.lock().unwrap();
+    while *busy >= gpu_jobs() {
+        busy = cv.wait(busy).unwrap();
+    }
+    *busy += 1;
+    GpuSlot
+}
+
+impl Drop for GpuSlot {
+    fn drop(&mut self) {
+        let (lock, cv) = &GPU_SLOTS;
+        *lock.lock().unwrap() -= 1;
+        cv.notify_one();
+    }
+}
+
 fn compile_run(nvcc: &str, cu: &str, tag: &str) -> RunOut {
     let dir = tempfile::tempdir().unwrap();
     let cup = dir.path().join("p.cu");
@@ -295,6 +349,9 @@ fn compile_run(nvcc: &str, cu: &str, tag: &str) -> RunOut {
         ),
         None => panic!("{tag}: nvcc timed out ({COMPILE_TIMEOUT_SECS}s)"),
     }
+    // Compiling is CPU work and fans out to every core; running holds a CUDA
+    // context on the one GPU, so the runs at once are bounded by its memory.
+    let _slot = gpu_slot();
     match run_timeboxed(&mut Command::new(&exe), dir.path(), "run", TIMEOUT_SECS) {
         ProcOut {
             code: Some(code),
