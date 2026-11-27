@@ -20,9 +20,12 @@ use mapal_ir::CategoryIr;
 use mapal_syntax::{Diagnostic, LineIndex, Severity};
 
 mod fmt;
+mod repl;
 
-const USAGE: &str = "usage: mapal <build|run|dump-ir|test|fmt|lsp> <file.mapal> [options]
+const USAGE: &str = "usage: mapal <build|run|dump-ir|test|fmt|repl|lsp> <file.mapal> [options]
   fmt      [--check | --stdout] <files... | ->  format source (use fmt --help for modes)
+  repl     [--budget N]                   an interactive session on the interpreter: definitions, bindings,
+                                          expressions; :help lists its commands
   lsp                                     the language server, over stdin/stdout (editors start it)
   build    [-o <exe>] [--emit-only]       emit <exe>.ll (+ .dev.ll/.ptx on a GPU profile) and link
   run      [--interp [--weakest | --bound]] [--budget N]  compile and execute (--interp: the oracle;
@@ -82,6 +85,10 @@ fn main() -> ExitCode {
     if args.peek().is_some_and(|arg| arg == "fmt") {
         args.next();
         return ExitCode::from(fmt::run(args).unwrap_or_else(|code| code));
+    }
+    if args.peek().is_some_and(|arg| arg == "repl") {
+        args.next();
+        return ExitCode::from(repl::run(args).unwrap_or_else(|code| code));
     }
     if args.peek().is_some_and(|arg| arg == "lsp") {
         args.next();

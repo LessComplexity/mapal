@@ -16,6 +16,7 @@ mapal-rewrite = { path = "../mapal-rewrite" }
 mapal-interp = { path = "../mapal-interp" }
 mapal-backend-llvm = { path = "../backends/llvm" }
 mapal-lsp = { path = "../mapal-lsp" }
+rustyline = "14"
 
 [dev-dependencies]
 tempfile = "3.27.0"
