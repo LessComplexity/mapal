@@ -518,7 +518,7 @@ pub fn run_emulated_totals(clang: &str, host: &str, dev: &str) -> (String, [u64;
 }
 
 /// The emulator compiled once — per clang (its `--version`) and the text of
-/// `mapal_gpu_emu.c` + `mapal_choice.h` — into the tests' target tmpdir;
+/// `mapal_gpu_emu.c` + its `.inc` parts + `mapal_choice.h` — into the tests' target tmpdir;
 /// every emulated program links that object. Compiling the emulator inside
 /// each program's link was ~0.25 s of every build: about two thirds of a
 /// generated-program test's clang time (generic_fusion: 1082 clang runs,
@@ -537,7 +537,16 @@ fn emu_obj(clang: &str) -> std::path::PathBuf {
         .expect("clang --version")
         .stdout;
     let mut key: u64 = 0xcbf2_9ce4_8422_2325;
-    for f in ["mapal_gpu_emu.c", "mapal_choice.h"] {
+    for f in [
+        "mapal_gpu_emu.c",
+        "mapal_gpu_emu_copy.inc",
+        "mapal_gpu_emu_warp.inc",
+        "mapal_gpu_emu_wgmma.inc",
+        "mapal_gpu_emu_host.inc",
+        "mapal_gpu_emu_launch.inc",
+        "mapal_gpu_emu_sites.inc",
+        "mapal_choice.h",
+    ] {
         let text = std::fs::read(format!("{dir}/{f}")).expect("emulator source");
         for b in clang.bytes().chain(version.iter().copied()).chain(text) {
             key = (key ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3);

@@ -55,7 +55,7 @@ for p in $PROGS; do
     echo "built $p: $(grep -o 'persist=[0-9]* tiles=[0-9]*' "$OUT/$PART/$p.on.plan" | sort | uniq -c | tr '\n' ' ')"
 done
 cp "$ROOT/crates/mapal-rt/gpu/mapal_gpu.c" "$OUT/mapal_gpu_new.c"
-cp "$ROOT/crates/mapal-rt/gpu/mapal_choice.h" "$OUT/"
+cp "$ROOT/crates/mapal-rt/gpu/mapal_choice.h" "$ROOT"/crates/mapal-rt/gpu/mapal_gpu_*.inc "$OUT/"
 git -C "$ROOT" show "$BASE:crates/mapal-rt/gpu/mapal_gpu.c" > "$OUT/mapal_gpu_old.c"
 cmp -s <(git -C "$ROOT" show "$BASE:crates/mapal-rt/gpu/mapal_choice.h") "$ROOT/crates/mapal-rt/gpu/mapal_choice.h" ||
     { echo "mapal_choice.h changed since $BASE: the old runtime needs its own"; exit 1; }

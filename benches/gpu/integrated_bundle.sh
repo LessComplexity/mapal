@@ -322,7 +322,7 @@ for spec in "$@"; do
     gzip -f "$d"/*.remarks.yaml 2>/dev/null || true
 done
 cp "$ROOT/target/x86_64-unknown-linux-gnu/release/libmapal_rt.a" "$OUT/"
-cp "$ROOT/crates/mapal-rt/gpu/mapal_gpu.c" "$ROOT/crates/mapal-rt/gpu/mapal_choice.h" "$ROOT/benches/gpu/tile_bench.cu" "$ROOT/benches/gpu/chain_bench.cu" \
+cp "$ROOT/crates/mapal-rt/gpu/mapal_gpu.c" "$ROOT/crates/mapal-rt/gpu/mapal_choice.h" "$ROOT"/crates/mapal-rt/gpu/mapal_gpu_*.inc "$ROOT/benches/gpu/tile_bench.cu" "$ROOT/benches/gpu/chain_bench.cu" \
     "$ROOT/benches/gpu/mlp_bench.cu" "$ROOT/benches/gpu/gemm_lib.cu" "$ROOT/benches/gpu/value_gate.py" \
     "$ROOT/benches/gpu/box_run.sh" "$ROOT/benches/gpu/box_profile.sh" "$OUT/"
 # cross-arch: the device calibration box_run.sh runs before the timed sections (the native-gpu profile's properties).

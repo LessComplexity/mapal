@@ -63,7 +63,7 @@ def check(bundle, prof):
     if not lib.exists() or not elf_x86_64(lib):
         bad.append('libmapal_rt.a missing or not x86-64 ELF (cargo build --release -p mapal-rt '
                    '--target x86_64-unknown-linux-gnu)')
-    for f in ('mapal_gpu.c', 'mapal_choice.h', 'tile_bench.cu', 'chain_bench.cu', 'box_run.sh'):
+    for f in ('mapal_gpu.c', 'mapal_gpu_fills.inc', 'mapal_choice.h', 'tile_bench.cu', 'chain_bench.cu', 'box_run.sh'):
         if not (bundle / f).exists():
             bad.append(f'{f} missing')
     if not (bundle / 'cutlass/include/cutlass').is_dir():
