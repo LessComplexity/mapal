@@ -53,11 +53,19 @@ static void emu_block(uint32_t i, uint32_t gx, uint32_t n) {
   ctaid_x = (int32_t)(b % gx);
   ctaid_y = (int32_t)(b / gx);
 }
-/* One block's shared memory (blocks run one at a time). Aligned to 256 KiB so
- * an address's low 18 bits are its offset: a `wgmma` matrix descriptor's
- * 14-bit start field (address >> 4) names the byte it would on the device,
- * and a swizzle applies to the same address bits the hardware's does. */
-unsigned char emu_smem[1 << 20] __attribute__((aligned(1 << 18)));
+/* One block's shared memory (blocks run one at a time). Aligned to 32 KiB —
+ * the most a Mach-O common symbol allows (macOS) — so a swizzle, which reads
+ * address bits [4, 10), applies to the same bits the hardware's does. A
+ * `wgmma` descriptor's 14-bit start field is (address >> 4) mod 2^14: the
+ * decoders below subtract the buffer's own low 18 address bits to recover the
+ * offset (`emu_desc_start`), which the device names by its window offset. */
+unsigned char emu_smem[1 << 20] __attribute__((aligned(1 << 15)));
+/* A matrix descriptor's start field as an offset into `emu_smem`. */
+static uint64_t emu_desc_start(uint64_t desc) {
+  const uint64_t window = (uint64_t)1 << 18;
+  uint64_t base = (uint64_t)(uintptr_t)emu_smem & (window - 1);
+  return (((desc & 0x3fff) << 4) + window - base) & (window - 1);
+}
 /* `barrier0` for the `b_n` threads of the running block (macOS has no
  * pthread_barrier_t). */
 static pthread_mutex_t b_mu = PTHREAD_MUTEX_INITIALIZER;
@@ -674,7 +682,7 @@ static uint64_t wg_d[1024];
 static struct { const uint32_t *p; uint32_t v, g; } wg_rec[4][WG_REC_MAX];
 static uint32_t wg_nrec[4], wg_group[4];
 static const uint32_t *wg_b_at(uint64_t desc, int col, int k) {
-  uint64_t start = (desc & 0x3fff) << 4, lbo = ((desc >> 16) & 0x3fff) << 4, sbo = ((desc >> 32) & 0x3fff) << 4;
+  uint64_t start = emu_desc_start(desc), lbo = ((desc >> 16) & 0x3fff) << 4, sbo = ((desc >> 32) & 0x3fff) << 4;
   uint32_t mode = (uint32_t)(desc >> 62) & 3;
   uint32_t span = mode == 1 ? 128 : mode == 2 ? 64 : mode == 3 ? 32 : 0;
   uint64_t kb = (uint64_t)k * 4, o;
@@ -742,7 +750,7 @@ void emu_wgmma(int32_t n, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, ui
  * recorded for `emu_wg_wait` as `emu_wgmma`'s. */
 static uint64_t wg_ad[1024];
 static const unsigned char *wg16_at(uint64_t desc, int mn, int k, int mn_major) {
-  uint64_t start = (desc & 0x3fff) << 4, lbo = ((desc >> 16) & 0x3fff) << 4, sbo = ((desc >> 32) & 0x3fff) << 4;
+  uint64_t start = emu_desc_start(desc), lbo = ((desc >> 16) & 0x3fff) << 4, sbo = ((desc >> 32) & 0x3fff) << 4;
   uint32_t mode = (uint32_t)(desc >> 62) & 3;
   if (mode != 1) {
     fprintf(stderr, "emu: wgmma16 descriptor mode %u (the kernel writes 128-byte swizzled boxes)\n", mode);
