@@ -455,6 +455,10 @@ fn build(a: &Args, ir: &CategoryIr, exe: &Path) -> Res<(&'static str, Option<Pat
             &gpu_c.with_file_name("mapal_choice.h"),
             include_str!("../../mapal-rt/gpu/mapal_choice.h"),
         )?;
+        // The runtime's parts, each `#include`d at its place in `mapal_gpu.c`.
+        for (name, text) in GPU_PARTS {
+            write(&gpu_c.with_file_name(name), text)?;
+        }
         link.arg(&obj).arg(&gpu_c).arg(&rt);
         link.arg(format!("-I{}", cuda.join("include").display()));
         link.arg(format!("-L{}", cuda.join("lib64/stubs").display()));
@@ -474,6 +478,42 @@ fn build(a: &Args, ir: &CategoryIr, exe: &Path) -> Res<(&'static str, Option<Pat
     }
     Ok((em.profile, ptx))
 }
+
+/// The parts of `mapal_gpu.c` (`#include "<name>"`), written beside it.
+const GPU_PARTS: [(&str, &str); 8] = [
+    (
+        "mapal_gpu_fills.inc",
+        include_str!("../../mapal-rt/gpu/mapal_gpu_fills.inc"),
+    ),
+    (
+        "mapal_gpu_modscan.inc",
+        include_str!("../../mapal-rt/gpu/mapal_gpu_modscan.inc"),
+    ),
+    (
+        "mapal_gpu_init.inc",
+        include_str!("../../mapal-rt/gpu/mapal_gpu_init.inc"),
+    ),
+    (
+        "mapal_gpu_memory.inc",
+        include_str!("../../mapal-rt/gpu/mapal_gpu_memory.inc"),
+    ),
+    (
+        "mapal_gpu_launch.inc",
+        include_str!("../../mapal-rt/gpu/mapal_gpu_launch.inc"),
+    ),
+    (
+        "mapal_gpu_transfer.inc",
+        include_str!("../../mapal-rt/gpu/mapal_gpu_transfer.inc"),
+    ),
+    (
+        "mapal_gpu_gen.inc",
+        include_str!("../../mapal-rt/gpu/mapal_gpu_gen.inc"),
+    ),
+    (
+        "mapal_gpu_sites.inc",
+        include_str!("../../mapal-rt/gpu/mapal_gpu_sites.inc"),
+    ),
+];
 
 /// Build into a fresh temp dir, hand the executable to `f`, then clean up.
 fn in_temp<T>(
