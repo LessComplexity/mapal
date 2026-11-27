@@ -393,7 +393,8 @@ fn weights_loop(trips: u32, elem: &str) -> String {
     let term = if elem == "f32" {
         "acc + weights[r * 64 + k] * x[k]".to_string()
     } else {
-        "weights[r * 64 + k] -> widen_f32 -> w;\n                        acc + w * x[k]".to_string()
+        "weights[r * 64 + k] -> widen<f32> -> w;\n                        acc + w * x[k]"
+            .to_string()
     };
     format!(
         "fn main() {{
@@ -719,7 +720,7 @@ type Model {
 fn main() {
     "model.bin" -> read -> model: Model;
     4 -> iota -> map {
-        i -> model.embedding[i + 4] -> widen_f32
+        i -> model.embedding[i + 4] -> widen<f32>
     } -> x0;
     mut x: [f32; 4] <- x0;
     mut layer: i32 <- 0;
@@ -729,8 +730,8 @@ fn main() {
                 model.layers[layer] -> weights;
                 4 -> iota -> map {
                     i ->
-                    weights.gain[i] -> widen_f32 -> g;
-                    weights.weight[i % 3][i] -> widen_f32 -> w;
+                    weights.gain[i] -> widen<f32> -> g;
+                    weights.weight[i % 3][i] -> widen<f32> -> w;
                     x[i] * g + w * model.scale[layer]
                 } -> x;
                 layer + 1 -> layer;

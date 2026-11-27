@@ -2,36 +2,36 @@ fn main() {
     262144 -> iota -> ta;
     512 -> iota -> krange;
     ta -> map {
-        t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v;
+        t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v;
         v / 7.0
     } -> a;
     ta -> map {
-        t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v;
+        t -> (t * 11 + 57) % 103 - 51 -> widen<f32> -> v;
         v / 9.0
     } -> b;
     ta -> map {
-        t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v;
+        t -> (t * 5 + 3) % 97 - 48 -> widen<f32> -> v;
         v / 11.0
     } -> e;
     ta -> map {
-        t -> (t * 3 + 1) % 89 - 44 -> widen_f32 -> v;
+        t -> (t * 3 + 1) % 89 - 44 -> widen<f32> -> v;
         v / 13.0
     } -> f;
     ta -> map {
-        t -> (t * 13 + 7) % 107 - 53 -> widen_f32 -> v;
+        t -> (t * 13 + 7) % 107 - 53 -> widen<f32> -> v;
         v / 15.0
     } -> g;
     ta -> map {
-        t -> (t * 17 + 29) % 109 - 54 -> widen_f32 -> v;
+        t -> (t * 17 + 29) % 109 - 54 -> widen<f32> -> v;
         v / 17.0
     } -> p;
     () -> time -> t0;
     krange -> map {
-        t -> t % 13 - 6 -> widen_f32 -> v;
+        t -> t % 13 - 6 -> widen<f32> -> v;
         v / 5.0
     } -> bias;
     krange -> map {
-        t -> t % 11 - 5 -> widen_f32 -> v;
+        t -> t % 11 - 5 -> widen<f32> -> v;
         v / 4.0
     } -> bias2;
     ta -> map {

@@ -6,10 +6,14 @@
 // and a SMALLER win here. If 512 wins as hard as 1024 the rule is not doing work.
 fn main() {
     262144 -> iota -> ia;
-    ia -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 } -> a;
+    ia -> map {
+        t -> (t * 7 + 13) % 101 - 50 -> widen<f32>
+    } -> a;
     262144 -> iota -> ib;
     () -> time -> t0;
-    ib -> map { t -> a[(t % 512) * 512 + t / 512] } -> b;
+    ib -> map {
+        t -> a[(t % 512) * 512 + t / 512]
+    } -> b;
     () -> time -> t1;
     b[0] -> println;
     b[262143] -> println;

@@ -33,9 +33,9 @@
 use std::collections::BTreeMap;
 
 use mapal_syntax::{
-    ArmPayload, Block, BlockItem, Chain, CollOp, Diagnostic, Expr, ExprKind, FnDecl, GuardArm,
-    Item, MemberField, Name, Program, SizeExpr, SizeKind, SourceLoc, Stage, StageKind, StmtKind,
-    TokenKind, TyKind, TypeDecl,
+    ArmPayload, Block, BlockItem, Chain, CollOp, Diagnostic, Expr, ExprKind, FnDecl, GenericParam,
+    GuardArm, Item, MemberField, Name, Program, SizeExpr, SizeKind, SourceLoc, Stage, StageKind,
+    StmtKind, TokenKind, TyKind, TypeDecl,
 };
 
 pub type DefId = usize;
@@ -57,6 +57,8 @@ pub enum DefKind {
     BodyParam,
     /// A size parameter of a function or a type (ADR-0047 / ADR-0048 D4).
     SizeParam,
+    /// A format parameter of a function or a type, `name: kind` (ADR-0051 D1).
+    FormatParam,
 }
 
 impl DefKind {
@@ -70,6 +72,7 @@ impl DefKind {
             DefKind::Param => "parameter",
             DefKind::BodyParam => "body parameter",
             DefKind::SizeParam => "size parameter",
+            DefKind::FormatParam => "format parameter",
         }
     }
 }
@@ -279,8 +282,10 @@ impl Analysis {
             DefKind::Field if d.name == "_" => return None,
             DefKind::Field if decl => Class::FieldDeclaration,
             DefKind::Field => Class::Field,
-            DefKind::SizeParam if decl => Class::SizeDeclaration,
-            DefKind::SizeParam => Class::Size,
+            // A format parameter is a generic parameter like a size: the
+            // editors' one class for both (ADR-0051 D1).
+            DefKind::SizeParam | DefKind::FormatParam if decl => Class::SizeDeclaration,
+            DefKind::SizeParam | DefKind::FormatParam => Class::Size,
             _ if decl && matches!(d.kind, DefKind::Param | DefKind::BodyParam) => {
                 Class::ParameterDeclaration
             }
@@ -384,7 +389,8 @@ struct Walker<'a> {
     globals: BTreeMap<String, DefId>,
     /// Top-level binding stages by the name's start offset → the global.
     global_sites: BTreeMap<u32, DefId>,
-    /// The enclosing function's or type's size parameters.
+    /// The enclosing function's or type's generic parameters: sizes and
+    /// formats (ADR-0051 D1).
     sizes: BTreeMap<String, DefId>,
     frames: Vec<Frame>,
     /// Walking a top-level chain (its bindings are globals).
@@ -615,7 +621,7 @@ impl<'a> Walker<'a> {
         if self.defs[tid].span != td.span {
             return; // a duplicate declaration: the first one owns the name
         }
-        self.sizes = self.size_params(&td.sizes, tid, td.span);
+        self.sizes = self.size_params(&td.generics, tid, td.span);
         let mut fields = BTreeMap::new();
         for f in &td.fields {
             let ty = self.ty(&f.ty);
@@ -637,26 +643,35 @@ impl<'a> Walker<'a> {
         self.sizes.clear();
     }
 
+    /// The declared generic list: a bare name is a size parameter, `name:
+    /// kind` a format parameter (ADR-0051 D1; the kind reads as a primitive).
     fn size_params(
         &mut self,
-        sizes: &[Name],
+        generics: &[GenericParam],
         owner: DefId,
         scope: SourceLoc,
     ) -> BTreeMap<String, DefId> {
         let mut out = BTreeMap::new();
-        for s in sizes {
-            let text = self.name(*s).to_string();
+        for g in generics {
+            let text = self.name(g.name).to_string();
+            let (kind, ty) = match g.kind {
+                None => (DefKind::SizeParam, Ty::Prim("i32".into())),
+                Some(k) => {
+                    self.lex(k.span, Class::Primitive);
+                    (DefKind::FormatParam, Ty::Prim(self.name(k).to_string()))
+                }
+            };
             let id = self.def(Def {
                 name: text.clone(),
-                kind: DefKind::SizeParam,
-                name_span: s.span,
-                span: s.span,
-                ty: Ty::Prim("i32".into()),
+                kind,
+                name_span: g.name.span,
+                span: g.span,
+                ty,
                 mutable: false,
                 container: Some(owner),
                 visible: scope,
             });
-            self.occ(s.span, id, Role::Decl);
+            self.occ(g.name.span, id, Role::Decl);
             out.insert(text, id);
         }
         out
@@ -695,7 +710,7 @@ impl<'a> Walker<'a> {
 
     fn binds_bare(&self, n: Name) -> bool {
         let t = self.name(n);
-        !self.fns.contains_key(t) && !mapal_lower::is_builtin(t) && !is_scalar(t)
+        !self.fns.contains_key(t) && !is_builtin_name(t) && !is_scalar(t)
     }
 
     fn function(&mut self, fd: &FnDecl) {
@@ -703,7 +718,7 @@ impl<'a> Walker<'a> {
         let Some(&fid) = self.fns.get(fname) else {
             return;
         };
-        self.sizes = self.size_params(&fd.sizes, fid, fd.span);
+        self.sizes = self.size_params(&fd.generics, fid, fd.span);
         self.frames.push(Frame {
             names: BTreeMap::new(),
             kind: FrameKind::Root,
@@ -782,6 +797,13 @@ impl<'a> Walker<'a> {
             self.lex(n.span, Class::Primitive);
             return Ty::Prim(text.to_string());
         }
+        // ADR-0051 D1: a format parameter in a type position.
+        if let Some(&id) = self.sizes.get(text)
+            && self.defs[id].kind == DefKind::FormatParam
+        {
+            self.occ(n.span, id, Role::TypeUse);
+            return Ty::Prim(text.to_string());
+        }
         if let Some(&id) = self.types.get(text) {
             self.occ(n.span, id, Role::TypeUse);
         }
@@ -796,7 +818,10 @@ impl<'a> Walker<'a> {
             SizeKind::Int(_) => {}
             SizeKind::Name(n) => {
                 let text = self.name(*n);
-                if let Some(&id) = self.sizes.get(text) {
+                // A format argument (`Matrix<64, 64, bf16>`, `to<bf16>`).
+                if is_scalar(text) {
+                    self.lex(n.span, Class::Primitive);
+                } else if let Some(&id) = self.sizes.get(text) {
                     self.occ(n.span, id, Role::Read);
                 } else if let Some(&id) = self.globals.get(text) {
                     self.occ(n.span, id, Role::Read);
@@ -1009,6 +1034,7 @@ impl<'a> Walker<'a> {
         match &st.kind {
             StageKind::Expr(e) => match &e.kind {
                 ExprKind::Var(n) => self.bare_stage(*n, wire, target, chain_span),
+                ExprKind::Generic { name, args } => self.generic_stage(*name, args, wire),
                 _ => self.expr(e),
             },
             StageKind::Bind { mut_span, name, ty } => {
@@ -1112,9 +1138,9 @@ impl<'a> Walker<'a> {
             self.occ(n.span, id, Role::Call);
             return self.defs[id].ty.clone();
         }
-        if mapal_lower::is_builtin(text) {
+        if is_builtin_name(text) {
             self.lex(n.span, Class::Builtin);
-            return builtin_result(text, wire, self.src);
+            return builtin_result(text, None, wire, self.src);
         }
         if self.top {
             self.global_bind(n, &wire.ty);
@@ -1129,6 +1155,25 @@ impl<'a> Walker<'a> {
             );
         }
         wire.ty.clone()
+    }
+
+    /// ADR-0051 D2: a stage with explicit generic arguments, `x -> to<bf16>`,
+    /// `(w, x) -> project<4096, 2048>` — a call of a function or a builtin.
+    fn generic_stage(&mut self, n: Name, args: &[SizeExpr], wire: &Wire) -> Ty {
+        for a in args {
+            self.size_expr(a);
+        }
+        let text = self.name(n);
+        if let Some(&id) = self.fns.get(text) {
+            self.occ(n.span, id, Role::Call);
+            return self.defs[id].ty.clone();
+        }
+        if is_builtin_name(text) {
+            self.lex(n.span, Class::Builtin);
+            let first = args.first().map(|a| self.text(a.span));
+            return builtin_result(text, first, wire, self.src);
+        }
+        Ty::Unknown
     }
 
     fn arm(&mut self, arm: &GuardArm, _input: Ty, routing: bool) -> Ty {
@@ -1293,6 +1338,14 @@ impl<'a> Walker<'a> {
                 t
             }
             ExprKind::Question(inner) => self.expr(inner),
+            // Built only in stage position (`stage`); walk it the same way.
+            ExprKind::Generic { name, args } => {
+                let wire = Wire {
+                    ty: Ty::Unknown,
+                    head: None,
+                };
+                self.generic_stage(*name, args, &wire)
+            }
         }
     }
 
@@ -1304,7 +1357,10 @@ impl<'a> Walker<'a> {
         }
         if let Some(&id) = self.sizes.get(text) {
             self.occ(n.span, id, Role::Read);
-            return Ty::Prim("i32".into());
+            return match self.defs[id].kind {
+                DefKind::SizeParam => Ty::Prim("i32".into()),
+                _ => Ty::Unknown,
+            };
         }
         if let Some(&id) = self.globals.get(text) {
             self.occ(n.span, id, Role::Read);
@@ -1314,7 +1370,7 @@ impl<'a> Walker<'a> {
             self.occ(n.span, id, Role::Call);
             return self.defs[id].ty.clone();
         }
-        if mapal_lower::is_builtin(text) {
+        if is_builtin_name(text) {
             self.lex(n.span, Class::Builtin);
         }
         Ty::Unknown
@@ -1401,8 +1457,16 @@ fn final_chain(p: &ArmPayload) -> Option<&Chain> {
     }
 }
 
-/// The value a builtin stage produces from its input.
-fn builtin_result(name: &str, wire: &Wire, src: &str) -> Ty {
+/// A stage builtin, or a removed conversion name (ADR-0051 D6): reserved, so
+/// never a fresh binding — the compiler reports its use (L1713) and the
+/// editors show it as the builtin it was.
+pub fn is_builtin_name(name: &str) -> bool {
+    mapal_lower::is_builtin(name) || mapal_lower::removed_builtin(name).is_some()
+}
+
+/// The value a builtin stage produces from its input; `explicit` is the first
+/// explicit generic argument's text (`to<bf16>`: `bf16`, ADR-0051 D2).
+fn builtin_result(name: &str, explicit: Option<&str>, wire: &Wire, src: &str) -> Ty {
     let text = |e: &Expr| {
         src.get(e.span.start as usize..e.span.end as usize)
             .unwrap_or("n")
@@ -1454,8 +1518,20 @@ fn builtin_result(name: &str, wire: &Wire, src: &str) -> Ty {
             _ => Ty::Unknown,
         },
         "exp" | "sqrt" | "sin" | "cos" => wire.ty.clone(),
-        n if n.starts_with("widen_") => scalar(&n["widen_".len()..]),
-        n if n.starts_with("to_") => scalar(&n["to_".len()..]),
-        _ => Ty::Unknown,
+        // ADR-0051 D4: the target is the first generic argument (else inferred
+        // from the context, which the analysis does not model).
+        "to" | "widen" => match explicit {
+            Some(t) => scalar(t),
+            None => Ty::Unknown,
+        },
+        n => match mapal_lower::removed_builtin(n) {
+            Some(r) => {
+                let t = r
+                    .split_once('<')
+                    .map_or("", |(_, t)| t.trim_end_matches('>'));
+                scalar(t)
+            }
+            None => Ty::Unknown,
+        },
     }
 }

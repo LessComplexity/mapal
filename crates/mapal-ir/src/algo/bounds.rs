@@ -57,6 +57,9 @@ pub struct BoundsProof {
     /// caching-memory: each integer view of a canonical loop's merge (the
     /// counter as the body reads it) — its range over every trip.
     views: SecondaryMap<ObjectId, (i128, i128)>,
+    /// ADR-0051 D4: each `Widen` of an integer — its source's range where it
+    /// runs (the exactness of `widen<f32>` of an `i32`).
+    widen: SecondaryMap<MorphismId, (i128, i128)>,
 }
 
 impl BoundsProof {
@@ -87,6 +90,13 @@ impl BoundsProof {
     /// loop body reads it) over every trip, if known.
     pub fn view_range(&self, v: ObjectId) -> Option<(i128, i128)> {
         self.views.get(v).copied()
+    }
+
+    /// ADR-0051 D4: the range of the integer `m` widens (`m` a `Widen` of an
+    /// integer) where `m` runs, if known — under the same conditions an
+    /// index's range is (guard arms, loop conditions, captured ranges).
+    pub fn widen_range(&self, m: MorphismId) -> Option<(i128, i128)> {
+        self.widen.get(m).copied()
     }
 }
 
@@ -233,7 +243,16 @@ impl Eval<'_> {
         let get = |o: Option<ObjectId>| o.and_then(|o| int(rng.get(o).copied()));
         match morph.op {
             Operation::Add | Operation::Sub | Operation::Mul | Operation::Div | Operation::Mod => {
-                let a = get(self.slot(morph.source, 0))?;
+                let x = self.slot(morph.source, 0);
+                // A remainder's range needs no range of its dividend: any
+                // value of the type (a wrapped product included) leaves
+                // `x % k` inside `(−|k|, |k|)` (ADR-0051: `(t * 11 + 57) % 103`
+                // past `t * 11`'s `i32` range).
+                let a = match (get(x), morph.op) {
+                    (Some(a), _) => a,
+                    (None, Operation::Mod) => self.ty_range(x?)?,
+                    (None, _) => return None,
+                };
                 let b = get(self.slot(morph.source, 1))?;
                 arith(morph.op, a, b, self.ty_range(t)?).map(|(l, h)| Rng::Int(l, h))
             }
@@ -947,6 +966,13 @@ impl CategoryIr {
                                 }
                             }
                         }
+                    }
+                }
+                Operation::Widen if type_range(&self.objects[morph.source].ty).is_some() => {
+                    let chain = chain_of(&links, &mut memo, m, 0);
+                    let all: Vec<Cond> = chain.iter().map(|&(c, p, _)| (c, p)).collect();
+                    if let Some(r) = int(at(all).get(morph.source).copied()) {
+                        out.widen.insert(m, r);
                     }
                 }
                 Operation::Map { captures, .. } | Operation::Fold { captures, .. }

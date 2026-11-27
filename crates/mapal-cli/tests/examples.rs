@@ -125,8 +125,8 @@ fn dump_ir_emits_translation_unit() {
 /// One offloadable tile site (64×64×64, f32) — `backends/llvm/tests/gpu_host.rs`.
 const SITE: &str = r#"fn main() {
     4096 -> iota -> ta;
-    ta -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> x; x / 7.0 } -> a;
-    ta -> map { t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> x; x / 9.0 } -> b;
+    ta -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> x; x / 7.0 } -> a;
+    ta -> map { t -> (t * 11 + 57) % 103 - 51 -> widen<f32> -> x; x / 9.0 } -> b;
     64 -> iota -> krange;
     ta -> map { t ->
         t / 64 -> i;

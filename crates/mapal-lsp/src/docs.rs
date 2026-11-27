@@ -21,13 +21,24 @@ pub fn builtin(name: &str) -> Option<&'static str> {
         "sqrt" => "`x -> sqrt` — the square root (ADR-0046)",
         "sin" => "`x -> sin` — the sine, radians (ADR-0046)",
         "cos" => "`x -> cos` — the cosine, radians (ADR-0046)",
-        "widen_i64" => "`x -> widen_i64` — the integer as `i64`, exactly (ADR-0029)",
-        "widen_f32" => "`x -> widen_f32` — the value as `f32` (ADR-0029)",
-        "widen_f64" => "`x -> widen_f64` — the value as `f64` (ADR-0029)",
-        "to_bf16" => "`x -> to_bf16` — rounded to bfloat16 storage (ADR-0043)",
-        "to_f16" => "`x -> to_f16` — rounded to IEEE half storage (ADR-0043)",
-        "to_f8e4m3" => "`x -> to_f8e4m3` — rounded (saturating) to fp8 e4m3 storage (ADR-0043)",
-        "to_f8e5m2" => "`x -> to_f8e5m2` — rounded (saturating) to fp8 e5m2 storage (ADR-0043)",
+        "to" => {
+            "`x -> to<target>` — the value rounded to nearest of `target` (ADR-0051 D4: `f32` → a \
+             narrow format, ADR-0043's contract, fp8 saturating; an `int` → a `float`); `target` \
+             may be inferred from the binding's type"
+        }
+        "widen" => {
+            "`x -> widen<target>` — the value as `target`, exactly (ADR-0051 D4: every value of the \
+             source is one of `target`, or the facts prove it is); `target` may be inferred"
+        }
+        "widen_i64" => "removed (ADR-0051 D6): write `widen<i64>`",
+        "widen_f32" => {
+            "removed (ADR-0051 D6): write `widen<f32>` (or `to<f32>` where it may round)"
+        }
+        "widen_f64" => "removed (ADR-0051 D6): write `widen<f64>`",
+        "to_bf16" => "removed (ADR-0051 D6): write `to<bf16>`",
+        "to_f16" => "removed (ADR-0051 D6): write `to<f16>`",
+        "to_f8e4m3" => "removed (ADR-0051 D6): write `to<f8e4m3>`",
+        "to_f8e5m2" => "removed (ADR-0051 D6): write `to<f8e5m2>`",
         _ => return None,
     })
 }

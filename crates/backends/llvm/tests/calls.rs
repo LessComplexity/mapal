@@ -420,8 +420,8 @@ fn decode_values_through_the_persistent_kernel() {
     let src = format!(
         "fn main() {{
     {dd} -> iota -> tw;
-    tw -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> x; x / 64.0 }} -> wk;
-    tw -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> x; x / 64.0 }} -> wv;
+    tw -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> x; x / 64.0 }} -> wk;
+    tw -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen<f32> -> x; x / 64.0 }} -> wv;
     {rd} -> iota -> tc;
     {d} -> iota -> krange;
     {rows} -> iota -> rrange;
@@ -433,10 +433,10 @@ fn decode_values_through_the_persistent_kernel() {
     loop {{
         (t < {trips}) -> {{
             -true-> {{
-                tc -> map {{ c -> (c / {d} == t) -> {{ -true-> {{ (c * 7 + 13) % 101 - 50 -> widen_f32 -> f; f / 16.0 + o[c % {d}] }} -false-> x[c]; }} }} -> x;
+                tc -> map {{ c -> (c / {d} == t) -> {{ -true-> {{ (c * 7 + 13) % 101 - 50 -> widen<f32> -> f; f / 16.0 + o[c % {d}] }} -false-> x[c]; }} }} -> x;
                 tc -> map {{ c -> c / {d} -> i; c % {d} -> j; (0.0, krange) -> fold {{ acc, k -> acc + x[i * {d} + k] * wk[k * {d} + j] }} }} -> kk;
                 tc -> map {{ c -> c / {d} -> i; c % {d} -> j; (0.0, krange) -> fold {{ acc, k -> acc + x[i * {d} + k] * wv[k * {d} + j] }} }} -> vv;
-                krange -> map {{ k -> ((t * {d} + k) * 5 + 3) % 97 - 48 -> widen_f32 -> qv; qv / 64.0 }} -> q;
+                krange -> map {{ k -> ((t * {d} + k) * 5 + 3) % 97 - 48 -> widen<f32> -> qv; qv / 64.0 }} -> q;
                 rrange -> map {{ r -> (0.0, krange) -> fold {{ acc, k -> acc + q[k] * kk[r * {d} + k] }} }} -> s;
                 krange -> map {{ j -> (0.0, rrange) -> fold {{ acc, r -> acc + s[r] * vv[r * {d} + j] }} }} -> o;
                 t + 1 -> t;

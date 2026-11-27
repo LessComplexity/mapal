@@ -196,9 +196,9 @@ fn radix_tile_counted_and_valued_on_unseen_programs() {
 fn radix_register_tile_values() {
     let src = "fn main() {
     4096 -> iota -> i_w;
-    i_w -> map { t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v; v / 11.0 } -> wt;
+    i_w -> map { t -> (t * 5 + 3) % 97 - 48 -> widen<f32> -> v; v / 11.0 } -> wt;
     2592 -> iota -> i_img;
-    i_img -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 } -> img;
+    i_img -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 } -> img;
     8192 -> iota -> o_y;
     64 -> iota -> k_y;
     o_y -> map { t ->
@@ -251,9 +251,9 @@ fn radix_register_tile_values() {
 fn radix_one_output_and_tf32_plain_operands() {
     let one = "fn main() {
     36 -> iota -> i_w;
-    i_w -> map { t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v; v / 11.0 } -> w;
+    i_w -> map { t -> (t * 5 + 3) % 97 - 48 -> widen<f32> -> v; v / 11.0 } -> w;
     256 -> iota -> i_img;
-    i_img -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 } -> img;
+    i_img -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 } -> img;
     1 -> iota -> o_y;
     36 -> iota -> k_y;
     o_y -> map { t ->
@@ -269,9 +269,9 @@ fn radix_one_output_and_tf32_plain_operands() {
         format!(
             "fn main() {{
     4096 -> iota -> i_w;
-    i_w -> map {{ t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v; v / 11.0 }} -> w;
+    i_w -> map {{ t -> (t * 5 + 3) % 97 - 48 -> widen<f32> -> v; v / 11.0 }} -> w;
     8192 -> iota -> i_x;
-    i_x -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> x;
+    i_x -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 }} -> x;
     8192 -> iota -> o_y;
     64 -> iota -> k_y;
     o_y -> map {{ t ->

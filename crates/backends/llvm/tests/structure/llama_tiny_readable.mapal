@@ -70,7 +70,7 @@ fn synthetic_number(index: i32, seed: i32) -> f32 {
     index % 1009 -> a;
     index % 997 -> b;
     (a * a * 7 + b * 101 + seed * 211) % 2039 -> bucket;
-    bucket - 1019 -> widen_f32 -> centered;
+    bucket - 1019 -> widen<f32> -> centered;
     centered / 2039.0 -> ret;
 }
 
@@ -79,13 +79,13 @@ fn synthetic_number(index: i32, seed: i32) -> f32 {
 // and layers that move the residual stream, so that greedy decoding visits several different tokens.
 fn synthetic_weight(index: i32, seed: i32, scale: f32) -> bf16 {
     (index, seed) -> synthetic_number -> number;
-    number * scale -> to_bf16 -> ret;
+    number * scale -> to<bf16> -> ret;
 }
 
 // A norm gain near one.
 fn synthetic_gain(index: i32, seed: i32) -> bf16 {
     (index, seed) -> synthetic_number -> number;
-    1.0 + 0.2 * number -> to_bf16 -> ret;
+    1.0 + 0.2 * number -> to<bf16> -> ret;
 }
 
 fn make_layer(layer: i32) -> DecoderLayerWeights {
@@ -181,7 +181,7 @@ fn sine_near_zero(x: f32) -> f32 {
     ((x, x), steps) -> fold {
         sum_and_term, step ->
         2 * step + 2 -> k;
-        k * (k + 1) -> widen_f32 -> divisor;
+        k * (k + 1) -> widen<f32> -> divisor;
         -sum_and_term.1 * x_squared / divisor -> term;
         (sum_and_term.0 + term, term)
     } -> series;
@@ -195,7 +195,7 @@ fn cosine_near_zero(x: f32) -> f32 {
     ((1.0, 1.0), steps) -> fold {
         sum_and_term, step ->
         2 * step + 1 -> k;
-        k * (k + 1) -> widen_f32 -> divisor;
+        k * (k + 1) -> widen<f32> -> divisor;
         -sum_and_term.1 * x_squared / divisor -> term;
         (sum_and_term.0 + term, term)
     } -> series;
@@ -223,7 +223,7 @@ fn cosine(angle: f32) -> f32 {
 // written with exp as exp(-(2 pair / 16) ln theta), ln(500000) = 13.122363. Llama 3 then stretches the slow frequencies: wavelengths
 // above 8192 / 1 are divided by 32, those below 8192 / 4 are kept, and those between are blended smoothly.
 fn llama3_frequency(pair: i32, log_theta: f32) -> f32 {
-    pair -> widen_f32 -> p;
+    pair -> to<f32> -> p;
     -(2.0 * p / 16.0) * log_theta -> exp -> frequency;
     6.2831855 / frequency -> wavelength;
     (wavelength < 2048.0) -> {
@@ -246,12 +246,12 @@ fn make_rotary_tables(log_theta: f32) -> RotaryTables {
     } -> frequencies;
     128 -> iota -> map {
         cell ->
-        cell / 8 -> widen_f32 -> position;
+        cell / 8 -> widen<f32> -> position;
         position * frequencies[cell % 8] -> cosine
     } -> cosines;
     128 -> iota -> map {
         cell ->
-        cell / 8 -> widen_f32 -> position;
+        cell / 8 -> widen<f32> -> position;
         position * frequencies[cell % 8] -> sine
     } -> sines;
     RotaryTables {
@@ -291,7 +291,7 @@ fn rotate_key_heads(key: [f32; 32], rotary: RotaryTables, position: i32) -> [f32
 
 fn embed(embedding: [bf16; 16384], token: i32) -> [f32; 64] {
     64 -> iota -> map {
-        i -> embedding[token * 64 + i] -> widen_f32
+        i -> embedding[token * 64 + i] -> widen<f32>
     } -> ret;
 }
 
@@ -304,7 +304,7 @@ fn rms_norm(x: [f32; 64], gain: [bf16; 64]) -> [f32; 64] {
     sum_of_squares / 64.0 + 0.00001 -> inverse_square_root -> scale;
     features -> map {
         i ->
-        gain[i] -> widen_f32 -> g;
+        gain[i] -> widen<f32> -> g;
         x[i] * scale * g
     } -> ret;
 }
@@ -316,7 +316,7 @@ fn project_64_to_64(weight: [bf16; 4096], x: [f32; 64]) -> [f32; 64] {
         row ->
         (0.0, columns) -> fold {
             sum, column ->
-            weight[row * 64 + column] -> widen_f32 -> w;
+            weight[row * 64 + column] -> widen<f32> -> w;
             sum + w * x[column]
         }
     } -> ret;
@@ -328,7 +328,7 @@ fn project_64_to_32(weight: [bf16; 2048], x: [f32; 64]) -> [f32; 32] {
         row ->
         (0.0, columns) -> fold {
             sum, column ->
-            weight[row * 64 + column] -> widen_f32 -> w;
+            weight[row * 64 + column] -> widen<f32> -> w;
             sum + w * x[column]
         }
     } -> ret;
@@ -340,7 +340,7 @@ fn project_64_to_128(weight: [bf16; 8192], x: [f32; 64]) -> [f32; 128] {
         row ->
         (0.0, columns) -> fold {
             sum, column ->
-            weight[row * 64 + column] -> widen_f32 -> w;
+            weight[row * 64 + column] -> widen<f32> -> w;
             sum + w * x[column]
         }
     } -> ret;
@@ -352,7 +352,7 @@ fn project_128_to_64(weight: [bf16; 8192], x: [f32; 128]) -> [f32; 64] {
         row ->
         (0.0, columns) -> fold {
             sum, column ->
-            weight[row * 128 + column] -> widen_f32 -> w;
+            weight[row * 128 + column] -> widen<f32> -> w;
             sum + w * x[column]
         }
     } -> ret;
@@ -365,7 +365,7 @@ fn project_to_vocabulary(embedding: [bf16; 16384], x: [f32; 64]) -> [f32; 256] {
         token ->
         (0.0, columns) -> fold {
             sum, column ->
-            embedding[token * 64 + column] -> widen_f32 -> w;
+            embedding[token * 64 + column] -> widen<f32> -> w;
             sum + w * x[column]
         }
     } -> ret;

@@ -158,7 +158,7 @@ fn dead_capture_of_the_state_in_a_loop_body_runs() {
 fn main() {
     16 -> iota -> ta;
     4 -> iota -> krange;
-    ta -> map { t -> t -> widen_f32 } -> a0;
+    ta -> map { t -> t -> widen<f32> } -> a0;
     mut x: [f32; 16] <- a0;
     mut it: i32 <- 0;
     loop {

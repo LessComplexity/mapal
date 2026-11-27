@@ -46,7 +46,7 @@ fn main() { }";
     let Item::Type(td) = &po.program.items[0] else {
         panic!("type item")
     };
-    assert_eq!(td.sizes.len(), 2);
+    assert_eq!(td.generics.len(), 2);
     assert_eq!(
         &src[td.fields[0].name.span.start as usize..td.fields[0].name.span.end as usize],
         "_"
@@ -64,7 +64,7 @@ fn main() { }";
 
 #[test]
 fn a_type_argument_that_is_a_type_stays_p0103() {
-    assert!(codes("fn f(x: Vec<f32>) { }").contains(&"P0103"));
+    assert!(codes("fn f(x: Vec<Pixel>) { }").contains(&"P0103"));
     assert!(codes("fn f(x: Result<T, E>) { }").contains(&"P0103"));
     assert!(codes("fn f(x: Wrap<[f32; 4]>) { }").contains(&"P0103"));
     assert!(!codes("fn f(x: Wrap<n, 4>) { }").contains(&"P0103"));

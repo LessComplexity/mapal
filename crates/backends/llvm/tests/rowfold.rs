@@ -23,8 +23,8 @@ fn program(tail: &str) -> String {
         "fn main() {{
     {nn} -> iota -> ta;
     {N} -> iota -> krange;
-    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> a;
-    ta -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 }} -> b;
+    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 }} -> a;
+    ta -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen<f32> -> v; v / 9.0 }} -> b;
     ta -> map {{ t ->
         t / {N} -> i;
         t % {N} -> j;

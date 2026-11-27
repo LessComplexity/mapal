@@ -83,9 +83,9 @@ for f in "$OUT"/tiles/*.mapal; do
     case " ${DEFAULT:-} " in *" $(basename "$b") "*)
         if [ ! -s "${b}_xabs.expect" ] && python3 -c 'import re, sys
 s = open(sys.argv[1]).read()
-o, n = re.subn(r"-> widen_(f32|f64) -> (\w+); \2 / ([0-9.]+) \}",
-              r"-> widen_\1 -> \2; (\2 > 0.0) -> { -true-> \2; -false-> 0.0 - \2; } -> va; va / \3 }", s)
-rest = re.sub(r"[^\n]*widen_f(32|64)[^\n]*", "", s)
+o, n = re.subn(r"-> ((?:widen|to)<f(?:32|64)>) -> (\w+); \2 / ([0-9.]+) \}",
+              r"-> \1 -> \2; (\2 > 0.0) -> { -true-> \2; -false-> 0.0 - \2; } -> va; va / \3 }", s)
+rest = re.sub(r"[^\n]*(?:widen|to)<f(32|64)>[^\n]*", "", s)
 sys.exit(1 if n == 0 or " - " in rest or "max" in rest or "exp" in rest else open(sys.argv[2], "w").write(o) * 0)' \
                 "$f" "${b}_xabs.mapal"; then
             "$EMIT" "${b}_xabs.mapal" - --rewrite --exact --target=apple-m > "${b}_xabs.cpu.ll"

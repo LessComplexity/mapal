@@ -13,7 +13,7 @@ import sys
 
 def gen(n: int, width: str = "f64") -> str:
     nn = n * n
-    widen = f"widen_{width}"
+    widen = f"widen<{width}>"
     return f"""fn main() {{
     {nn} -> iota -> ta;
     ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> {widen} }} -> a;

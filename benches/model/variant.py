@@ -9,9 +9,11 @@ scores and the weighted sum of values) ADR-0041's compute-precision permission `
 may be rounded to bf16, the sums kept in f32 — the class the competitors compute in (bf16 activations, f32
 accumulation). Without it the program is Mapal's default face: f32 activations on the bf16 weights.
 
-`--cache bf16` stores the key/value cache in bf16, as the competitors keep it: `KeyValueCache`'s arrays are
-`[bf16; cache_size]`, `write_rows` rounds each new row once (`-> to_bf16`) and `attend` widens each cached element
-it reads (`-> widen_f32`, exact). The bf16 class (`--compute bf16`) takes it unless `--cache f32` is given.
+`--cache bf16` stores the key/value cache in bf16, as the competitors keep it: the program's one choice of the
+cache's format (`main`'s `0.0 -> to<f32> -> zero;`, ADR-0051) becomes `to<bf16>` — `KeyValueCache<element>` is then
+`[bf16; cache_size]`, `write_rows` rounds each new row once (`-> to<element>`) and `attend` widens each cached element
+it reads (`-> widen<f32>`, exact); in the f32 class both conversions are identities. The bf16 class
+(`--compute bf16`) takes it unless `--cache f32` is given.
 """
 import os
 import re
@@ -41,7 +43,7 @@ def main():
         assert n == 1, f"no top-level binding `{name}`"
     if compute:
         # the three sums of products: `project`'s fold and `attend`'s two folds over the head and the context
-        s, n = re.subn(r"\(0\.0, (along|dimensions|past_positions)\) -> fold \{(\s+sum, (?:column|d|past) ->\s+(?:weight|sum \+ query|\(layer))",
+        s, n = re.subn(r"\(0\.0, (along|dimensions|past_positions)\) -> fold \{(\s+sum, (?:column|d|past) ->\s+(?:weight|query|\(layer))",
                        rf"(0.0, \1) -> fold: {compute} | f32 {{\2", s)
         assert n == 3, n
     if cache == "bf16":
@@ -50,30 +52,11 @@ def main():
 
 
 def bf16_cache(s):
-    """The key/value cache stored in bf16: its type, the rounding as a row is written, the widening as an element
-    is read, and the empty cache's zero."""
-    subs = [
-        ("    keys: [f32; cache_size],\n    values: [f32; cache_size],",
-         "    keys: [bf16; cache_size],\n    values: [bf16; cache_size],"),
-        ("fn write_rows<tokens>(cache: [f32; cache_size], rows: [f32; tokens * key_value_size], layer: i32, "
-         "first_position: i32) -> [f32; cache_size] {",
-         "fn write_rows<tokens>(cache: [bf16; cache_size], rows: [f32; tokens * key_value_size], layer: i32, "
-         "first_position: i32) -> [bf16; cache_size] {"),
-        ("            -true-> rows[t * key_value_size + cell % key_value_size];",
-         "            -true-> rows[t * key_value_size + cell % key_value_size] -> to_bf16;"),
-        ("                    sum, d -> sum + query[token_head * head_size + d] * cache.keys[key_row * head_size + d]",
-         "                    sum, d ->\n                    cache.keys[key_row * head_size + d] -> widen_f32 -> key;\n"
-         "                    sum + query[token_head * head_size + d] * key"),
-        ("            sum + exponentials[token_head * context_length + past] * cache.values[value_row * head_size + d]",
-         "            cache.values[value_row * head_size + d] -> widen_f32 -> value;\n"
-         "            sum + exponentials[token_head * context_length + past] * value"),
-        ("    (0.0, cache_size) -> fill -> nothing_cached;",
-         "    0.0 -> to_bf16 -> zero;\n    (zero, cache_size) -> fill -> nothing_cached;"),
-    ]
-    for old, new in subs:
-        assert s.count(old) == 1, old
-        s = s.replace(old, new)
-    return s
+    """The key/value cache stored in bf16: the format `main` chooses for it (ADR-0051: every function over the
+    cache takes its format as a parameter, inferred from the cache)."""
+    old, new = "    0.0 -> to<f32> -> zero;", "    0.0 -> to<bf16> -> zero;"
+    assert s.count(old) == 1, old
+    return s.replace(old, new)
 
 
 if __name__ == "__main__":

@@ -53,17 +53,17 @@ fn main() {
 
     "bf16.bin" -> read -> brain_floats: [bf16; 8];
     brain_floats -> map {
-        b -> b -> widen_f32 -> wide;
+        b -> b -> widen<f32> -> wide;
         wide * 2.0
     } -> doubled_brain;
     doubled_brain[0] -> println;
     doubled_brain[2] -> println;
     doubled_brain[3] -> println;
-    brain_floats[4] -> widen_f32 -> println;
+    brain_floats[4] -> widen<f32> -> println;
 
     "f16.bin" -> read -> half_floats: [f16; 8];
     half_floats -> map {
-        h -> h -> widen_f64
+        h -> h -> widen<f64>
     } -> wide_halves;
     wide_halves[2] -> println;
     wide_halves[3] -> println;

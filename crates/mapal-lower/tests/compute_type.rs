@@ -22,7 +22,7 @@ fn sets(src: &str) -> (usize, usize) {
     (on, muls.len() - on)
 }
 
-const ARR: &str = "4 -> iota -> r; r -> map { t -> t -> widen_f32 -> v; v * 3.0 } -> a;";
+const ARR: &str = "4 -> iota -> r; r -> map { t -> t -> widen<f32> -> v; v * 3.0 } -> a;";
 
 #[test]
 fn step_form_covers_its_own_body_only() {
@@ -150,10 +150,10 @@ fn narrow_members() {
 fn precision_plan_store_narrow() {
     let gemv = |set: &str, extra: &str| {
         format!(
-            "fn main() {{ 64 -> iota -> ia; ia -> map {{ t -> t -> widen_f32 -> v; v / 7.0 }} -> a;
-               256 -> iota -> ib; ib -> map {{ t -> t -> widen_f32 -> v; v / 9.0 -> to_bf16 }} -> w;
+            "fn main() {{ 64 -> iota -> ia; ia -> map {{ t -> t -> widen<f32> -> v; v / 7.0 }} -> a;
+               256 -> iota -> ib; ib -> map {{ t -> t -> widen<f32> -> v; v / 9.0 -> to<bf16> }} -> w;
                4 -> iota -> o; 64 -> iota -> kk;
-               o -> map {{ j -> (0.0, kk) -> fold{set} {{ acc, q -> w[q * 4 + j] -> widen_f32 -> y; acc + a[q] * y }} }} -> c;
+               o -> map {{ j -> (0.0, kk) -> fold{set} {{ acc, q -> w[q * 4 + j] -> widen<f32> -> y; acc + a[q] * y }} }} -> c;
                c[0] -> println; {extra} }}"
         )
     };
@@ -225,14 +225,14 @@ fn precision_plan_store_narrow() {
                         -false-> z -> zz;
                     }}
                 }}
-                zz -> widen_f32 -> zf;
+                zz -> to<f32> -> zf;
                 64 -> iota -> ia;
-                ia -> map {{ t -> t -> widen_f32 -> v; v / 7.0 + zf }} -> a;
+                ia -> map {{ t -> t -> widen<f32> -> v; v / 7.0 + zf }} -> a;
                 256 -> iota -> ib;
-                ib -> map {{ t -> t -> widen_f32 -> v; v / 9.0 -> to_bf16 }} -> w;
+                ib -> map {{ t -> t -> widen<f32> -> v; v / 9.0 -> to<bf16> }} -> w;
                 4 -> iota -> o;
                 64 -> iota -> kk;
-                o -> map {{ j -> (0.0, kk) -> fold: bf16 | f32 {{ acc, q -> w[q * 4 + j] -> widen_f32 -> y; acc + a[q] * y }} }} -> c;
+                o -> map {{ j -> (0.0, kk) -> fold: bf16 | f32 {{ acc, q -> w[q * 4 + j] -> widen<f32> -> y; acc + a[q] * y }} }} -> c;
                 {read}
             }}
             fn main() {{ 3 -> mk -> r; {print} }}",

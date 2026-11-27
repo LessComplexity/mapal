@@ -24,7 +24,7 @@ use mapal_ir::CategoryIr;
 const TRANSPOSE_16: &str = r#"
 fn main() {
     256 -> iota -> ia;
-    ia -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 } -> a;
+    ia -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> } -> a;
     256 -> iota -> ib;
     ib -> map { t -> a[(t % 16) * 16 + t / 16] } -> b;
     b[0] -> println;
@@ -39,8 +39,8 @@ fn main() {
 const MATMUL_16: &str = r#"
 fn main() {
     256 -> iota -> tq;
-    tq -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 } -> q;
-    tq -> map { t -> (t * 5 + 29) % 101 - 50 -> widen_f32 } -> kt;
+    tq -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> } -> q;
+    tq -> map { t -> (t * 5 + 29) % 101 - 50 -> widen<f32> } -> kt;
     16 -> iota -> kr;
     tq -> map { t ->
         t / 16 -> i;
@@ -208,7 +208,7 @@ fn move_panel_is_a_bijection_of_the_iteration_space() {
 const TRANSPOSE_1024: &str = r#"
 fn main() {
     1048576 -> iota -> ia;
-    ia -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 } -> a;
+    ia -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> } -> a;
     1048576 -> iota -> ib;
     ib -> map { t -> a[(t % 1024) * 1024 + t / 1024] } -> b;
     b[0] -> println;

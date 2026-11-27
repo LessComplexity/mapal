@@ -119,7 +119,7 @@ fn head() -> String {
 
 fn operand(name: &str, mul: u32) -> String {
     format!(
-        "    ta -> map {{ t -> (t * {mul} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> {name};\n"
+        "    ta -> map {{ t -> (t * {mul} + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 }} -> {name};\n"
     )
 }
 
@@ -284,7 +284,7 @@ fn an_operand_only_the_host_holds_keeps_the_map_on_the_host() {
     // cell may build it, and copying it in for one map is the host loop's
     // cost moved, not removed.
     let src = head()
-        + "    ta -> map { t -> (t * 7 + 13) / (t % 5 + 1) -> widen_f32 } -> u;\n"
+        + "    ta -> map { t -> (t * 7 + 13) / (t % 5 + 1) -> widen<f32> } -> u;\n"
         + "    u -> map { v -> v * 2.0 } -> w;\n"
         + &corners("w");
     let on = emit(&src, &[]);

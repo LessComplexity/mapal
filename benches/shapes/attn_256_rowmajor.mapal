@@ -4,19 +4,31 @@
 // and tiles: a mixed recognized/refused program.
 fn main() {
     65536 -> iota -> tq;
-    tq -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 } -> q;
-    tq -> map { t -> (t * 5 + 29) % 101 - 50 -> widen_f32 } -> kmat;
-    tq -> map { t -> (t * 3 + 41) % 101 - 50 -> widen_f32 } -> v;
+    tq -> map {
+        t -> (t * 7 + 13) % 101 - 50 -> widen<f32>
+    } -> q;
+    tq -> map {
+        t -> (t * 5 + 29) % 101 - 50 -> widen<f32>
+    } -> kmat;
+    tq -> map {
+        t -> (t * 3 + 41) % 101 - 50 -> widen<f32>
+    } -> v;
     256 -> iota -> kr;
-    tq -> map { t ->
+    tq -> map {
+        t ->
         t / 256 -> i;
         t % 256 -> j;
-        (0.0, kr) -> fold { acc, k -> acc + q[i * 256 + k] * kmat[j * 256 + k] }
+        (0.0, kr) -> fold {
+            acc, k -> acc + q[i * 256 + k] * kmat[j * 256 + k]
+        }
     } -> s;
-    tq -> map { t ->
+    tq -> map {
+        t ->
         t / 256 -> i;
         t % 256 -> j;
-        (0.0, kr) -> fold { acc, k -> acc + s[i * 256 + k] * v[k * 256 + j] }
+        (0.0, kr) -> fold {
+            acc, k -> acc + s[i * 256 + k] * v[k * 256 + j]
+        }
     } -> o;
     o[0] -> println;
     o[65535] -> println;

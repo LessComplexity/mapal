@@ -56,7 +56,7 @@ fn one_map(body: &str) -> String {
 
 #[test]
 fn piecewise_maps_have_an_outside() {
-    let new = "{ c -> widen_f32 -> f; f + x[c] }";
+    let new = "{ c -> widen<f32> -> f; f + x[c] }";
     let all = u64::MAX;
     // (d, a, b, step, len)
     let cases: [(&str, Option<(u64, i64, i64, u64, u64)>); 10] = [
@@ -181,7 +181,7 @@ fn range_map_at_the_edges_matches_the_oracle() {
     let rows = "fn main() {
     256 -> iota -> tc;
     16 -> iota -> krange;
-    tc -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 256.0 } -> w;
+    tc -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 256.0 } -> w;
     (0.25, 256) -> fill -> x0;
     mut x: [f32; 256] <- x0;
     mut z: [f32; 256] <- x0;
@@ -189,7 +189,7 @@ fn range_map_at_the_edges_matches_the_oracle() {
     loop {
         (t < 18) -> {
             -true-> {
-                tc -> map { c -> (c / 16 == t) -> { -true-> { c -> widen_f32 -> f; f / 16.0 + z[c] } -false-> x[c]; } } -> x;
+                tc -> map { c -> (c / 16 == t) -> { -true-> { c -> widen<f32> -> f; f / 16.0 + z[c] } -false-> x[c]; } } -> x;
                 tc -> map { c -> (c >= t * 16 - 3 && c < t * 16 + 2) -> { -true-> { x[c] * 0.5 + 1.0 } -false-> x[c]; } } -> x;
                 tc -> map { c -> c / 16 -> i; c % 16 -> j; (0.0, krange) -> fold { acc, k -> acc + x[i * 16 + k] * w[k * 16 + j] } } -> y;
                 y -> map { v -> v * 0.125 + 0.5 } -> z;
@@ -208,8 +208,8 @@ fn range_map_at_the_edges_matches_the_oracle() {
 ";
     // The column write: `c % 16 == t` matches nothing for `t < 0` or `t ≥ 16`.
     let column = rows.replace(
-        "(c / 16 == t) -> { -true-> { c -> widen_f32 -> f; f / 16.0 + z[c] } -false-> x[c]; }",
-        "(c % 16 == t) -> { -true-> { c -> widen_f32 -> f; f / 16.0 + z[c] } -false-> x[c]; }",
+        "(c / 16 == t) -> { -true-> { c -> widen<f32> -> f; f / 16.0 + z[c] } -false-> x[c]; }",
+        "(c % 16 == t) -> { -true-> { c -> widen<f32> -> f; f / 16.0 + z[c] } -false-> x[c]; }",
     );
     // A range wider than the array: its delta is never an upload's.
     let wide = rows.replace(
@@ -248,7 +248,7 @@ fn range_map_over_a_shared_init_copies_it_at_the_entry() {
     };
     let src = "fn main() {
     65 -> iota -> ix;
-    ix -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 9.0 } -> n0;
+    ix -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 9.0 } -> n0;
     mut s1: [f32; 65] <- n0;
     mut i1: i32 <- 0;
     loop {
@@ -296,8 +296,8 @@ fn a_fold_over_a_range_stays_in_the_cell() {
             "fn main() {{
     4096 -> iota -> ta;
     64 -> iota -> krange;
-    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> a;
-    ta -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 }} -> b;
+    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 }} -> a;
+    ta -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen<f32> -> v; v / 9.0 }} -> b;
     ta -> map {{ t -> t / 64 -> i; t % 64 -> j; (0.0, krange) -> fold {{ acc, k -> acc + a[i * 64 + k] * b[k * 64 + j] }} }} -> c;
     krange -> map {{ i -> (-1000000000.0, krange) -> fold {{ acc, j -> c[i * 64 + j] -> e; (e > acc) -> {{ -true-> e; -false-> acc; }} }} }} -> mx;
     ta -> map {{ t -> (c[t] - mx[t / 64]) / 64.0 -> x; x / 256.0 + 1.0 -> u; (u > 0.0) -> {{ -true-> u; -false-> 0.0; }} -> v0; {ex} }} -> ex;

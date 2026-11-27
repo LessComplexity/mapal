@@ -2819,7 +2819,7 @@ mod place_tests {
 
     fn law(name: &str, len: u64, mul: u64) -> String {
         format!(
-            "    {len} -> iota -> i_{name};\n    i_{name} -> map {{ t -> (t * {mul} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> {name};\n"
+            "    {len} -> iota -> i_{name};\n    i_{name} -> map {{ t -> (t * {mul} + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 }} -> {name};\n"
         )
     }
 

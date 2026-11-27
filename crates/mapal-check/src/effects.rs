@@ -154,8 +154,15 @@ impl Walk<'_> {
                 StageKind::Expr(e) => {
                     // A bare Var in stage position not shadowed by a local is a
                     // call/builtin use; classify it as an effect site.
-                    if let ExprKind::Var(n) = &e.kind {
-                        let text = name_text(self.source, *n);
+                    // ADR-0051 D2: a stage with explicit arguments
+                    // (`-> attend<64, bf16>`) calls its generic function.
+                    let callee = match &e.kind {
+                        ExprKind::Var(n) => Some(*n),
+                        ExprKind::Generic { name, .. } => Some(*name),
+                        _ => None,
+                    };
+                    if let Some(n) = callee {
+                        let text = name_text(self.source, n);
                         if !scope.contains(text) {
                             self.classify_stage_call(text, n.span, in_fanout);
                         }

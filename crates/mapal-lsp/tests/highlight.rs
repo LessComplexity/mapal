@@ -109,7 +109,9 @@ fn static_name(
             .filter(|t| line(t) == here && t.kind != TokenKind::Eof)
     };
     let kind = |t: Option<&Token>| t.map(|t| t.kind);
-    if mapal_lower::is_builtin(w) {
+    // A removed conversion name (ADR-0051 D6) stays reserved: shown as the
+    // builtin it was (its use is the compiler's L1713).
+    if mapal_lower::is_builtin(w) || mapal_lower::removed_builtin(w).is_some() {
         return "builtin";
     }
     if mapal_lower::SCALAR_TYPES.contains(&w) || mapal_lower::PRECISION_MEMBERS.contains(&w) {
@@ -120,6 +122,13 @@ fn static_name(
     }
     if kind(prev(1)) == Some(TokenKind::KwFn) {
         return "function-declaration";
+    }
+    // ADR-0051 D1: a kind word after the colon of a declared parameter.
+    if in_size
+        && matches!(w, "float" | "narrow" | "int" | "number")
+        && kind(prev(1)) == Some(TokenKind::Colon)
+    {
+        return "primitive";
     }
     if in_size {
         return "size";
@@ -178,8 +187,9 @@ fn rows(src: &str) -> Vec<Row> {
             },
         });
     };
-    // Size lists: `<` after `fn name` / `type Name`, or after a PascalCase
-    // name (a generic type's sizes), to its `>`.
+    // Size lists: `<` after `fn name` / `type Name`, after a PascalCase
+    // name (a generic type's sizes) or after a stage name behind an arrow
+    // (`-> to<bf16>`, ADR-0051 D2), to its `>`.
     let mut size_depth = 0usize;
     for (i, t) in toks.iter().enumerate() {
         let text = &src[t.span.start as usize..t.span.end as usize];
@@ -191,7 +201,11 @@ fn rows(src: &str) -> Vec<Row> {
             && i >= 1
             && toks[i - 1].kind == TokenKind::Ident
             && (prev_text(1).is_some_and(|p| p.starts_with(|c: char| c.is_ascii_uppercase()))
-                || (i >= 2 && matches!(toks[i - 2].kind, TokenKind::KwFn | TokenKind::KwType)));
+                || (i >= 2
+                    && matches!(
+                        toks[i - 2].kind,
+                        TokenKind::KwFn | TokenKind::KwType | TokenKind::Arrow
+                    )));
         match t.kind {
             TokenKind::Ident => {
                 let class = named.get(&t.span.start).map_or(
@@ -444,7 +458,10 @@ fn semantic_tokens_match_the_fixture() {
 /// The names both grammars hard-code are the language's.
 #[test]
 fn grammar_name_lists_are_the_languages() {
+    // The builtins and the removed conversion names (ADR-0051 D6), reserved
+    // and highlighted as the builtins they were.
     let mut builtins: Vec<&str> = mapal_lower::builtin_names();
+    builtins.extend(mapal_lower::REMOVED_BUILTINS);
     builtins.sort_unstable();
     let mut prims: Vec<&str> = mapal_lower::SCALAR_TYPES.to_vec();
     prims.extend(mapal_lower::PRECISION_MEMBERS);

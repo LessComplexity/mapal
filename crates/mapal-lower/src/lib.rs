@@ -12,9 +12,11 @@
 //! ⇒ `lower` never panics or hangs. Determinism is sacred (DESIGN §11): no
 //! `HashMap` iteration affects emission order — `BTreeMap`/`Vec` throughout.
 
+mod convert;
 mod diag;
 mod effects;
 mod emit;
+mod formats;
 mod globals;
 mod scope;
 mod sizes;
@@ -27,6 +29,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use mapal_syntax::{Diagnostic, Program};
 
 use crate::diag::{LCode, diag};
+use crate::formats::Arg;
 use crate::globals::Globals;
 use crate::sizes::{Generics, Instance, SiteKey};
 use crate::tys::name_text;
@@ -139,9 +142,9 @@ fn evaluate_globals(source: &str, program: &Program, g: &mut Globals, diags: &mu
     let main_name = syn::Name {
         span: syn::SourceLoc::new(source.len() as u32 + 1, source.len() as u32 + 5),
     };
-    let own = |d: &[syn::Name]| -> BTreeSet<String> {
+    let own = |d: &[syn::GenericParam]| -> BTreeSet<String> {
         d.iter()
-            .map(|x| name_text(source, *x).to_string())
+            .map(|x| name_text(source, x.name).to_string())
             .collect()
     };
     let mut all_const = vec![false; n];
@@ -174,7 +177,7 @@ fn evaluate_globals(source: &str, program: &Program, g: &mut Globals, diags: &mu
                 .iter()
                 .filter(|t| {
                     let (nm, td) = &tys[*t];
-                    let params = own(&td.sizes);
+                    let params = own(&td.generics);
                     nm.sizes
                         .iter()
                         .all(|s| g.sizes.contains_key(s) || params.contains(s))
@@ -198,7 +201,7 @@ fn evaluate_globals(source: &str, program: &Program, g: &mut Globals, diags: &mu
                 .iter()
                 .filter(|f| {
                     let (nm, fd) = &fns[*f];
-                    let params = own(&fd.sizes);
+                    let params = own(&fd.generics);
                     nm.sizes
                         .iter()
                         .all(|s| g.sizes.contains_key(s) || params.contains(s))
@@ -283,7 +286,7 @@ fn evaluate_globals(source: &str, program: &Program, g: &mut Globals, diags: &mu
         };
         items.push(syn::Item::Fn(syn::FnDecl {
             name: main_name,
-            sizes: Vec::new(),
+            generics: Vec::new(),
             params: Vec::new(),
             ret_ty: None,
             body,
@@ -416,11 +419,11 @@ fn lower_with(
                 }
                 if name == "main" {
                     has_main = true;
-                    if !fd.sizes.is_empty() {
+                    if !fd.generics.is_empty() {
                         diags.push(diag(
                             LCode::MainShape,
                             fd.name.span,
-                            "`main` takes no size parameters",
+                            "`main` takes no generic parameters",
                         ));
                     }
                     if !fd.params.is_empty() || fd.ret_ty.is_some() {
@@ -449,11 +452,11 @@ fn lower_with(
     if !has_main {
         diags.push(diag(LCode::NoMain, program.span, "no `fn main`"));
     }
-    // ADR-0047 D1: the size-generic functions' declarations.
+    // ADR-0047 D1 / ADR-0051 D1: the generic functions' declarations.
     let mut generics: Generics = BTreeMap::new();
     for item in &program.items {
         if let mapal_syntax::Item::Fn(fd) = item
-            && !fd.sizes.is_empty()
+            && !fd.generics.is_empty()
         {
             sizes::check_decl(source, fd, &fn_names, &globals.sizes, globals, &mut diags);
             generics
@@ -491,8 +494,8 @@ fn lower_with(
     // calls was declared. A program without generic functions takes one round
     // (the original pipeline).
     let mut seeds: BTreeSet<Instance> = BTreeSet::new();
-    let mut sites: BTreeMap<SiteKey, Vec<u64>> = BTreeMap::new();
-    let mut last_ok: Option<mapal_ir::CategoryIr> = None;
+    let mut sites: BTreeMap<SiteKey, Vec<Arg>> = BTreeMap::new();
+    let mut last_ok: Option<(mapal_ir::CategoryIr, Vec<convert::WidenCheck>)> = None;
     for _ in 0..MAX_ROUNDS {
         let mut round_diags = diags.clone();
         let mut sigs = fn_sigs.clone();
@@ -537,7 +540,8 @@ fn lower_with(
             },
         );
         if generics.is_empty() {
-            return result;
+            let widens = std::mem::take(&mut log.borrow_mut().widens);
+            return result.and_then(|ir| proven(ir, &widens));
         }
         let log = log.into_inner();
         let declared: BTreeSet<Instance> = instances
@@ -557,23 +561,34 @@ fn lower_with(
         }
         match result {
             Err(d) => return Err(d),
-            Ok(ir) if log.called == declared => return Ok(ir),
+            Ok(ir) if log.called == declared => return proven(ir, &log.widens),
             Ok(ir) => {
                 // An instance no call reaches (the typing walk's inference
                 // disagreed with emission's somewhere upstream): drop it.
-                last_ok = Some(ir);
+                last_ok = Some((ir, log.widens.clone()));
                 sites.extend(log.sites.clone());
                 seeds = log.called.clone();
             }
         }
     }
-    last_ok.ok_or_else(|| {
+    let (ir, widens) = last_ok.ok_or_else(|| {
         vec![diag(
             LCode::Internal,
             program.span,
             "size inference did not settle (ADR-0047 D5)",
         )]
-    })
+    })?;
+    proven(ir, &widens)
+}
+
+/// ADR-0051 D4: the sealed IR, once the facts prove every logged `widen`
+/// exact ([`convert::check`]).
+fn proven(
+    ir: mapal_ir::CategoryIr,
+    widens: &[convert::WidenCheck],
+) -> Result<mapal_ir::CategoryIr, Vec<Diagnostic>> {
+    let d = convert::check(&ir, widens);
+    if d.is_empty() { Ok(ir) } else { Err(d) }
 }
 
 /// One typing round (D1 over every fixed-size function, then every instance
@@ -587,14 +602,14 @@ fn type_round(
     types: &tys::TypeTable,
     effects: &effects::Effects,
     generics: &Generics,
-    sites: &BTreeMap<SiteKey, Vec<u64>>,
+    sites: &BTreeMap<SiteKey, Vec<Arg>>,
     seeds: &BTreeSet<Instance>,
     sigs: &mut BTreeMap<String, typing::FnSig>,
     diags: &mut Vec<Diagnostic>,
 ) -> (
     BTreeMap<String, typing::TypeInfo>,
-    BTreeMap<String, Vec<(Vec<u64>, String)>>,
-    BTreeMap<SiteKey, Vec<u64>>,
+    BTreeMap<String, Vec<(Vec<Arg>, String)>>,
+    BTreeMap<SiteKey, Vec<Arg>>,
     usize,
 ) {
     enum Unit<'a> {
@@ -604,7 +619,7 @@ fn type_round(
     let mut queue: VecDeque<Unit> = VecDeque::new();
     for item in &program.items {
         if let mapal_syntax::Item::Fn(fd) = item
-            && fd.sizes.is_empty()
+            && fd.generics.is_empty()
         {
             queue.push_back(Unit::Fixed(fd));
         }
@@ -616,7 +631,7 @@ fn type_round(
         }
     }
     let mut typing_info: BTreeMap<String, typing::TypeInfo> = BTreeMap::new();
-    let mut used: BTreeMap<SiteKey, Vec<u64>> = BTreeMap::new();
+    let mut used: BTreeMap<SiteKey, Vec<Arg>> = BTreeMap::new();
     let mut unresolved = 0;
     let mut instance_diags: Vec<Diagnostic> = Vec::new();
     while let Some(unit) = queue.pop_front() {
@@ -631,7 +646,7 @@ fn type_round(
                 let Some(fd) = generics.get(g).copied() else {
                     continue;
                 };
-                let env = sizes::env_of(source, fd, vs, types.base_env());
+                let env = sizes::env_of(source, &fd.generics, vs, types.base_env());
                 let Some(sig) =
                     sizes::instance_sig(source, types, fd, &env, effects.is_effectful(g))
                 else {
@@ -681,7 +696,7 @@ fn type_round(
         }
     }
     diags.extend(instance_diags);
-    let mut instances: BTreeMap<String, Vec<(Vec<u64>, String)>> = BTreeMap::new();
+    let mut instances: BTreeMap<String, Vec<(Vec<Arg>, String)>> = BTreeMap::new();
     for (g, vs) in known {
         let name = sizes::instance_name(&g, &vs);
         if typing_info.contains_key(&name) {
@@ -701,24 +716,12 @@ pub(crate) fn is_print_builtin(name: &str) -> bool {
 }
 
 /// Pure bare-stage builtins (ADR-0018/ADR-0029). Resolved by name like
-/// `print`/`println`, but token-free and legal in parallel fanout.
+/// `print`/`println`, but token-free and legal in parallel fanout. ADR-0051:
+/// the conversions `to` and `widen` (generic builtins, `x -> to<bf16>`).
 pub(crate) fn is_pure_builtin(name: &str) -> bool {
     matches!(name, "zip" | "enumerate" | "iota" | "fill")
         || mapal_ir::MathFn::from_name(name).is_some()
-        || widen_target(name).is_some()
-        || narrow_target(name).is_some()
-}
-
-/// ADR-0043: the narrow format a rounding builtin (`to_bf16`, `to_f16`)
-/// produces.
-pub(crate) fn narrow_target(name: &str) -> Option<mapal_ir::NarrowFloat> {
-    match name {
-        "to_bf16" => Some(mapal_ir::NarrowFloat::Bf16),
-        "to_f16" => Some(mapal_ir::NarrowFloat::F16),
-        "to_f8e4m3" => Some(mapal_ir::NarrowFloat::F8e4m3),
-        "to_f8e5m2" => Some(mapal_ir::NarrowFloat::F8e5m2),
-        _ => None,
-    }
+        || formats::Verb::from_name(name).is_some()
 }
 
 /// The `time` stage builtin (plan-time-builtin): effectful like `print` (it
@@ -736,16 +739,6 @@ pub(crate) fn is_read_builtin(name: &str) -> bool {
     name == "read"
 }
 
-/// Target type selected by an ADR-0029 widening builtin name.
-pub(crate) fn widen_target(name: &str) -> Option<mapal_ir::Ty> {
-    match name {
-        "widen_i64" => Some(mapal_ir::Ty::i64()),
-        "widen_f32" => Some(mapal_ir::Ty::f32()),
-        "widen_f64" => Some(mapal_ir::Ty::f64()),
-        _ => None,
-    }
-}
-
 /// The scalar type names (`resolve` in `tys`): the primitive types a program
 /// writes. Editor tooling (the language server, the static grammars' tests)
 /// reads this list instead of keeping its own.
@@ -758,8 +751,8 @@ pub const SCALAR_TYPES: [&str; 10] = [
 pub const PRECISION_MEMBERS: [&str; 4] = ["f32", "tf32", "bf16", "f16"];
 
 /// Every stage builtin by name — the print family, `time`, `read` and the pure
-/// builtins (collection ops, sources, the math builtins, widening and
-/// narrowing) — in the order editor tooling lists them. Each name satisfies
+/// builtins (collection ops, sources, the math builtins, the generic
+/// conversions `widen<target>` / `to<target>` of ADR-0051) — in the order editor tooling lists them. Each name satisfies
 /// exactly the predicate lowering dispatches on (test `builtin_names_dispatch`).
 pub fn builtin_names() -> Vec<&'static str> {
     let mut names = vec![
@@ -773,16 +766,27 @@ pub fn builtin_names() -> Vec<&'static str> {
         "fill",
     ];
     names.extend(mapal_ir::MathFn::ALL.iter().map(|f| f.name()));
-    names.extend([
-        "widen_i64",
-        "widen_f32",
-        "widen_f64",
-        "to_bf16",
-        "to_f16",
-        "to_f8e4m3",
-        "to_f8e5m2",
-    ]);
+    names.extend([formats::Verb::Widen.name(), formats::Verb::To.name()]);
     names
+}
+
+/// ADR-0051 D6: the removed format-named conversions. Each stays reserved
+/// (L1009; its use is L1713, naming [`removed_builtin`]'s replacement), so
+/// editor tooling shows it as the builtin it was, never as a fresh binding.
+pub const REMOVED_BUILTINS: [&str; 7] = [
+    "widen_i64",
+    "widen_f32",
+    "widen_f64",
+    "to_bf16",
+    "to_f16",
+    "to_f8e4m3",
+    "to_f8e5m2",
+];
+
+/// The replacement of a removed conversion name (`to_bf16` → `to<bf16>`,
+/// `widen_f32` → `widen<f32>`); `None` for any other name.
+pub fn removed_builtin(name: &str) -> Option<String> {
+    formats::removed(name).map(|(verb, format)| format!("{}<{format}>", verb.name()))
 }
 
 /// Whether `name` is a stage builtin (any of [`builtin_names`]).
@@ -793,10 +797,12 @@ pub fn is_builtin(name: &str) -> bool {
         || is_read_builtin(name)
 }
 
-/// Whether a name is reserved (L1009): stage builtins or a scalar type name.
+/// Whether a name is reserved (L1009): stage builtins, a scalar type name,
+/// or a removed conversion name (ADR-0051 D6 — its use is L1713).
 pub(crate) fn is_reserved(name: &str) -> bool {
     is_print_builtin(name)
         || is_pure_builtin(name)
+        || formats::removed(name).is_some()
         || is_time_builtin(name)
         || is_read_builtin(name)
         || SCALAR_TYPES.contains(&name)
@@ -825,8 +831,17 @@ mod builtin_list_tests {
             assert!(is_reserved(t) && !is_builtin(t));
         }
         // Spot-check names lowering accepts that a stale list would miss.
-        for n in ["sqrt", "sin", "cos", "exp", "to_f8e5m2", "read", "time"] {
+        for n in ["sqrt", "sin", "cos", "exp", "to", "widen", "read", "time"] {
             assert!(names.contains(&n), "`{n}` missing from builtin_names");
         }
+        // ADR-0051 D6: the removed format-named conversions stay reserved (their
+        // use is L1713) but are not offered as builtins.
+        for n in REMOVED_BUILTINS {
+            assert!(is_reserved(n) && !names.contains(&n), "`{n}` is listed");
+            assert!(!is_builtin(n), "`{n}` still dispatches");
+        }
+        assert_eq!(removed_builtin("to_bf16").as_deref(), Some("to<bf16>"));
+        assert_eq!(removed_builtin("widen_f32").as_deref(), Some("widen<f32>"));
+        assert_eq!(removed_builtin("to"), None);
     }
 }

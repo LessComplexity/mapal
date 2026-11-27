@@ -21,7 +21,7 @@ fn prog(body: &str) -> String {
     );
     for (x, m) in [("a", 7), ("b", 11), ("e", 5), ("f", 3), ("g", 13)] {
         s += &format!(
-            "    ta -> map {{ t -> (t * {m} + 1) % 17 - 8 -> widen_f32 -> v; v / 4.0 }} -> {x};\n"
+            "    ta -> map {{ t -> (t * {m} + 1) % 17 - 8 -> widen<f32> -> v; v / 4.0 }} -> {x};\n"
         );
     }
     s + body + "    out[0] -> println;\n    out[15] -> println;\n}\n"

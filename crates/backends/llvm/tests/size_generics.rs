@@ -4,7 +4,9 @@
 //! the interpreter; with one instance per generic function the host text and
 //! the device unit are the twin's byte for byte (D5); over generated programs
 //! (`testgen::generic_prog_strategy`) the same values. No backend changed:
-//! monomorphization hands them ordinary fixed-size functions.
+//! monomorphization hands them ordinary fixed-size functions. ADR-0051: the
+//! same over generated format-generic programs
+//! (`testgen::format_prog_strategy`).
 
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -118,7 +120,7 @@ const PROJECT: &str =
     columns -> iota -> column_indices;
     rows -> iota -> map {
         row -> (0.0, column_indices) -> fold {
-            sum, column -> weight[row * columns + column] -> widen_f32 -> w;
+            sum, column -> weight[row * columns + column] -> widen<f32> -> w;
             sum + w * x[column]
         }
     } -> ret;
@@ -132,13 +134,13 @@ fn checksum<n>(y: [f32; n]) -> f32 {
 
 fn main() {
     8192 -> iota -> map {
-        i -> i % 7 - 3 -> widen_f32 -> * 0.25 -> to_bf16
+        i -> i % 7 - 3 -> widen<f32> -> * 0.25 -> to<bf16>
     } -> w;
     128 -> iota -> map {
-        i -> i % 5 -> widen_f32 -> + 1.0
+        i -> i % 5 -> widen<f32> -> + 1.0
     } -> x;
     64 -> iota -> map {
-        i -> i % 3 -> widen_f32
+        i -> i % 3 -> widen<f32>
     } -> x2;
     (w, x) -> project -> y;
     (w, x2) -> project -> z;
@@ -155,7 +157,7 @@ const PROJECT_HAND: &str = "fn project_64_128(weight: [bf16; 8192], x: [f32; 128
     128 -> iota -> column_indices;
     64 -> iota -> map {
         row -> (0.0, column_indices) -> fold {
-            sum, column -> weight[row * 128 + column] -> widen_f32 -> w;
+            sum, column -> weight[row * 128 + column] -> widen<f32> -> w;
             sum + w * x[column]
         }
     } -> ret;
@@ -165,7 +167,7 @@ fn project_128_64(weight: [bf16; 8192], x: [f32; 64]) -> [f32; 128] {
     64 -> iota -> column_indices;
     128 -> iota -> map {
         row -> (0.0, column_indices) -> fold {
-            sum, column -> weight[row * 64 + column] -> widen_f32 -> w;
+            sum, column -> weight[row * 64 + column] -> widen<f32> -> w;
             sum + w * x[column]
         }
     } -> ret;
@@ -185,13 +187,13 @@ fn checksum_128(y: [f32; 128]) -> f32 {
 
 fn main() {
     8192 -> iota -> map {
-        i -> i % 7 - 3 -> widen_f32 -> * 0.25 -> to_bf16
+        i -> i % 7 - 3 -> widen<f32> -> * 0.25 -> to<bf16>
     } -> w;
     128 -> iota -> map {
-        i -> i % 5 -> widen_f32 -> + 1.0
+        i -> i % 5 -> widen<f32> -> + 1.0
     } -> x;
     64 -> iota -> map {
-        i -> i % 3 -> widen_f32
+        i -> i % 3 -> widen<f32>
     } -> x2;
     (w, x) -> project_64_128 -> y;
     (w, x2) -> project_128_64 -> z;
@@ -217,10 +219,10 @@ const SQUARE: &str = "fn apply<n>(m: [f32; n * n], v: [f32; n]) -> [f32; n] {
 
 fn main() {
     9216 -> iota -> map {
-        i -> (i * 5 + 3) % 17 - 8 -> widen_f32 -> * 0.125
+        i -> (i * 5 + 3) % 17 - 8 -> widen<f32> -> * 0.125
     } -> m;
     96 -> iota -> map {
-        i -> i % 4 -> widen_f32
+        i -> i % 4 -> widen<f32>
     } -> v;
     (m, v) -> apply -> y;
     y[0] -> println;
@@ -239,10 +241,10 @@ const SQUARE_HAND: &str = "fn apply_96(m: [f32; 9216], v: [f32; 96]) -> [f32; 96
 
 fn main() {
     9216 -> iota -> map {
-        i -> (i * 5 + 3) % 17 - 8 -> widen_f32 -> * 0.125
+        i -> (i * 5 + 3) % 17 - 8 -> widen<f32> -> * 0.125
     } -> m;
     96 -> iota -> map {
-        i -> i % 4 -> widen_f32
+        i -> i % 4 -> widen<f32>
     } -> v;
     (m, v) -> apply_96 -> y;
     y[0] -> println;
@@ -330,4 +332,55 @@ fn generated_generic_programs_on_native_and_emulated_device() {
          {device} through the emulated device (3 modes each), {same_text} with the twin's text"
     );
     assert!(multi > 0 && device > 0 && same_text > 0);
+}
+
+/// ADR-0051: generated programs over helpers generic in a size and a format
+/// (explicit prefixes, inferred rest): the twin's values on the interpreter,
+/// the native CPU and the emulated device in every mode; with one instance
+/// per helper, the twin's host text and device unit.
+#[test]
+fn generated_format_generic_programs_on_native_and_emulated_device() {
+    let Some(clang) = emu::clang() else {
+        eprintln!("SKIP: clang not found");
+        return;
+    };
+    let n: usize = std::env::var("MAPAL_TESTGEN_N")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(24);
+    let mut runner = TestRunner::deterministic();
+    let strat = testgen::format_prog_strategy();
+    let progs: Vec<_> = (0..n)
+        .map(|_| strat.new_tree(&mut runner).unwrap().current())
+        .collect();
+    let [programs, device, same_text] = testgen::par_count(&progs, |_, p| {
+        let (src, hand) = (p.source(), p.hand());
+        let (g, h) = (lower(&src), lower(&hand));
+        let want = interp(&h, &hand);
+        assert_eq!(interp(&g, &src), want, "\n{src}");
+        assert_eq!(
+            native(&clang, &emission(&g, "generic").text),
+            want,
+            "\n{src}"
+        );
+        let em = emission(&g, "rtx-5080");
+        let dev = emulated(&clang, &em, &want, &src);
+        let single = p.renames().len()
+            == p.renames()
+                .iter()
+                .map(|r| r.0.split('<').next().unwrap_or("").to_string())
+                .collect::<std::collections::BTreeSet<_>>()
+                .len();
+        if single {
+            let eh = emission(&h, "rtx-5080");
+            assert_eq!(em.text, eh.text, "host text\n{src}");
+            assert_eq!(em.device, eh.device, "device unit\n{src}");
+        }
+        [1, usize::from(dev), usize::from(single)]
+    });
+    eprintln!(
+        "format generics (backends): {programs} programs, {device} through the emulated device \
+         (3 modes each), {same_text} with the twin's text"
+    );
+    assert!(device > 0 && same_text > 0);
 }

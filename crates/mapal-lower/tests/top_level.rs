@@ -45,7 +45,7 @@ fn sizes_and_values_from_top_level_bindings_in_any_order() {
     // computed from another binding (`/` is fine in a value).
     let src = "fn first(x: [f32; head_size]) -> f32 { x[0] -> ret; }
 fn main() {
-    head_size -> iota -> map { i -> i -> widen_f32 } -> h;
+    head_size -> iota -> map { i -> i -> widen<f32> } -> h;
     h -> first -> println;
     hidden_size -> println;
     head_size * 3 -> println;
@@ -66,7 +66,7 @@ fn an_unannotated_number_takes_its_width_from_context() {
 7 -> small;
 0.1 -> tenth;
 fn main() {
-    small -> widen_i64 -> a;
+    small -> widen<i64> -> a;
     a + big -> println;
     small + 1 -> println;
     1.5 -> f: f32;

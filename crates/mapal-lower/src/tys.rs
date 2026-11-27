@@ -10,6 +10,7 @@ use mapal_ir::{MAX_TY_DEPTH, Ty};
 use mapal_syntax::{self as syn, Program, Ty as SynTy, TyKind};
 
 use crate::diag::{LCode, diag};
+use crate::formats::Arg;
 use crate::globals::Globals;
 use crate::sizes::SizeEnv;
 
@@ -164,7 +165,7 @@ pub fn build(
     let mut map: BTreeMap<String, Ty> = BTreeMap::new();
     for td in &decl_order {
         let name = name_text(source, td.name).to_string();
-        if table.cyclic.contains(&name) || !td.sizes.is_empty() {
+        if table.cyclic.contains(&name) || !td.generics.is_empty() {
             continue;
         }
         if let Some(ty) = table.instantiate_at(source, td, &[], 0, &mut diags) {
@@ -175,8 +176,9 @@ pub fn build(
     (table, diags)
 }
 
-/// ADR-0048 D4: a size-generic type's declaration checks — each size name
-/// declared once (L1702), not a top-level name (L1802), used by a field
+/// ADR-0048 D4 / ADR-0051 D1: a generic type's declaration checks — each
+/// name declared once (L1702), not a top-level name (L1802), a format
+/// parameter's kind one of D1's (L1711), a size parameter used by a field
 /// (L1706); a field's size names are the type's sizes or top-level integers
 /// (else L1701, reported at resolution).
 fn check_type_sizes(
@@ -186,39 +188,19 @@ fn check_type_sizes(
     diags: &mut Vec<syn::Diagnostic>,
 ) {
     let tname = name_text(source, td.name);
-    let mut declared: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
-    for n in &td.sizes {
-        let text = name_text(source, *n);
-        if crate::is_reserved(text) {
-            diags.push(diag(
-                LCode::ReservedName,
-                n.span,
-                format!("`{text}` is a reserved name"),
-            ));
-        } else if globals.is_top(text) {
-            diags.push(diag(
-                LCode::TopNameReused,
-                n.span,
-                format!(
-                    "`{text}` is a top-level name; a size parameter of `{tname}` cannot reuse it"
-                ),
-            ));
-        } else if !declared.insert(text) {
-            diags.push(diag(
-                LCode::DuplicateSize,
-                n.span,
-                format!("size parameter `{text}` is declared twice"),
-            ));
-        }
+    crate::sizes::check_generic_names(source, &td.generics, tname, globals, diags);
+    let formats = crate::sizes::format_params(source, &td.generics);
+    for f in &td.fields {
+        crate::sizes::check_format_lengths(source, &f.ty, &formats, tname, diags);
     }
     let mut used = crate::globals::Names::default();
     used.type_decl(source, td);
-    for n in &td.sizes {
-        let text = name_text(source, *n);
+    for p in td.generics.iter().filter(|p| p.is_size()) {
+        let text = name_text(source, p.name);
         if !used.sizes.contains(text) {
             diags.push(diag(
                 LCode::SizeUnbound,
-                n.span,
+                p.name.span,
                 format!("size parameter `{text}` of `{tname}` appears in no field type"),
             ));
         }
@@ -380,21 +362,16 @@ fn resolve_tykind(
                 "f8e4m3" => Ty::f8e4m3(),
                 "f8e5m2" => Ty::f8e5m2(),
                 "bool" => Ty::Bool,
-                _ => table.named(source, text, n.span, &[], depth, diags)?,
+                // ADR-0051 D1: a format parameter at the instance's format.
+                _ => match env.format(text) {
+                    Some(f) => f.ty(),
+                    None => table.named(source, text, n.span, &[], depth, diags)?,
+                },
             }
         }
         TyKind::Generic { name, args } => {
             let text = name_text(source, *name);
-            let mut values = Vec::with_capacity(args.len());
-            for a in args {
-                match crate::sizes::eval(source, a, env) {
-                    Ok(v) => values.push(v),
-                    Err(d) => {
-                        diags.push(d);
-                        return None;
-                    }
-                }
-            }
+            let values = table.generic_args(source, text, name.span, args, env, diags)?;
             table.named(source, text, name.span, &values, depth, diags)?
         }
         TyKind::Tuple(ts) => {
@@ -457,14 +434,60 @@ fn resolve_tykind(
 }
 
 impl TypeTable {
-    /// A declared type at `values` (its sizes in declared order; empty for a
-    /// fixed-size type): L1809 when the count is wrong.
+    /// ADR-0048 D4 / ADR-0051 D2: a generic type's arguments at a use,
+    /// resolved against its declared list — a size parameter's size
+    /// expression evaluated under `env`, a format parameter's format name (or
+    /// the enclosing function's format parameter) within its kind. An
+    /// unknown type or a wrong count resolves the arguments as sizes, for
+    /// [`TypeTable::named`] to report.
+    fn generic_args(
+        &self,
+        source: &str,
+        text: &str,
+        span: syn::SourceLoc,
+        args: &[syn::SizeExpr],
+        env: &SizeEnv,
+        diags: &mut Vec<syn::Diagnostic>,
+    ) -> Option<Vec<Arg>> {
+        let decl = self
+            .decls
+            .get(text)
+            .filter(|td| td.generics.len() == args.len());
+        let Some(td) = decl else {
+            let mut values = Vec::with_capacity(args.len());
+            for a in args {
+                if crate::sizes::is_format_arg(source, a, env) {
+                    // A wrong count is the error to report, not the format.
+                    values.push(Arg::Size(1));
+                    continue;
+                }
+                match crate::sizes::eval(source, a, env) {
+                    Ok(v) => values.push(Arg::Size(v)),
+                    Err(d) => {
+                        diags.push(d);
+                        return None;
+                    }
+                }
+            }
+            return Some(values);
+        };
+        match crate::sizes::explicit_args(source, args, env, source, text, &td.generics, span) {
+            Ok(v) => Some(v),
+            Err(d) => {
+                diags.push(d);
+                None
+            }
+        }
+    }
+
+    /// A declared type at `values` (its arguments in declared order; empty
+    /// for a fixed type): L1809 when the count is wrong.
     fn named(
         &self,
         source: &str,
         text: &str,
         span: syn::SourceLoc,
-        values: &[u64],
+        values: &[Arg],
         depth: usize,
         diags: &mut Vec<syn::Diagnostic>,
     ) -> Option<Ty> {
@@ -473,29 +496,38 @@ impl TypeTable {
             return None;
         }
         let Some(td) = self.decls.get(text) else {
+            let hint = if text.starts_with(|c: char| c.is_ascii_lowercase()) {
+                format!(
+                    ": a type is a number format, `bool`, a declared type, or a format parameter \
+                     declared after the function or type name (`fn f<…, {text}: float>`, \
+                     ADR-0051)"
+                )
+            } else {
+                String::new()
+            };
             diags.push(diag(
                 LCode::UnknownType,
                 span,
-                format!("unknown type `{text}`"),
+                format!("unknown type `{text}`{hint}"),
             ));
             return None;
         };
-        if td.sizes.len() != values.len() {
+        if td.generics.len() != values.len() {
             let want = td
-                .sizes
+                .generics
                 .iter()
-                .map(|n| name_text(source, *n))
+                .map(|p| src_slice(source, p.span))
                 .collect::<Vec<_>>()
                 .join(", ");
             diags.push(diag(
                 LCode::TypeSizes,
                 span,
-                if td.sizes.is_empty() {
+                if td.generics.is_empty() {
                     format!("type `{text}` takes no sizes")
                 } else {
                     format!(
-                        "type `{text}` takes {} size(s), `{text}<{want}>`; this use gives {}",
-                        td.sizes.len(),
+                        "type `{text}` takes {} argument(s), `{text}<{want}>`; this use gives {}",
+                        td.generics.len(),
                         values.len()
                     )
                 },
@@ -517,14 +549,11 @@ impl TypeTable {
         &self,
         source: &str,
         td: &syn::TypeDecl,
-        values: &[u64],
+        values: &[Arg],
         depth: usize,
         diags: &mut Vec<syn::Diagnostic>,
     ) -> Option<Ty> {
-        let mut env = self.globals.sizes.clone();
-        for (n, v) in td.sizes.iter().zip(values) {
-            env.insert(name_text(source, *n).to_string(), *v);
-        }
+        let env = crate::sizes::env_of(source, &td.generics, values, &self.globals.sizes);
         let tname = name_text(source, td.name);
         // ADR-0048 D5: a type whose only field is `_` is that field's type
         // (a transparent alias, both ways).
@@ -624,7 +653,7 @@ impl TypeTable {
         &self,
         source: &str,
         name: &str,
-        values: &[u64],
+        values: &[Arg],
         span: syn::SourceLoc,
     ) -> Option<Ty> {
         self.named(source, name, span, values, 0, &mut Vec::new())

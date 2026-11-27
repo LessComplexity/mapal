@@ -46,7 +46,7 @@ fn size_list_and_expressions_parse() {
     let src = "fn project<rows, columns>(weight: [bf16; rows * columns], x: [f32; columns]) \
                -> [f32; rows] { x[0] -> ret; }";
     let fd = one_fn(src);
-    let names: Vec<&str> = fd.sizes.iter().map(|n| text(src, n.span)).collect();
+    let names: Vec<&str> = fd.generics.iter().map(|g| text(src, g.name.span)).collect();
     assert_eq!(names, ["rows", "columns"]);
     let (len, e) = size_of(&fd.params[0].ty);
     assert_eq!(
@@ -65,7 +65,7 @@ fn precedence_grouping_and_literals() {
     let src = "fn f<a, b,>(x: [f32; a + b * 2 - 1], y: [[f32; (a + 1) * b]; 3], z: [f32; 64 * 64], \
                w: [f32; 4096]) -> f32 { x[0] -> ret; }";
     let fd = one_fn(src);
-    assert_eq!(fd.sizes.len(), 2, "a trailing comma is allowed");
+    assert_eq!(fd.generics.len(), 2, "a trailing comma is allowed");
     let s = |i: usize| shape(src, size_of(&fd.params[i].ty).1.unwrap());
     assert_eq!(s(0), "((a + (b * 2)) - 1)");
     // The outer dimension is a literal; the element's is grouped.
@@ -87,7 +87,7 @@ fn precedence_grouping_and_literals() {
 #[test]
 fn fixed_size_fns_have_no_sizes() {
     let fd = one_fn("fn f(x: [f32; 8]) -> f32 { x[0] -> ret; }");
-    assert!(fd.sizes.is_empty());
+    assert!(fd.generics.is_empty());
     assert_eq!(size_of(&fd.params[0].ty), (8, None));
 }
 
@@ -114,8 +114,11 @@ fn malformed_lists_and_lengths() {
     assert!(codes("fn f<n(x: [f32; n]) -> f32 { x[0] -> ret; }").contains(&"P0002"));
     assert!(codes("fn f<n>(x: [f32; ]) -> f32 { x[0] -> ret; }").contains(&"P0001"));
     assert!(codes("fn f<n>(x: [f32; (n + 1]) -> f32 { x[0] -> ret; }").contains(&"P0002"));
-    // A `type` generic argument stays P0103 (out of Core).
-    assert!(codes("fn f(x: Vec<f32>) { }").contains(&"P0103"));
+    // A type argument that is a type stays P0103 (out of Core); a number
+    // format is a format argument (ADR-0051 D1), lowering resolves it.
+    assert!(codes("fn f(x: Vec<Pixel>) { }").contains(&"P0103"));
+    assert!(codes("fn f(x: Vec<bool>) { }").contains(&"P0103"));
+    assert!(!codes("fn f(x: Vec<f32>) { }").contains(&"P0103"));
 }
 
 fn tokens(source: &str) -> Vec<(mapal_syntax::TokenKind, &str)> {

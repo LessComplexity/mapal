@@ -10,7 +10,7 @@ fn noisy(x: [f32; 4096]) -> [f32; 4096] {
 
 fn main() {
     4096 -> iota -> map {
-        k -> k % 13 -> widen_f32
+        k -> k % 13 -> widen<f32>
     } -> w;
     mut i: i32 <- 0;
     mut acc: [f32; 4096] <- w;

@@ -9,19 +9,19 @@ fn main() {
         (it < 8) -> {
             -true-> {
                 ta -> map {
-                    t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v;
+                    t -> (t * 11 + 57) % 103 - 51 -> widen<f32> -> v;
                     v / 9.0
                 } -> b;
                 ta -> map {
-                    t -> (t * 3 + 1) % 89 - 44 -> widen_f32 -> v;
+                    t -> (t * 3 + 1) % 89 - 44 -> widen<f32> -> v;
                     v / 13.0
                 } -> f;
                 ta -> map {
-                    t -> ((t + it) * 7 + 13) % 101 - 50 -> widen_f32 -> v;
+                    t -> ((t + it) * 7 + 13) % 101 - 50 -> widen<f32> -> v;
                     v / 7.0
                 } -> a;
                 ta -> map {
-                    t -> ((t + it) * 5 + 3) % 97 - 48 -> widen_f32 -> v;
+                    t -> ((t + it) * 5 + 3) % 97 - 48 -> widen<f32> -> v;
                     v / 11.0
                 } -> e;
                 ta -> map {

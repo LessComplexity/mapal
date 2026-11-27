@@ -29,13 +29,13 @@ fn math_builtins_keep_the_width() {
         [(MathFn::Sin, Ty::f32())]
     );
     assert_eq!(
-        maths("fn main() { 3 -> widen_f64 -> cos -> c; c -> println; }"),
+        maths("fn main() { 3 -> widen<f64> -> cos -> c; c -> println; }"),
         [(MathFn::Cos, Ty::f64())]
     );
     // Chained, in a map body and a fold body, beside `exp`.
     let src = "fn main() {
     8 -> iota -> r;
-    r -> map { t -> t -> widen_f32 -> v; v / 4.0 -> sin -> exp } -> a;
+    r -> map { t -> t -> widen<f32> -> v; v / 4.0 -> sin -> exp } -> a;
     (0.0, r) -> fold { acc, k -> a[k] * a[k] -> sqrt -> w; w -> cos -> c; acc + c } -> s;
     s -> println;
 }";

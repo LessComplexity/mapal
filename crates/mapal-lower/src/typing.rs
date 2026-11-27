@@ -23,6 +23,7 @@ use mapal_syntax::{
 };
 
 use crate::diag::{LCode, diag};
+use crate::formats::{Arg, Format, Verb};
 use crate::scope::ScopeStack;
 use crate::sizes::{Generics, Instance, SiteKey, SizeEnv};
 use crate::tys::{TypeTable, name_text};
@@ -133,14 +134,14 @@ pub struct SizeCtx<'a> {
     pub env: SizeEnv,
     pub generics: &'a Generics<'a>,
     /// Emission's binding of each call site, from earlier rounds (D5).
-    pub sites: &'a BTreeMap<SiteKey, Vec<u64>>,
+    pub sites: &'a BTreeMap<SiteKey, Vec<Arg>>,
 }
 
 /// What the typing walk found at its calls to generic functions: the binding
 /// it used at each site, and the instances they name.
 #[derive(Default)]
 pub struct SizeUse {
-    pub sites: BTreeMap<SiteKey, Vec<u64>>,
+    pub sites: BTreeMap<SiteKey, Vec<Arg>>,
     pub instances: Vec<Instance>,
     /// Generic calls the walk could not type (its own types did not reach
     /// and no earlier round's emission bound the site): its diagnostics
@@ -160,6 +161,11 @@ struct Walk<'a> {
     effects: &'a crate::effects::Effects,
     /// the owner's declared (surface) return ty, for ret-write unification.
     owner_ret: Option<Ty>,
+    /// The function body's tail chain (its span): a return position.
+    fn_tail: Option<(u32, u32)>,
+    /// Walking the last stage of [`Self::fn_tail`] (ADR-0051 D3: its result
+    /// flows into the owner's output).
+    at_fn_tail: bool,
     /// union-find parent links over literal vars.
     uf: Vec<usize>,
     /// per-var state.
@@ -227,6 +233,8 @@ pub fn analyze_fn(
         size_use: SizeUse::default(),
         effects,
         owner_ret,
+        fn_tail: fd.body.tail.as_ref().map(|t| (t.span.start, t.span.end)),
+        at_fn_tail: false,
         uf: Vec::new(),
         state: Vec::new(),
         var_span: Vec::new(),
@@ -349,36 +357,74 @@ impl Walk<'_> {
                 name.span,
                 format!("`{text}` is a size parameter; it cannot be rebound — pick another name"),
             ));
+        } else if self.sizes.env.format(text).is_some() {
+            self.diags.push(diag(
+                LCode::SizeRebound,
+                name.span,
+                format!(
+                    "`{text}` is a format parameter (ADR-0051); it cannot be bound as a value — \
+                     pick another name"
+                ),
+            ));
         }
     }
 
     /// D3 at a call to a generic function (typing side): emission's binding
     /// of this site when an earlier round found one, else this walk's own
-    /// inference from `cur` (and the next stage's annotation). The result is
-    /// the instance's output type; `Unknown` when neither reaches.
+    /// inference from `cur` (and the next stage's annotation), after the
+    /// stage's explicit arguments (ADR-0051 D2). The result is the instance's
+    /// output type; `Unknown` when neither reaches.
     fn generic_call(
         &mut self,
         name: &str,
         cur: &WTy,
         next: Option<&Stage>,
         span: syn::SourceLoc,
+        args: Option<&[syn::SizeExpr]>,
     ) -> WTy {
         let Some(fd) = self.sizes.generics.get(name).copied() else {
             return WTy::Unknown;
+        };
+        let explicit = match args {
+            Some(a) => match crate::sizes::explicit_args(
+                self.source,
+                a,
+                &self.sizes.env,
+                self.source,
+                name,
+                &fd.generics,
+                span,
+            ) {
+                Ok(v) => v,
+                Err(d) => {
+                    self.diags.push(d);
+                    return WTy::Unknown;
+                }
+            },
+            None => Vec::new(),
         };
         let key: SiteKey = (self.owner_name.clone(), span.start, span.end);
         let values = match self.sizes.sites.get(&key) {
             Some(v) => Some(v.clone()),
             None => self.wty_to_ty(cur).and_then(|arg| {
-                let expected = self.expected_result(next);
-                crate::sizes::infer(self.source, self.types, fd, &arg, expected.as_ref(), span).ok()
+                let expected = self.expected_flow(next);
+                crate::sizes::infer(
+                    self.source,
+                    self.types,
+                    fd,
+                    &arg,
+                    expected.as_ref(),
+                    &explicit,
+                    span,
+                )
+                .ok()
             }),
         };
         let Some(values) = values else {
             self.size_use.unresolved += 1;
             return WTy::Unknown;
         };
-        let env = crate::sizes::env_of(self.source, fd, &values, self.types.base_env());
+        let env = crate::sizes::env_of(self.source, &fd.generics, &values, self.types.base_env());
         let effectful = self.effects.is_effectful(name);
         let Some(sig) = crate::sizes::instance_sig(self.source, self.types, fd, &env, effectful)
         else {
@@ -390,6 +436,116 @@ impl Walk<'_> {
         match sig.ret {
             Some(r) => WTy::Known(r),
             None => WTy::Unknown,
+        }
+    }
+
+    /// ADR-0051 D4: `x -> to<…>` / `x -> widen<…>` (typing side): the target
+    /// from the explicit argument, else the expected type (the next stage's
+    /// annotation, the owner's output at `-> ret`, a fixed function's
+    /// parameter the value flows into). Emission owns the admission (L1614 /
+    /// L1616) and the undetermined target (L1708); a literal flowing into a
+    /// narrow target is an `f32` (the one source), into an explicit
+    /// `source` that format.
+    fn conversion(
+        &mut self,
+        verb: Verb,
+        args: Option<&[syn::SizeExpr]>,
+        cur: &WTy,
+        next: Option<&Stage>,
+        span: syn::SourceLoc,
+    ) -> WTy {
+        let decl = verb.decl();
+        let explicit = match args {
+            Some(a) => match crate::sizes::explicit_args(
+                self.source,
+                a,
+                &self.sizes.env,
+                crate::formats::PRELUDE,
+                verb.name(),
+                &decl.generics,
+                span,
+            ) {
+                Ok(v) => v,
+                Err(d) => {
+                    self.diags.push(d);
+                    return WTy::Unknown;
+                }
+            },
+            None => Vec::new(),
+        };
+        let format_at = |i: usize| match explicit.get(i) {
+            Some(Arg::Format(f)) => Some(*f),
+            _ => None,
+        };
+        if let (Some(src), WTy::Var(_)) = (format_at(1), cur) {
+            self.unify_known(cur, &src.ty(), span);
+        }
+        let target = format_at(0).or_else(|| {
+            let want = self.expected_flow(next);
+            want.as_ref().and_then(Format::of)
+        });
+        match target {
+            Some(t) => {
+                // A float literal flowing in takes its width from the
+                // conversion: an `f32` into a narrow target (ADR-0043's one
+                // source), the target itself into `f32` / `f64` (the identity).
+                // An integer literal keeps its own width (`3 -> to<f32>`
+                // converts an `i32`).
+                if format_at(1).is_none()
+                    && let WTy::Var(v) = cur
+                    && t.is_float()
+                {
+                    let r = self.find(*v);
+                    if matches!(self.state[r], LitState::FloatVar) {
+                        let width = if t.narrow().is_some() {
+                            Ty::f32()
+                        } else {
+                            t.ty()
+                        };
+                        self.unify_known(cur, &width, span);
+                    }
+                }
+                WTy::Known(t.ty())
+            }
+            None => WTy::Unknown,
+        }
+    }
+
+    /// ADR-0051 D3: the type a call's or a conversion's result flows into —
+    /// the next stage's annotation, the owner's output at `-> ret` (`ret.k`:
+    /// its component) or at the function body's tail, or the one parameter of
+    /// a fixed function called next. Emission reads the same sources
+    /// (`emit::Emitter::expected_flow`).
+    fn expected_flow(&mut self, next: Option<&Stage>) -> Option<Ty> {
+        if let Some(t) = self.expected_result(next) {
+            return Some(t);
+        }
+        match next.map(|s| &s.kind) {
+            None if self.at_fn_tail => self.owner_ret.clone(),
+            Some(StageKind::Ret { proj: Some((k, _)) }) => self
+                .owner_ret
+                .as_ref()
+                .and_then(|r| u32::try_from(*k).ok().and_then(|k| r.component_ty(k)))
+                .cloned(),
+            _ => self.expected_param(next),
+        }
+    }
+
+    /// ADR-0051 D3: the type a value flows into as the next stage's input —
+    /// the one parameter of a fixed (non-generic) function called there.
+    fn expected_param(&self, next: Option<&Stage>) -> Option<Ty> {
+        let Some(StageKind::Expr(e)) = next.map(|s| &s.kind) else {
+            return None;
+        };
+        let ExprKind::Var(n) = &e.kind else {
+            return None;
+        };
+        match self.fn_sigs.get(name_text(self.source, *n)) {
+            Some(sig) if !sig.generic => match sig.params.as_slice() {
+                [one] => Some(one.clone()),
+                _ => None,
+            },
+            _ => None,
         }
     }
 
@@ -685,9 +841,13 @@ impl Walk<'_> {
             None => seed,
         };
         let mut prev: Option<&Expr> = chain.head.as_ref();
+        let is_fn_tail = self.fn_tail == Some((chain.span.start, chain.span.end));
         for (i, stage) in chain.stages.iter().enumerate() {
             let next = chain.stages.get(i + 1);
+            let outer = self.at_fn_tail;
+            self.at_fn_tail = is_fn_tail && next.is_none();
             cur = self.stage(&stage.kind, stage.span, cur, prev, next, scope);
+            self.at_fn_tail = outer;
             prev = match &stage.kind {
                 StageKind::Expr(e) => Some(e),
                 _ => None,
@@ -718,7 +878,7 @@ impl Walk<'_> {
                         cur
                     } else if self.fn_sigs.get(text).is_some_and(|s| s.generic) {
                         // ADR-0047: a call to a size-generic function.
-                        self.generic_call(text, &cur, next, e.span)
+                        self.generic_call(text, &cur, next, e.span, None)
                     } else if let Some(sig) = self.fn_sigs.get(text).cloned() {
                         // call: cur (arg) unifies with declared input; result ty.
                         self.type_call(&sig, &cur, e.span);
@@ -788,16 +948,13 @@ impl Walk<'_> {
                             }
                             _ => WTy::Unknown,
                         }
-                    } else if let Some(target) = crate::widen_target(text) {
-                        // emit owns L1614; typing only synthesizes the target.
-                        WTy::Known(target)
-                    } else if let Some(fmt) = crate::narrow_target(text) {
-                        // ADR-0043: emit owns L1616; the target is the format.
-                        // A literal flowing in is an `f32` (the one source).
-                        if matches!(cur, WTy::Var(_)) {
-                            self.unify_known(&cur, &Ty::f32(), e.span);
-                        }
-                        WTy::Known(Ty::Narrow(fmt))
+                    } else if let Some(verb) = Verb::from_name(text) {
+                        // ADR-0051 D4: `to` / `widen`, the target inferred
+                        // from the context (emit owns L1614 / L1616 / L1708).
+                        self.conversion(verb, None, &cur, next, e.span)
+                    } else if let Some((verb, f)) = crate::formats::removed(text) {
+                        self.diags.push(removed_conversion(text, verb, f, e.span));
+                        WTy::Unknown
                     } else if mapal_ir::MathFn::from_name(text).is_some() {
                         // ADR-0042 / ADR-0046: `x -> exp` (`sqrt`, `sin`,
                         // `cos`) keeps the float width — a literal's variable
@@ -812,6 +969,25 @@ impl Walk<'_> {
                         self.check_not_size(*n);
                         scope.bind(text, cur.clone());
                         cur
+                    }
+                } else if let ExprKind::Generic { name, args } = &e.kind {
+                    // ADR-0051 D2: a stage with explicit generic arguments.
+                    let text = name_text(self.source, *name);
+                    if self.fn_sigs.get(text).is_some_and(|s| s.generic) && !scope.contains(text) {
+                        self.generic_call(text, &cur, next, e.span, Some(args))
+                    } else if let (Some(verb), false) =
+                        (Verb::from_name(text), scope.contains(text))
+                    {
+                        self.conversion(verb, Some(args), &cur, next, e.span)
+                    } else {
+                        self.diags.push(no_generic_args(
+                            self.source,
+                            text,
+                            scope.contains(text),
+                            self.fn_sigs.contains_key(text),
+                            e.span,
+                        ));
+                        WTy::Unknown
                     }
                 } else {
                     // general expr stage — emission rejects (L1302). Walk for
@@ -1445,7 +1621,7 @@ impl Walk<'_> {
                 if let Some(td) = self
                     .types
                     .decl(tname)
-                    .filter(|td| !td.sizes.is_empty())
+                    .filter(|td| !td.generics.is_empty())
                     .cloned()
                 {
                     let mut tys = Vec::new();
@@ -2266,6 +2442,45 @@ fn array_size(ty: &Ty) -> Option<u64> {
     }
 }
 
+/// ADR-0051 D1: a generic signature's type names, checked at probe values
+/// (every size 2²⁰, every format parameter the first format of its kind):
+/// only the errors no instance could avoid — an unknown type, a format
+/// outside a kind — are reported (a size's range depends on the instance).
+fn probe_generic_sig(
+    source: &str,
+    types: &TypeTable,
+    fd: &syn::FnDecl,
+    diags: &mut Vec<syn::Diagnostic>,
+) {
+    let mut env = types.base_env().clone();
+    for p in &fd.generics {
+        let text = name_text(source, p.name).to_string();
+        match crate::formats::kind_of(source, p) {
+            None => {
+                env.insert(text, 1 << 20);
+            }
+            Some(k) => {
+                let kind = k.unwrap_or(crate::formats::Kind::Number);
+                let first = crate::formats::Format::ALL
+                    .into_iter()
+                    .find(|f| kind.admits(*f))
+                    .expect("every kind has a member");
+                env.formats.insert(text, first);
+            }
+        }
+    }
+    let mut sink = Vec::new();
+    for t in fd.params.iter().map(|p| &p.ty).chain(fd.ret_ty.as_ref()) {
+        let _ = types.resolve_sized(source, t, &env, &mut sink);
+    }
+    for d in sink {
+        let keep = d.code.0 == LCode::UnknownType.code() || d.code.0 == LCode::FormatKind.code();
+        if keep && !diags.iter().any(|x| x.span == d.span && x.code == d.code) {
+            diags.push(d);
+        }
+    }
+}
+
 /// Build the surface fn signature table (resolved param/return tys) used by D1
 /// call typing.
 pub fn build_fn_sigs(
@@ -2279,8 +2494,12 @@ pub fn build_fn_sigs(
     for item in &program.items {
         if let syn::Item::Fn(fd) = item {
             let name = name_text(source, fd.name).to_string();
-            if !fd.sizes.is_empty() {
-                // ADR-0047: each instance resolves its own signature.
+            if !fd.generics.is_empty() {
+                // ADR-0047: each instance resolves its own signature. Its
+                // types are checked once here, at probe values (ADR-0051 D1:
+                // a name in a type position is a format, a declared type or
+                // a declared format parameter).
+                probe_generic_sig(source, types, fd, diags);
                 out.insert(
                     name.clone(),
                     FnSig {
@@ -2316,4 +2535,60 @@ pub fn build_fn_sigs(
         }
     }
     out
+}
+
+/// ADR-0051 D6 (L1713): a removed format-named conversion, naming its
+/// replacement.
+pub fn removed_conversion(
+    text: &str,
+    verb: Verb,
+    f: Format,
+    span: syn::SourceLoc,
+) -> syn::Diagnostic {
+    let alt = match (verb, f) {
+        (Verb::Widen, Format::F32) => {
+            " — or `to<f32>` where the value may not be exact (an `i32` past ±2²⁴)".to_string()
+        }
+        (Verb::Widen, _) => " — or `to<…>` where the conversion may round".to_string(),
+        _ => String::new(),
+    };
+    diag(
+        LCode::RemovedConversion,
+        span,
+        format!(
+            "`{text}` was removed: write `{}<{f}>`{alt} (ADR-0051 D6: the format is the \
+             conversion's argument)",
+            verb.name()
+        ),
+    )
+}
+
+/// ADR-0051 D2 (L1712): explicit arguments `name<…>` on a stage that takes
+/// none — a value, a fixed function, a builtin without generic parameters,
+/// or no function at all.
+pub fn no_generic_args(
+    source: &str,
+    text: &str,
+    local: bool,
+    function: bool,
+    span: syn::SourceLoc,
+) -> syn::Diagnostic {
+    let _ = source;
+    let what = if local {
+        format!("`{text}` is a value")
+    } else if function {
+        format!("`{text}` declares no generic parameters")
+    } else if crate::is_reserved(text) {
+        format!("the builtin `{text}` takes no generic arguments")
+    } else {
+        format!("`{text}` is no generic function")
+    };
+    diag(
+        LCode::GenericArgs,
+        span,
+        format!(
+            "{what}: explicit arguments `<…>` apply to a generic function (`fn f<n, t: float>`) \
+             or to `to` / `widen` (ADR-0051 D2)"
+        ),
+    )
 }

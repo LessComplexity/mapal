@@ -1,22 +1,22 @@
 fn main() {
     131072 -> iota -> i_x;
     i_x -> map {
-        t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v;
+        t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v;
         v / 7.0
     } -> x;
     2097152 -> iota -> i_w1;
     i_w1 -> map {
-        t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v;
+        t -> (t * 11 + 57) % 103 - 51 -> widen<f32> -> v;
         v / 9.0
     } -> w1;
     2097152 -> iota -> i_w2;
     i_w2 -> map {
-        t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v;
+        t -> (t * 5 + 3) % 97 - 48 -> widen<f32> -> v;
         v / 11.0
     } -> w2;
     2048 -> iota -> i_bias;
     i_bias -> map {
-        t -> t % 13 - 6 -> widen_f32 -> v;
+        t -> t % 13 - 6 -> widen<f32> -> v;
         v / 5.0
     } -> bias;
     () -> time -> t0;

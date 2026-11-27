@@ -12,7 +12,7 @@ fn main() {
         cell / rows -> t;
         cell % rows -> row;
         (0.0, along) -> fold: bf16 | f32 {
-            sum, column -> weight[row * columns + column] -> widen_f32 -> w;
+            sum, column -> weight[row * columns + column] -> widen<f32> -> w;
             sum + w * x[t * columns + column]
         }
     } -> out;

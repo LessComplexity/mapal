@@ -8,16 +8,16 @@ programs=out/'programs'
 # Real recognized one-row strided-lane site.
 (programs/'strided.mapal').write_text('''fn main() {
     128 -> iota -> ta;
-    ta -> map { t -> t -> widen_f32 } -> a;
+    ta -> map { t -> t -> widen<f32> } -> a;
     32768 -> iota -> tb;
-    tb -> map { t -> t -> widen_f32 } -> b;
+    tb -> map { t -> t -> widen<f32> } -> b;
     128 -> iota -> krange;
     256 -> iota -> tc;
     tc -> map { j -> (2.0, krange) -> fold { acc, k -> a[k] * b[j * 128 + k] + acc } } -> c;
     c[0] -> println;
 }
 ''')
-(programs/'mixed.mapal').write_text('fn main() {\n    32768 -> iota -> ta;\n    ta -> map { t -> t % 31 -> widen_f32 } -> a;\n    ta -> map { t -> t % 23 -> widen_f32 } -> b;\n    128 -> iota -> krange;\n    256 -> iota -> tc;\n    tc -> map { j -> (2.0, krange) -> fold { acc, k -> a[k] * b[j * 128 + k] + acc } } -> c;\n    32768 -> iota -> td;\n    td -> map { t -> t / 256 -> i; t % 256 -> j;\n        (0.0, krange) -> fold { acc, k -> acc + a[i * 128 + k] * b[k * 256 + j] }\n    } -> d;\n    c[0] -> println;\n    d[0] -> println;\n}\n')
+(programs/'mixed.mapal').write_text('fn main() {\n    32768 -> iota -> ta;\n    ta -> map { t -> t % 31 -> widen<f32> } -> a;\n    ta -> map { t -> t % 23 -> widen<f32> } -> b;\n    128 -> iota -> krange;\n    256 -> iota -> tc;\n    tc -> map { j -> (2.0, krange) -> fold { acc, k -> a[k] * b[j * 128 + k] + acc } } -> c;\n    32768 -> iota -> td;\n    td -> map { t -> t / 256 -> i; t % 256 -> j;\n        (0.0, krange) -> fold { acc, k -> acc + a[i * 128 + k] * b[k * 256 + j] }\n    } -> d;\n    c[0] -> println;\n    d[0] -> println;\n}\n')
 cases=[
  ('scalar-exact','mm_1024','rtx-4090','sm_89',[],True),
  ('scalar-contract','mm_1024','rtx-4090','sm_89',['--contract'],True),

@@ -136,7 +136,7 @@ fn finite_ranges_hold_and_refuse() {
     let src = "fn main() {
     64 -> iota -> ix;
     ix -> map {
-        t -> (t * 7 + 3) % 13 - 6 -> widen_f32 -> v;
+        t -> (t * 7 + 3) % 13 - 6 -> widen<f32> -> v;
         v / 4.0
     } -> x;
     8 -> iota -> rr;

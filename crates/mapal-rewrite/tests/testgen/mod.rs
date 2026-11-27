@@ -1785,7 +1785,7 @@ pub fn device_src(p: &DeviceProg) -> String {
     let nn = n * n;
     let law = |name: &str, a: u32, b: u32, m: u32, scale: u32| {
         format!(
-            "    ta -> map {{ t -> (t * {a} + {b}) % {m} - {h} -> widen_f32 -> v; v / {scale}.0 }} -> {name};\n",
+            "    ta -> map {{ t -> (t * {a} + {b}) % {m} - {h} -> widen<f32> -> v; v / {scale}.0 }} -> {name};\n",
             h = m / 2
         )
     };
@@ -1832,7 +1832,7 @@ pub fn device_src(p: &DeviceProg) -> String {
             // A closed form of the cell and the trip counter (a uniform), read
             // by a site: built where the site runs, never uploaded.
             6 => format!(
-                "ta -> map {{ t -> ((t + it * {c}) * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / {s}.0 }} -> {z}g;\n{ind}ta -> map {{ t -> t / {n} -> i; t % {n} -> j; (0.0, krange) -> fold {{ acc, k -> acc + {x}[i * {n} + k] * {z}g[k * {n} + j] }} }} -> {z};\n",
+                "ta -> map {{ t -> ((t + it * {c}) * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / {s}.0 }} -> {z}g;\n{ind}ta -> map {{ t -> t / {n} -> i; t % {n} -> j; (0.0, krange) -> fold {{ acc, k -> acc + {x}[i * {n} + k] * {z}g[k * {n} + j] }} }} -> {z};\n",
                 c = u32::from(b % 5) + 1,
                 s = 8 * n
             ),
@@ -2067,7 +2067,7 @@ impl ChainCtx {
         } else {
             let it = self.iota(n);
             format!(
-                "    {it} -> map {{ t -> (t * {mul} + {add}) % {m} - {h} -> widen_f32 -> v; v / {div:.1} }} -> {name};\n",
+                "    {it} -> map {{ t -> (t * {mul} + {add}) % {m} - {h} -> widen<f32> -> v; v / {div:.1} }} -> {name};\n",
                 h = m / 2
             )
         };
@@ -2150,7 +2150,7 @@ impl Chain {
                     let it = x.iota(rc);
                     let (mul, add) = [(3, 5), (13, 7)][p as usize % 2];
                     x.s += &format!(
-                        "    {it} -> map {{ t -> (t * {mul} + {add}) % 31 - 15 -> widen_f32 -> v; v / 4.0 }} -> {o};\n"
+                        "    {it} -> map {{ t -> (t * {mul} + {add}) % 31 - 15 -> widen<f32> -> v; v / 4.0 }} -> {o};\n"
                     );
                     Shape::M
                 }
@@ -2337,7 +2337,7 @@ impl Chain {
                 16 => {
                     let v = x.pick(Shape::V, p);
                     x.s += &format!(
-                        "    {tm} -> map {{ t -> t % {c} -> j; j -> widen_f32 -> f; {v}[t / {c}] + f / 8.0 }} -> {o};\n"
+                        "    {tm} -> map {{ t -> t % {c} -> j; j -> widen<f32> -> f; {v}[t / {c}] + f / 8.0 }} -> {o};\n"
                     );
                     Shape::M
                 }
@@ -2449,7 +2449,7 @@ pub fn twin_src(p: &TwinProg, natural: bool, check: Option<(i64, i64, u64)>) -> 
     let nn = n * n;
     let law = |name: &str, a: u32, b: u32, m: u32, scale: u32| {
         format!(
-            "    ta -> map {{ t -> (t * {a} + {b}) % {m} - {h} -> widen_f32 -> v; v / {scale}.0 }} -> {name};\n",
+            "    ta -> map {{ t -> (t * {a} + {b}) % {m} - {h} -> widen<f32> -> v; v / {scale}.0 }} -> {name};\n",
             h = m / 2
         )
     };
@@ -2715,7 +2715,7 @@ pub fn recur_src(p: &RecurProg) -> String {
     let ind = "                ";
     let mut s = format!(
         "fn main() {{\n    {nn} -> iota -> ta;\n    {n} -> iota -> krange;\n    \
-         ta -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / {}.0 }} -> w;\n    \
+         ta -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen<f32> -> v; v / {}.0 }} -> w;\n    \
          (0.0, {nn}) -> fill -> x0;\n    (0.0, {n}) -> fill -> o0;\n    \
          mut x: [f32; {nn}] <- x0;\n{}    mut o: [f32; {n}] <- o0;\n    mut it: i32 <- 0;\n    loop {{\n        \
          (it < {}) -> {{\n            -true-> {{\n",
@@ -2732,7 +2732,7 @@ pub fn recur_src(p: &RecurProg) -> String {
         k => format!("(it < {k}) -> {{ -true-> {f} / 64.0; -false-> {f} / 64.0 + o[t % {n}]; }}"),
     };
     let cell = match p.var & 1 {
-        0 => "(t * 7 + 13) % 101 - 50 -> widen_f32 -> f;".to_string(),
+        0 => "(t * 7 + 13) % 101 - 50 -> widen<f32> -> f;".to_string(),
         // Reversed: not the cell's own index, so `w` is an operand (not `cell-law`).
         _ => format!("w[{} - t] * 64.0 -> f;", nn - 1),
     };
@@ -2757,7 +2757,7 @@ pub fn recur_src(p: &RecurProg) -> String {
         write(&body, "x")
     );
     if p.var & 64 != 0 {
-        let g = format!("(t * 3 + 5) % 89 - 44 -> widen_f32 -> g; {}", fed("g"));
+        let g = format!("(t * 3 + 5) % 89 - 44 -> widen<f32> -> g; {}", fed("g"));
         s += &format!(
             "{ind}ta -> map {{ t -> (t / {n} == {row}) -> {{ -true-> {} -false-> y[t]; }} }} -> y;\n",
             write(&g, "y")
@@ -2767,12 +2767,12 @@ pub fn recur_src(p: &RecurProg) -> String {
     let (dzs, dzt) = match trap {
         Some(c) => {
             s += &format!("{ind}100 / (it - {c}) -> dz;\n");
-            (" dz -> widen_f32 -> dq;", " + dq / 1000.0")
+            (" dz -> to<f32> -> dq;", " + dq / 1000.0")
         }
         None => ("", ""),
     };
     s += &format!(
-        "{ind}krange -> map {{ k -> ((it * {n} + k) * 5 + 3) % 97 - 48 -> widen_f32 -> qv;{dzs} qv / {}.0{dzt} }} -> q;\n",
+        "{ind}krange -> map {{ k -> ((it * {n} + k) * 5 + 3) % 97 - 48 -> widen<f32> -> qv;{dzs} qv / {}.0{dzt} }} -> q;\n",
         8 * n
     );
     let (mut mat, mut vec) = ("x".to_string(), "q".to_string());
@@ -2941,9 +2941,9 @@ pub fn radix_src(p: &RadixProg) -> (String, u64) {
     let src = format!(
         "fn main() {{
     {wn} -> iota -> i_w;
-    i_w -> map {{ t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v; v / 11.0 }} -> wt;
+    i_w -> map {{ t -> (t * 5 + 3) % 97 - 48 -> widen<f32> -> v; v / 11.0 }} -> wt;
     {imn} -> iota -> i_img;
-    i_img -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> img;
+    i_img -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 }} -> img;
     {n} -> iota -> o_y;
     {k} -> iota -> k_y;
     o_y -> map {{ t ->
@@ -3037,9 +3037,9 @@ pub fn tf32_src(p: &Tf32Prog) -> (String, (u64, u64)) {
     let src = format!(
         "fn main(){fn_ty} {{
     {mk} -> iota -> ia;
-    ia -> map {{ t -> (t * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> a;
+    ia -> map {{ t -> (t * {a1} + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 }} -> a;
     {kn} -> iota -> ib;
-    ib -> map {{ t -> (t * {a2} + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 }} -> b;
+    ib -> map {{ t -> (t * {a2} + 57) % 103 - 51 -> widen<f32> -> v; v / 9.0 }} -> b;
     {mn} -> iota -> ic;
     {k} -> iota -> kr;
     {y} -> y;
@@ -3205,9 +3205,9 @@ fn geom_src_at(p: &GeomProg, m: u64, n: u64, k: u64) -> (String, (u64, u64, u64)
     let head = format!(
         "fn main() {{
     {mk} -> iota -> ia;
-    ia -> map {{ t -> (t * {a1} + 13) % 101 - 50 -> widen_f32{da} }} -> a;
+    ia -> map {{ t -> (t * {a1} + 13) % 101 - 50 -> widen<f32>{da} }} -> a;
     {kn} -> iota -> ib;
-    ib -> map {{ t -> (t * {a2} + 57) % 103 - 51 -> widen_f32{db} }} -> b;
+    ib -> map {{ t -> (t * {a2} + 57) % 103 - 51 -> widen<f32>{db} }} -> b;
     {mn} -> iota -> ic;
     {k} -> iota -> kr;
 ",
@@ -3225,7 +3225,7 @@ fn geom_src_at(p: &GeomProg, m: u64, n: u64, k: u64) -> (String, (u64, u64, u64)
     loop {{
         (t < {trips}) -> {{
             -true-> {{
-                ia -> map {{ c -> (c / {k} == t) -> {{ -true-> (c * 3 + t * 5) % 23 - 11 -> widen_f32; -false-> x[c]; }} }} -> x;
+                ia -> map {{ c -> (c / {k} == t) -> {{ -true-> (c * 3 + t * 5) % 23 - 11 -> widen<f32>; -false-> x[c]; }} }} -> x;
                 {y}
                 nr -> map {{ j -> y[t * {n} + j] }} -> o;
                 t + 1 -> t;
@@ -3252,7 +3252,7 @@ fn geom_src_at(p: &GeomProg, m: u64, n: u64, k: u64) -> (String, (u64, u64, u64)
         // a cut fold's chooser).
         let epi = if p.law[1] % 3 == 0 {
             format!(
-                "\n    {n} -> iota -> nb;\n    nb -> map {{ t -> t % 7 - 3 -> widen_f32 }} -> bias;\n    \
+                "\n    {n} -> iota -> nb;\n    nb -> map {{ t -> t % 7 - 3 -> widen<f32> }} -> bias;\n    \
                  ic -> map {{ c -> y[c] + bias[c % {n}] -> u; (u > 0.0) -> {{ -true-> u; -false-> 0.0; }} -> r; r }} -> z;"
             )
         } else {
@@ -3345,7 +3345,7 @@ pub fn tile_src(p: &TileProg, small: bool) -> (String, Vec<(u64, u64, u64)>) {
         _ => vec![("y1", "a", "b0", k, n[0]), ("y2", "a2", "b1", k2, n[0])],
     };
     let mut iotas: Vec<u64> = Vec::new();
-    let mut laws = String::new();
+    let mut laws = Laws::default();
     let mut made: Vec<&str> = Vec::new();
     let mut body = String::new();
     for &(y, a, b, kk, nn) in &prods {
@@ -3384,6 +3384,7 @@ pub fn tile_src(p: &TileProg, small: bool) -> (String, Vec<(u64, u64, u64)>) {
         .iter()
         .map(|n| format!("    {n} -> iota -> i{n};\n"))
         .collect();
+    let laws = laws.text;
     let src = format!(
         "fn main() {{\n{head}{laws}    () -> time -> t0;\n{body}    () -> time -> t1;\n    {out}[0] -> println;\n    {out}[{}] -> println;\n    \"iter ms=\" -> print;\n    t1 - t0 -> println;\n}}\n",
         cells - 1
@@ -3402,13 +3403,31 @@ fn tile_iota(iotas: &mut Vec<u64>, n: u64) -> String {
     format!("i{n}")
 }
 
+/// A tile program's operand laws: their text and the draw state the next
+/// law's multiplier is drawn from.
+#[derive(Default)]
+struct Laws {
+    text: String,
+    /// Advanced by each law's fields ([`LAW_DRAW_WIDTH`] + its iota's,
+    /// multiplier's, addend's and name's widths), never by how a law is
+    /// spelled: a spelling change keeps every draw.
+    drawn: usize,
+}
+
+/// The fixed width each law advances the draw by — the width of a law line's
+/// fixed text when the draws were set (the generated set the tests' counters
+/// were tuned on).
+const LAW_DRAW_WIDTH: usize = 57;
+
 /// `name` over the iota `it`: integers in ±3, a law per name and `key`.
-fn tile_law(laws: &mut String, key: u8, name: &str, it: String) {
-    let mul = [3, 5, 11, 13][(usize::from(key) + name.len() + laws.len()) % 4];
-    *laws += &format!(
-        "    {it} -> map {{ t -> (t * {mul} + {add}) % 7 - 3 -> widen_f32 }} -> {name};\n",
-        add = name.len() * 2 + 1
+fn tile_law(laws: &mut Laws, key: u8, name: &str, it: String) {
+    let mul = [3, 5, 11, 13][(usize::from(key) + name.len() + laws.drawn) % 4];
+    let add = name.len() * 2 + 1;
+    laws.text += &format!(
+        "    {it} -> map {{ t -> (t * {mul} + {add}) % 7 - 3 -> widen<f32> }} -> {name};\n"
     );
+    laws.drawn +=
+        LAW_DRAW_WIDTH + it.len() + mul.to_string().len() + add.to_string().len() + name.len();
 }
 
 /// kernel-merging `zero-fold`: a program whose tile sites add into a zeroed
@@ -3462,7 +3481,7 @@ pub fn zero_src(p: &ZeroProg) -> String {
     let (r, c, k) = (p.rows, p.c, p.k);
     let rc = r * c;
     let mut s = format!(
-        "fn main() {{\n    {kc} -> iota -> tw;\n    tw -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 256.0 }} -> w;\n    {k} -> iota -> kr;\n    {rc} -> iota -> oc;\n    {rk} -> iota -> qc;\n",
+        "fn main() {{\n    {kc} -> iota -> tw;\n    tw -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 256.0 }} -> w;\n    {k} -> iota -> kr;\n    {rc} -> iota -> oc;\n    {rk} -> iota -> qc;\n",
         kc = k * c,
         rk = r * k
     );
@@ -3474,7 +3493,7 @@ pub fn zero_src(p: &ZeroProg) -> String {
     let t = "t";
     let cell = |body: &mut String, cells: &mut usize, sites: usize, step: [u8; 3]| {
         let mut e = format!(
-            "((({t} * {k} + e) * {}) + 3) % 97 - 48 -> widen_f32 -> v; v / 256.0",
+            "((({t} * {k} + e) * {}) + 3) % 97 - 48 -> widen<f32> -> v; v / 256.0",
             5 + step[1] % 3
         );
         if step[1] % 2 == 1 {
@@ -3627,7 +3646,7 @@ pub fn hz_src(p: &HzProg) -> String {
     let (r, c, k) = (p.rows, p.c, p.k);
     let rc = r * c;
     let mut s = format!(
-        "fn main() {{\n    {kc} -> iota -> tw;\n    tw -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 256.0 }} -> w;\n    tw -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 256.0 }} -> w2;\n    {k} -> iota -> kr;\n    {c} -> iota -> cr;\n    {r} -> iota -> rr;\n    {rc} -> iota -> oc;\n    {rk} -> iota -> qc;\n",
+        "fn main() {{\n    {kc} -> iota -> tw;\n    tw -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 256.0 }} -> w;\n    tw -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen<f32> -> v; v / 256.0 }} -> w2;\n    {k} -> iota -> kr;\n    {c} -> iota -> cr;\n    {r} -> iota -> rr;\n    {rc} -> iota -> oc;\n    {rk} -> iota -> qc;\n",
         kc = k * c,
         rk = r * k
     );
@@ -3637,7 +3656,7 @@ pub fn hz_src(p: &HzProg) -> String {
     let t = "t";
     let cell = |body: &mut String, cells: &mut usize, sites: usize, step: [u8; 3]| {
         let mut e = format!(
-            "((({t} * {k} + e) * {}) + 3) % 97 - 48 -> widen_f32 -> v; v / 256.0",
+            "((({t} * {k} + e) * {}) + 3) % 97 - 48 -> widen<f32> -> v; v / 256.0",
             5 + step[1] % 3
         );
         if step[1] % 2 == 1 {
@@ -3692,7 +3711,7 @@ pub fn hz_src(p: &HzProg) -> String {
     let mut kv = String::new();
     if p.kv {
         kv = format!(
-            "{ind}qc -> map {{ e -> (e / {k} == t) -> {{ -true-> {{ (e * 7 + 13) % 101 - 50 -> widen_f32 -> f; f / 16.0 + o[e % {rc}] }} -false-> x[e]; }} }} -> x;\n\
+            "{ind}qc -> map {{ e -> (e / {k} == t) -> {{ -true-> {{ (e * 7 + 13) % 101 - 50 -> widen<f32> -> f; f / 16.0 + o[e % {rc}] }} -false-> x[e]; }} }} -> x;\n\
              {ind}oc -> map {{ e -> e / {c} -> i; e % {c} -> j; (0.0, kr) -> fold {{ acc, kk -> acc + x[i * {k} + kk] * w[kk * {c} + j] }} }} -> ka;\n\
              {ind}oc -> map {{ e -> e / {c} -> i; e % {c} -> j; (0.0, kr) -> fold {{ acc, kk -> acc + x[i * {k} + kk] * w2[kk * {c} + j] }} }} -> va;\n"
         );
@@ -3789,7 +3808,7 @@ pub fn long_row_src(p: &LongRow) -> String {
     // `a0` is a tile site's output (`q · W`, `d = 8`): the rows start on the
     // device, where the folds over them run.
     let mut s = format!(
-        "fn main() {{\n    {n} -> iota -> t;\n    {r} -> iota -> rr;\n    {l} -> iota -> kl;\n    8 -> iota -> kd;\n    {rq} -> iota -> tq;\n    tq -> map {{ e -> (e * 5 + 3) % 31 - 15 -> widen_f32 -> v; v / 16.0 }} -> q;\n    {lw} -> iota -> tw;\n    tw -> map {{ e -> (e * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 64.0 }} -> w;\n    t -> map {{ e -> e / {l} -> i; e % {l} -> j; (0.0, kd) -> fold {{ acc, d -> acc + q[i * 8 + d] * w[d * {l} + j] }} }} -> a0;\n    t -> map {{ e -> (e * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 64.0 }} -> b0;\n",
+        "fn main() {{\n    {n} -> iota -> t;\n    {r} -> iota -> rr;\n    {l} -> iota -> kl;\n    8 -> iota -> kd;\n    {rq} -> iota -> tq;\n    tq -> map {{ e -> (e * 5 + 3) % 31 - 15 -> widen<f32> -> v; v / 16.0 }} -> q;\n    {lw} -> iota -> tw;\n    tw -> map {{ e -> (e * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 64.0 }} -> w;\n    t -> map {{ e -> e / {l} -> i; e % {l} -> j; (0.0, kd) -> fold {{ acc, d -> acc + q[i * 8 + d] * w[d * {l} + j] }} }} -> a0;\n    t -> map {{ e -> (e * 11 + 57) % 103 - 51 -> widen<f32> -> v; v / 64.0 }} -> b0;\n",
         rq = r * 8,
         lw = l * 8
     );
@@ -4086,10 +4105,10 @@ pub fn onto_src(p: &OntoProg) -> String {
     format!(
         "fn main() {{
     {n} -> iota -> r;
-    r -> map {{ t -> (t * 5 + 3) % 11 - 5 -> widen_f32 }} -> a;
+    r -> map {{ t -> (t * 5 + 3) % 11 - 5 -> widen<f32> }} -> a;
     r -> map {{ t -> (t * 3 + 1) % {n} }} -> perm;
     {lt} -> iota -> it;
-    it -> map {{ t -> (t * 7 + 1) % 13 - 6 -> widen_f32 }} -> tab;
+    it -> map {{ t -> (t * 7 + 1) % 13 - 6 -> widen<f32> }} -> tab;
     r -> map {{ c -> c % {m} -> i; {gread} }} -> g;
     mut x: [f32; {n}] <- g;
     mut t: i32 <- {init};
@@ -4228,9 +4247,9 @@ pub fn bounds_fuzz_src(p: &BoundsFuzz) -> String {
     format!(
         "fn main() {{
     {n} -> iota -> r;
-    r -> map {{ t -> (t * 5 + 3) % 11 - 5 -> widen_f32 }} -> a;
+    r -> map {{ t -> (t * 5 + 3) % 11 - 5 -> widen<f32> }} -> a;
     {lt} -> iota -> it;
-    it -> map {{ t -> (t * 7 + 1) % 13 - 6 -> widen_f32 }} -> tab;
+    it -> map {{ t -> (t * 7 + 1) % 13 - 6 -> widen<f32> }} -> tab;
     r -> map {{ c -> c % {m} -> i; (i {op} {thr}) -> {{ -true-> a[c + {d1}]; -false-> a[c - {d2}]; }} }} -> g;
     mut x: [f32; {n}] <- g;
     mut t: i32 <- {t0};
@@ -4292,8 +4311,8 @@ pub fn host_par_src(p: &HostParProg) -> String {
     {rq} -> iota -> rq;
     32768 -> iota -> rw;
     64 -> iota -> kd;
-    rq -> map {{ e -> (e * 5 + 3) % 31 - 15 -> widen_f32 -> v; v / 16.0 }} -> q;
-    rw -> map {{ e -> (e * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 64.0 }} -> w;
+    rq -> map {{ e -> (e * 5 + 3) % 31 - 15 -> widen<f32> -> v; v / 16.0 }} -> q;
+    rw -> map {{ e -> (e * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 64.0 }} -> w;
     r -> map {{ e -> e / 512 -> i; e % 512 -> j; (0.0, kd) -> fold {{ acc, d -> acc + q[i * 64 + d] * w[d * 512 + j] }} }} -> x;
     r -> map {{ t -> (t * 7 + 3) % {n} }} -> perm;
     r -> map {{ c -> x[perm[c]] }} -> h0;
@@ -4400,7 +4419,7 @@ pub fn layer_prog_src(p: &LayerProg) -> String {
     let data = |name: &str, len: u64, a: u64, c: u64, md: u64| {
         let h = md / 2;
         format!(
-            "    {len} -> iota -> i_{name};\n    i_{name} -> map {{ t -> (t * {a} + {c}) % {md} - {h} -> widen_f32 }} -> {name};\n"
+            "    {len} -> iota -> i_{name};\n    i_{name} -> map {{ t -> (t * {a} + {c}) % {md} - {h} -> widen<f32> }} -> {name};\n"
         )
     };
     match p.kind {
@@ -4413,7 +4432,7 @@ pub fn layer_prog_src(p: &LayerProg) -> String {
             s += &data("x", m * n, 7, 2, 9);
             s += &data("bias", n, 2, 1, 5);
             s += &format!(
-                "    {m} -> iota -> i_dv;\n    i_dv -> map {{ t -> t % 3 + 1 -> widen_f32 }} -> dv;\n"
+                "    {m} -> iota -> i_dv;\n    i_dv -> map {{ t -> t % 3 + 1 -> widen<f32> }} -> dv;\n"
             );
             s += &format!("    {k} -> iota -> rk;\n    {} -> iota -> o;\n", m * n);
             // A number the map captures: a whole fold of the residual.
@@ -4461,7 +4480,7 @@ pub fn layer_prog_src(p: &LayerProg) -> String {
             s += &data("kc", kn, 3, 1, 5);
             s += &data("pe", b * h * l, 7, 2, 5);
             s += &format!(
-                "    {} -> iota -> i_den;\n    i_den -> map {{ t -> t % 4 + 1 -> widen_f32 }} -> den;\n",
+                "    {} -> iota -> i_den;\n    i_den -> map {{ t -> t % 4 + 1 -> widen<f32> }} -> den;\n",
                 b * h
             );
             s += &format!("    {d} -> iota -> rd;\n    {l} -> iota -> rl;\n");
@@ -4562,7 +4581,7 @@ pub fn layer_prog_src(p: &LayerProg) -> String {
 /// counter moves, or scaled per row) and the group's projection added into
 /// a carried `y`. Head widths include odd ones (`d = 3`: a pointer moved by
 /// a non-vector step; `d = 4`: one 16-byte vector of `f32`); `b` rows the staged tiles take. The K/V
-/// cache is stored `f32` or `bf16` (`narrow`: `to_bf16`, read `-> widen_f32` — ADR-0043's narrow
+/// cache is stored `f32` or `bf16` (`narrow`: `to<bf16>`, read `-> widen<f32>` — ADR-0043's narrow
 /// operand, its pointer moved by the counter in its own 2-byte elements). Every value is a small
 /// integer or an exact quotient by 2 or 4, so every face and fold order agrees with the interpreter.
 #[derive(Clone, Debug)]
@@ -4585,7 +4604,7 @@ pub struct SliceProg {
     /// A row fold reads the carry's init before the loop (its device copy
     /// then dies at the loop's entry: long-prefill `carry-take`).
     pub pre: bool,
-    /// The K/V cache stored `bf16` (ADR-0043), read through `widen_f32`.
+    /// The K/V cache stored `bf16` (ADR-0043), read through `widen<f32>`.
     pub narrow: bool,
 }
 
@@ -4627,7 +4646,7 @@ pub fn slice_prog_src(p: &SliceProg) -> String {
     let data = |name: &str, len: u64, a: u64, c: u64, md: u64| {
         let h = md / 2;
         format!(
-            "    {len} -> iota -> i_{name};\n    i_{name} -> map {{ t -> (t * {a} + {c}) % {md} - {h} -> widen_f32 }} -> {name};\n"
+            "    {len} -> iota -> i_{name};\n    i_{name} -> map {{ t -> (t * {a} + {c}) % {md} - {h} -> widen<f32> }} -> {name};\n"
         )
     };
     let (b, g, per, l, d, n) = (p.b, p.groups, p.per, p.l, p.d, p.n);
@@ -4642,16 +4661,15 @@ pub fn slice_prog_src(p: &SliceProg) -> String {
     let mut s = String::from("fn main() {\n");
     s += &data("q", b * h * d, 5, 3, 7);
     s += &match p.narrow {
-        true => {
-            data("kc", kn, 3, 1, 5).replace("widen_f32 } -> kc;", "widen_f32 -> to_bf16 } -> kc;")
-        }
+        true => data("kc", kn, 3, 1, 5)
+            .replace("widen<f32> } -> kc;", "widen<f32> -> to<bf16> } -> kc;"),
         false => data("kc", kn, 3, 1, 5),
     };
     s += &data("pe", b * h * l, 7, 2, 5);
     s += &data("w", g * kk * n, 3, 2, 5);
     s += &data("y0", b * n, 5, 1, 9);
     s += &format!(
-        "    {} -> iota -> i_den;\n    i_den -> map {{ t -> (t % 2 + 1) * 2 -> widen_f32 }} -> den;\n",
+        "    {} -> iota -> i_den;\n    i_den -> map {{ t -> (t % 2 + 1) * 2 -> widen<f32> }} -> den;\n",
         b * h
     );
     s += &format!(
@@ -4673,7 +4691,7 @@ pub fn slice_prog_src(p: &SliceProg) -> String {
     let kread = format!("kc[(({kb}r) * {g} + gg) * {d} + u]");
     let (kpre, kv) = match p.narrow {
         true => (
-            format!("{kread} -> widen_f32 -> kv;\n                        "),
+            format!("{kread} -> widen<f32> -> kv;\n                        "),
             "kv".to_string(),
         ),
         false => (String::new(), kread),
@@ -4777,8 +4795,8 @@ pub fn exp_src(p: &ExpProg) -> String {
     let sc = f64::from(1u32 << p.scale) / 8.0;
     let mut s = format!(
         "fn main() {{\n    {n} -> iota -> t;\n    {r} -> iota -> rr;\n    {l} -> iota -> kl;\n    8 -> iota -> kd;\n    \
-         {rq} -> iota -> tq;\n    tq -> map {{ e -> (e * {mul} + {add}) % 31 - 15 -> widen_f32 -> v; v / 4.0 }} -> q;\n    \
-         {lw} -> iota -> tw;\n    tw -> map {{ e -> (e * 7 + 13) % {m} - {h} -> widen_f32 -> v; v / 8.0 }} -> w;\n    \
+         {rq} -> iota -> tq;\n    tq -> map {{ e -> (e * {mul} + {add}) % 31 - 15 -> widen<f32> -> v; v / 4.0 }} -> q;\n    \
+         {lw} -> iota -> tw;\n    tw -> map {{ e -> (e * 7 + 13) % {m} - {h} -> widen<f32> -> v; v / 8.0 }} -> w;\n    \
          t -> map {{ e -> e / {l} -> i; e % {l} -> j; (0.0, kd) -> fold {{ acc, d -> acc + q[i * 8 + d] * w[d * {l} + j] }} -> u; u * {sc:.3} }} -> x;\n",
         rq = r * 8,
         lw = l * 8,
@@ -4797,7 +4815,7 @@ pub fn exp_src(p: &ExpProg) -> String {
     s += &format!("    t -> map {{ e -> {arg} -> exp }} -> y;\n");
     // `f64`: a range past f64's overflow and underflow.
     if p.wide {
-        s += "    t -> map { e -> x[e] -> widen_f64 -> d; d * 8.0 -> exp } -> z;\n";
+        s += "    t -> map { e -> x[e] -> widen<f64> -> d; d * 8.0 -> exp } -> z;\n";
         s += "    0.0 -> z0: f64;\n    (z0, z) -> fold { acc, v -> acc + v / 1000000.0 } -> zs;\n";
     }
     // A fold whose step reads `exp` of its element.
@@ -4904,8 +4922,8 @@ pub fn math_src(p: &MathProg) -> String {
     let sc = f64::from(1u32 << p.scale) / 8.0;
     let mut s = format!(
         "fn main() {{\n    {n} -> iota -> t;\n    {r} -> iota -> rr;\n    {l} -> iota -> kl;\n    8 -> iota -> kd;\n    \
-         {rq} -> iota -> tq;\n    tq -> map {{ e -> (e * {mul} + {add}) % 31 - 15 -> widen_f32 -> v; v / 4.0 }} -> q;\n    \
-         {lw} -> iota -> tw;\n    tw -> map {{ e -> (e * 7 + 13) % {m} - {h} -> widen_f32 -> v; v / 8.0 }} -> w;\n    \
+         {rq} -> iota -> tq;\n    tq -> map {{ e -> (e * {mul} + {add}) % 31 - 15 -> widen<f32> -> v; v / 4.0 }} -> q;\n    \
+         {lw} -> iota -> tw;\n    tw -> map {{ e -> (e * 7 + 13) % {m} - {h} -> widen<f32> -> v; v / 8.0 }} -> w;\n    \
          t -> map {{ e -> e / {l} -> i; e % {l} -> j; (0.0, kd) -> fold {{ acc, d -> acc + q[i * 8 + d] * w[d * {l} + j] }} -> u; u * {sc:.3} }} -> x;\n    \
          16 -> iota -> ts;\n",
         rq = r * 8,
@@ -4946,7 +4964,7 @@ pub fn math_src(p: &MathProg) -> String {
     }
     if p.wide {
         let arg64 = format!(
-            "x[e] -> widen_f64 -> d; e % 5 -> c; (c == 0) -> {{ -true-> d * 7.0; -false-> (c == 1) -> {{ -true-> d * {e300}; -false-> (c == 2) -> {{ -true-> d * {em310}; -false-> (c == 3) -> {{ -true-> d * {e15}; -false-> d * 1.5707963267948966; }}; }}; }}; }}",
+            "x[e] -> widen<f64> -> d; e % 5 -> c; (c == 0) -> {{ -true-> d * 7.0; -false-> (c == 1) -> {{ -true-> d * {e300}; -false-> (c == 2) -> {{ -true-> d * {em310}; -false-> (c == 3) -> {{ -true-> d * {e15}; -false-> d * 1.5707963267948966; }}; }}; }}; }}",
             e300 = big(300),
             em310 = small(310),
             e15 = big(15),
@@ -5087,11 +5105,11 @@ fn gemm_src_reading(p: &GemmProg, m: u64, n: u64, k: u64, bi: &str, kn: u64) -> 
         "fn main() {{
     {mk} -> iota -> ia;
     ia -> map {{
-        t -> (t * {a1} + 13) % 5 - 2 -> widen_f32
+        t -> (t * {a1} + 13) % 5 - 2 -> widen<f32>
     }} -> a;
     {kn} -> iota -> ib;
     ib -> map {{
-        t -> (t * {a2} + 7) % 5 - 2 -> widen_f32
+        t -> (t * {a2} + 7) % 5 - 2 -> widen<f32>
     }} -> b;
     {k} -> iota -> kr;
     {mn} -> iota -> ic;
@@ -5239,7 +5257,7 @@ pub fn gemm_epi_src_at(p: &GemmProg, m: u64, n: u64, k: u64, chain: u8) -> Strin
         }
         1 => {
             s += &format!(
-                "    {n} -> iota -> jb;\n    jb -> map {{\n        t -> (t * 3 + 1) % 7 - 3 -> widen_f32\n    }} -> bv;\n"
+                "    {n} -> iota -> jb;\n    jb -> map {{\n        t -> (t * 3 + 1) % 7 - 3 -> widen<f32>\n    }} -> bv;\n"
             );
             s += &format!(
                 "    ic -> map {{\n        t ->\n        y[t] + bv[t % {n}] -> u;\n        (u > 0.0) -> {{\n            -true-> u;\n            -false-> 0.0;\n        }}\n    }} -> z;\n"
@@ -5247,7 +5265,7 @@ pub fn gemm_epi_src_at(p: &GemmProg, m: u64, n: u64, k: u64, chain: u8) -> Strin
             "z"
         }
         2 => {
-            s += "    ic -> map {\n        t -> (t * 5 + 2) % 9 - 4 -> widen_f32\n    } -> d;\n";
+            s += "    ic -> map {\n        t -> (t * 5 + 2) % 9 - 4 -> widen<f32>\n    } -> d;\n";
             s += "    ic -> map {\n        t -> y[t] + d[t]\n    } -> z;\n";
             "z"
         }
@@ -5359,8 +5377,8 @@ pub fn narrow_src(p: &NarrowProg) -> (String, usize) {
     let mut s = format!(
         "fn main() {{\n    {n} -> iota -> t;\n    {k} -> iota -> kk;\n    {rk} -> iota -> ta;\n    \
          {kc} -> iota -> tw;\n    \
-         ta -> map {{ e -> (e * {mul} + {add}) % 31 - 15 -> widen_f32 -> v; v / 4.0 }} -> a;\n    \
-         tw -> map {{ e -> (e * 7 + 13) % 103 - 51 -> widen_f32 -> v; v {scale} -> to_{fmt} }} -> w;\n",
+         ta -> map {{ e -> (e * {mul} + {add}) % 31 - 15 -> widen<f32> -> v; v / 4.0 }} -> a;\n    \
+         tw -> map {{ e -> (e * 7 + 13) % 103 - 51 -> widen<f32> -> v; v {scale} -> to<{fmt}> }} -> w;\n",
         rk = rows * k,
         kc = k * cols,
         mul = p.mul,
@@ -5368,9 +5386,9 @@ pub fn narrow_src(p: &NarrowProg) -> (String, usize) {
     );
     // `a` itself narrow: both operands widened.
     let (abind, aval) = if p.both {
-        s += &format!("    ta -> map {{ e -> a[e] -> to_{fmt} }} -> an;\n");
+        s += &format!("    ta -> map {{ e -> a[e] -> to<{fmt}> }} -> an;\n");
         (
-            "an[i * K + q] -> widen_f32 -> x; ".replace('K', &k.to_string()),
+            "an[i * K + q] -> widen<f32> -> x; ".replace('K', &k.to_string()),
             "x".to_string(),
         )
     } else {
@@ -5387,7 +5405,7 @@ pub fn narrow_src(p: &NarrowProg) -> (String, usize) {
         String::new()
     };
     s += &format!(
-        "    t -> map {{ e -> e / {cols} -> i; e % {cols} -> j; (0.0, kk) -> fold {{ acc, q -> {abind}{wi} -> widen_f32 -> b; acc + {aval} * b }}{tail} }} -> y;\n"
+        "    t -> map {{ e -> e / {cols} -> i; e % {cols} -> j; (0.0, kk) -> fold {{ acc, q -> {abind}{wi} -> widen<f32> -> b; acc + {aval} * b }}{tail} }} -> y;\n"
     );
     let mut tight = 0;
     for c in [0, n / 3, n - 1] {
@@ -5397,18 +5415,18 @@ pub fn narrow_src(p: &NarrowProg) -> (String, usize) {
     // Cells rounding into the format; a guard selecting narrow values.
     if p.guard {
         s += &format!(
-            "    t -> map {{ e -> (e % 3 == 0) -> {{ -true-> y[e] -> to_{fmt}; -false-> w[e % {kc}]; }} }} -> z;\n",
+            "    t -> map {{ e -> (e % 3 == 0) -> {{ -true-> y[e] -> to<{fmt}>; -false-> w[e % {kc}]; }} }} -> z;\n",
             kc = k * cols
         );
     } else {
-        s += &format!("    t -> map {{ e -> y[e] -> to_{fmt} }} -> z;\n");
+        s += &format!("    t -> map {{ e -> y[e] -> to<{fmt}> }} -> z;\n");
     }
     // A loop carrying a narrow array: a map over it and an element update.
     let fin = if p.looped {
         s += &format!(
             "    mut st: [{fmt}; {n}] <- z;\n    mut it: i32 <- 0;\n    loop {{\n        (it < 3) -> {{\n            -true-> {{\n                \
-             t -> map {{ e -> st[e] -> widen_f32 -> v; v * 1.5 + 0.25 -> to_{fmt} }} -> st;\n                \
-             it * 5 % {n} -> c;\n                st[c] -> widen_f32 -> sv;\n                sv + 1.0 -> to_{fmt} -> sn;\n                \
+             t -> map {{ e -> st[e] -> widen<f32> -> v; v * 1.5 + 0.25 -> to<{fmt}> }} -> st;\n                \
+             it * 5 % {n} -> c;\n                st[c] -> widen<f32> -> sv;\n                sv + 1.0 -> to<{fmt}> -> sn;\n                \
              st[c] <- sn;\n                it + 1 -> it;\n                -> loop;\n            }}\n            -false-> st -> fin;\n        }}\n    }}\n"
         );
         "fin"
@@ -5416,10 +5434,10 @@ pub fn narrow_src(p: &NarrowProg) -> (String, usize) {
         "z"
     };
     for c in [0, 1, n / 2 + 1, n - 1] {
-        s += &format!("    {fin}[{c}] -> widen_f32 -> println;\n");
+        s += &format!("    {fin}[{c}] -> widen<f32> -> println;\n");
     }
     s += &format!(
-        "    0.0 -> zero: f32;\n    (zero, {fin}) -> fold {{ acc, v -> v -> widen_f32 -> x; acc + x }} -> sum;\n    sum -> println;\n}}\n"
+        "    0.0 -> zero: f32;\n    (zero, {fin}) -> fold {{ acc, v -> v -> widen<f32> -> x; acc + x }} -> sum;\n    sum -> println;\n}}\n"
     );
     (s, tight)
 }
@@ -5565,7 +5583,7 @@ pub fn shared_cell_src(p: &SharedCellProg) -> String {
         _ => format!("x[i] -> v; v / (1.0 + v * v * {s:?}) {off}"),
     };
     let (tw, sw, ww) = match p.fw {
-        1 => ("bf16", " -> to_bf16", " -> widen_f32"),
+        1 => ("bf16", " -> to<bf16>", " -> widen<f32>"),
         _ => ("f32", "", ""),
     };
     let mut src = format!(
@@ -5587,11 +5605,11 @@ pub fn shared_cell_src(p: &SharedCellProg) -> String {
 }}
 fn main() {{
     {cc} -> iota -> map {{
-        e -> (e % 103 * 11 + 57) % 103 - 51 -> widen_f32 -> v;
+        e -> (e % 103 * 11 + 57) % 103 - 51 -> widen<f32> -> v;
         v / {wd:?}{sw}
     }} -> w;
     {tc} -> iota -> map {{
-        e -> (e * 7 + 3) % 31 - 15 -> widen_f32 -> v;
+        e -> (e * 7 + 3) % 31 - 15 -> widen<f32> -> v;
         v / 9.0
     }} -> y0;
 ",
@@ -5665,7 +5683,7 @@ pub fn shared_store_src(p: &SharedStoreProg) -> (String, (usize, u64)) {
         u64::from(p.law[1] % 11) * 2 + 5,
     );
     let (bt, bs, br) = match p.fb {
-        1 => ("bf16", " -> to_bf16", " -> widen_f32"),
+        1 => ("bf16", " -> to<bf16>", " -> widen<f32>"),
         _ => ("f32", "", ""),
     };
     let projs = if p.twin { 2 } else { 1 };
@@ -5706,20 +5724,20 @@ fn magnitude(a: [f32; {mk}], b: [{bt}; {kn}]) -> [f32; {mn}] {{
 fn gemm(s: i32) -> ([f32; {mn}], [f32; {mn}], [f32; {mn}], [f32; {mn}], [f32; {mk}]) {{
     {mk} -> iota -> ia;
     ia -> map {{
-        t -> (t * {a1} + 13 + s) % 101 - 50 -> widen_f32 -> v;
+        t -> (t * {a1} + 13 + s) % 101 - 50 -> widen<f32> -> v;
         v / 7.0
     }} -> a;
     ia -> map {{
-        t -> (t * {a1} + 13 + s) % 101 - 50 -> widen_f32 -> v;
+        t -> (t * {a1} + 13 + s) % 101 - 50 -> widen<f32> -> v;
         v / 7.0
     }} -> am;
     {kn} -> iota -> ib;
     ib -> map {{
-        t -> (t * {a2} + 57) % 103 - 51 -> widen_f32 -> v;
+        t -> (t * {a2} + 57) % 103 - 51 -> widen<f32> -> v;
         v / 9.0{bs}
     }} -> b;
     ib -> map {{
-        t -> (t * {a2} + 41) % 97 - 48 -> widen_f32 -> v;
+        t -> (t * {a2} + 41) % 97 - 48 -> widen<f32> -> v;
         v / 9.0{bs}
     }} -> c;
     (a, b) -> project -> y;
@@ -5767,9 +5785,9 @@ fn half_src_full(p: &HalfProg, once: bool, ret: bool) -> (String, (usize, u64, u
         u64::from(p.law[0] % 13) * 2 + 3,
         u64::from(p.law[1] % 11) * 2 + 5,
     );
-    let store = |f: u8| half_fmt(f).map_or(String::new(), |n| format!(" -> to_{n}"));
+    let store = |f: u8| half_fmt(f).map_or(String::new(), |n| format!(" -> to<{n}>"));
     let read = |f: u8, x: &str| match half_fmt(f) {
-        Some(_) => format!("{x} -> widen_f32"),
+        Some(_) => format!("{x} -> widen<f32>"),
         None => x.to_string(),
     };
     let abs = "(pv > 0.0) -> { -true-> pv; -false-> 0.0 - pv; } -> av; acc + av";
@@ -5786,7 +5804,7 @@ fn half_src_full(p: &HalfProg, once: bool, ret: bool) -> (String, (usize, u64, u
         let post = if p.post {
             format!(
                 " -> u; a[i * {k}]{} -> r; u * 0.5 + r",
-                if p.fa > 0 { " -> widen_f32" } else { "" }
+                if p.fa > 0 { " -> widen<f32>" } else { "" }
             )
         } else {
             String::new()
@@ -5822,9 +5840,9 @@ fn half_src_full(p: &HalfProg, once: bool, ret: bool) -> (String, (usize, u64, u
         let mut src = head
             + &format!(
                 "    {mk} -> iota -> ia;
-    ia -> map {{ t -> (t * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0{sa} }} -> a;
+    ia -> map {{ t -> (t * {a1} + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0{sa} }} -> a;
     {kn} -> iota -> ib;
-    ib -> map {{ t -> (t * {a2} + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0{sb} }} -> b;
+    ib -> map {{ t -> (t * {a2} + 57) % 103 - 51 -> widen<f32> -> v; v / 9.0{sb} }} -> b;
     {mn} -> iota -> ic;
     {k} -> iota -> kr;
     ic -> map {{ t -> t / {n} -> i; t % {n} -> j; (0.0, kr) -> fold{set} {{ acc, q -> {ar} -> x; {br} -> y; acc + x * y }}{post} }} -> y;
@@ -5837,8 +5855,8 @@ fn half_src_full(p: &HalfProg, once: bool, ret: bool) -> (String, (usize, u64, u
         );
         let (am, bm) = if once {
             src += &format!(
-                "    ia -> map {{ t -> (t * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0{sa} }} -> am;
-    ib -> map {{ t -> (t * {a2} + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0{sb} }} -> bm;
+                "    ia -> map {{ t -> (t * {a1} + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0{sa} }} -> am;
+    ib -> map {{ t -> (t * {a2} + 57) % 103 - 51 -> widen<f32> -> v; v / 9.0{sb} }} -> bm;
 ",
                 sa = store(p.fa),
                 sb = store(p.fb),
@@ -5873,7 +5891,7 @@ fn main() {
         }
         let mut pairs = cells.len();
         if ret {
-            let widen = if p.fa > 0 { " -> widen_f32" } else { "" };
+            let widen = if p.fa > 0 { " -> widen<f32>" } else { "" };
             for x in [u64::from(p.law[1]) * 5 % (m * k), m * k - 1] {
                 src += &format!("    ao[{x}]{widen} -> println;\n    0.0 -> println;\n");
             }
@@ -5923,9 +5941,9 @@ fn main() {
     let mut src = format!(
         "fn main() {{
     {nd} -> iota -> it;
-    it -> map {{ t -> (t * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v / 29.0{sa} }} -> qh;
-    it -> map {{ t -> (t * {a2} + 57) % 103 - 51 -> widen_f32 -> v; v / 31.0{sb} }} -> kc;
-    it -> map {{ t -> (t * 11 + 7) % 97 - 48 -> widen_f32 -> v; v / 13.0{sb} }} -> vc;
+    it -> map {{ t -> (t * {a1} + 13) % 101 - 50 -> widen<f32> -> v; v / 29.0{sa} }} -> qh;
+    it -> map {{ t -> (t * {a2} + 57) % 103 - 51 -> widen<f32> -> v; v / 31.0{sb} }} -> kc;
+    it -> map {{ t -> (t * 11 + 7) % 97 - 48 -> widen<f32> -> v; v / 13.0{sb} }} -> vc;
     {ns} -> iota -> isc;
     {d} -> iota -> dr;
     {s} -> iota -> sr;
@@ -6044,9 +6062,9 @@ pub fn f8_src(p: &F8Prog) -> (String, (usize, u64, u64)) {
     let (mk, kn, mn) = (m * k, k * n, m * n);
     let mut s = format!(
         "fn main() {{\n    {mk} -> iota -> ia;\n    \
-         ia -> map {{ t -> (t * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> af;\n    \
+         ia -> map {{ t -> (t * {a1} + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 }} -> af;\n    \
          {kn} -> iota -> ib;\n    \
-         ib -> map {{ t -> (t * {a2} + 57) % 103 - 51 -> widen_f32 -> v; v {rng} }} -> bf;\n    \
+         ib -> map {{ t -> (t * {a2} + 57) % 103 - 51 -> widen<f32> -> v; v {rng} }} -> bf;\n    \
          {n} -> iota -> inn;\n    {mn} -> iota -> ic;\n    {k} -> iota -> kr;\n"
     );
     // The scale, as dataflow.
@@ -6056,13 +6074,13 @@ pub fn f8_src(p: &F8Prog) -> (String, (usize, u64, u64)) {
                   (0.0, ib) -> fold { mx, t -> 0.0 - bf[t] -> x; (x > mx) -> { -true-> x; -false-> mx; } } -> lo;\n    \
                   (hi > lo) -> { -true-> hi; -false-> lo; } -> amax;\n";
             s += &format!(
-                "    amax / {max} -> s;\n    ib -> map {{ t -> bf[t] / s -> to_{fmt} }} -> b;\n"
+                "    amax / {max} -> s;\n    ib -> map {{ t -> bf[t] / s -> to<{fmt}> }} -> b;\n"
             );
             (" -> u; u * s".to_string(), " -> u; u * s".to_string(), "")
         }
         2 => {
-            s += "    inn -> map { j -> j % 5 + 1 -> widen_f32 -> v; v * 0.25 } -> sc;\n";
-            s += &format!("    ib -> map {{ t -> bf[t] -> to_{fmt} }} -> b;\n");
+            s += "    inn -> map { j -> j % 5 + 1 -> widen<f32> -> v; v * 0.25 } -> sc;\n";
+            s += &format!("    ib -> map {{ t -> bf[t] -> to<{fmt}> }} -> b;\n");
             (
                 " -> u; u * sc[j]".to_string(),
                 " -> u; u * sc[j]".to_string(),
@@ -6070,7 +6088,7 @@ pub fn f8_src(p: &F8Prog) -> (String, (usize, u64, u64)) {
             )
         }
         _ => {
-            s += &format!("    ib -> map {{ t -> bf[t] -> to_{fmt} }} -> b;\n");
+            s += &format!("    ib -> map {{ t -> bf[t] -> to<{fmt}> }} -> b;\n");
             (
                 String::new(),
                 String::new(),
@@ -6079,11 +6097,11 @@ pub fn f8_src(p: &F8Prog) -> (String, (usize, u64, u64)) {
         }
     };
     if p.scale == 3 {
-        s += "    kr[3] -> widen_f32 -> f3;\n    f3 * 0.125 -> sf;\n";
+        s += "    kr[3] -> widen<f32> -> f3;\n    f3 * 0.125 -> sf;\n";
     }
     let ar = if p.fa {
-        s += &format!("    ia -> map {{ t -> af[t] -> to_{fmt} }} -> a;\n");
-        format!("a[i * {k} + q] -> widen_f32")
+        s += &format!("    ia -> map {{ t -> af[t] -> to<{fmt}> }} -> a;\n");
+        format!("a[i * {k} + q] -> widen<f32>")
     } else {
         format!("af[i * {k} + q]")
     };
@@ -6094,8 +6112,8 @@ pub fn f8_src(p: &F8Prog) -> (String, (usize, u64, u64)) {
     };
     let abs = "(pv > 0.0) -> { -true-> pv; -false-> 0.0 - pv; } -> av; acc + av";
     s += &format!(
-        "    ic -> map {{ t -> t / {n} -> i; t % {n} -> j; (0.0, kr) -> fold{set} {{ acc, q -> {ar} -> x; {bi} -> widen_f32 -> y; acc + x * y{factor} }}{post} }} -> y;\n    \
-         ic -> map: f32 {{ t -> t / {n} -> i; t % {n} -> j; (0.0, kr) -> fold {{ acc, q -> {ar} -> x; {bi} -> widen_f32 -> y; x * y{factor} -> pv; {abs} }}{mpost} }} -> mag;\n"
+        "    ic -> map {{ t -> t / {n} -> i; t % {n} -> j; (0.0, kr) -> fold{set} {{ acc, q -> {ar} -> x; {bi} -> widen<f32> -> y; acc + x * y{factor} }}{post} }} -> y;\n    \
+         ic -> map: f32 {{ t -> t / {n} -> i; t % {n} -> j; (0.0, kr) -> fold {{ acc, q -> {ar} -> x; {bi} -> widen<f32> -> y; x * y{factor} -> pv; {abs} }}{mpost} }} -> mag;\n"
     );
     let cells = [
         u64::from(p.law[0]) * 7 % mn,
@@ -6108,13 +6126,13 @@ pub fn f8_src(p: &F8Prog) -> (String, (usize, u64, u64)) {
     // Cells rounding into the format: every seventh `exp(1000) = +inf`,
     // which saturates to the format's largest finite.
     s += &format!(
-        "    ic -> map {{ e -> (e % 7 == 0) -> {{ -true-> 1000.0 -> exp -> to_{fmt}; -false-> y[e] -> to_{fmt}; }} }} -> z;\n"
+        "    ic -> map {{ e -> (e % 7 == 0) -> {{ -true-> 1000.0 -> exp -> to<{fmt}>; -false-> y[e] -> to<{fmt}>; }} }} -> z;\n"
     );
     let fin = if p.looped {
         s += &format!(
             "    mut st: [{fmt}; {mn}] <- z;\n    mut it: i32 <- 0;\n    loop {{\n        (it < 3) -> {{\n            -true-> {{\n                \
-             ic -> map {{ e -> st[e] -> widen_f32 -> v; v * 1.5 + 0.25 -> to_{fmt} }} -> st;\n                \
-             it * 5 % {mn} -> c;\n                st[c] -> widen_f32 -> sv;\n                sv + 1.0 -> to_{fmt} -> sn;\n                \
+             ic -> map {{ e -> st[e] -> widen<f32> -> v; v * 1.5 + 0.25 -> to<{fmt}> }} -> st;\n                \
+             it * 5 % {mn} -> c;\n                st[c] -> widen<f32> -> sv;\n                sv + 1.0 -> to<{fmt}> -> sn;\n                \
              st[c] <- sn;\n                it + 1 -> it;\n                -> loop;\n            }}\n            -false-> st -> fin;\n        }}\n    }}\n"
         );
         "fin"
@@ -6122,10 +6140,10 @@ pub fn f8_src(p: &F8Prog) -> (String, (usize, u64, u64)) {
         "z"
     };
     for c in [0, 1, mn / 2, mn - 1] {
-        s += &format!("    {fin}[{c}] -> widen_f32 -> println;\n");
+        s += &format!("    {fin}[{c}] -> widen<f32> -> println;\n");
     }
     s += &format!(
-        "    0.0 -> zero: f32;\n    (zero, {fin}) -> fold {{ acc, v -> v -> widen_f32 -> x; acc + x }} -> sum;\n    sum -> println;\n}}\n"
+        "    0.0 -> zero: f32;\n    (zero, {fin}) -> fold {{ acc, v -> v -> widen<f32> -> x; acc + x }} -> sum;\n    sum -> println;\n}}\n"
     );
     (s, (cells.len(), k, mn))
 }
@@ -6232,7 +6250,7 @@ pub fn history_prog_src(p: &HistoryProg) -> String {
     let (b, l, d, n) = (p.b, p.l, p.d, p.n);
     let data = |name: &str, len: u64, a: u64, c: u64| {
         format!(
-            "    {len} -> iota -> i_{name};\n    i_{name} -> map {{ t -> (t * {a} + {c}) % 5 - 2 -> widen_f32 }} -> {name};\n"
+            "    {len} -> iota -> i_{name};\n    i_{name} -> map {{ t -> (t * {a} + {c}) % 5 - 2 -> widen<f32> }} -> {name};\n"
         )
     };
     // The inputs: built in `main` (a callee's parameters) or in the callee.
@@ -6341,8 +6359,8 @@ pub fn history_prog_src(p: &HistoryProg) -> String {
         "pr"
     };
     body += &format!(
-        "rBD -> map {{ e -> e / {d} -> bb; e % {d} -> dd; (0.0, rLN) -> fold {{ acc, i -> i % 3 - 1 -> widen_f32 -> cw; \
-         acc + {res}[bb * {} + i] * cw }} -> s; dd -> widen_f32 -> df; (s + df > 0.0) -> {{ -true-> g[dd]; -false-> 0.0 - g[dd]; }} }} -> x;\n",
+        "rBD -> map {{ e -> e / {d} -> bb; e % {d} -> dd; (0.0, rLN) -> fold {{ acc, i -> i % 3 - 1 -> widen<f32> -> cw; \
+         acc + {res}[bb * {} + i] * cw }} -> s; dd -> widen<f32> -> df; (s + df > 0.0) -> {{ -true-> g[dd]; -false-> 0.0 - g[dd]; }} }} -> x;\n",
         l * n
     );
     if p.late {
@@ -6461,16 +6479,16 @@ pub fn gemv_src(p: &GemvProg) -> String {
         _ => k * cols + off,
     };
     let fmt = ["", "bf16", "f16"][usize::from(p.fmt)];
-    let wlaw = format!("(e * {} + 5) % 9 + 1 -> widen_f32 -> v; v / 8.0", p.mul);
+    let wlaw = format!("(e * {} + 5) % 9 + 1 -> widen<f32> -> v; v / 8.0", p.mul);
     let wmap = match p.fmt {
         0 => wlaw,
-        _ => format!("{wlaw} -> to_{fmt}"),
+        _ => format!("{wlaw} -> to<{fmt}>"),
     };
     let ar = if p.shared { k } else { rows * k };
     let mut s = format!(
         "fn main() {{\n    {n} -> iota -> t;\n    {k} -> iota -> kk;\n    {ar} -> iota -> ta;\n    \
          {wn} -> iota -> tw;\n    \
-         ta -> map {{ e -> (e * 7 + 3) % 5 -> widen_f32 -> v; v / 4.0 }} -> a;\n    \
+         ta -> map {{ e -> (e * 7 + 3) % 5 -> widen<f32> -> v; v / 4.0 }} -> a;\n    \
          tw -> map {{ e -> {wmap} }} -> w;\n"
     );
     let wi = match p.layout {
@@ -6481,7 +6499,7 @@ pub fn gemv_src(p: &GemvProg) -> String {
     };
     let wv = match p.fmt {
         0 => wi,
-        _ => format!("{wi} -> widen_f32"),
+        _ => format!("{wi} -> widen<f32>"),
     };
     let ai = if p.shared {
         "a[q]".to_string()
@@ -6715,16 +6733,16 @@ pub fn kdec_src(p: &KdecProg) -> String {
     let (b, h, g, l, d) = (p.b, p.h, p.g, p.l, p.d);
     let kvh = h / g;
     let (nb, w) = match p.narrow {
-        true => (" -> to_bf16", " -> widen_f32"),
+        true => (" -> to<bf16>", " -> widen<f32>"),
         false => ("", ""),
     };
     let mut s = String::from("fn main() {\n");
     s += &format!(
-        "    {} -> iota -> i_kc;\n    i_kc -> map {{\n        t -> (t * 5 + 3) % 9 - 4 -> widen_f32 -> v;\n        v / 4.0{nb}\n    }} -> kc;\n",
+        "    {} -> iota -> i_kc;\n    i_kc -> map {{\n        t -> (t * 5 + 3) % 9 - 4 -> widen<f32> -> v;\n        v / 4.0{nb}\n    }} -> kc;\n",
         b * l * kvh * d
     );
     s += &format!(
-        "    {} -> iota -> i_q;\n    i_q -> map {{\n        t -> (t * 7 + 13) % 11 - 5 -> widen_f32 -> v;\n        v / 4.0\n    }} -> q;\n",
+        "    {} -> iota -> i_q;\n    i_q -> map {{\n        t -> (t * 7 + 13) % 11 - 5 -> widen<f32> -> v;\n        v / 4.0\n    }} -> q;\n",
         b * h * d
     );
     s += &format!(
@@ -6770,7 +6788,7 @@ pub fn flash_mh_src(p: &FlashProg) -> String {
     let kvh = h / g;
     let data = |name: &str, len: u64, a: u64, b: u64, m: u64| {
         format!(
-            "    {len} -> iota -> i_{name};\n    i_{name} -> map {{\n        t -> (t * {a} + {b}) % {m} - {} -> widen_f32 -> v;\n        v / 4.0\n    }} -> {name};\n",
+            "    {len} -> iota -> i_{name};\n    i_{name} -> map {{\n        t -> (t * {a} + {b}) % {m} - {} -> widen<f32> -> v;\n        v / 4.0\n    }} -> {name};\n",
             m / 2
         )
     };
@@ -6840,7 +6858,7 @@ pub fn flash_tm_src(p: &FlashProg) -> String {
     let kvh = h / g;
     let data = |name: &str, len: u64, a: u64, b: u64, m: u64| {
         format!(
-            "    {len} -> iota -> i_{name};\n    i_{name} -> map {{\n        t -> (t * {a} + {b}) % {m} - {} -> widen_f32 -> v;\n        v / 4.0\n    }} -> {name};\n",
+            "    {len} -> iota -> i_{name};\n    i_{name} -> map {{\n        t -> (t * {a} + {b}) % {m} - {} -> widen<f32> -> v;\n        v / 4.0\n    }} -> {name};\n",
             m / 2
         )
     };
@@ -6930,7 +6948,7 @@ pub fn flash_loop_src(p: &FlashProg) -> String {
     let kvh = h / g;
     let data = |name: &str, len: u64, a: u64, b: u64, m: u64| {
         format!(
-            "    {len} -> iota -> i_{name};\n    i_{name} -> map {{\n        t -> (t * {a} + {b}) % {m} - {} -> widen_f32 -> v;\n        v / 4.0\n    }} -> {name};\n",
+            "    {len} -> iota -> i_{name};\n    i_{name} -> map {{\n        t -> (t * {a} + {b}) % {m} - {} -> widen<f32> -> v;\n        v / 4.0\n    }} -> {name};\n",
             m / 2
         )
     };
@@ -7010,7 +7028,7 @@ pub fn flash_src(p: &FlashProg) -> String {
     let (n, w, d, c) = (p.n, p.w, p.d, p.c);
     let data = |name: &str, len: u64, a: u64, b: u64, m: u64| {
         format!(
-            "    {len} -> iota -> i_{name};\n    i_{name} -> map {{\n        t -> (t * {a} + {b}) % {m} - {} -> widen_f32 -> v;\n        v / 4.0\n    }} -> {name};\n",
+            "    {len} -> iota -> i_{name};\n    i_{name} -> map {{\n        t -> (t * {a} + {b}) % {m} - {} -> widen<f32> -> v;\n        v / 4.0\n    }} -> {name};\n",
             m / 2
         )
     };
@@ -7180,22 +7198,22 @@ pub fn split_src_at(p: &SplitProg, m: u64, n: u64, k: u64) -> (String, (usize, u
     // `a` along `k` (row-major), `b` along `k` at stride `n` (or 1 when `bt`).
     let law_a = match p.law {
         1 => format!(
-            "(t * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 -> x; (t % 3 == 0) -> {{ -true-> x * {big}; -false-> x / {small}; }} -> r; r"
+            "(t * {a1} + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 -> x; (t % 3 == 0) -> {{ -true-> x * {big}; -false-> x / {small}; }} -> r; r"
         ),
         2 => format!(
-            "((t / 2) * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 -> x; (t % 2 == 0) -> {{ -true-> x; -false-> 0.0 - x; }} -> r; r"
+            "((t / 2) * {a1} + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 -> x; (t % 2 == 0) -> {{ -true-> x; -false-> 0.0 - x; }} -> r; r"
         ),
-        3 => format!("(t * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v"),
+        3 => format!("(t * {a1} + 13) % 101 - 50 -> widen<f32> -> v; v"),
         4 => format!(
-            "(t * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 -> x; (t == {p0}) -> {{ -true-> 1.0 / 0.0; -false-> x; }} -> r; r"
+            "(t * {a1} + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 -> x; (t == {p0}) -> {{ -true-> 1.0 / 0.0; -false-> x; }} -> r; r"
         ),
         5 if !narrow => format!(
-            "(t * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 -> x; (t == {p0}) -> {{ -true-> 340282346638528859811704183484516925440.0; -false-> x; }} -> r; r"
+            "(t * {a1} + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 -> x; (t == {p0}) -> {{ -true-> 340282346638528859811704183484516925440.0; -false-> x; }} -> r; r"
         ),
         6 if !narrow => format!(
-            "(t * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 -> x; x / 1000000000000000000000000000000000000.0"
+            "(t * {a1} + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 -> x; x / 1000000000000000000000000000000000000.0"
         ),
-        _ => format!("(t * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0"),
+        _ => format!("(t * {a1} + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0"),
     };
     // Cancelling pairs: `b` equal on the two `k` of a pair (whose `a` cancel)
     // but for a relative 2⁻¹⁰ step.
@@ -7211,19 +7229,19 @@ pub fn split_src_at(p: &SplitProg, m: u64, n: u64, k: u64) -> (String, (usize, u
     };
     let law_b = match p.law {
         2 => format!(
-            "(({pair}) * {a2} + 57) % 103 - 51 -> widen_f32 -> v; {odd} -> widen_f32 -> s; v / 9.0 + v / 9.0 * s / 1024.0"
+            "(({pair}) * {a2} + 57) % 103 - 51 -> widen<f32> -> v; {odd} -> widen<f32> -> s; v / 9.0 + v / 9.0 * s / 1024.0"
         ),
-        3 => format!("(t * {a2} + 57) % 103 - 51 -> widen_f32 -> v; v"),
+        3 => format!("(t * {a2} + 57) % 103 - 51 -> widen<f32> -> v; v"),
         4 => format!(
-            "(t * {a2} + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 -> x; (t == {p1}) -> {{ -true-> 0.0 / 0.0; -false-> x; }} -> r; r"
+            "(t * {a2} + 57) % 103 - 51 -> widen<f32> -> v; v / 9.0 -> x; (t == {p1}) -> {{ -true-> 0.0 / 0.0; -false-> x; }} -> r; r"
         ),
         5 if !narrow => format!(
-            "(t * {a2} + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 / 1000000000000000000000000000000.0"
+            "(t * {a2} + 57) % 103 - 51 -> widen<f32> -> v; v / 9.0 / 1000000000000000000000000000000.0"
         ),
         6 if !narrow => format!(
-            "(t * {a2} + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 * 100000000000000000000.0"
+            "(t * {a2} + 57) % 103 - 51 -> widen<f32> -> v; v / 9.0 * 100000000000000000000.0"
         ),
-        _ => format!("(t * {a2} + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0"),
+        _ => format!("(t * {a2} + 57) % 103 - 51 -> widen<f32> -> v; v / 9.0"),
     };
     let cells = [
         u64::from(p.seed[0]) * 7 % (m * n),
@@ -7254,9 +7272,9 @@ pub fn split_src_at(p: &SplitProg, m: u64, n: u64, k: u64) -> (String, (usize, u
         }
         _ => (law_a, law_b),
     };
-    let store = |f: Option<&str>| f.map_or(String::new(), |n| format!(" -> to_{n}"));
+    let store = |f: Option<&str>| f.map_or(String::new(), |n| format!(" -> to<{n}>"));
     let read = |f: Option<&str>, x: &str| match f {
-        Some(_) => format!("{x} -> widen_f32"),
+        Some(_) => format!("{x} -> widen<f32>"),
         None => x.to_string(),
     };
     let bi = if p.bt {
@@ -7380,9 +7398,9 @@ pub fn wgmma_src(p: &WgmmaProg) -> (String, (u64, u64, u64)) {
     let src = format!(
         "fn main(): tf32 | f32 {{
     {na} -> iota -> ia;
-    ia -> map {{ t -> (t * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> a;
+    ia -> map {{ t -> (t * {a1} + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 }} -> a;
     {nb} -> iota -> ib;
-    ib -> map {{ t -> (t * {a2} + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 }} -> b;
+    ib -> map {{ t -> (t * {a2} + 57) % 103 - 51 -> widen<f32> -> v; v / 9.0 }} -> b;
     {mn} -> iota -> ic;
     {k} -> iota -> kr;
     ic -> map {{ t -> t / {n} -> i; t % {n} -> j; (0.0, kr) -> fold {{ acc, k -> acc + {ai} * {bi} }} }} -> y;
@@ -7477,9 +7495,9 @@ pub fn wgmma16_src(p: &Wgmma16Prog) -> (String, (usize, u64)) {
         u64::from(p.law[0] % 13) * 2 + 3,
         u64::from(p.law[1] % 11) * 2 + 5,
     );
-    let store = |f: u8| half_fmt(f).map_or(String::new(), |n| format!(" -> to_{n}"));
+    let store = |f: u8| half_fmt(f).map_or(String::new(), |n| format!(" -> to<{n}>"));
     let read = |f: u8, x: &str| match half_fmt(f) {
-        Some(_) => format!("{x} -> widen_f32"),
+        Some(_) => format!("{x} -> widen<f32>"),
         None => x.to_string(),
     };
     let bi = |b: &str| match p.bt {
@@ -7500,11 +7518,11 @@ pub fn wgmma16_src(p: &Wgmma16Prog) -> (String, (usize, u64)) {
     let mut src = format!(
         "fn main() {{
     {mk} -> iota -> ia;
-    ia -> map {{ t -> (t * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0{sa} }} -> a;
+    ia -> map {{ t -> (t * {a1} + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0{sa} }} -> a;
     {kn} -> iota -> ib;
-    ib -> map {{ t -> (t * {a2} + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0{sb} }} -> b;
+    ib -> map {{ t -> (t * {a2} + 57) % 103 - 51 -> widen<f32> -> v; v / 9.0{sb} }} -> b;
     {mn} -> iota -> ic;
-    ic -> map {{ t -> (t * 3 + 7) % 17 - 8 -> widen_f32 -> v; v / 8.0 }} -> r;
+    ic -> map {{ t -> (t * 3 + 7) % 17 - 8 -> widen<f32> -> v; v / 8.0 }} -> r;
     {k} -> iota -> kr;
     ic -> map {{ t -> t / {n} -> i; t % {n} -> j; (0.0, kr) -> fold{set} {{ acc, q -> {ar} -> x; {br} -> y; acc + x * y }}{post} }} -> y;
 ",
@@ -7516,8 +7534,8 @@ pub fn wgmma16_src(p: &Wgmma16Prog) -> (String, (usize, u64)) {
     );
     let (am, bm) = if p.once {
         src += &format!(
-            "    ia -> map {{ t -> (t * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0{sa} }} -> am;
-    ib -> map {{ t -> (t * {a2} + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0{sb} }} -> bm;
+            "    ia -> map {{ t -> (t * {a1} + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0{sa} }} -> am;
+    ib -> map {{ t -> (t * {a2} + 57) % 103 - 51 -> widen<f32> -> v; v / 9.0{sb} }} -> bm;
 ",
             sa = store(p.fa),
             sb = store(p.fb),
@@ -7638,7 +7656,7 @@ pub const GENERIC_HELPERS: &[GenericHelper] = &[
         name: "ramp",
         sizes: &["n"],
         sig: "(s: f32) -> [f32; @{n}]",
-        body: "@{n} -> iota -> map { i -> i -> widen_f32 -> * s } -> ret;",
+        body: "@{n} -> iota -> map { i -> i -> widen<f32> -> * s } -> ret;",
     },
     GenericHelper {
         name: "flip",
@@ -7824,7 +7842,7 @@ impl GenericProg {
             let a = 3 + (usize::from(self.seed) + 5 * k) % 7;
             let b = (usize::from(self.seed) / 3 + k) % 11;
             src.push_str(&format!(
-                "    {len} -> iota -> map {{ i -> (i * {a} + {b}) % 13 - 6 -> widen_f32 -> * 0.125 }} -> {name};\n"
+                "    {len} -> iota -> map {{ i -> (i * {a} + {b}) % 13 - 6 -> widen<f32> -> * 0.125 }} -> {name};\n"
             ));
         };
         for (k, (h, vs)) in self.draws().into_iter().enumerate() {
@@ -7979,7 +7997,7 @@ impl GenericProg {
         u.floats += 1;
         if !pure {
             tops.push(
-                "4 -> iota -> map {\n    i -> i * 0 + 1 -> widen_f32\n} -> ones;".to_string(),
+                "4 -> iota -> map {\n    i -> i * 0 + 1 -> widen<f32>\n} -> ones;".to_string(),
             );
             let mut out = String::new();
             for line in body.lines() {
@@ -8091,7 +8109,7 @@ pub fn decode_prog_src(g: &DecodeProg) -> String {
     let (cn, half, lwh, lh) = (l * p * w, w / 2, l * w * h, l * h);
     let data = |name: &str, len: u64, a: u64, c: u64| {
         format!(
-            "    {len} -> iota -> map {{\n        t -> (t * {a} + {c}) % 3 - 1 -> widen_f32\n    }} -> {name};\n"
+            "    {len} -> iota -> map {{\n        t -> (t * {a} + {c}) % 3 - 1 -> widen<f32>\n    }} -> {name};\n"
         )
     };
     let rotate = if g.rot {
@@ -8149,7 +8167,7 @@ pub fn decode_prog_src(g: &DecodeProg) -> String {
         sum += " + a1[i]";
     }
     s += &format!(
-        "{ind}{h} -> iota -> map {{\n{ind}    i -> {sum}\n{ind}}} -> hidden;\n{ind}tokens -> map {{\n{ind}    t -> (0.0, features) -> fold {{\n{ind}        s, c -> s + emb[t * {h} + c] * hidden[c]\n{ind}    }}\n{ind}}} -> logits;\n{ind}((logits[0], 0), tokens) -> fold {{\n{ind}    best, t ->\n{ind}    (logits[t] > best.0) -> {{\n{ind}        -true-> (logits[t], t);\n{ind}        -false-> best;\n{ind}    }}\n{ind}}} -> winner;\n{ind}winner.1 -> token;\n{ind}token % 2 -> widen_f32 -> picked;\n{ind}{h} -> iota -> map {{\n{ind}    i -> emb[token * {h} + i] + picked\n{ind}}} -> next_x;\n{ind}next_x -> x;\n{ind}{last}.1 -> kv;\n{ind}position + 1 -> position;\n{ind}-> loop;\n            }}\n            -false-> x -> done;\n        }}\n    }}\n    done[0] -> println;\n    done[{m}] -> println;\n    done[{e}] -> println;\n}}\n",
+        "{ind}{h} -> iota -> map {{\n{ind}    i -> {sum}\n{ind}}} -> hidden;\n{ind}tokens -> map {{\n{ind}    t -> (0.0, features) -> fold {{\n{ind}        s, c -> s + emb[t * {h} + c] * hidden[c]\n{ind}    }}\n{ind}}} -> logits;\n{ind}((logits[0], 0), tokens) -> fold {{\n{ind}    best, t ->\n{ind}    (logits[t] > best.0) -> {{\n{ind}        -true-> (logits[t], t);\n{ind}        -false-> best;\n{ind}    }}\n{ind}}} -> winner;\n{ind}winner.1 -> token;\n{ind}token % 2 -> widen<f32> -> picked;\n{ind}{h} -> iota -> map {{\n{ind}    i -> emb[token * {h} + i] + picked\n{ind}}} -> next_x;\n{ind}next_x -> x;\n{ind}{last}.1 -> kv;\n{ind}position + 1 -> position;\n{ind}-> loop;\n            }}\n            -false-> x -> done;\n        }}\n    }}\n    done[0] -> println;\n    done[{m}] -> println;\n    done[{e}] -> println;\n}}\n",
         m = h / 2,
         e = h - 1,
     );
@@ -8273,7 +8291,7 @@ pub fn carry_prog_src(g: &CarryProg) -> String {
     let (n, m, k) = (g.n, g.m, g.k);
     let data = |name: &str, len: u64, a: u64, c: u64| {
         format!(
-            "    {len} -> iota -> map {{\n        t -> (t * {a} + {c}) % 5 - 2 -> widen_f32\n    }} -> {name};\n"
+            "    {len} -> iota -> map {{\n        t -> (t * {a} + {c}) % 5 - 2 -> widen<f32>\n    }} -> {name};\n"
         )
     };
     let mut s = String::from("fn main() {\n");
@@ -8286,8 +8304,8 @@ pub fn carry_prog_src(g: &CarryProg) -> String {
         // A bf16 matrix, as a checkpoint stores it: its one-row projection is
         // a nest cell (a warp a row), not a strided site.
         s += &data("proj", m * k, 13, 4).replace(
-            "widen_f32\n    } -> proj;",
-            "widen_f32 -> to_bf16\n    } -> proj;",
+            "widen<f32>\n    } -> proj;",
+            "widen<f32> -> to<bf16>\n    } -> proj;",
         );
     }
     s += &format!(
@@ -8295,7 +8313,7 @@ pub fn carry_prog_src(g: &CarryProg) -> String {
         nm = n * m
     );
     s += &format!(
-        "    {nm} -> iota -> map {{\n        c -> (c % 7 - 3) -> widen_f32\n    }} -> other0;\n",
+        "    {nm} -> iota -> map {{\n        c -> (c % 7 - 3) -> widen<f32>\n    }} -> other0;\n",
         nm = n * m
     );
     s += "    mut x: [f32; N] <- start;\n"
@@ -8315,7 +8333,7 @@ pub fn carry_prog_src(g: &CarryProg) -> String {
     );
     if g.row {
         s += &format!(
-            "                [trip % 4] -> ids;\n                {k} -> iota -> map {{\n                    c -> emb[ids[0] * {k} + c]\n                }} -> v;\n                1 -> iota -> map {{\n                    r -> (0.0, inner) -> fold {{\n                        s, c -> s + v[r * {k} + c] * v[r * {k} + c]\n                    }}\n                }} -> squares;\n                {k} -> iota -> map {{\n                    c -> v[c] * 0.5 + squares[0] * 0.0625\n                }} -> scaled;\n                {k} -> iota -> map {{\n                    c -> c * 3 + trip -> widen_f32 -> f;\n                    f % 5.0 - 2.0\n                }} -> other;\n                {m} -> iota -> map {{\n                    r -> (0.0, inner) -> fold {{\n                        s, c ->\n                        proj[r * {k} + c] -> widen_f32 -> weight;\n                        s + weight * other[c]\n                    }}\n                }} -> u;\n"
+            "                [trip % 4] -> ids;\n                {k} -> iota -> map {{\n                    c -> emb[ids[0] * {k} + c]\n                }} -> v;\n                1 -> iota -> map {{\n                    r -> (0.0, inner) -> fold {{\n                        s, c -> s + v[r * {k} + c] * v[r * {k} + c]\n                    }}\n                }} -> squares;\n                {k} -> iota -> map {{\n                    c -> v[c] * 0.5 + squares[0] * 0.0625\n                }} -> scaled;\n                {k} -> iota -> map {{\n                    c -> c * 3 + trip -> widen<f32> -> f;\n                    f % 5.0 - 2.0\n                }} -> other;\n                {m} -> iota -> map {{\n                    r -> (0.0, inner) -> fold {{\n                        s, c ->\n                        proj[r * {k} + c] -> widen<f32> -> weight;\n                        s + weight * other[c]\n                    }}\n                }} -> u;\n"
         );
     }
     let next = match (g.mix, g.second) {
@@ -8353,7 +8371,7 @@ pub fn prefill_prog_src(g: &PrefillProg) -> String {
     let (cn, lwh) = (l * p * w, l * w * h);
     let data = |name: &str, len: u64, a: u64, c: u64| {
         format!(
-            "    {len} -> iota -> map {{\n        t -> (t * {a} + {c}) % 5 - 2 -> widen_f32\n    }} -> {name};\n"
+            "    {len} -> iota -> map {{\n        t -> (t * {a} + {c}) % 5 - 2 -> widen<f32>\n    }} -> {name};\n"
         )
     };
     let mut s = String::new();
@@ -8386,7 +8404,7 @@ pub fn prefill_prog_src(g: &PrefillProg) -> String {
         // A distinct start (an equal fill is the same value: one object),
         // closed-form in the cell index.
         s += &format!(
-            "    {cn} -> iota -> map {{\n        i -> i % 3 - 1 -> widen_f32\n    }} -> start;\n"
+            "    {cn} -> iota -> map {{\n        i -> i % 3 - 1 -> widen<f32>\n    }} -> start;\n"
         );
         "start"
     };
@@ -8427,7 +8445,7 @@ pub fn prefill_prog_src(g: &PrefillProg) -> String {
 /// bound-blkdec (the composed bound, ADR-0041 D5 `bound(o)`): a decode block
 /// over `steps` trips — an optional RMS norm (a sum of squares and a Newton
 /// square root), the fused QKV projection over bf16 weights, the step's key
-/// and value rounded into a bf16 cache (`to_bf16` of values that carry the
+/// and value rounded into a bf16 cache (`to<bf16>` of values that carry the
 /// default face's deviation), causal scores over the cache, a running max,
 /// `exp`, the sum, `P·V ÷ sum` (an epilogue the stored rounding ends:
 /// `round-post`), the output projection with its residual and an optional
@@ -8476,10 +8494,10 @@ pub fn block_src(p: &BlockProg, member: bool) -> String {
     let law = |n: u64, m: u64, a: u64, div: &str, narrow: bool| {
         let h = (m - 1) / 2;
         format!(
-            "    {n} -> iota -> map {{\n        t -> (t % {m} * {s} + {a}) % {m} - {h} -> widen_f32 -> v;\n        v / {div}{tail}\n    }}",
+            "    {n} -> iota -> map {{\n        t -> (t % {m} * {s} + {a}) % {m} - {h} -> widen<f32> -> v;\n        v / {div}{tail}\n    }}",
             s = 7 + 2 * p.law,
             a = a + 5 * p.law,
-            tail = if narrow { " -> to_bf16" } else { "" },
+            tail = if narrow { " -> to<bf16>" } else { "" },
         )
     };
     let (w, wf) = (format!("{}.0", 8 * d), format!("{}.0", 8 * f.max(1)));
@@ -8523,28 +8541,28 @@ pub fn block_src(p: &BlockProg, member: bool) -> String {
         s += &format!("{b}rRD -> map {{\n{b}    e -> x[e] * 0.75\n{b}}} -> xn;\n");
     }
     s += &format!(
-        "{b}rRQ -> map {{\n{b}    e -> e / {q} -> b;\n{b}    e % {q} -> j;\n{b}    (0.0, rD) -> fold{k}{{\n{b}        acc, c -> wqkv[c * {q} + j] -> widen_f32 -> w;\n{b}        acc + xn[b * {d} + c] * w\n{b}    }}\n{b}}} -> qkv;\n"
+        "{b}rRQ -> map {{\n{b}    e -> e / {q} -> b;\n{b}    e % {q} -> j;\n{b}    (0.0, rD) -> fold{k}{{\n{b}        acc, c -> wqkv[c * {q} + j] -> widen<f32> -> w;\n{b}        acc + xn[b * {d} + c] * w\n{b}    }}\n{b}}} -> qkv;\n"
     );
     for (cache, off) in [("kc", d), ("vc", 2 * d)] {
         s += &format!(
-            "{b}rC -> map {{\n{b}    c -> c / {ld} -> b;\n{b}    c / {d} % {l} -> r;\n{b}    (r == p) -> {{\n{b}        -true-> qkv[b * {q} + {off} + c % {d}] -> to_bf16;\n{b}        -false-> {cache}[c];\n{b}    }}\n{b}}} -> {cache};\n",
+            "{b}rC -> map {{\n{b}    c -> c / {ld} -> b;\n{b}    c / {d} % {l} -> r;\n{b}    (r == p) -> {{\n{b}        -true-> qkv[b * {q} + {off} + c % {d}] -> to<bf16>;\n{b}        -false-> {cache}[c];\n{b}    }}\n{b}}} -> {cache};\n",
             ld = l * d,
         );
     }
     s += &format!(
-        "{b}rRL -> map {{\n{b}    e -> e / {l} -> b;\n{b}    e % {l} -> r;\n{b}    (r <= p) -> {{\n{b}        -true-> {{\n{b}            (0.0, rD) -> fold{k}{{\n{b}                acc, i -> kc[(b * {l} + r) * {d} + i] -> widen_f32 -> kv;\n{b}                acc + qkv[b * {q} + i] * kv\n{b}            }} -> dt;\n{b}            dt / {sc}\n{b}        }}\n{b}        -false-> -1000000000.0;\n{b}    }}\n{b}}} -> s;\n",
+        "{b}rRL -> map {{\n{b}    e -> e / {l} -> b;\n{b}    e % {l} -> r;\n{b}    (r <= p) -> {{\n{b}        -true-> {{\n{b}            (0.0, rD) -> fold{k}{{\n{b}                acc, i -> kc[(b * {l} + r) * {d} + i] -> widen<f32> -> kv;\n{b}                acc + qkv[b * {q} + i] * kv\n{b}            }} -> dt;\n{b}            dt / {sc}\n{b}        }}\n{b}        -false-> -1000000000.0;\n{b}    }}\n{b}}} -> s;\n",
         sc = if d >= 16 { "4.0" } else { "2.0" },
     );
     s += &format!(
         "{b}rR -> map {{\n{b}    b -> (-1000000000.0, rL) -> fold{k}{{\n{b}        acc, r -> s[b * {l} + r] -> se;\n{b}        (se > acc) -> {{\n{b}            -true-> se;\n{b}            -false-> acc;\n{b}        }}\n{b}    }}\n{b}}} -> mx;\n{b}rRL -> map {{\n{b}    e -> s[e] - mx[e / {l}] -> exp\n{b}}} -> pe;\n{b}rR -> map {{\n{b}    b -> (0.0, rL) -> fold{k}{{\n{b}        acc, r -> acc + pe[b * {l} + r]\n{b}    }}\n{b}}} -> den;\n"
     );
     s += &format!(
-        "{b}rRD -> map {{\n{b}    e -> e / {d} -> b;\n{b}    e % {d} -> i;\n{b}    (0.0, rL) -> fold{k}{{\n{b}        acc, r -> vc[(b * {l} + r) * {d} + i] -> widen_f32 -> vv;\n{b}        acc + pe[b * {l} + r] * vv\n{b}    }} -> av;\n{b}    av / den[b]\n{b}}} -> att;\n{b}rRD -> map {{\n{b}    e -> e / {d} -> b;\n{b}    e % {d} -> j;\n{b}    (0.0, rD) -> fold{k}{{\n{b}        acc, c -> wo[c * {d} + j] -> widen_f32 -> w;\n{b}        acc + att[b * {d} + c] * w\n{b}    }} -> y;\n{b}    x[e] + y\n{b}}} -> {h};\n",
+        "{b}rRD -> map {{\n{b}    e -> e / {d} -> b;\n{b}    e % {d} -> i;\n{b}    (0.0, rL) -> fold{k}{{\n{b}        acc, r -> vc[(b * {l} + r) * {d} + i] -> widen<f32> -> vv;\n{b}        acc + pe[b * {l} + r] * vv\n{b}    }} -> av;\n{b}    av / den[b]\n{b}}} -> att;\n{b}rRD -> map {{\n{b}    e -> e / {d} -> b;\n{b}    e % {d} -> j;\n{b}    (0.0, rD) -> fold{k}{{\n{b}        acc, c -> wo[c * {d} + j] -> widen<f32> -> w;\n{b}        acc + att[b * {d} + c] * w\n{b}    }} -> y;\n{b}    x[e] + y\n{b}}} -> {h};\n",
         h = if f > 0 { "h" } else { "x" },
     );
     if f > 0 {
         s += &format!(
-            "{b}rRF -> map {{\n{b}    e -> e / {f} -> b;\n{b}    e % {f} -> j;\n{b}    (0.0, rD) -> fold{k}{{\n{b}        acc, c -> wg[c * {f} + j] -> widen_f32 -> w;\n{b}        acc + h[b * {d} + c] * w\n{b}    }} -> g;\n{b}    (g > 0.0) -> {{\n{b}        -true-> g;\n{b}        -false-> 0.0;\n{b}    }}\n{b}}} -> hh;\n{b}rRD -> map {{\n{b}    e -> e / {d} -> b;\n{b}    e % {d} -> j;\n{b}    (0.0, rF) -> fold{k}{{\n{b}        acc, c -> wd[c * {d} + j] -> widen_f32 -> w;\n{b}        acc + hh[b * {f} + c] * w\n{b}    }} -> y2;\n{b}    h[e] + y2\n{b}}} -> x;\n"
+            "{b}rRF -> map {{\n{b}    e -> e / {f} -> b;\n{b}    e % {f} -> j;\n{b}    (0.0, rD) -> fold{k}{{\n{b}        acc, c -> wg[c * {f} + j] -> widen<f32> -> w;\n{b}        acc + h[b * {d} + c] * w\n{b}    }} -> g;\n{b}    (g > 0.0) -> {{\n{b}        -true-> g;\n{b}        -false-> 0.0;\n{b}    }}\n{b}}} -> hh;\n{b}rRD -> map {{\n{b}    e -> e / {d} -> b;\n{b}    e % {d} -> j;\n{b}    (0.0, rF) -> fold{k}{{\n{b}        acc, c -> wd[c * {d} + j] -> widen<f32> -> w;\n{b}        acc + hh[b * {f} + c] * w\n{b}    }} -> y2;\n{b}    h[e] + y2\n{b}}} -> x;\n"
         );
     }
     s += &format!(
@@ -8552,4 +8570,490 @@ pub fn block_src(p: &BlockProg, member: bool) -> String {
         last = r * d - 1,
     );
     formatted(s)
+}
+
+// ---------------------------------------------------------------------------
+// ADR-0051: format generics on generated programs.
+
+/// A program of helpers generic over a size and a format (`fn f<n, t:
+/// float>`, the `to` / `widen` builtins inside), each call giving a drawn
+/// prefix of its arguments explicitly (`-> store<4, bf16>`, `-> store<4>`,
+/// `-> store`) and the rest inferred — from the argument's format, or from the
+/// result's annotation where the format reaches only the output. Its
+/// hand-specialized twin writes one function per (helper, size, format) and
+/// no explicit argument.
+#[derive(Clone, Debug)]
+pub struct FormatProg {
+    /// Per call: the helper, a size draw, a format draw, the explicit-prefix
+    /// draw (and whether the result is annotated).
+    pub calls: Vec<[u8; 4]>,
+    pub seed: u8,
+}
+
+/// A helper generic over `n` and the format `t` (kind `kind`): signature and
+/// body with `@{e}` sizes (as [`GenericHelper`]) and `$t` for the format.
+pub struct FormatHelper {
+    pub name: &'static str,
+    pub kind: &'static str,
+    sig: &'static str,
+    body: &'static str,
+    /// The format reaches the output only: a call infers it from the
+    /// result's annotation (or gives it explicitly).
+    pub output_only: bool,
+    /// A scalar helper (no size parameter); else an array helper over
+    /// `[f32; n]` / `[t; n]`.
+    pub scalar: bool,
+}
+
+pub const FORMAT_HELPERS: &[FormatHelper] = &[
+    FormatHelper {
+        name: "store",
+        kind: "float",
+        sig: "(x: [f32; @{n}]) -> [$t; @{n}]",
+        body: "x -> map { v -> v -> to<$t> } -> ret;",
+        output_only: true,
+        scalar: false,
+    },
+    FormatHelper {
+        name: "load",
+        kind: "float",
+        sig: "(x: [$t; @{n}]) -> [f32; @{n}]",
+        body: "x -> map { v -> v -> widen<f32> } -> ret;",
+        output_only: false,
+        scalar: false,
+    },
+    FormatHelper {
+        name: "total",
+        kind: "float",
+        sig: "(x: [$t; @{n}]) -> f32",
+        body: "@{n} -> iota -> idx;\n(0.0, idx) -> fold { s, i -> x[i] -> widen<f32> -> v; s + v } -> ret;",
+        output_only: false,
+        scalar: false,
+    },
+    FormatHelper {
+        name: "rescale",
+        kind: "float",
+        sig: "(x: [$t; @{n}], k: f32) -> [$t; @{n}]",
+        body: "x -> map { v -> v -> widen<f32> -> * k -> to<$t> } -> ret;",
+        output_only: false,
+        scalar: false,
+    },
+    FormatHelper {
+        name: "matvec",
+        kind: "float",
+        sig: "(w: [$t; @{n * n}], x: [f32; @{n}]) -> [f32; @{n}]",
+        body: "@{n} -> iota -> cols;\n@{n} -> iota -> map { i -> (0.0, cols) -> fold { s, j -> w[i * @{n} + j] -> widen<f32> -> v; s + v * x[j] } } -> ret;",
+        output_only: false,
+        scalar: false,
+    },
+    FormatHelper {
+        name: "pick",
+        kind: "narrow",
+        sig: "(x: f32) -> $t",
+        body: "x -> to -> ret;",
+        output_only: true,
+        scalar: true,
+    },
+];
+
+/// The formats a draw picks among (`float` helpers); a `narrow` helper skips
+/// `f32`.
+const FORMAT_DRAWS: [&str; 5] = ["f32", "bf16", "f16", "f8e4m3", "f8e5m2"];
+
+pub fn format_prog_strategy() -> impl Strategy<Value = FormatProg> {
+    (
+        prop::collection::vec(prop::array::uniform4(any::<u8>()), 1..7),
+        any::<u8>(),
+    )
+        .prop_map(|(calls, seed)| FormatProg { calls, seed })
+}
+
+impl FormatProg {
+    /// Each call: (helper index, size, format, explicit prefix length,
+    /// annotated result).
+    fn draws(&self) -> Vec<(usize, u64, &'static str, usize, bool)> {
+        self.calls
+            .iter()
+            .map(|c| {
+                let h = usize::from(c[0]) % FORMAT_HELPERS.len();
+                let g = &FORMAT_HELPERS[h];
+                let fmt = if g.kind == "narrow" {
+                    FORMAT_DRAWS[1 + usize::from(c[2]) % 4]
+                } else {
+                    FORMAT_DRAWS[usize::from(c[2]) % 5]
+                };
+                let arity = if g.scalar { 1 } else { 2 };
+                let prefix = usize::from(c[3]) % (arity + 1);
+                // A format the output alone carries needs the stage or the
+                // annotation; otherwise the annotation is a draw.
+                let annotated = (g.output_only && prefix < arity) || c[3] / 3 % 2 == 0;
+                (h, 1 + u64::from(c[1]) % 9, fmt, prefix, annotated)
+            })
+            .collect()
+    }
+
+    /// Every instance, by helper: its (size, format) pairs in the order
+    /// lowering declares them (sizes numerically, then formats in ADR-0051's
+    /// order `f64, f32, bf16, f16, f8e4m3, f8e5m2`; a scalar helper has no
+    /// size).
+    fn instances(&self) -> Vec<(usize, Vec<(u64, &'static str)>)> {
+        let rank = |f: &str| {
+            ["f64", "f32", "bf16", "f16", "f8e4m3", "f8e5m2"]
+                .iter()
+                .position(|x| *x == f)
+        };
+        let mut by: std::collections::BTreeMap<
+            usize,
+            std::collections::BTreeSet<(u64, Option<usize>, &'static str)>,
+        > = Default::default();
+        for (h, n, f, _, _) in self.draws() {
+            let n = if FORMAT_HELPERS[h].scalar { 0 } else { n };
+            by.entry(h).or_default().insert((n, rank(f), f));
+        }
+        by.into_iter()
+            .map(|(h, s)| (h, s.into_iter().map(|(n, _, f)| (n, f)).collect()))
+            .collect()
+    }
+
+    /// `(instance name, twin name)` pairs.
+    pub fn renames(&self) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        for (h, pairs) in self.instances() {
+            let g = &FORMAT_HELPERS[h];
+            for (n, f) in pairs {
+                if g.scalar {
+                    out.push((format!("{}<{f}>", g.name), format!("{}_{f}", g.name)));
+                } else {
+                    out.push((
+                        format!("{}<{n}, {f}>", g.name),
+                        format!("{}_{n}_{f}", g.name),
+                    ));
+                }
+            }
+        }
+        out
+    }
+
+    /// Calls giving at least one argument explicitly; calls whose format
+    /// only the result's annotation determines; calls whose format the
+    /// argument determines; instances at `f32` (the conversions' identity).
+    pub fn counters(&self) -> [usize; 4] {
+        let mut c = [0; 4];
+        for (h, _, f, prefix, _) in self.draws() {
+            let g = &FORMAT_HELPERS[h];
+            let arity = if g.scalar { 1 } else { 2 };
+            c[0] += usize::from(prefix > 0);
+            c[1] += usize::from(g.output_only && prefix < arity);
+            c[2] += usize::from(!g.output_only && prefix < arity);
+            c[3] += usize::from(f == "f32");
+        }
+        c
+    }
+
+    /// The generic program (formatted).
+    pub fn source(&self) -> String {
+        self.program(false)
+    }
+
+    /// The hand-specialized twin (formatted).
+    pub fn hand(&self) -> String {
+        self.program(true)
+    }
+
+    fn program(&self, hand: bool) -> String {
+        let mut src = String::new();
+        for (h, pairs) in self.instances() {
+            let g = &FORMAT_HELPERS[h];
+            if hand {
+                for (n, f) in &pairs {
+                    let env = [("n", *n)];
+                    let name = if g.scalar {
+                        format!("{}_{f}", g.name)
+                    } else {
+                        format!("{}_{n}_{f}", g.name)
+                    };
+                    src.push_str(&format!(
+                        "fn {name}{} {{\n{}\n}}\n\n",
+                        render_sizes(g.sig, &env).replace("$t", f),
+                        render_sizes(g.body, &env).replace("$t", f)
+                    ));
+                }
+            } else {
+                let list = if g.scalar {
+                    format!("t: {}", g.kind)
+                } else {
+                    format!("n, t: {}", g.kind)
+                };
+                src.push_str(&format!(
+                    "fn {}<{list}>{} {{\n{}\n}}\n\n",
+                    g.name,
+                    render_sizes(g.sig, &[]).replace("$t", "t"),
+                    render_sizes(g.body, &[]).replace("$t", "t")
+                ));
+            }
+        }
+        src.push_str("fn main() {\n");
+        for (k, (h, n, f, prefix, annotated)) in self.draws().into_iter().enumerate() {
+            let g = &FORMAT_HELPERS[h];
+            let (a, b) = (
+                3 + (usize::from(self.seed) + 5 * k) % 7,
+                (usize::from(self.seed) / 3 + k) % 11,
+            );
+            // The operand: an f32 closed form of the index (exact in every
+            // drawn format's range), rounded to the format where the helper
+            // takes `[t; n]`.
+            // `matvec` reads an `n × n` matrix and an `n` vector.
+            let len = if g.name == "matvec" { n * n } else { n };
+            src.push_str(&format!(
+                "    {len} -> iota -> map {{ i -> (i * {a} + {b}) % 13 - 6 -> widen<f32> -> * 0.125 }} -> x{k};\n"
+            ));
+            if g.name == "matvec" {
+                src.push_str(&format!(
+                    "    {n} -> iota -> map {{ i -> (i * {b} + {a}) % 7 - 3 -> widen<f32> }} -> u{k};\n"
+                ));
+            }
+            if !g.output_only {
+                src.push_str(&format!(
+                    "    x{k} -> map {{ v -> v -> to<{f}> }} -> y{k};\n"
+                ));
+            }
+            let callee = if hand {
+                if g.scalar {
+                    format!("{}_{f}", g.name)
+                } else {
+                    format!("{}_{n}_{f}", g.name)
+                }
+            } else {
+                let args: Vec<String> = if g.scalar {
+                    vec![f.to_string()]
+                } else {
+                    vec![n.to_string(), f.to_string()]
+                };
+                match prefix {
+                    0 => g.name.to_string(),
+                    p => format!("{}<{}>", g.name, args[..p].join(", ")),
+                }
+            };
+            let ty = match (g.name, g.scalar) {
+                (_, true) => f.to_string(),
+                ("total", _) => "f32".to_string(),
+                ("load" | "matvec", _) => format!("[f32; {n}]"),
+                _ => format!("[{f}; {n}]"),
+            };
+            let bind = if annotated {
+                format!("r{k}: {ty}")
+            } else {
+                format!("r{k}")
+            };
+            let input = match g.name {
+                "store" => format!("x{k}"),
+                "load" | "total" => format!("y{k}"),
+                "rescale" => format!("(y{k}, 0.5)"),
+                "matvec" => format!("(y{k}, u{k})"),
+                _ => format!("x{k}[{}]", n - 1),
+            };
+            src.push_str(&format!("    {input} -> {callee} -> {bind};\n"));
+            match g.name {
+                "total" => src.push_str(&format!("    r{k} -> println;\n")),
+                "pick" => src.push_str(&format!("    r{k} -> widen<f32> -> println;\n")),
+                "load" | "matvec" => src.push_str(&format!(
+                    "    (0.0, r{k}) -> fold {{ s, v -> s + v }} -> println;\n"
+                )),
+                _ => src.push_str(&format!(
+                    "    (0.0, r{k}) -> fold {{ s, v -> v -> widen<f32> -> w; s + w }} -> println;\n"
+                )),
+            }
+        }
+        src.push_str("}\n");
+        mapal_syntax::format_source(&src)
+            .unwrap_or_else(|d| panic!("generated program does not parse: {d:?}\n{src}"))
+    }
+}
+
+// ---------------------------------------------------------------------------
+//  ADR-0051 D4: integer laws a `widen<f32>` converts (`BoundsProof::widen_range`)
+// ---------------------------------------------------------------------------
+
+/// An integer law of a map's index: `+ − ·` over the index and constants,
+/// `÷ %` by a positive constant (trap-free), constants around 2²⁴ and products
+/// that wrap past `i32`.
+#[derive(Clone, Debug)]
+pub enum IntLaw {
+    Index,
+    Const(i64),
+    Bin(Box<IntLaw>, char, Box<IntLaw>),
+}
+
+/// Constants a law draws: small, around 2²⁴ (the exactness edge of `f32`),
+/// and large enough that a product wraps.
+const LAW_CONSTS: [i64; 20] = [
+    0, 1, 2, 3, 7, 13, 57, 255, 4096, 4097, 65536, 262144, 1000003, 16777215, 16777216, 16777217,
+    33554432, 268435456, 1073741824, 2147483647,
+];
+
+/// Divisors (`÷ %`): positive, so no law traps; `16777217` / `16777218` sit on
+/// either side of the edge a `%` alone keeps.
+const LAW_DIVISORS: [i64; 10] = [
+    2, 3, 7, 101, 103, 4096, 1000003, 16777217, 16777218, 33554433,
+];
+
+/// The map's extents (`iota`): the index range the facts start from.
+const LAW_EXTENTS: [i64; 10] = [1, 2, 3, 5, 8, 33, 64, 65, 257, 4097];
+
+fn int_law_strategy() -> impl Strategy<Value = IntLaw> {
+    let leaf = prop_oneof![
+        3 => Just(IntLaw::Index),
+        2 => (0..LAW_CONSTS.len(), any::<bool>()).prop_map(|(k, neg)| {
+            let c = LAW_CONSTS[k];
+            IntLaw::Const(if neg && c != 0 { -c } else { c })
+        }),
+        1 => (0i64..300).prop_map(IntLaw::Const),
+    ];
+    leaf.prop_recursive(4, 16, 2, |inner| {
+        prop_oneof![
+            3 => (inner.clone(), prop::sample::select(vec!['+', '-', '*']), inner.clone())
+                .prop_map(|(a, op, b)| IntLaw::Bin(Box::new(a), op, Box::new(b))),
+            2 => (inner, prop::sample::select(vec!['/', '%']), 0..LAW_DIVISORS.len())
+                .prop_map(|(a, op, k)| {
+                    IntLaw::Bin(Box::new(a), op, Box::new(IntLaw::Const(LAW_DIVISORS[k])))
+                }),
+        ]
+    })
+}
+
+impl IntLaw {
+    /// The law as Mapal text over `i` (a negative constant as `(0 - c)`).
+    pub fn text(&self) -> String {
+        match self {
+            IntLaw::Index => "i".into(),
+            IntLaw::Const(c) if *c < 0 => format!("(0 - {})", -c),
+            IntLaw::Const(c) => c.to_string(),
+            IntLaw::Bin(a, op, b) => format!("({} {op} {})", a.text(), b.text()),
+        }
+    }
+
+    /// The law at `i` with `i32` arithmetic (wrapping `+ − ·`, truncating
+    /// `÷ %`) and whether an intermediate left `i32` — for coverage counters
+    /// only (the interpreter is the oracle).
+    pub fn eval(&self, i: i64) -> (i32, bool) {
+        match self {
+            IntLaw::Index => (i as i32, false),
+            IntLaw::Const(c) => (*c as i32, false),
+            IntLaw::Bin(a, op, b) => {
+                let ((x, wa), (y, wb)) = (a.eval(i), b.eval(i));
+                let (v, exact) = match op {
+                    '+' => (x.wrapping_add(y), i64::from(x) + i64::from(y)),
+                    '-' => (x.wrapping_sub(y), i64::from(x) - i64::from(y)),
+                    '*' => (x.wrapping_mul(y), i64::from(x) * i64::from(y)),
+                    '/' => (x.wrapping_div(y), i64::from(x) / i64::from(y)),
+                    _ => (x.wrapping_rem(y), i64::from(x) % i64::from(y)),
+                };
+                (v, wa || wb || i64::from(v) != exact)
+            }
+        }
+    }
+
+    /// Whether a `%` divides a dividend that wraps past `i32` at some index
+    /// in `cells` (the case ADR-0051's `%` rule exists for).
+    pub fn mod_of_wrapped(&self, cells: &[i64]) -> bool {
+        match self {
+            IntLaw::Bin(a, '%', _) => cells.iter().any(|&i| a.eval(i).1) || a.mod_of_wrapped(cells),
+            IntLaw::Bin(a, _, b) => a.mod_of_wrapped(cells) || b.mod_of_wrapped(cells),
+            _ => false,
+        }
+    }
+}
+
+/// A map over `extent -> iota` whose cells convert `law` with `widen<f32>` (or
+/// its rounding twin `to<f32>`), under a guard arm `i < c` / `i >= c` when
+/// drawn (the condition narrows the index where the conversion runs).
+#[derive(Clone, Debug)]
+pub struct WidenLawProg {
+    pub extent: i64,
+    pub law: IntLaw,
+    /// `(below, c)`: the arm `i < c` (`below`) or `i >= c`.
+    pub guard: Option<(bool, i64)>,
+}
+
+pub fn widen_law_strategy() -> impl Strategy<Value = WidenLawProg> {
+    // A third of the laws are a scaled law's remainder, `(law · k + c) % d`
+    // with `k` large: the product wraps past `i32` and only the `%` bounds
+    // the result (the shape ADR-0051's `%` rule is for).
+    let law = prop_oneof![
+        2 => int_law_strategy(),
+        1 => (int_law_strategy(), 9..LAW_CONSTS.len(), 0i64..300, 0..LAW_DIVISORS.len())
+            .prop_map(|(l, k, c, d)| {
+                let scaled = IntLaw::Bin(Box::new(l), '*', Box::new(IntLaw::Const(LAW_CONSTS[k])));
+                let shifted = IntLaw::Bin(Box::new(scaled), '+', Box::new(IntLaw::Const(c)));
+                IntLaw::Bin(Box::new(shifted), '%', Box::new(IntLaw::Const(LAW_DIVISORS[d])))
+            }),
+    ]
+    // One line of a formatted program (no line past 120 columns).
+    .prop_filter("a law fits a line", |l| l.text().len() <= 72);
+    (
+        0..LAW_EXTENTS.len(),
+        law,
+        prop::option::of((any::<bool>(), 0i64..70)),
+    )
+        .prop_map(|(e, law, guard)| WidenLawProg {
+            extent: LAW_EXTENTS[e],
+            law,
+            guard,
+        })
+}
+
+impl WidenLawProg {
+    /// The indices where the conversion runs (the guard's arm), in order.
+    pub fn cells(&self) -> Vec<i64> {
+        (0..self.extent)
+            .filter(|&i| match self.guard {
+                Some((true, c)) => i < c,
+                Some((false, c)) => i >= c,
+                None => true,
+            })
+            .collect()
+    }
+
+    /// The program converting with `verb` (`widen` or `to`), formatted: each
+    /// converted cell's sum printed (the conversion's value reaches output).
+    pub fn source(&self, verb: &str) -> String {
+        let law = self.law.text();
+        let body = match self.guard {
+            None => format!("i -> {law} -> {verb}<f32>"),
+            Some((below, c)) => {
+                let cmp = if below { "<" } else { ">=" };
+                format!("i -> (i {cmp} {c}) -> {{ -true-> {law} -> {verb}<f32>; -false-> 0.0; }}")
+            }
+        };
+        formatted(format!(
+            "fn main() {{
+    {extent} -> iota -> idx;
+    idx -> map {{ {body} }} -> converted;
+    (0.0, converted) -> fold {{ s, x -> s + x }} -> total;
+    total -> println;
+}}
+",
+            extent = self.extent
+        ))
+    }
+
+    /// The oracle twin: the law's integers over exactly the cells where the
+    /// conversion runs, their largest and smallest printed; `None` when no
+    /// cell runs it.
+    pub fn observer(&self) -> Option<String> {
+        let cells = self.cells();
+        let (first, n) = (*cells.first()?, cells.len());
+        Some(formatted(format!(
+            "fn main() {{
+    {n} -> iota -> cells;
+    cells -> map {{ j -> j + {first} -> i; {law} }} -> raw;
+    (raw[0], raw) -> fold {{ m, x -> (x > m) -> {{ -true-> x; -false-> m; }} }} -> hi;
+    (raw[0], raw) -> fold {{ m, x -> (x < m) -> {{ -true-> x; -false-> m; }} }} -> lo;
+    hi -> println;
+    lo -> println;
+}}
+",
+            law = self.law.text()
+        )))
+    }
 }

@@ -424,10 +424,10 @@ fn differential_widen() {
 fn main() {
     2 -> iota -> a;
     a[1] - 2 -> x;
-    x -> widen_i64 -> i;
-    a -> map { y -> y - 2 -> widen_f32 } -> fs;
-    a -> map { y -> y - 2 -> widen_f64 } -> ds;
-    fs -> map { y -> y -> widen_f64 } -> fds;
+    x -> widen<i64> -> i;
+    a -> map { y -> y - 2 -> widen<f32> } -> fs;
+    a -> map { y -> y - 2 -> widen<f64> } -> ds;
+    fs -> map { y -> y -> widen<f64> } -> fds;
     i -> println;
     fs[1] -> println;
     ds[1] -> println;

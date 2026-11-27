@@ -7,10 +7,14 @@
 // -> pressure 170.7 against side 1024's 85.3.
 fn main() {
     4194304 -> iota -> ia;
-    ia -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 } -> a;
+    ia -> map {
+        t -> (t * 7 + 13) % 101 - 50 -> widen<f32>
+    } -> a;
     4194304 -> iota -> ib;
     () -> time -> t0;
-    ib -> map { t -> a[(t % 2048) * 2048 + t / 2048] } -> b;
+    ib -> map {
+        t -> a[(t % 2048) * 2048 + t / 2048]
+    } -> b;
     () -> time -> t1;
     b[0] -> println;
     b[4194303] -> println;

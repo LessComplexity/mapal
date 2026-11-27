@@ -85,7 +85,7 @@ fi
 # that nearly cancels (|sum| << the terms) can't false-fail on contraction
 # noise. f64 gets 1e-9, not machine-eps class — K=4096 accumulation is ~K·eps
 # before cancellation. Default is the loose f32 bound unless proven f64.
-if grep -q 'widen_f64' "$MAPAL_FILE"; then
+if grep -q 'widen<f64>' "$MAPAL_FILE"; then
   REL_TOL=1e-9
 else
   REL_TOL=1e-4

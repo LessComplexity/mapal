@@ -3384,7 +3384,7 @@ mod tests {
 
     #[test]
     fn widen_is_trap_free_device_scalar_with_no_kernel_site() {
-        let src = "fn main() {\n    2 -> iota -> a;\n    a -> map { x -> x -> widen_f64 } -> b;\n    b[1] -> println;\n}\n";
+        let src = "fn main() {\n    2 -> iota -> a;\n    a -> map { x -> x -> widen<f64> } -> b;\n    b[1] -> println;\n}\n";
         let ir = lower_src(src);
         let body = ir
             .funcs()

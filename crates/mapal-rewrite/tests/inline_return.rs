@@ -27,7 +27,7 @@ fn bumped(x: [f32; 64]) -> [f32; 64] {
 
 fn main() {
     64 -> iota -> map {
-        i -> i -> widen_f32
+        i -> i -> widen<f32>
     } -> x;
     x -> doubled -> y;
     y -> bumped -> z;

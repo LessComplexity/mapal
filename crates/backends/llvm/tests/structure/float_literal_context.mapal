@@ -4,7 +4,7 @@ fn cosine_near_zero(x: f32) -> f32 {
     ((1.0, 1.0), steps) -> fold {
         sum_and_term, step ->
         2 * step + 1 -> k;
-        k * (k + 1) -> widen_f32 -> divisor;
+        k * (k + 1) -> widen<f32> -> divisor;
         -sum_and_term.1 * x_squared / divisor -> term;
         (sum_and_term.0 + term, term)
     } -> series;

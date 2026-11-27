@@ -44,6 +44,9 @@ syn keyword flowReserved category
 " The stage builtins (mapal-lower builtin_names): effects, collection ops and
 " sources, the math builtins (ADR-0042 / ADR-0046), widening and narrowing.
 syn keyword flowBuiltin print println time read zip enumerate iota fill exp sqrt sin cos
+syn keyword flowBuiltin to widen
+" ADR-0051 D6: the removed format-named conversions stay reserved (L1009, use is
+" L1713), shown as the builtins they were.
 syn keyword flowBuiltin widen_i64 widen_f32 widen_f64 to_bf16 to_f16 to_f8e4m3 to_f8e5m2
 
 " The scalar types (mapal-lower SCALAR_TYPES) and the `: compute` member tf32.
@@ -94,11 +97,16 @@ syn match flowArrow "->\|<-"
 " generic type at its sizes `Matrix<hidden_size, 64>`. The names inside are
 " sizes; commas stay plain (the region is transparent).
 " ---------------------------------------------------------------------------
+" ADR-0051: a stage's explicit arguments `to<bf16>`, `widen<f32>`, `store<8, bf16>`
+" and a declared list's `name: kind` (the kind words are keywords only there).
 syn region flowSizeArgs transparent oneline matchgroup=flowSizeBracket
-      \ start="\%(\<\u\w*\)\@<=<" end=">" contains=flowSizeParam,flowNumber,flowOperator
+      \ start="\%(\<\u\w*\)\@<=<" end=">" contains=flowSizeParam,flowNumber,flowOperator,flowPrimType
+syn region flowStageArgs transparent oneline matchgroup=flowSizeBracket
+      \ start="\%(->\s*\<[a-z_]\w*\)\@<=<" end=">" contains=flowSizeParam,flowNumber,flowOperator,flowPrimType
 syn region flowSizeList transparent oneline matchgroup=flowSizeBracket
-      \ start="\%(\<\%(fn\|type\)\s\+\h\w*\s*\)\@<=<" end=">" contains=flowSizeParam,flowNumber,flowOperator
+      \ start="\%(\<\%(fn\|type\)\s\+\h\w*\s*\)\@<=<" end=">" contains=flowSizeParam,flowNumber,flowOperator,flowPrimType
 syn match flowSizeParam contained "\<[a-z_]\w*\>"
+syn match flowPrimType contained "\<\%(float\|narrow\|int\|number\)\>"
 
 " ---------------------------------------------------------------------------
 " Guard arrows `-true->` `-false->` `-_->` `-42->` (single lexemes,

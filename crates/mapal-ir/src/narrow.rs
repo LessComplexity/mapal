@@ -3,12 +3,12 @@
 //! gates and cost model read.
 //!
 //! A narrow value is a binary32 value stored in two bytes (one for fp8); it
-//! takes no arithmetic. `widen_f32` / `widen_f64` are exact (every narrow
-//! value is an `f32`); `to_bf16` / `to_f16` / `to_f8e4m3` / `to_f8e5m2`
+//! takes no arithmetic. `widen<f32>` / `widen<f64>` are exact (every narrow
+//! value is an `f32`); `to<bf16>` / `to<f16>` / `to<f8e4m3>` / `to<f8e5m2>`
 //! round once, to nearest with ties to even, from the `f32` or `f64` operand
 //! itself (never through an intermediate rounding): subnormal results are
 //! kept, `±0` keeps its sign, and a NaN stays a NaN (payload unspecified: no
-//! surface observes it — a narrow value prints only after `widen_f32`, and
+//! surface observes it — a narrow value prints only after `widen<f32>`, and
 //! every NaN prints `NaN`). Past the largest finite value the 16-bit formats
 //! overflow to `±inf` (IEEE-754's `convertFormat` with `roundTiesToEven`);
 //! the fp8 formats **saturate** to `±max` (the PTX ISA's

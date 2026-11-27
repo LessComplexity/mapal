@@ -158,9 +158,19 @@ fn definition_lands_on_each_kind_of_definition() {
             "a function call",
         ),
         (
-            ("cache: KeyValueCache)", 0, 7),
+            ("cache: KeyValueCache<element>,", 0, 7),
             line_of(&text, "type KeyValueCache", 0),
             "a type use",
+        ),
+        (
+            ("keys: [element; cache_size]", 0, 7),
+            line_of(&text, "type KeyValueCache<element: float>", 0),
+            "a format parameter in a type position (ADR-0051 D1)",
+        ),
+        (
+            ("-> to<element>;", 0, 6),
+            line_of(&text, "fn write_rows<tokens, element: float>", 0),
+            "a format parameter as a stage's explicit argument (ADR-0051 D2)",
         ),
         (
             ("(weights.query, normed)", 0, 16),
@@ -174,7 +184,7 @@ fn definition_lands_on_each_kind_of_definition() {
         ),
         (
             ("cache.keys[key_row", 0, 6),
-            line_of(&text, "    keys: [f32; cache_size],", 0),
+            line_of(&text, "    keys: [element; cache_size],", 0),
             "a field",
         ),
         (
@@ -282,18 +292,35 @@ fn hover_shows_signatures_types_and_docs() {
     assert!(project.contains("A linear layer without bias"), "{project}");
     let result = h(&mut c, "result.0", 0);
     assert!(
-        result.contains("result: ([f32; tokens * hidden_size], KeyValueCache)"),
+        result.contains("result: ([f32; tokens * hidden_size], KeyValueCache<element>)"),
         "{result}"
     );
     let field = h(&mut c, "cache.keys[key_row", 6);
     assert!(
-        field.contains("keys: [f32; cache_size]") && field.contains("field of `KeyValueCache`"),
+        field.contains("keys: [element; cache_size]") && field.contains("field of `KeyValueCache`"),
         "{field}"
     );
     let global = h(&mut c, "log_rope_theta;", 0);
     assert!(global.contains("ln(500000)"), "trailing comment: {global}");
     let sqrt = h(&mut c, "-> sqrt -> root", 3);
     assert!(sqrt.contains("builtin `sqrt`"), "{sqrt}");
+    // ADR-0051: the generic conversions and a format parameter.
+    let widen = h(&mut c, "-> widen<f32> -> key;", 3);
+    assert!(
+        widen.contains("builtin `widen`") && widen.contains("exactly"),
+        "{widen}"
+    );
+    let to = h(&mut c, "-> to<element>;", 3);
+    assert!(
+        to.contains("builtin `to`") && to.contains("rounded"),
+        "{to}"
+    );
+    let element = h(&mut c, "type KeyValueCache<element: float>", 19);
+    assert!(
+        element.contains("element: float")
+            && element.contains("format parameter of `type KeyValueCache`, kind `float`"),
+        "{element}"
+    );
     let bf16 = h(&mut c, "[bf16; hidden_size]", 1);
     assert!(bf16.contains("primitive type `bf16`"), "{bf16}");
     c.stop();

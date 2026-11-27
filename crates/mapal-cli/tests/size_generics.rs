@@ -74,7 +74,7 @@ const GENERIC: &str =
     columns -> iota -> column_indices;
     rows -> iota -> map {
         row -> (0.0, column_indices) -> fold {
-            sum, column -> weight[row * columns + column] -> widen_f32 -> w;
+            sum, column -> weight[row * columns + column] -> widen<f32> -> w;
             sum + w * x[column]
         }
     } -> ret;
@@ -82,13 +82,13 @@ const GENERIC: &str =
 
 fn main() {
     131072 -> iota -> map {
-        i -> i % 7 - 3 -> widen_f32 -> * 0.25 -> to_bf16
+        i -> i % 7 - 3 -> widen<f32> -> * 0.25 -> to<bf16>
     } -> w;
     512 -> iota -> map {
-        i -> i % 5 -> widen_f32 -> + 1.0
+        i -> i % 5 -> widen<f32> -> + 1.0
     } -> x;
     256 -> iota -> map {
-        i -> i % 3 -> widen_f32
+        i -> i % 3 -> widen<f32>
     } -> x2;
     (w, x) -> project -> y;
     (w, x2) -> project -> z;
@@ -108,7 +108,7 @@ fn hand() -> String {
     {columns} -> iota -> column_indices;
     {rows} -> iota -> map {{
         row -> (0.0, column_indices) -> fold {{
-            sum, column -> weight[row * {columns} + column] -> widen_f32 -> w;
+            sum, column -> weight[row * {columns} + column] -> widen<f32> -> w;
             sum + w * x[column]
         }}
     }} -> ret;

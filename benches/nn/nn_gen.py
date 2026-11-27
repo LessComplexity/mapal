@@ -36,7 +36,7 @@ SEEDS = {
 
 def gen_mat(name: str) -> str:
     mul, add = SEEDS[name]
-    return f"    ta -> map {{ t -> (t * {mul} + {add}) % 9 + 1 -> widen_f32 }} -> {name};\n"
+    return f"    ta -> map {{ t -> (t * {mul} + {add}) % 9 + 1 -> widen<f32> }} -> {name};\n"
 
 
 def layer(d: int, out: str, lhs: str, rhs: str) -> str:

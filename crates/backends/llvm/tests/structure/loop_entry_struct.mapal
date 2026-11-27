@@ -6,10 +6,10 @@ type Cache {
 
 fn main() {
     4096 -> iota -> map {
-        i -> i % 7 -> widen_f32
+        i -> i % 7 -> widen<f32>
     } -> a;
     4096 -> iota -> map {
-        i -> i % 5 -> widen_f32
+        i -> i % 5 -> widen<f32>
     } -> b;
     Cache {
         keys: a,

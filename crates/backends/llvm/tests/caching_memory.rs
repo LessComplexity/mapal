@@ -97,11 +97,11 @@ fn history(b: u64) -> String {
     format!(
         "fn main() {{
     {hd} -> iota -> i_h;
-    i_h -> map {{ t -> (t * 3 + 1) % 5 - 2 -> widen_f32 }} -> h0;
+    i_h -> map {{ t -> (t * 3 + 1) % 5 - 2 -> widen<f32> }} -> h0;
     {bd} -> iota -> i_x;
-    i_x -> map {{ t -> t % 3 -> widen_f32 }} -> x0;
+    i_x -> map {{ t -> t % 3 -> widen<f32> }} -> x0;
     16 -> iota -> i_w;
-    i_w -> map {{ t -> (t * 2 + 1) % 5 - 2 -> widen_f32 }} -> w;
+    i_w -> map {{ t -> (t * 2 + 1) % 5 - 2 -> widen<f32> }} -> w;
     4 -> iota -> g;
     {bl} -> iota -> rBL;
     4 -> iota -> rD;
@@ -120,7 +120,7 @@ fn history(b: u64) -> String {
                 rHD -> map {{ e -> hx[e] * 2.0 + rs[e / 4] }} -> xn;
                 rBLN -> map {{ e -> e / 4 -> r; e % 4 -> j; (0.0, rD) -> fold {{ acc, k -> acc + xn[r * 4 + k] * w[k * 4 + j] }} }} -> pr;
                 rBLN -> map {{ e -> e / 4 -> r; e % 4 -> u; (u < 2) -> {{ -true-> pr[r * 4 + u] - pr[r * 4 + u + 2]; -false-> pr[r * 4 + u] + pr[r * 4 + u - 2]; }} }} -> ro;
-                rBLN -> map {{ e -> p -> widen_f32 -> pf; ro[e] + pf }} -> rp;
+                rBLN -> map {{ e -> p -> widen<f32> -> pf; ro[e] + pf }} -> rp;
                 rBD -> map {{ e -> (0.0, rBLN) -> fold {{ acc, i -> acc + ro[i] }} -> s; s * 0.0 + rp[e] }} -> x;
                 t + 1 -> t;
                 -> loop;
@@ -223,7 +223,7 @@ fn unchanged_rows_form() {
 fn unchanged_constant_carry_and_calls() {
     let src = "fn main() {
     8 -> iota -> i_w;
-    i_w -> map { t -> t % 3 -> widen_f32 } -> w0;
+    i_w -> map { t -> t % 3 -> widen<f32> } -> w0;
     8 -> iota -> r;
     mut wc: [f32; 8] <- w0;
     mut acc: f32 <- 0.0;
@@ -273,7 +273,7 @@ fn unchanged_back_edge_value_is_never_same() {
     128 -> iota -> tc;
     8 -> iota -> krange;
     64 -> iota -> tw;
-    tw -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> x; x / 128.0 } -> wk;
+    tw -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> x; x / 128.0 } -> wk;
     (0.0, 128) -> fill -> x0;
     (0.0, 8) -> fill -> o0;
     mut x: [f32; 128] <- x0;
@@ -282,7 +282,7 @@ fn unchanged_back_edge_value_is_never_same() {
     loop {
         (t < 16) -> {
             -true-> {
-                tc -> map { c -> (c / 8 == t) -> { -true-> { (c * 7 + 13) % 101 - 50 -> widen_f32 -> f; f / 64.0 + o[c % 8] } -false-> x[c]; } } -> x;
+                tc -> map { c -> (c / 8 == t) -> { -true-> { (c * 7 + 13) % 101 - 50 -> widen<f32> -> f; f / 64.0 + o[c % 8] } -false-> x[c]; } } -> x;
                 x -> map { v -> v * 0.5 } -> xh;
                 tc -> map { c -> c / 8 -> i; c % 8 -> j; (0.0, krange) -> fold { acc, k -> acc + xh[i * 8 + k] * wk[k * 8 + j] } } -> kk;
                 krange -> map { j -> (0.0, krange) -> fold { acc, r -> acc + kk[(t * 8 + r) % 128] * wk[r * 8 + j] } } -> o;
@@ -402,9 +402,9 @@ fn same_every_trip_launches_once() {
     };
     let src = "fn main() {
     64 -> iota -> i_w;
-    i_w -> map { t -> (t * 3 + 1) % 5 - 2 -> widen_f32 } -> w0;
+    i_w -> map { t -> (t * 3 + 1) % 5 - 2 -> widen<f32> } -> w0;
     256 -> iota -> i_h;
-    i_h -> map { t -> (t * 7 + 2) % 5 - 2 -> widen_f32 } -> h0;
+    i_h -> map { t -> (t * 7 + 2) % 5 - 2 -> widen<f32> } -> h0;
     64 -> iota -> rW;
     256 -> iota -> rH;
     8 -> iota -> rD;
@@ -653,9 +653,9 @@ fn layer(w: [f32; 64], x: [f32; 8]) -> [f32; 8] {
 }
 fn main() {
     64 -> iota -> iw;
-    iw -> map { t -> t % 13 - 6 -> widen_f32 -> v; v / 9.0 } -> w;
+    iw -> map { t -> t % 13 - 6 -> widen<f32> -> v; v / 9.0 } -> w;
     8 -> iota -> ix;
-    ix -> map { t -> t -> widen_f32 } -> x0;
+    ix -> map { t -> t -> widen<f32> } -> x0;
     mut x: [f32; 8] <- x0;
     mut t: i32 <- 0;
     loop {
@@ -664,7 +664,7 @@ fn main() {
                 (w, x) -> layer -> xa;
                 iw -> map { e -> w[e] + 1.0 } -> wsame;
                 (wsame, xa) -> layer -> xb;
-                t -> widen_f32 -> tf;
+                t -> widen<f32> -> tf;
                 iw -> map { e -> w[e] + tf } -> wnew;
                 (wnew, xb) -> layer -> x;
                 t + 1 -> t;

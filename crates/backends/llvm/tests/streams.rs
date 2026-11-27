@@ -122,7 +122,7 @@ fn site(out: &str, a: &str, b: &str, n: u64) -> String {
 
 fn operand(name: &str, mul: u32) -> String {
     format!(
-        "    ta -> map {{ t -> (t * {mul} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> {name};\n"
+        "    ta -> map {{ t -> (t * {mul} + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 }} -> {name};\n"
     )
 }
 
@@ -471,10 +471,10 @@ fn grouped(src: &str, contract: bool) -> Emission {
 const GROUPED_MEMBER: &str = r#"fn main() {
     4096 -> iota -> ta;
     64 -> iota -> krange;
-    ta -> map { t -> (t % 7 + 1) -> widen_f32 } -> a;
-    ta -> map { t -> (t % 5 + 2) -> widen_f32 } -> b;
-    ta -> map { t -> (t % 11 + 1) -> widen_f32 } -> e;
-    ta -> map { t -> (t % 13 + 1) -> widen_f32 } -> f;
+    ta -> map { t -> (t % 7 + 1) -> widen<f32> } -> a;
+    ta -> map { t -> (t % 5 + 2) -> widen<f32> } -> b;
+    ta -> map { t -> (t % 11 + 1) -> widen<f32> } -> e;
+    ta -> map { t -> (t % 13 + 1) -> widen<f32> } -> f;
     ta -> map { t ->
         t / 64 -> i;
         t % 64 -> j;
@@ -505,10 +505,10 @@ const GROUPED_MEMBER: &str = r#"fn main() {
 const GROUPED_FORK: &str = r#"fn main() {
     4096 -> iota -> ta;
     64 -> iota -> krange;
-    ta -> map { t -> (t % 7 + 1) -> widen_f32 } -> a;
-    ta -> map { t -> (t % 5 + 2) -> widen_f32 } -> b;
-    ta -> map { t -> (t % 11 + 1) -> widen_f32 } -> e;
-    ta -> map { t -> (t % 13 + 1) -> widen_f32 } -> f;
+    ta -> map { t -> (t % 7 + 1) -> widen<f32> } -> a;
+    ta -> map { t -> (t % 5 + 2) -> widen<f32> } -> b;
+    ta -> map { t -> (t % 11 + 1) -> widen<f32> } -> e;
+    ta -> map { t -> (t % 13 + 1) -> widen<f32> } -> f;
     ta -> map { t ->
         t / 64 -> i;
         t % 64 -> j;
@@ -543,10 +543,10 @@ const GROUPED_FORK: &str = r#"fn main() {
 const GROUPED_ROW_FOLD: &str = r#"fn main() {
     4096 -> iota -> ta;
     64 -> iota -> krange;
-    ta -> map { t -> (t % 7 + 1) -> widen_f32 } -> a;
-    ta -> map { t -> (t % 5 + 2) -> widen_f32 } -> b;
-    ta -> map { t -> (t % 11 + 1) -> widen_f32 } -> e;
-    ta -> map { t -> (t % 13 + 1) -> widen_f32 } -> f;
+    ta -> map { t -> (t % 7 + 1) -> widen<f32> } -> a;
+    ta -> map { t -> (t % 5 + 2) -> widen<f32> } -> b;
+    ta -> map { t -> (t % 11 + 1) -> widen<f32> } -> e;
+    ta -> map { t -> (t % 13 + 1) -> widen<f32> } -> f;
     ta -> map { t ->
         t / 64 -> i;
         t % 64 -> j;

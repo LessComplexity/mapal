@@ -297,7 +297,7 @@ pub struct TileRead {
     /// plain affine reads.
     pub ksplit: Option<TileKSplit>,
     /// ADR-0043: the operand array stores a narrow format and the product
-    /// reads its exact widening to the site's `elem` (`w[k] -> widen_f32`);
+    /// reads its exact widening to the site's `elem` (`w[k] -> widen<f32>`);
     /// `None`: the array's elements are `elem` itself. Only
     /// [`CategoryIr::tile_plan_narrow`]'s sites carry one.
     pub narrow: Option<crate::ty::NarrowFloat>,
@@ -1597,7 +1597,7 @@ impl CategoryIr {
 
     /// **Tile sites over narrow storage** (ADR-0043): a sum of products whose
     /// operand (one or both) is the exact widening of an element of a `bf16`
-    /// / `f16` array — `acc + x[i·k + k'] · (w[k'·n + j] -> widen_f32)` —
+    /// / `f16` array — `acc + x[i·k + k'] · (w[k'·n + j] -> widen<f32>)` —
     /// with the strided lanes and epilogues of [`Self::tile_plan_strided`]
     /// and [`Self::tile_plan_post`] (`post` tells them apart). Each such read
     /// carries its format ([`TileRead::narrow`]); the product is the widened

@@ -692,7 +692,7 @@ pub fn valid_name(new: &str) -> Result<(), String> {
     if mapal_syntax::KEYWORDS.contains(&new) {
         return Err(format!("`{new}` is a keyword"));
     }
-    if mapal_lower::is_builtin(new) || mapal_lower::SCALAR_TYPES.contains(&new) {
+    if crate::analysis::is_builtin_name(new) || mapal_lower::SCALAR_TYPES.contains(&new) {
         return Err(format!("`{new}` is a reserved name"));
     }
     Ok(())
@@ -741,6 +741,16 @@ pub fn hover_def(a: &Analysis, def: DefId) -> String {
             Some(o) => format!("size parameter of `fn {}`", a.defs[o].name),
             None => "size parameter".into(),
         },
+        DefKind::FormatParam => {
+            let owner = match d.container {
+                Some(o) if a.defs[o].kind == DefKind::Type => {
+                    format!(" of `type {}`", a.defs[o].name)
+                }
+                Some(o) => format!(" of `fn {}`", a.defs[o].name),
+                None => String::new(),
+            };
+            format!("format parameter{owner}, kind `{}`", d.ty.render())
+        }
         DefKind::Param => match d.container {
             Some(f) => format!("parameter of `fn {}`", a.defs[f].name),
             None => "parameter".into(),
@@ -860,7 +870,7 @@ pub fn completions(a: &Analysis, off: u32) -> Vec<CompletionItem> {
             DefKind::Function => CompletionItemKind::FUNCTION,
             DefKind::Type => CompletionItemKind::STRUCT,
             DefKind::Global => CompletionItemKind::CONSTANT,
-            DefKind::SizeParam => CompletionItemKind::TYPE_PARAMETER,
+            DefKind::SizeParam | DefKind::FormatParam => CompletionItemKind::TYPE_PARAMETER,
             DefKind::Field => CompletionItemKind::FIELD,
             _ => CompletionItemKind::VARIABLE,
         };

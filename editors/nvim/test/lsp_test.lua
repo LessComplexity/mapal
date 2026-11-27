@@ -90,11 +90,11 @@ if not client then
 end
 
 definition(client, buf, "a function call", "-> decoder_layer -> result", 3, "fn decoder_layer")
-definition(client, buf, "a type use", "cache: KeyValueCache)", 7, "type KeyValueCache")
+definition(client, buf, "a type use", "cache: KeyValueCache<element>,", 7, "type KeyValueCache")
 definition(client, buf, "a binding use", "(weights.query, normed)", 16, "-> rms_norm -> normed;")
 -- `positions` of decoder_layer (the second function with that parameter).
 definition(client, buf, "a parameter", "(query, positions) -> rotate", 8, "    positions: [i32; tokens],", 2)
-definition(client, buf, "a field", "cache.keys[key_row", 6, "    keys: [f32; cache_size],")
+definition(client, buf, "a field", "cache.keys[key_row", 6, "    keys: [element; cache_size],")
 definition(client, buf, "a top-level value", "hidden_size -> iota -> features", 0, "2048 -> hidden_size;")
 definition(client, buf, "a rebind of a mut binding", "result.0 -> hidden;", 12, "mut hidden: [f32")
 

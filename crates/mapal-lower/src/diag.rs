@@ -87,6 +87,13 @@ pub enum LCode {
     SizeNotIntegral, // L1705
     SizeUnbound,     // L1706
     SizeOutOfRange,  // L1707
+    // ADR-0051: format generics (the L17xx band continued).
+    FormatUndetermined, // L1708
+    FormatConflict,     // L1709
+    FormatKind,         // L1710
+    UnknownKind,        // L1711
+    GenericArgs,        // L1712
+    RemovedConversion,  // L1713
     // ADR-0048: top-level bindings, compile-time evaluation, `_` and
     // size-generic types (the L18xx band).
     TopMutable,    // L1801
@@ -178,6 +185,12 @@ impl LCode {
             LCode::SizeNotIntegral => "L1705",
             LCode::SizeUnbound => "L1706",
             LCode::SizeOutOfRange => "L1707",
+            LCode::FormatUndetermined => "L1708",
+            LCode::FormatConflict => "L1709",
+            LCode::FormatKind => "L1710",
+            LCode::UnknownKind => "L1711",
+            LCode::GenericArgs => "L1712",
+            LCode::RemovedConversion => "L1713",
             LCode::TopMutable => "L1801",
             LCode::TopNameReused => "L1802",
             LCode::TopStage => "L1803",

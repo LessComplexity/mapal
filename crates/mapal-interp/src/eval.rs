@@ -752,7 +752,7 @@ pub(crate) fn round_tf32(x: f32) -> f32 {
 
 /// The weakest member a product evaluates with under `--weakest`: its f32
 /// operands rounded first to TF32 (ADR-0041) or to a narrow format (ADR-0043
-/// D4: `bf16` / `f16`, ties to even — the oracle's `to_bf16` / `to_f16`).
+/// D4: `bf16` / `f16`, ties to even — the oracle's `to<bf16>` / `to<f16>`).
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Weak {
     None,

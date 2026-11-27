@@ -79,9 +79,9 @@ fn matmul(a: [f64; 30], b: [f64; 100]) -> [f64; 120] {
 }
 fn main() {
     30 -> iota -> ais;
-    ais -> map { x -> (x * 5 + 7) % 67 - 33 -> widen_f64 } -> a;
+    ais -> map { x -> (x * 5 + 7) % 67 - 33 -> widen<f64> } -> a;
     100 -> iota -> bis;
-    bis -> map { x -> (x * 7 + 11) % 101 - 50 -> widen_f64 } -> b;
+    bis -> map { x -> (x * 7 + 11) % 101 - 50 -> widen<f64> } -> b;
     (a, b) -> matmul -> c;
     c[0] -> println;
     c[119] -> println;
@@ -123,9 +123,9 @@ fn matmul(a: [f32; 2400], b: [f32; 9600]) -> [f32; 256] {
 }
 fn main() {
     2400 -> iota -> ta;
-    ta -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 } -> a;
+    ta -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> } -> a;
     9600 -> iota -> tb;
-    tb -> map { t -> (t * 7 + 57) % 101 - 50 -> widen_f32 } -> b;
+    tb -> map { t -> (t * 7 + 57) % 101 - 50 -> widen<f32> } -> b;
     (a, b) -> matmul -> c;
     c[0] -> println;
     c[255] -> println;
@@ -1096,9 +1096,9 @@ fn golden_tile_map_shape_1d() {
 const TILE_CONV_SRC: &str = r#"
 fn main() {
     324 -> iota -> ti;
-    ti -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 } -> img;
+    ti -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> } -> img;
     9 -> iota -> kr;
-    kr -> map { t -> (t * 5 + 3) % 31 - 15 -> widen_f32 } -> w;
+    kr -> map { t -> (t * 5 + 3) % 31 - 15 -> widen<f32> } -> w;
     256 -> iota -> ts;
     ts -> map { t ->
         t / 16 -> i;
@@ -2136,8 +2136,8 @@ fn gpu_time_bracket_is_time_tile_sync_time() {
         format!(
             "fn main() {{
     {nn} -> iota -> ta;
-    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 }} -> a;
-    ta -> map {{ t -> (t * 7 + 57) % 101 - 50 -> widen_f32 }} -> b;
+    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen<f32> }} -> a;
+    ta -> map {{ t -> (t * 7 + 57) % 101 - 50 -> widen<f32> }} -> b;
     {n} -> iota -> krange;
     () -> time -> t0;
     ta -> map {{ t ->
@@ -2261,8 +2261,8 @@ fn gpu_mm(n: u64) -> CategoryIr {
     let src = format!(
         "fn main() {{
     {nn} -> iota -> ta;
-    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 }} -> a;
-    ta -> map {{ t -> (t * 7 + 57) % 101 - 50 -> widen_f32 }} -> b;
+    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen<f32> }} -> a;
+    ta -> map {{ t -> (t * 7 + 57) % 101 - 50 -> widen<f32> }} -> b;
     {n} -> iota -> krange;
     ta -> map {{ t ->
         t / {n} -> i;

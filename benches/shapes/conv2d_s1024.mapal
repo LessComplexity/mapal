@@ -12,15 +12,22 @@
 // written down before either was run.
 fn main() {
     1048576 -> iota -> ti;
-    ti -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 } -> img;
+    ti -> map {
+        t -> (t * 7 + 13) % 101 - 50 -> widen<f32>
+    } -> img;
     9 -> iota -> kr;
-    kr -> map { t -> (t * 5 + 3) % 31 - 15 -> widen_f32 } -> w;
+    kr -> map {
+        t -> (t * 5 + 3) % 31 - 15 -> widen<f32>
+    } -> w;
     1044484 -> iota -> ts;
     () -> time -> t0;
-    ts -> map { t ->
+    ts -> map {
+        t ->
         t / 1022 -> i;
         t % 1022 -> j;
-        (0.0, kr) -> fold { acc, k -> acc + w[k] * img[(i + k / 3) * 1024 + j + k % 3] }
+        (0.0, kr) -> fold {
+            acc, k -> acc + w[k] * img[(i + k / 3) * 1024 + j + k % 3]
+        }
     } -> y;
     () -> time -> t1;
     y[0] -> println;

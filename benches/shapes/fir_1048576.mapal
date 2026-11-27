@@ -2,13 +2,20 @@
 // small sibling fir_65536.mapal, oracle fir_256.mapal).
 fn main() {
     1048639 -> iota -> tx;
-    tx -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 } -> x;
+    tx -> map {
+        t -> (t * 7 + 13) % 101 - 50 -> widen<f32>
+    } -> x;
     64 -> iota -> kr;
-    kr -> map { t -> (t * 5 + 3) % 31 - 15 -> widen_f32 } -> w;
+    kr -> map {
+        t -> (t * 5 + 3) % 31 - 15 -> widen<f32>
+    } -> w;
     1048576 -> iota -> ts;
     () -> time -> t0;
-    ts -> map { t ->
-        (0.0, kr) -> fold { acc, k -> acc + w[k] * x[t + k] }
+    ts -> map {
+        t ->
+        (0.0, kr) -> fold {
+            acc, k -> acc + w[k] * x[t + k]
+        }
     } -> y;
     () -> time -> t1;
     y[0] -> println;

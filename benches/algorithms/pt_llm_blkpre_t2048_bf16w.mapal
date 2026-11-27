@@ -1,53 +1,53 @@
 fn main() {
     8388608 -> iota -> i_x0;
     i_x0 -> map {
-        t -> (t % 101 * 7 + 13) % 101 - 50 -> widen_f32 -> v;
+        t -> (t % 101 * 7 + 13) % 101 - 50 -> widen<f32> -> v;
         v / 29.0
     } -> x0;
     4096 -> iota -> i_g1;
     i_g1 -> map {
-        t -> (t % 97 * 5 + 3) % 97 - 48 -> widen_f32 -> v;
+        t -> (t % 97 * 5 + 3) % 97 - 48 -> widen<f32> -> v;
         1.0 + v / 400.0
     } -> g1;
     25165824 -> iota -> i_wqkv;
     i_wqkv -> map {
-        t -> (t % 103 * 11 + 57) % 103 - 51 -> widen_f32 -> v;
-        v / 1856.0 -> to_bf16
+        t -> (t % 103 * 11 + 57) % 103 - 51 -> widen<f32> -> v;
+        v / 1856.0 -> to<bf16>
     } -> wqkv;
     16777216 -> iota -> i_wo;
     i_wo -> map {
-        t -> (t % 97 * 5 + 3) % 97 - 48 -> widen_f32 -> v;
-        v / 1856.0 -> to_bf16
+        t -> (t % 97 * 5 + 3) % 97 - 48 -> widen<f32> -> v;
+        v / 1856.0 -> to<bf16>
     } -> wo;
     131072 -> iota -> i_cs;
     i_cs -> map {
-        t -> (t % 89 * 3 + 1) % 89 - 44 -> widen_f32 -> v;
+        t -> (t % 89 * 3 + 1) % 89 - 44 -> widen<f32> -> v;
         v / 50.0
     } -> cs;
     131072 -> iota -> i_sn;
     i_sn -> map {
-        t -> (t % 107 * 13 + 7) % 107 - 53 -> widen_f32 -> v;
+        t -> (t % 107 * 13 + 7) % 107 - 53 -> widen<f32> -> v;
         v / 50.0
     } -> sn;
     4096 -> iota -> i_g2;
     i_g2 -> map {
-        t -> (t % 103 * 11 + 57) % 103 - 51 -> widen_f32 -> v;
+        t -> (t % 103 * 11 + 57) % 103 - 51 -> widen<f32> -> v;
         1.0 + v / 400.0
     } -> g2;
     58720256 -> iota -> i_wg;
     i_wg -> map {
-        t -> (t % 89 * 3 + 1) % 89 - 44 -> widen_f32 -> v;
-        v / 1856.0 -> to_bf16
+        t -> (t % 89 * 3 + 1) % 89 - 44 -> widen<f32> -> v;
+        v / 1856.0 -> to<bf16>
     } -> wg;
     58720256 -> iota -> i_wu;
     i_wu -> map {
-        t -> (t % 107 * 13 + 7) % 107 - 53 -> widen_f32 -> v;
-        v / 1856.0 -> to_bf16
+        t -> (t % 107 * 13 + 7) % 107 - 53 -> widen<f32> -> v;
+        v / 1856.0 -> to<bf16>
     } -> wu;
     58720256 -> iota -> i_wd;
     i_wd -> map {
-        t -> (t % 109 * 17 + 29) % 109 - 54 -> widen_f32 -> v;
-        v / 3472.3 -> to_bf16
+        t -> (t % 109 * 17 + 29) % 109 - 54 -> widen<f32> -> v;
+        v / 3472.3 -> to<bf16>
     } -> wd;
     2048 -> iota -> rR;
     4096 -> iota -> rD;
@@ -81,7 +81,7 @@ fn main() {
         e -> e / 6144 -> i;
         e % 6144 -> j;
         (0.0, rD) -> fold {
-            acc, k -> wqkv[k * 6144 + j] -> widen_f32 -> wv;
+            acc, k -> wqkv[k * 6144 + j] -> widen<f32> -> wv;
             acc + xn[i * 4096 + k] * wv
         }
     } -> qkv;
@@ -148,7 +148,7 @@ fn main() {
         e -> e / 4096 -> i;
         e % 4096 -> j;
         (0.0, rD) -> fold {
-            acc, k -> wo[k * 4096 + j] -> widen_f32 -> wv;
+            acc, k -> wo[k * 4096 + j] -> widen<f32> -> wv;
             acc + attf[i * 4096 + k] * wv
         } -> y;
         x0[e] + y
@@ -172,7 +172,7 @@ fn main() {
         e -> e / 14336 -> b;
         e % 14336 -> j;
         (0.0, rD) -> fold {
-            acc, k -> wg[k * 14336 + j] -> widen_f32 -> wv;
+            acc, k -> wg[k * 14336 + j] -> widen<f32> -> wv;
             acc + hn[b * 4096 + k] * wv
         }
     } -> gt;
@@ -180,7 +180,7 @@ fn main() {
         e -> e / 14336 -> b;
         e % 14336 -> j;
         (0.0, rD) -> fold {
-            acc, k -> wu[k * 14336 + j] -> widen_f32 -> wv;
+            acc, k -> wu[k * 14336 + j] -> widen<f32> -> wv;
             acc + hn[b * 4096 + k] * wv
         }
     } -> up;
@@ -194,7 +194,7 @@ fn main() {
         e -> e / 4096 -> b;
         e % 4096 -> j;
         (0.0, rF) -> fold {
-            acc, k -> wd[k * 4096 + j] -> widen_f32 -> wv;
+            acc, k -> wd[k * 4096 + j] -> widen<f32> -> wv;
             acc + hh[b * 14336 + k] * wv
         } -> y2;
         h1[e] + y2

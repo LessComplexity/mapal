@@ -10,8 +10,8 @@ use mapal_backend_llvm::{EmitOpts, GpuArms, GpuRungs, emit_detailed};
 const MM_1024: &str = r#"
 fn main() {
     1048576 -> iota -> ta;
-    ta -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 } -> a;
-    ta -> map { t -> (t * 7 + 57) % 101 - 50 -> widen_f32 } -> b;
+    ta -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> } -> a;
+    ta -> map { t -> (t * 7 + 57) % 101 - 50 -> widen<f32> } -> b;
     1024 -> iota -> krange;
     ta -> map { t ->
         t / 1024 -> i;

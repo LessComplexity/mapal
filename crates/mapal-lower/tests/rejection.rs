@@ -65,9 +65,9 @@ fn l1009_reserved_collection_builtins() {
     // of either name collides exactly like `print` — L1009.
     assert_rejects("fn zip() {}\nfn main() {}\n", "L1009");
     assert_rejects("fn enumerate() {}\nfn main() {}\n", "L1009");
-    assert_rejects("fn widen_i64() {}\nfn main() {}\n", "L1009");
-    assert_rejects("fn widen_f32() {}\nfn main() {}\n", "L1009");
-    assert_rejects("fn widen_f64() {}\nfn main() {}\n", "L1009");
+    assert_rejects("fn widen<i64>() {}\nfn main() {}\n", "L1009");
+    assert_rejects("fn widen<f32>() {}\nfn main() {}\n", "L1009");
+    assert_rejects("fn widen<f64>() {}\nfn main() {}\n", "L1009");
 }
 
 #[test]
@@ -1524,22 +1524,40 @@ fn iota_bound_literal_count_lowers() {
 
 #[test]
 fn l1614_invalid_widen_sources_reject() {
-    assert_rejects("fn main() { 5 -> x: i64; x -> widen_f64 -> y; }\n", "L1614");
-    assert_rejects("fn main() { [1, 2] -> widen_i64 -> y; }\n", "L1614");
-    assert_rejects("fn main() { 1.0 -> widen_f32 -> y; }\n", "L1614");
+    assert_rejects(
+        "fn main() { 5 -> x: i64; x -> widen<f64> -> y; }\n",
+        "L1614",
+    );
+    assert_rejects("fn main() { [1, 2] -> widen<i64> -> y; }\n", "L1614");
+    // A float literal takes the conversion's width (the identity, ADR-0051);
+    // an `f64` does not widen to `f32`.
+    assert_rejects(
+        "fn main() { 1.0 -> to<f64> -> x; x -> widen<f32> -> y; }\n",
+        "L1614",
+    );
 }
 
 #[test]
-fn l1614_message_names_the_legal_lattice() {
-    let src = "fn main() { 5 -> x: i64; x -> widen_f64 -> y; }\n";
-    let po = mapal_syntax::parse(src);
-    assert!(po.diagnostics.is_empty(), "{:?}", po.diagnostics);
-    let ds = mapal_lower::lower(src, &po.program).unwrap_err();
-    let d = ds
-        .iter()
-        .find(|d| d.code.0 == "L1614")
-        .unwrap_or_else(|| panic!("expected L1614, got {ds:?}"));
-    for edge in ["i32→i64", "i32→f32", "i32→f64", "f32→f64"] {
-        assert!(d.message.contains(edge), "message omits {edge}: {d:?}");
-    }
+fn l1614_message_names_the_pair_and_the_rounding_conversion() {
+    // ADR-0051 D4: the message names the pair and, where `to` realizes it,
+    // the conversion that rounds; where nothing does, it says so.
+    let l1614 = |src: &str| {
+        let po = mapal_syntax::parse(src);
+        assert!(po.diagnostics.is_empty(), "{:?}", po.diagnostics);
+        let ds = mapal_lower::lower(src, &po.program).unwrap_err();
+        ds.into_iter()
+            .find(|d| d.code.0 == "L1614")
+            .unwrap_or_else(|| panic!("expected L1614"))
+            .message
+    };
+    let m = l1614("fn main() { 0.5 -> widen<bf16> -> y; }\n");
+    assert!(
+        m.contains("cannot widen `f32` to `bf16`") && m.contains("`to<bf16>`"),
+        "{m}"
+    );
+    let m = l1614("fn main() { 5 -> x: i64; x -> widen<f64> -> y; }\n");
+    assert!(
+        m.contains("cannot widen `i64` to `f64`") && m.contains("yet"),
+        "{m}"
+    );
 }

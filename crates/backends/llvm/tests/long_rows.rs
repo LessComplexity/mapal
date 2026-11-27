@@ -135,9 +135,9 @@ fn softmax(rows: u64, len: u64) -> String {
     {len} -> iota -> kl;
     8 -> iota -> kd;
     {rq} -> iota -> tq;
-    tq -> map {{ e -> (e * 5 + 3) % 31 - 15 -> widen_f32 -> v; e / 8 + 1 -> widen_f32 -> rf; v * rf / 16.0 }} -> q;
+    tq -> map {{ e -> (e * 5 + 3) % 31 - 15 -> widen<f32> -> v; e / 8 + 1 -> widen<f32> -> rf; v * rf / 16.0 }} -> q;
     {lw} -> iota -> tw;
-    tw -> map {{ e -> (e * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 64.0 }} -> w;
+    tw -> map {{ e -> (e * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 64.0 }} -> w;
     t -> map {{ e -> e / {len} -> i; e % {len} -> j; (0.0, kd) -> fold {{ acc, d -> acc + q[i * 8 + d] * w[d * {len} + j] }} }} -> x;
     rr -> map {{ i -> (-1000000000.0, kl) -> fold {{ acc, j -> x[i * {len} + j] -> e; (e > acc) -> {{ -true-> e; -false-> acc; }} }} }} -> mx;
     t -> map {{ e -> (x[e] - mx[e / {len}]) / 8.0 -> z; z / 256.0 + 1.0 -> u; (u > 0.0) -> {{ -true-> u; -false-> 0.0; }} -> v0; 8 -> iota -> sq; (v0, sq) -> fold {{ acc, k -> acc * acc }} }} -> ex;
@@ -234,9 +234,9 @@ fn laws_drop_phases() {
     {len} -> iota -> kl;
     8 -> iota -> kd;
     {rq} -> iota -> tq;
-    tq -> map {{ e -> (e * 5 + 3) % 31 - 15 -> widen_f32 -> v; v / 16.0 }} -> q;
+    tq -> map {{ e -> (e * 5 + 3) % 31 - 15 -> widen<f32> -> v; v / 16.0 }} -> q;
     {lw} -> iota -> tw;
-    tw -> map {{ e -> (e * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 64.0 }} -> w;
+    tw -> map {{ e -> (e * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 64.0 }} -> w;
     t -> map {{ e -> e / {len} -> i; e % {len} -> j; (0.0, kd) -> fold {{ acc, d -> acc + q[i * 8 + d] * w[d * {len} + j] }} }} -> x;
 ",
         rq = rows * 8,
@@ -475,9 +475,9 @@ fn rule_slices_long_rows_on_measured_properties() {
     {len} -> iota -> kl;
     8 -> iota -> kd;
     {rq} -> iota -> tq;
-    tq -> map {{ e -> (e * 5 + 3) % 31 - 15 -> widen_f32 -> v; v / 16.0 }} -> q;
+    tq -> map {{ e -> (e * 5 + 3) % 31 - 15 -> widen<f32> -> v; v / 16.0 }} -> q;
     {lw} -> iota -> tw;
-    tw -> map {{ e -> (e * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 64.0 }} -> w;
+    tw -> map {{ e -> (e * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 64.0 }} -> w;
     t -> map {{ e -> e / {len} -> i; e % {len} -> j; (0.0, kd) -> fold {{ acc, d -> acc + q[i * 8 + d] * w[d * {len} + j] }} }} -> x0;
     mut x: [f32; {n}] <- x0;
     mut it: i32 <- 0;

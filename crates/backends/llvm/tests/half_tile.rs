@@ -76,9 +76,9 @@ const GEMV: &str = "fn main() {
     8192 -> iota -> tw;
     4096 -> iota -> t;
     64 -> iota -> kk;
-    ta -> map { e -> (e * 7 + 3) % 31 - 15 -> widen_f32 -> v; v / 29.0 } -> a;
-    tw -> map { e -> (e * 7 + 13) % 103 - 51 -> widen_f32 -> v; v / 1856.0 -> to_bf16 } -> w;
-    t -> map { e -> e / 128 -> i; e % 128 -> j; (0.0, kk) -> fold: bf16 | f32 { acc, q -> w[q * 128 + j] -> widen_f32 -> b; acc + a[i * 64 + q] * b } } -> y;
+    ta -> map { e -> (e * 7 + 3) % 31 - 15 -> widen<f32> -> v; v / 29.0 } -> a;
+    tw -> map { e -> (e * 7 + 13) % 103 - 51 -> widen<f32> -> v; v / 1856.0 -> to<bf16> } -> w;
+    t -> map { e -> e / 128 -> i; e % 128 -> j; (0.0, kk) -> fold: bf16 | f32 { acc, q -> w[q * 128 + j] -> widen<f32> -> b; acc + a[i * 64 + q] * b } } -> y;
     y[0] -> println;
     y[4095] -> println;
 }
@@ -223,10 +223,10 @@ fn realization_per_arm() {
 fn exact_products_need_the_round_to_nearest_accumulator() {
     let src = GEMV
         .replace("fold: bf16 | f32", "fold")
-        .replace("v / 29.0 }", "v / 29.0 -> to_bf16 }")
+        .replace("v / 29.0 }", "v / 29.0 -> to<bf16> }")
         .replace(
             "acc + a[i * 64 + q] * b",
-            "a[i * 64 + q] -> widen_f32 -> x; acc + x * b",
+            "a[i * 64 + q] -> widen<f32> -> x; acc + x * b",
         );
     let ir = lower(&src);
     let s = ir.tile_plan_narrow(ir.entry());
@@ -797,7 +797,7 @@ fn round_store_shared_bodies_on_generated_programs() {
 fn round_post_src(t: u64, k1: u64, c1: u64, c2: u64, epi: u8) -> String {
     let data = |name: &str, len: u64, a: u64, b: u64, m: u64, d: f64| {
         format!(
-            "    {len} -> iota -> i_{name};\n    i_{name} -> map {{\n        x -> (x * {a} + {b}) % {m} - {} -> widen_f32 -> v;\n        v / {d:?}\n    }} -> {name};\n",
+            "    {len} -> iota -> i_{name};\n    i_{name} -> map {{\n        x -> (x * {a} + {b}) % {m} - {} -> widen<f32> -> v;\n        v / {d:?}\n    }} -> {name};\n",
             m / 2
         )
     };

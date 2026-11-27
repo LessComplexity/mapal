@@ -57,8 +57,8 @@ fn programs() -> [(&'static str, String); 2] {
     .unwrap();
     let saxpy = "fn main() {
     65536 -> iota -> ix;
-    ix -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 } -> x;
-    ix -> map { t -> (t * 5 + 3) % 31 - 15 -> widen_f32 } -> y0;
+    ix -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> } -> x;
+    ix -> map { t -> (t * 5 + 3) % 31 - 15 -> widen<f32> } -> y0;
     (x, y0) -> zip -> map { p -> 2.5 * p.0 + p.1 } -> y;
     y[0] -> println;
     y[65535] -> println;

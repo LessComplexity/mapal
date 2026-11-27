@@ -23,9 +23,9 @@ use mapal_ir::CategoryIr;
 const ATTN_32: &str = r#"
 fn main() {
     1024 -> iota -> tq;
-    tq -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 } -> q;
-    tq -> map { t -> (t * 5 + 29) % 101 - 50 -> widen_f32 } -> kt;
-    tq -> map { t -> (t * 3 + 41) % 101 - 50 -> widen_f32 } -> v;
+    tq -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> } -> q;
+    tq -> map { t -> (t * 5 + 29) % 101 - 50 -> widen<f32> } -> kt;
+    tq -> map { t -> (t * 3 + 41) % 101 - 50 -> widen<f32> } -> v;
     32 -> iota -> kr;
     tq -> map { t ->
         t / 32 -> i;
@@ -48,9 +48,9 @@ fn main() {
 const ATTN_24: &str = r#"
 fn main() {
     576 -> iota -> tq;
-    tq -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 } -> q;
-    tq -> map { t -> (t * 5 + 29) % 101 - 50 -> widen_f32 } -> kt;
-    tq -> map { t -> (t * 3 + 41) % 101 - 50 -> widen_f32 } -> v;
+    tq -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> } -> q;
+    tq -> map { t -> (t * 5 + 29) % 101 - 50 -> widen<f32> } -> kt;
+    tq -> map { t -> (t * 3 + 41) % 101 - 50 -> widen<f32> } -> v;
     24 -> iota -> kr;
     tq -> map { t ->
         t / 24 -> i;
@@ -75,9 +75,9 @@ fn main() {
 const ATTN_16: &str = r#"
 fn main() {
     256 -> iota -> tq;
-    tq -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 } -> q;
-    tq -> map { t -> (t * 5 + 29) % 101 - 50 -> widen_f32 } -> kt;
-    tq -> map { t -> (t * 3 + 41) % 101 - 50 -> widen_f32 } -> v;
+    tq -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> } -> q;
+    tq -> map { t -> (t * 5 + 29) % 101 - 50 -> widen<f32> } -> kt;
+    tq -> map { t -> (t * 3 + 41) % 101 - 50 -> widen<f32> } -> v;
     16 -> iota -> kr;
     tq -> map { t ->
         t / 16 -> i;
@@ -100,9 +100,9 @@ fn main() {
 const ATTN_32_F64: &str = r#"
 fn main() {
     1024 -> iota -> tq;
-    tq -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f64 } -> q;
-    tq -> map { t -> (t * 5 + 29) % 101 - 50 -> widen_f64 } -> kt;
-    tq -> map { t -> (t * 3 + 41) % 101 - 50 -> widen_f64 } -> v;
+    tq -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f64> } -> q;
+    tq -> map { t -> (t * 5 + 29) % 101 - 50 -> widen<f64> } -> kt;
+    tq -> map { t -> (t * 3 + 41) % 101 - 50 -> widen<f64> } -> v;
     32 -> iota -> kr;
     tq -> map { t ->
         t / 32 -> i;
@@ -324,8 +324,8 @@ fn pack_shape(k: u64) -> String {
 fn main() {{
     1024 -> iota -> tout;
     {ab} -> iota -> tab;
-    tab -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 }} -> a;
-    tab -> map {{ t -> (t * 5 + 29) % 101 - 50 -> widen_f32 }} -> b;
+    tab -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen<f32> }} -> a;
+    tab -> map {{ t -> (t * 5 + 29) % 101 - 50 -> widen<f32> }} -> b;
     {k} -> iota -> kr;
     tout -> map {{ t ->
         t / 32 -> i;

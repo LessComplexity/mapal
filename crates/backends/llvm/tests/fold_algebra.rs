@@ -46,8 +46,8 @@ fn opts(base: EmitOpts, off: &[&str]) -> EmitOpts {
 
 const DOT: &str = "fn main() {
     4096 -> iota -> ix;
-    ix -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 } -> x;
-    ix -> map { t -> (t * 5 + 3) % 31 - 15 -> widen_f32 } -> y;
+    ix -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> } -> x;
+    ix -> map { t -> (t * 5 + 3) % 31 - 15 -> widen<f32> } -> y;
     (x, y) -> zip -> xy;
     (0.0, xy) -> fold { acc, p -> acc + p.0 * p.1 } -> d;
     d -> println;

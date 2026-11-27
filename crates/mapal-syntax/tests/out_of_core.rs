@@ -58,8 +58,10 @@ fn full_surface_exact_pcode_multiset() {
     // C8 end-to-end: the existing lexer fixture lexes cleanly (zero L-codes) and
     // the parser rejects each out-of-Core construct precisely. The exact multiset
     // (per DESIGN §14.1/§16): two annotations (P0102 ×2), `f? -> g?` (P0101 ×2),
-    // `pub use` (P0112), `channel<i32>` + `Result<T, E>` type positions
-    // (P0103 ×2), `List::map` (P0109 — chain continues), `[head, ...tail]`
+    // `pub use` (P0112), the `Result<T, E>` type position (P0103 — since
+    // ADR-0051 a number format is a type's format argument, so
+    // `channel<i32>` parses as a generic type's use and lowering reports the
+    // unknown type), `List::map` (P0109 — chain continues), `[head, ...tail]`
     // (P0107), `void;` (P0113), and the `executor` decl (P0111).
     let src = read_fixture("full_surface.mapal");
     let out = parse(&src);
@@ -78,7 +80,7 @@ fn full_surface_exact_pcode_multiset() {
     let expected: BTreeMap<&'static str, usize> = [
         ("P0101", 2),
         ("P0102", 2),
-        ("P0103", 2),
+        ("P0103", 1),
         ("P0107", 1),
         ("P0109", 1),
         ("P0111", 1),

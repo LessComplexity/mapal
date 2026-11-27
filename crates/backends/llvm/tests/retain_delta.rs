@@ -45,7 +45,7 @@ fn decode_form(t_steps: u64, d: u64, elem: &str, column: bool, unrolled: bool) -
     let cell = |j: &str, k: &str| {
         let f = format!("(({j}) * 7 + 13) % 101 - 50");
         if float {
-            format!("{f} -> widen_f32 -> f{k}; f{k} / 64.0")
+            format!("{f} -> widen<f32> -> f{k}; f{k} / 64.0")
         } else {
             f
         }
@@ -95,7 +95,7 @@ fn decode_form(t_steps: u64, d: u64, elem: &str, column: bool, unrolled: bool) -
     let wf = |m: u64, a: u64| {
         let x = format!("(t * {m} + {a}) % 101 - 50");
         if float {
-            format!("{x} -> widen_f32 -> x; {w}")
+            format!("{x} -> widen<f32> -> x; {w}")
         } else {
             format!("{x} -> x; {w}")
         }
@@ -106,7 +106,7 @@ fn decode_form(t_steps: u64, d: u64, elem: &str, column: bool, unrolled: bool) -
         )
     };
     let q = if float {
-        format!("((t * {d} + k) * 5 + 3) % 97 - 48 -> widen_f32 -> qv; qv / 128.0")
+        format!("((t * {d} + k) * 5 + 3) % 97 - 48 -> widen<f32> -> qv; qv / 128.0")
     } else {
         format!("((t * {d} + k) * 5 + 3) % 9 - 4")
     };
@@ -567,10 +567,10 @@ fn lane_stride_places_q_kt_on_the_device() {
 fn strided_site_fuses_the_host_and_device_step_alike() {
     let src = "fn main() {
     128 -> iota -> tk;
-    tk -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 64.0 } -> kk;
+    tk -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 64.0 } -> kk;
     8 -> iota -> krange;
     16 -> iota -> rrange;
-    krange -> map { k -> k -> widen_f32 -> v; v / 8.0 } -> q;
+    krange -> map { k -> k -> widen<f32> -> v; v / 8.0 } -> q;
     rrange -> map { r -> (0.0, krange) -> fold { acc, k -> acc + q[k] * kk[r * 8 + k] } } -> s;
     s[0] -> println;
     s[15] -> println;
@@ -652,7 +652,7 @@ fn write_delta_passes_through_a_same_map() {
 
     // `v · t` captures the counter: every cell changes, so no Δ — nothing is
     // retained, and `xh` crosses whole (`x` is no device operand at all).
-    let captured = scaled.replace("v -> v * 0.5", "v -> t -> widen_f32 -> tf; v * tf");
+    let captured = scaled.replace("v -> v * 0.5", "v -> t -> widen<f32> -> tf; v * tf");
     let ir = lower(&captured);
     let wd: Vec<Delta> = ir.write_delta(ir.entry()).values().copied().collect();
     assert_eq!(
@@ -677,7 +677,7 @@ fn site_produced_carry_is_top_and_byte_identical() {
     // back edge brings a whole new array, not an `Update` chain: Top.
     let src = "fn main() {
     256 -> iota -> tw;
-    tw -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 256.0 } -> w;
+    tw -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 256.0 } -> w;
     256 -> iota -> tc;
     16 -> iota -> krange;
     (0.5, 256) -> fill -> x0;

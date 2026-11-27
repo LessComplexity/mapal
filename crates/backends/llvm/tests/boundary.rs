@@ -206,10 +206,10 @@ fn cpu_emission_ignores_the_boundary_rungs() {
 const TWIN_UP: &str = "fn main() {
     4096 -> iota -> ta;
     64 -> iota -> krange;
-    ta -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 } -> a0;
-    ta -> map { t -> (t * 11 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 } -> b;
-    ta -> map { t -> (t * 5 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 } -> e0;
-    ta -> map { t -> (t * 3 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 } -> f;
+    ta -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 } -> a0;
+    ta -> map { t -> (t * 11 + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 } -> b;
+    ta -> map { t -> (t * 5 + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 } -> e0;
+    ta -> map { t -> (t * 3 + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 } -> f;
     (0.0, ta) -> fold { acc, t -> acc + a0[t] } -> sa;
     (0.0, ta) -> fold { acc, t -> acc + e0[t] } -> se;
     ta -> map { t -> a0[t] + sa } -> a;
@@ -287,7 +287,7 @@ fn indep_src(n: u64, chains: &[(u8, u8, bool)]) -> String {
     );
     let law = |name: &str, p: u8, q: u8| {
         format!(
-            "    ta -> map {{ t -> (t * {} + {}) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> {name};\n",
+            "    ta -> map {{ t -> (t * {} + {}) % 101 - 50 -> widen<f32> -> v; v / 7.0 }} -> {name};\n",
             p % 13 + 1,
             q % 29
         )

@@ -95,14 +95,14 @@ const MODES: [[(&str, &str); 2]; 4] = [
 fn f8_facts_and_realization_per_side() {
     let src = "fn main() {
     1024 -> iota -> ib;
-    ib -> map { t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 -> to_f8e4m3 } -> b;
-    ib -> map { t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v; v * 1000.0 -> to_f8e5m2 } -> e;
+    ib -> map { t -> (t * 11 + 57) % 103 - 51 -> widen<f32> -> v; v / 9.0 -> to<f8e4m3> } -> b;
+    ib -> map { t -> (t * 5 + 3) % 97 - 48 -> widen<f32> -> v; v * 1000.0 -> to<f8e5m2> } -> e;
     64 -> iota -> ia;
-    ia -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 } -> a;
+    ia -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 } -> a;
     16 -> iota -> ic;
-    ic -> map { j -> (0.0, ia) -> fold { acc, k -> b[k * 16 + j] -> widen_f32 -> w; acc + a[k] * w } } -> y;
+    ic -> map { j -> (0.0, ia) -> fold { acc, k -> b[k * 16 + j] -> widen<f32> -> w; acc + a[k] * w } } -> y;
     y[3] -> println;
-    e[7] -> widen_f64 -> println;
+    e[7] -> widen<f64> -> println;
 }
 ";
     let ir = lower(src);

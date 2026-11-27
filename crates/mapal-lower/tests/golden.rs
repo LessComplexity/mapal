@@ -153,12 +153,14 @@ fn fanout_pure_collection_ops_lower_clean() {
     let _ = lower_ok(FANOUT_PURE_OPS);
 }
 
-/// All four ADR-0029 widening edges lower as pure, direct `Widen` morphisms.
+/// All four ADR-0029 widening edges lower as pure, direct `Widen` morphisms —
+/// `i32 → f32` of 16777217 rounds, so it is `to<f32>` (ADR-0051 D4: `widen` is
+/// exact, and the facts know this value is not).
 const WIDEN_BUILTINS: &str = r#"fn main() {
-    7 -> widen_i64 -> a;
-    16777217 -> widen_f32 -> b;
-    9 -> widen_f64 -> c;
-    b -> widen_f64 -> d;
+    7 -> widen<i64> -> a;
+    16777217 -> to<f32> -> b;
+    9 -> widen<f64> -> c;
+    b -> widen<f64> -> d;
     a -> println;
     d -> println;
     c -> println;

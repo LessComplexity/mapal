@@ -22,7 +22,7 @@ expression: "render_tree(&src, &out.program)"
 14:1   Item::Error
 16:1   Fn ‹over›
 16:9     Param ‹data›
-16:15       Ty::Named ‹channel›
+16:15       Ty::Generic ‹channel› <‹i32›>
 16:32     ret_ty
 16:32       Ty::Named ‹Result›
 16:45     Block

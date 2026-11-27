@@ -24,7 +24,7 @@ fn main() {
 }
 
 fn make(n: i32) -> Config {
-    n -> widen_f32 -> s;
+    n -> to<f32> -> s;
     Config {
         scale: s,
         bias: 1.0,

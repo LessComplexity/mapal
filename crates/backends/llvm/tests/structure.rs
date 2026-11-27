@@ -280,7 +280,7 @@ fn generated(seed: u64) -> String {
         "fn step(token: i32, model: Model, caches: [Cache; {layers}]) -> ([f32; {width}], [Cache; {layers}]) {{\n"
     ));
     s.push_str(&format!(
-        "    {width} -> iota -> map {{\n        i -> (i + token) % 5 -> widen_f32\n    }} -> start;\n"
+        "    {width} -> iota -> map {{\n        i -> (i + token) % 5 -> widen<f32>\n    }} -> start;\n"
     ));
     s.push_str(&format!(
         "    mut hidden: [f32; {width}] <- start;\n    mut updated: [Cache; {layers}] <- caches;\n    mut layer: i32 <- 0;\n    loop {{\n        (layer < {layers}) -> {{\n            -true-> {{\n"
@@ -320,7 +320,7 @@ fn generated(seed: u64) -> String {
         for f in 0..fields {
             let k = d.pick(7) + 1;
             s.push_str(&format!(
-                "    {width} -> iota -> map {{\n        i -> (i * {k} + {l}) % 9 - 4 -> widen_f32\n    }} -> l{l}w{f};\n"
+                "    {width} -> iota -> map {{\n        i -> (i * {k} + {l}) % 9 - 4 -> widen<f32>\n    }} -> l{l}w{f};\n"
             ));
         }
         let lits: Vec<String> = (0..fields).map(|f| format!("w{f}: l{l}w{f}")).collect();
@@ -331,7 +331,7 @@ fn generated(seed: u64) -> String {
     }
     let names: Vec<String> = (0..layers).map(|l| format!("layer{l}")).collect();
     s.push_str(&format!(
-        "    {width} -> iota -> map {{\n        i -> i -> widen_f32\n    }} -> bias;\n    Model {{ layers: [{}], bias: bias }} -> model;\n",
+        "    {width} -> iota -> map {{\n        i -> i -> widen<f32>\n    }} -> bias;\n    Model {{ layers: [{}], bias: bias }} -> model;\n",
         names.join(", ")
     ));
     s.push_str(&format!(

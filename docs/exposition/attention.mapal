@@ -9,7 +9,7 @@ fn main() {
     "value.bin" -> read -> value: [f32; tokens * width];
     width -> iota -> dims;
     tokens -> iota -> positions;
-    width -> widen_f32 -> sqrt -> scale;
+    width -> widen<f32> -> sqrt -> scale;
     tokens * tokens -> iota -> map {
         cell ->
         cell / tokens -> i;

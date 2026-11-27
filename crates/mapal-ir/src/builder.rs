@@ -83,7 +83,7 @@ pub enum IrError {
     /// ADR-0042 / ADR-0046: a math builtin (`exp`, `sqrt`, `sin`, `cos`) of a
     /// non-float source.
     InvalidExp,
-    /// ADR-0043: `to_bf16` / `to_f16` of anything but an `f32`.
+    /// ADR-0043: `to<bf16>` / `to<f16>` of anything but an `f32`.
     InvalidNarrow,
     /// ADR-0045: a `read` target that is not a one-dimensional array of a
     /// readable element type ([`crate::read::readable`]).

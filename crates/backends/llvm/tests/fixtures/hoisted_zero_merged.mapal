@@ -16,8 +16,8 @@ type Matrix<rows, columns> {
 // ones: wavelengths longer than the original context / low factor are divided by the factor, those shorter
 // than the original context / high factor are kept, and those between are blended smoothly.
 fn inverse_frequency(pair: i32) -> f32 {
-    pair * 2 -> widen_f32 -> twice_pair;
-    head_size -> widen_f32 -> width;
+    pair * 2 -> to<f32> -> twice_pair;
+    head_size -> widen<f32> -> width;
     -(twice_pair / width) * log_rope_theta -> exp -> frequency;
     6.2831855 / frequency -> wavelength;
     (wavelength > rope_original_context / rope_low_frequency_factor) -> {
@@ -48,7 +48,7 @@ fn rotate<tokens, width>(x: [f32; tokens * width], positions: [i32; tokens]) -> 
         cell / width -> t;
         cell % head_size -> within_head;
         within_head % rotation_pairs -> pair;
-        positions[t] -> widen_f32 -> position;
+        positions[t] -> to<f32> -> position;
         position * inverse_frequencies[pair] -> angle;
         angle -> cos -> cosine;
         angle -> sin -> sine;
@@ -68,7 +68,7 @@ fn project<tokens, rows, columns>(weight: Matrix<rows, columns>, x: [f32; tokens
         cell % rows -> row;
         (0.0, along) -> fold {
             sum, column ->
-            weight[row * columns + column] -> widen_f32 -> w;
+            weight[row * columns + column] -> widen<f32> -> w;
             sum + w * x[t * columns + column]
         }
     } -> ret;
@@ -76,15 +76,15 @@ fn project<tokens, rows, columns>(weight: Matrix<rows, columns>, x: [f32; tokens
 
 fn main() {
     65536 -> iota -> map {
-        i -> (i * 7 + 13) % 101 - 50 -> widen_f32 -> v;
-        v / 400.0 -> to_bf16
+        i -> (i * 7 + 13) % 101 - 50 -> widen<f32> -> v;
+        v / 400.0 -> to<bf16>
     } -> wq: Matrix<256, 256>;
     32768 -> iota -> map {
-        i -> (i * 11 + 5) % 103 - 51 -> widen_f32 -> v;
-        v / 400.0 -> to_bf16
+        i -> (i * 11 + 5) % 103 - 51 -> widen<f32> -> v;
+        v / 400.0 -> to<bf16>
     } -> wk: Matrix<128, 256>;
     32768 -> iota -> map {
-        i -> (i * 3 + 1) % 97 - 48 -> widen_f32 -> v;
+        i -> (i * 3 + 1) % 97 - 48 -> widen<f32> -> v;
         v / 48.0
     } -> x: [f32; 32768];
     128 -> iota -> map {

@@ -119,8 +119,8 @@ fn head(n: u64) -> String {
         "fn main() {{
     {nn} -> iota -> ta;
     {n} -> iota -> krange;
-    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> a;
-    ta -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 }} -> b;
+    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 }} -> a;
+    ta -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen<f32> -> v; v / 9.0 }} -> b;
     ta -> map {{ t ->
         t / {n} -> i;
         t % {n} -> j;
@@ -366,11 +366,11 @@ fn window_conv_runs_on_the_device() {
     let src = format!(
         "fn main() {{
     {ii} -> iota -> ti;
-    ti -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> img;
+    ti -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 }} -> img;
     9 -> iota -> k9;
-    k9 -> map {{ t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v; v / 11.0 }} -> wk;
-    {nn} -> iota -> to;
-    to -> map {{ t ->
+    k9 -> map {{ t -> (t * 5 + 3) % 97 - 48 -> widen<f32> -> v; v / 11.0 }} -> wk;
+    {nn} -> iota -> cells;
+    cells -> map {{ t ->
         t / {n} -> i;
         t % {n} -> j;
         (0.0, k9) -> fold {{ acc, k -> acc + wk[k] * img[(i + k / 3) * {w} + j + k % 3] }}
@@ -407,11 +407,11 @@ fn window_box_filter_is_a_device_row_fold() {
     let src = format!(
         "fn main() {{
     {ii} -> iota -> ti;
-    ti -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> img;
+    ti -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 7.0 }} -> img;
     9 -> iota -> k9;
-    k9 -> map {{ t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v; v / 11.0 }} -> wk;
-    {nn} -> iota -> to;
-    to -> map {{ t ->
+    k9 -> map {{ t -> (t * 5 + 3) % 97 - 48 -> widen<f32> -> v; v / 11.0 }} -> wk;
+    {nn} -> iota -> cells;
+    cells -> map {{ t ->
         t / {n} -> i;
         t % {n} -> j;
         (0.0, k9) -> fold {{ acc, k -> acc + wk[k] * img[(i + k / 3) * {w} + j + k % 3] }}
@@ -453,9 +453,9 @@ fn attention(t: u64, d: u64) -> String {
     format!(
         "fn main() {{
     {td} -> iota -> tq;
-    tq -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 64.0 }} -> q;
-    tq -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 64.0 }} -> kk;
-    tq -> map {{ t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v; v / 16.0 }} -> vv;
+    tq -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen<f32> -> v; v / 64.0 }} -> q;
+    tq -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen<f32> -> v; v / 64.0 }} -> kk;
+    tq -> map {{ t -> (t * 5 + 3) % 97 - 48 -> widen<f32> -> v; v / 16.0 }} -> vv;
     {d} -> iota -> kd;
     {t} -> iota -> kt;
     {tt} -> iota -> ts;

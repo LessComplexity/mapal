@@ -194,8 +194,14 @@ impl NameWalk<'_> {
                     // A bare Var in stage position resolving past locals to a fn
                     // name is a call edge; to `print`/`time` is a direct effect
                     // (both thread the IO token — plan-time-builtin).
-                    if let ExprKind::Var(n) = &e.kind {
-                        let text = name_text(self.source, *n);
+                    // ADR-0051 D2: `-> f<…>` calls `f` like `-> f`.
+                    let callee = match &e.kind {
+                        ExprKind::Var(n) => Some(*n),
+                        ExprKind::Generic { name, .. } => Some(*name),
+                        _ => None,
+                    };
+                    if let Some(n) = callee {
+                        let text = name_text(self.source, n);
                         if !scope.contains(text) {
                             if crate::is_print_builtin(text)
                                 || crate::is_time_builtin(text)

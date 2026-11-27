@@ -463,9 +463,9 @@ impl<'a> Parser<'a> {
         let start = self.cur_span().start;
         self.bump(); // `fn`
         let name = self.expect_name("function name");
-        // ADR-0047 D1: the size parameters `<rows, columns>`.
-        let sizes = if self.at(TokenKind::Lt) {
-            self.parse_size_params()
+        // ADR-0047 D1 / ADR-0051 D1: the generic list `<rows, cache: float>`.
+        let generics = if self.at(TokenKind::Lt) {
+            self.parse_generic_params()
         } else {
             Vec::new()
         };
@@ -493,7 +493,7 @@ impl<'a> Parser<'a> {
         let span = self.node_span_covering(start, body.span);
         FnDecl {
             name,
-            sizes,
+            generics,
             params,
             ret_ty,
             body,
@@ -501,15 +501,37 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// `sizes := '<' IDENT (',' IDENT)* ','? '>'` (ADR-0047 D1) — caller has
-    /// checked the `<`. An empty list is P0001; a missing `>` is P0002.
-    fn parse_size_params(&mut self) -> Vec<Name> {
+    /// `generics := '<' generic (',' generic)* ','? '>'`, `generic := IDENT
+    /// (':' IDENT)?` (ADR-0047 D1, ADR-0051 D1: a bare name is a size
+    /// parameter, `name: kind` a format parameter) — caller has checked the
+    /// `<`. An empty list or a missing kind after `:` is P0001; a missing `>`
+    /// is P0002.
+    fn parse_generic_params(&mut self) -> Vec<GenericParam> {
         self.bump(); // `<`
         let mut sizes = Vec::new();
         while self.at(TokenKind::Ident) {
-            sizes.push(Name {
+            let name = Name {
                 span: self.bump().span,
-            });
+            };
+            let kind = if self.eat(TokenKind::Colon).is_some() {
+                if self.at(TokenKind::Ident) {
+                    Some(Name {
+                        span: self.bump().span,
+                    })
+                } else {
+                    self.diag(
+                        "P0001",
+                        self.cur_span(),
+                        "expected a format kind after `:` — `float`, `narrow`, `int` or \
+                         `number` (`fn f<cache: float>`, ADR-0051)",
+                    );
+                    None
+                }
+            } else {
+                None
+            };
+            let span = self.node_span(name.span.start);
+            sizes.push(GenericParam { name, kind, span });
             if self.eat(TokenKind::Comma).is_none() {
                 break;
             }
@@ -518,7 +540,8 @@ impl<'a> Parser<'a> {
             self.diag(
                 "P0001",
                 self.cur_span(),
-                "expected a size parameter name: `fn f<n>(x: [f32; n])` (ADR-0047)",
+                "expected a size parameter name: `fn f<n>(x: [f32; n])` (ADR-0047), or a format \
+                 parameter with its kind: `fn f<cache: float>` (ADR-0051)",
             );
         }
         if self.eat(TokenKind::Gt).is_none() {
@@ -645,9 +668,9 @@ impl<'a> Parser<'a> {
         let start = self.cur_span().start;
         self.bump(); // `type` or `category` (L0004 already emitted; no new diag)
         let name = self.expect_name("type name");
-        // ADR-0048 D4: the size parameters `type Matrix<rows, columns>`.
-        let sizes = if self.at(TokenKind::Lt) {
-            self.parse_size_params()
+        // ADR-0048 D4 / ADR-0051 D1: `type Matrix<rows, columns, e: float>`.
+        let generics = if self.at(TokenKind::Lt) {
+            self.parse_generic_params()
         } else {
             Vec::new()
         };
@@ -679,7 +702,7 @@ impl<'a> Parser<'a> {
         }
         TypeDecl {
             name,
-            sizes,
+            generics,
             fields,
             span: self.node_span(start),
         }
@@ -861,25 +884,15 @@ impl<'a> Parser<'a> {
             }
             break self.eat(TokenKind::Gt).is_some();
         };
-        // A type in argument position — a scalar type name or a capitalized
-        // (type) name, `Result<T, E>`, `Vec<f32>` — is a type argument.
+        // A type in argument position — a capitalized (type) name,
+        // `Result<T, E>`, or `bool` — is a type argument. A number format
+        // (`bf16`, `f32`, …) is a format argument (ADR-0051 D1:
+        // `Matrix<64, 64, bf16>`), resolved by lowering against the
+        // declared list.
         let typeish = |e: &SizeExpr| match e.kind {
             SizeKind::Name(n) => {
                 let t = self.text(n.span);
-                t.starts_with(|c: char| c.is_ascii_uppercase())
-                    || matches!(
-                        t,
-                        "i32"
-                            | "i64"
-                            | "u8"
-                            | "f32"
-                            | "f64"
-                            | "bf16"
-                            | "f16"
-                            | "f8e4m3"
-                            | "f8e5m2"
-                            | "bool"
-                    )
+                t.starts_with(|c: char| c.is_ascii_uppercase()) || t == "bool"
             }
             _ => false,
         };
@@ -2010,9 +2023,73 @@ impl<'a> Parser<'a> {
                 ty: Some(ty),
             };
         }
+        // ADR-0051 D2: `-> name<args>` — explicit generic arguments. In stage
+        // position a name followed by `<` opens the list (a comparison cannot
+        // stand as a stage); a list that does not close where the stage ends
+        // falls back to the expression stage.
+        if self.peek_kind(1) == TokenKind::Lt
+            && let Some(e) = self.try_parse_stage_args()
+        {
+            return StageKind::Expr(e);
+        }
         // General expression stage (targets like `abs`, `print`, member access).
         let expr = self.parse_expr();
         StageKind::Expr(expr)
+    }
+
+    /// ADR-0051 D2: `IDENT '<' size (',' size)* ','? '>'` ending the stage —
+    /// the callee's explicit arguments, a prefix of its declared list (sizes
+    /// as size expressions, formats as names). Speculative: a list that does
+    /// not close, or a `>` the stage does not end at, restores the cursor and
+    /// the diagnostics and returns `None`.
+    fn try_parse_stage_args(&mut self) -> Option<Expr> {
+        let (pos, ndiag, cooldown, depth) = (
+            self.pos,
+            self.diagnostics.len(),
+            self.cooldown_at,
+            self.depth_exceeded,
+        );
+        let start = self.cur_span().start;
+        let name = Name {
+            span: self.bump().span,
+        };
+        self.bump(); // `<`
+        let mut args = Vec::new();
+        let closed = loop {
+            match self.parse_size_expr() {
+                Some(e) => args.push(e),
+                None => break false,
+            }
+            if self.eat(TokenKind::Comma).is_some() {
+                if self.at(TokenKind::Gt) {
+                    self.bump();
+                    break true;
+                }
+                continue;
+            }
+            break self.eat(TokenKind::Gt).is_some();
+        };
+        let ends_stage = matches!(
+            self.kind(),
+            TokenKind::Arrow
+                | TokenKind::Semi
+                | TokenKind::RBrace
+                | TokenKind::RParen
+                | TokenKind::RBracket
+                | TokenKind::Comma
+                | TokenKind::Eof
+        );
+        if closed && ends_stage {
+            return Some(Expr {
+                kind: ExprKind::Generic { name, args },
+                span: self.span(start, self.prev_end()),
+            });
+        }
+        self.pos = pos;
+        self.diagnostics.truncate(ndiag);
+        self.cooldown_at = cooldown;
+        self.depth_exceeded = depth;
+        None
     }
 
     /// Whether the next two tokens are a span-adjacent `::` (a path, P0109) — so

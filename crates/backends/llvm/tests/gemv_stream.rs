@@ -108,8 +108,8 @@ const GEMV: &str = "fn main() {
     4096 -> iota -> t;
     4096 -> iota -> kk;
     16777216 -> iota -> tw;
-    kk -> map { e -> (e * 7 + 3) % 5 -> widen_f32 -> v; v / 4.0 } -> a;
-    tw -> map { e -> (e * 11 + 5) % 9 + 1 -> widen_f32 -> v; v / 8.0 } -> w;
+    kk -> map { e -> (e * 7 + 3) % 5 -> widen<f32> -> v; v / 4.0 } -> a;
+    tw -> map { e -> (e * 11 + 5) % 9 + 1 -> widen<f32> -> v; v / 8.0 } -> w;
     t -> map { j -> (0.0, kk) -> fold { acc, q -> acc + a[q] * w[q * 4096 + j] } } -> y;
     y[0] -> println;
 }
@@ -239,9 +239,9 @@ const GEMV_POST: &str = "fn main() {
     4096 -> iota -> t;
     4096 -> iota -> kk;
     16777216 -> iota -> tw;
-    kk -> map { e -> (e * 7 + 3) % 5 -> widen_f32 -> v; v / 4.0 } -> a;
-    t -> map { e -> (e * 3 + 1) % 7 -> widen_f32 -> v; v / 2.0 } -> x;
-    tw -> map { e -> (e * 11 + 5) % 9 + 1 -> widen_f32 -> v; v / 8.0 } -> w;
+    kk -> map { e -> (e * 7 + 3) % 5 -> widen<f32> -> v; v / 4.0 } -> a;
+    t -> map { e -> (e * 3 + 1) % 7 -> widen<f32> -> v; v / 2.0 } -> x;
+    tw -> map { e -> (e * 11 + 5) % 9 + 1 -> widen<f32> -> v; v / 8.0 } -> w;
     t -> map { j -> (0.0, kk) -> fold { acc, q -> acc + a[q] * w[q * 4096 + j] } -> s; x[j] + s } -> y;
     y[0] -> println;
 }

@@ -260,8 +260,8 @@ The recognized shape, verbatim from `benches/matmul/matmul4_cap.mapal`:
 
 ```flow
 16 -> iota -> ta;                 // one counted range: the 16 cells
-ta -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f64 } -> a;
-ta -> map { t -> (t * 7 + 57) % 101 - 50 -> widen_f64 } -> b;
+ta -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f64> } -> a;
+ta -> map { t -> (t * 7 + 57) % 101 - 50 -> widen<f64> } -> b;
 4  -> iota -> krange;             // another: the dot-product chain
 ta -> map { t ->
     t / 4 -> i;                   // row = t / 4

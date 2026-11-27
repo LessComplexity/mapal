@@ -1549,9 +1549,9 @@ fn differential_tiled_fir() {
     let src = r#"
 fn main() {
     71 -> iota -> tx;
-    tx -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 } -> x;
+    tx -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> } -> x;
     8 -> iota -> kr;
-    kr -> map { t -> (t * 5 + 3) % 31 - 15 -> widen_f32 } -> w;
+    kr -> map { t -> (t * 5 + 3) % 31 - 15 -> widen<f32> } -> w;
     64 -> iota -> ts;
     ts -> map { t ->
         (0.0, kr) -> fold { acc, k -> acc + w[k] * x[t + k] }
@@ -1626,9 +1626,9 @@ fn differential_tiled_fir_remainder() {
     let src = r#"
 fn main() {
     92 -> iota -> tx;
-    tx -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 } -> x;
+    tx -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> } -> x;
     7 -> iota -> kr;
-    kr -> map { t -> (t * 5 + 3) % 31 - 15 -> widen_f32 } -> w;
+    kr -> map { t -> (t * 5 + 3) % 31 - 15 -> widen<f32> } -> w;
     86 -> iota -> ts;
     ts -> map { t ->
         (0.0, kr) -> fold { acc, k -> acc + w[k] * x[t + k] }
@@ -1689,9 +1689,9 @@ fn differential_tiled_fir_split() {
     let src = r#"
 fn main() {
     10007 -> iota -> tx;
-    tx -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 } -> x;
+    tx -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> } -> x;
     8 -> iota -> kr;
-    kr -> map { t -> (t * 5 + 3) % 31 - 15 -> widen_f32 } -> w;
+    kr -> map { t -> (t * 5 + 3) % 31 - 15 -> widen<f32> } -> w;
     10000 -> iota -> ts;
     ts -> map { t ->
         (0.0, kr) -> fold { acc, k -> acc + w[k] * x[t + k] }
@@ -1768,9 +1768,9 @@ fn conv2d_src(side: u64) -> String {
         r#"
 fn main() {{
     {img} -> iota -> ti;
-    ti -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 }} -> img;
+    ti -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen<f32> }} -> img;
     9 -> iota -> kr;
-    kr -> map {{ t -> (t * 5 + 3) % 31 - 15 -> widen_f32 }} -> w;
+    kr -> map {{ t -> (t * 5 + 3) % 31 - 15 -> widen<f32> }} -> w;
     {n} -> iota -> ts;
     ts -> map {{ t ->
         t / {side} -> i;
@@ -2136,9 +2136,9 @@ fn differential_tiled_matmul_r6_c20_k5_f64() {
     let src = r#"
 fn main() {
     30 -> iota -> ais;
-    ais -> map { x -> (x * 5 + 7) % 67 - 33 -> widen_f64 } -> a;
+    ais -> map { x -> (x * 5 + 7) % 67 - 33 -> widen<f64> } -> a;
     100 -> iota -> bis;
-    bis -> map { x -> (x * 7 + 11) % 101 - 50 -> widen_f64 } -> b;
+    bis -> map { x -> (x * 7 + 11) % 101 - 50 -> widen<f64> } -> b;
     120 -> iota -> cells;
     5 -> iota -> ks;
     cells -> map { cell ->
@@ -2350,9 +2350,9 @@ fn differential_tiled_matmul_kc_32x32x200() {
     let src = r#"
 fn main() {
     6400 -> iota -> ta;
-    ta -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 } -> a;
+    ta -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> } -> a;
     6400 -> iota -> tb;
-    tb -> map { t -> (t * 7 + 57) % 101 - 50 -> widen_f32 } -> b;
+    tb -> map { t -> (t * 7 + 57) % 101 - 50 -> widen<f32> } -> b;
     200 -> iota -> ks;
     1024 -> iota -> cells;
     cells -> map { cell ->
@@ -2419,9 +2419,9 @@ fn differential_tiled_matmul_kc_middle_panel() {
     let src = r#"
 fn main() {
     2400 -> iota -> ta;
-    ta -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 } -> a;
+    ta -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> } -> a;
     9600 -> iota -> tb;
-    tb -> map { t -> (t * 7 + 57) % 101 - 50 -> widen_f32 } -> b;
+    tb -> map { t -> (t * 7 + 57) % 101 - 50 -> widen<f32> } -> b;
     300 -> iota -> ks;
     256 -> iota -> cells;
     cells -> map { cell ->
@@ -2490,9 +2490,9 @@ fn differential_tiled_matmul_kc_c540() {
     let src = r#"
 fn main() {
     544 -> iota -> ta;
-    ta -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 } -> a;
+    ta -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> } -> a;
     73440 -> iota -> tb;
-    tb -> map { t -> (t * 7 + 57) % 101 - 50 -> widen_f32 } -> b;
+    tb -> map { t -> (t * 7 + 57) % 101 - 50 -> widen<f32> } -> b;
     136 -> iota -> ks;
     2160 -> iota -> cells;
     cells -> map { cell ->
@@ -2536,9 +2536,9 @@ fn differential_tiled_matmul_kc_split() {
     let src = r#"
 fn main() {
     4216 -> iota -> ta;
-    ta -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 } -> a;
+    ta -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> } -> a;
     18496 -> iota -> tb;
-    tb -> map { t -> (t * 7 + 57) % 101 - 50 -> widen_f32 } -> b;
+    tb -> map { t -> (t * 7 + 57) % 101 - 50 -> widen<f32> } -> b;
     136 -> iota -> ks;
     4216 -> iota -> cells;
     cells -> map { cell ->
@@ -2595,9 +2595,9 @@ fn differential_tiled_matmul_kc_f64() {
     let src = r#"
 fn main() {
     1200 -> iota -> ta;
-    ta -> map { t -> (t * 5 + 7) % 67 - 33 -> widen_f64 } -> a;
+    ta -> map { t -> (t * 5 + 7) % 67 - 33 -> widen<f64> } -> a;
     4000 -> iota -> tb;
-    tb -> map { t -> (t * 7 + 11) % 101 - 50 -> widen_f64 } -> b;
+    tb -> map { t -> (t * 7 + 11) % 101 - 50 -> widen<f64> } -> b;
     200 -> iota -> ks;
     120 -> iota -> cells;
     cells -> map { cell ->
@@ -2907,10 +2907,10 @@ fn differential_widen() {
 fn main() {
     2 -> iota -> a;
     a[1] - 2 -> x;
-    x -> widen_i64 -> i;
-    x -> widen_f32 -> f;
-    x -> widen_f64 -> d;
-    f -> widen_f64 -> fd;
+    x -> widen<i64> -> i;
+    x -> widen<f32> -> f;
+    x -> widen<f64> -> d;
+    f -> widen<f64> -> fd;
     i -> println;
     f -> println;
     d -> println;
@@ -3264,9 +3264,9 @@ fn matmul(a: [f32; 35], b: [f32; 280]) -> [f32; 200] {
 }
 fn main() {
     35 -> iota -> ta;
-    ta -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 } -> a;
+    ta -> map { t -> (t * 7 + 13) % 101 - 50 -> widen<f32> } -> a;
     280 -> iota -> tb;
-    tb -> map { t -> (t * 7 + 57) % 101 - 50 -> widen_f32 } -> b;
+    tb -> map { t -> (t * 7 + 57) % 101 - 50 -> widen<f32> } -> b;
     (a, b) -> matmul -> c;
     c[0] -> println;
     c[199] -> println;

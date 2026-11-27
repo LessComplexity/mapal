@@ -10,6 +10,10 @@ type Matrix<rows, columns> {
     _: [bf16; rows * columns]
 }
 
+type Bag<count, element: number> {
+    _: [element; count]
+}
+
 type Pixel {
     r: f32,
     g: f32,
@@ -30,9 +34,16 @@ fn scale<rows, columns>(m: Matrix<rows, columns>, x: [f32; columns]) -> [f32; ro
     rows -> iota -> map {
         r -> (0.0, along) -> fold: bf16 | f32 {
             sum, c ->
-            m[r * columns + c] -> widen_f32 -> w;
+            m[r * columns + c] -> widen<f32> -> w;
             sum + w * x[c]
         }
+    } -> ret;
+}
+
+// A format-generic helper: `cache: float` is a format parameter with its kind.
+fn store<columns, cache: float>(x: [f32; columns]) -> [cache; columns] {
+    columns -> iota -> map {
+        c -> x[c] -> to<cache>
     } -> ret;
 }
 
@@ -64,9 +75,12 @@ fn main() {
     "weights.bin" -> read -> weights: Matrix<4, 8>;
     (1.0, 8) -> fill -> ones;
     (weights, ones) -> scale -> scaled;
-    scaled[0] -> to_bf16 -> narrow;
-    narrow -> widen_f64 -> wide;
+    scaled[0] -> to<bf16> -> narrow;
+    narrow -> widen<f64> -> wide;
     wide -> println;
+    ones -> store<8, bf16> -> kept;
+    kept[0] -> widen<f32> -> first;
+    first -> println;
     () -> time -> start;
     5 -> a;
     a -> shout;
