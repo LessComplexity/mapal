@@ -139,7 +139,7 @@ The builder exposes **typed primitives only** (no raw add-object/add-edge); comp
 #**Route reconstruction completeness (S57).** `Trn replay` consumes the existing `Dat`
 `LoopPlan`, `RewritePlan` and old-to-new object map in the same compiler-memory location.
 A loop's required exit value may be acyclic: a token/value pair derived from the merge
-is in its canonical driver cone but outside the SCC. `replay.rs:reconstruct_loop` must
+is in its canonical driver cone but outside the SCC. `replay/loops.rs:reconstruct_loop` must
 rebuild that work before feeding `loop_exit`; SCC membership alone does not establish
 route readiness. Existing decide/advance orders supply membership, the global object order
 supplies deterministic reconstruction order, and `reconstruct_a` supplies the same

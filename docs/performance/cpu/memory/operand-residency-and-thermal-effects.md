@@ -263,7 +263,7 @@ call void @mapal_par_task(ptr %h, i32 7, i32 0, ptr @task7, ...)
                                           ^^^^^^  kind = 0 = Seq
 ```
 
-`mapal-rt/src/lib.rs:832` — *"`kind == 0` executes exactly one `f(0, n, frame)` call."* And `@task7`
+`mapal-rt/src/mem.rs:155` — *"`kind == 0` executes exactly one `f(0, n, frame)` call."* And `@task7`
 contains **0 `fmopa`, 8 stores, and 1 nested parallel call**: it packs all of B on one thread, then
 opens a *nested* parallel run for the matmul.
 
@@ -322,9 +322,9 @@ have chased, **this one exists at the thread count that ships.**
 `plan-s43-parallel-bpack.md` (Fable, written before the code, reconciled after). Three files,
 +139/−6. `mapal-ir` and `mapal-rt` untouched.
 
-- **`func/core.rs::emit_pack_copy`** — the `jt` loop's init/bound become `self.bulk_bounds(tiles)`.
+- **`func/core/packs.rs::emit_pack_copy`** — the `jt` loop's init/bound become `self.bulk_bounds(tiles)`.
   Two lines; at `split_range == false` it reproduces the old literals character-identically.
-- **`func/drive.rs::emit_task`** (packed branch) — a third emitted function
+- **`func/drive/task.rs::emit_task`** (packed branch) — a third emitted function
   `@task{id}_pack(i64 %lo, i64 %hi, ptr %frame)`; the wrapper drops the inline pack and gains a
   nested `begin(1)/task/launch/finish` ahead of the unchanged matmul dispatch.
 

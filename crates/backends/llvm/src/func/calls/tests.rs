@@ -1,3 +1,5 @@
+//! Unit tests of `calls`: persistent cooperative launches, grid barriers and the host issue cost.
+
 use super::super::horizontal::{HzSpec, parse_head};
 use super::*;
 use crate::profile::COOP_BODY_CYCLES_RTX_5080;

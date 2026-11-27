@@ -25,7 +25,7 @@ still pure graph geometry; every scheduling and machine decision is downstream o
 ## 1. What was built
 
 **P0 — a packed tile site is two tasks in the outer run, not a wrapper opening two nested
-runs.** `drive.rs::emit_parallel` registers `@task{n}_pack` at an appended task index with
+runs.** `drive/parallel.rs::emit_parallel` registers `@task{n}_pack` at an appended task index with
 the matmul's own dependency set, `@task{n}_slice` at the site's index, and one
 `mapal_par_dep(pack, matmul)`. `emit_task` stops emitting the wrapper. Nested
 `mapal_par_begin` count per program: `nn2` 4 → **0**, `nn4`/`nn2x2` 8 → **0**, `matmul*`

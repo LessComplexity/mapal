@@ -202,6 +202,8 @@ pub(super) fn detect() -> Option<TargetProfile> {
 /// plateau–DRAM midpoint. `None` where the sweep has no plateau (its highest
 /// rate within 1.25 × the DRAM rate, beyond the sweep's ±2 % repeat noise:
 /// every point past the keep — the A100 / H100 from 1.0 ×).
+/// Read by the calibration tests (`l2_keep_read_off_the_sweeps`) only.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn l2_keep_of_sweep(sweep: &[(f64, f64)], dram_gbs: f64) -> Option<f64> {
     let plateau = sweep.iter().map(|p| p.1).fold(0.0, f64::max);
     if plateau < 1.25 * dram_gbs {

@@ -28,29 +28,29 @@ one `eval` pass. Mapal programs are *not* modeled as categories here.
 ## Morphisms (Trn / relations) → code
 | Morphism | Signature | Realizing code | State |
 | --- | --- | --- | --- |
-| `scalar?` | `RValue → mapal_ir::Value` | `crates/mapal-interp/src/eval.rs:scalar` | built |
-| `tuple?` | `RValue → RValue*` | `crates/mapal-interp/src/eval.rs:component` | built |
-| `struct?` | `RValue → (𝕊 × RValue)*` | `crates/mapal-interp/src/eval.rs:component` | built |
-| `array?` | `RValue → RValue*` | `crates/mapal-interp/src/eval.rs:component` | built |
-| `token?` | `RValue → 𝕊` | `crates/mapal-interp/src/eval.rs:print_op` · `crates/mapal-interp/src/lib.rs:run` | built |
+| `scalar?` | `RValue → mapal_ir::Value` | `crates/mapal-interp/src/eval/helpers.rs:scalar` | built |
+| `tuple?` | `RValue → RValue*` | `crates/mapal-interp/src/eval/helpers.rs:component` | built |
+| `struct?` | `RValue → (𝕊 × RValue)*` | `crates/mapal-interp/src/eval/helpers.rs:component` | built |
+| `array?` | `RValue → RValue*` | `crates/mapal-interp/src/eval/helpers.rs:component` | built |
+| `token?` | `RValue → 𝕊` | `crates/mapal-interp/src/eval/helpers.rs:print_op` · `crates/mapal-interp/src/lib.rs:run` | built |
 | `done?` | `Outcome → RValue` | `crates/mapal-interp/src/lib.rs:run` (match `Outcome::Done`) | built |
 | `trapped?` | `Outcome → TrapKind` | `crates/mapal-interp/src/value.rs:Abort` (into_outcome; `Outcome::Trapped`) | built |
 | `eval` | `(CategoryIr × FuncId × RValue × Budget) → Outcome` — **the one `Trn`** | `crates/mapal-interp/src/eval.rs:eval_fn` | built |
 | `render` | `mapal_ir::Value → 𝕊` | `crates/mapal-interp/src/value.rs:render` | built |
 | `native_observable` | `CategoryIr × RunResult → (stdout?, exit)?` — the BL8 `@main` observable a compiled run must equal (public contract: backend differential + `mapal test`) | `crates/mapal-interp/src/lib.rs:native_observable` | built |
 | `eval_morphism` (§3 per-op dispatch) | `Morphism → env′` | `crates/mapal-interp/src/eval.rs:eval_morphism` | built |
-| `Add/Sub/Mul/Div/Mod` (§3) | `(N,N) → N` | `crates/mapal-interp/src/eval.rs:arith` | built |
-| `Eq/Neq/Lt/Gt/Le/Ge` (§3) | `(A,A) → Bool` | `crates/mapal-interp/src/eval.rs:compare` (`num_lt`/`num_le`) | built |
-| `And/Or` (§3) | `(Bool,Bool) → Bool` | `crates/mapal-interp/src/eval.rs:logic` | built |
-| `Neg` (§3) | `N → N` (IEEE fneg for floats) | `crates/mapal-interp/src/eval.rs:neg` | built |
-| `Index` (§3) | `(Array, I) → T` (OOB ⇒ trap) | `crates/mapal-interp/src/eval.rs:index` | built |
+| `Add/Sub/Mul/Div/Mod` (§3) | `(N,N) → N` | `crates/mapal-interp/src/eval/helpers.rs:arith` | built |
+| `Eq/Neq/Lt/Gt/Le/Ge` (§3) | `(A,A) → Bool` | `crates/mapal-interp/src/eval/helpers.rs:compare` (`num_lt`/`num_le`) | built |
+| `And/Or` (§3) | `(Bool,Bool) → Bool` | `crates/mapal-interp/src/eval/helpers.rs:logic` | built |
+| `Neg` (§3) | `N → N` (IEEE fneg for floats) | `crates/mapal-interp/src/eval/helpers.rs:neg` | built |
+| `Index` (§3) | `(Array, I) → T` (OOB ⇒ trap) | `crates/mapal-interp/src/eval/helpers.rs:index` | built |
 | `Zip` (§3; ADR-0018) | `([A;n],[B;n]) → [(A,B);n]` elementwise pair | `crates/mapal-interp/src/eval.rs:eval_morphism` (`Zip` arm) · `as_array` | built |
 | `Enumerate` (§3; ADR-0018) | `[A;n] → [(i32,A);n]` (index pinned `i32`) | `crates/mapal-interp/src/eval.rs:eval_morphism` (`Enumerate` arm) | built |
 | `Iota`/`Fill` (ADR-0029, stage 1) | `n → [i32;n]` of `0..n-1` (count = `Constant` source); `(x,n) → [x;n]` (count = internal pair's slot-1 `Constant`) | `crates/mapal-interp/src/eval.rs:eval_morphism` (`Iota`/`Fill` arms) | built (oracle contracts `tests/iota_fill.rs`) |
 | `Update` (§3; ADR-0021) | `(Array{T,n}, I, T) → Array{T,n}` (slot `i` replaced; OOB ⇒ `Trapped(IndexOob)`; pure) | `crates/mapal-interp/src/eval.rs:eval_morphism` (`Update` arm) · `eval.rs:update` | built |
-| `Print{newline}` (§3/§5) | `(IoToken, P) → IoToken` | `crates/mapal-interp/src/eval.rs:print_op` | built |
-| `TimeMs` (§3/§5; plan-time-builtin) | `IoToken → (IoToken, f64)` — token through slot 0, ms against the process epoch in slot 1 | `crates/mapal-interp/src/eval.rs:eval_morphism` (`TimeMs` arm) · `crates/mapal-interp/src/eval.rs:time_epoch` | built |
-| product assembly (§2) | `arity × Pair{slot} → Tuple/Struct/Array` | `crates/mapal-interp/src/eval.rs:stage_pair` · `finalize_product` | built |
+| `Print{newline}` (§3/§5) | `(IoToken, P) → IoToken` | `crates/mapal-interp/src/eval/helpers.rs:print_op` | built |
+| `TimeMs` (§3/§5; plan-time-builtin) | `IoToken → (IoToken, f64)` — token through slot 0, ms against the process epoch in slot 1 | `crates/mapal-interp/src/eval.rs:eval_morphism` (`TimeMs` arm) · `crates/mapal-interp/src/eval/helpers.rs:time_epoch` | built |
+| product assembly (§2) | `arity × Pair{slot} → Tuple/Struct/Array` | `crates/mapal-interp/src/eval/helpers.rs:stage_pair` · `finalize_product` | built |
 | `run_loop` (§4 driver) | `LoopMerge → env(exit objects)` | `crates/mapal-interp/src/loops.rs:run_loop` | built |
 | loop-layout derivation (§4; BL7) | `merge → LoopPlan` (decide/advance split) — **delegated to mapal-ir** (S13: the local `derive_plan`/`LoopPlan` were deleted, one source of truth) | `mapal_ir::CategoryIr::loop_plan` (called in `crates/mapal-interp/src/loops.rs:run_loop`) | built |
 | in-SCC set (§2) | `FuncId → 𝒫(ObjectId)` | `crates/mapal-interp/src/eval.rs:build_in_scc` | built |
@@ -65,16 +65,16 @@ one `eval` pass. Mapal programs are *not* modeled as categories here.
 | --- | --- | --- |
 | **C-interp-1** totality/E1 — `eval` total into `Outcome`, no panic/hang | `crates/mapal-interp/src/eval.rs:EvalCtx::spend` · `crates/mapal-interp/src/lib.rs:eval_call` (lift) | `tests/divergence.rs::constant_true_loop_diverges_and_returns` · `tests/divergence.rs::sum_to_n_budget_boundary` |
 | **C-interp-2** oracle equivalence (`eval∘r ≅ eval`) | *not in interp* — discharged by `rewrite`/`backend` (P4+) | — (external) |
-| **C-interp-3** effect order = dataflow / E2 | `crates/mapal-interp/src/eval.rs:print_op` (token threads through `env`); topo walk in `eval_fn` | `tests/determinism.rs::deterministic_*` · `tests/acceptance.rs::golden_fanout` |
+| **C-interp-3** effect order = dataflow / E2 | `crates/mapal-interp/src/eval/helpers.rs:print_op` (token threads through `env`); topo walk in `eval_fn` | `tests/determinism.rs::deterministic_*` · `tests/acceptance.rs::golden_fanout` |
 | Budget (IN1) — decrement once per morphism, `0 ⇒ Diverged` | `crates/mapal-interp/src/eval.rs:EvalCtx::spend` (called in `eval_morphism`) | `tests/divergence.rs::sum_to_n_budget_boundary` |
-| Traps (ADR-0013) — int ÷/% 0 ⇒ DivZero; OOB Index ⇒ IndexOob; float IEEE | `crates/mapal-interp/src/eval.rs:arith` · `crates/mapal-interp/src/eval.rs:index` | `tests/traps.rs::integer_div_by_zero_traps` · `tests/traps.rs::index_at_n_traps` · `tests/traps.rs::index_negative_traps` · `tests/traps.rs::float_div_by_zero_is_done_not_trap` |
+| Traps (ADR-0013) — int ÷/% 0 ⇒ DivZero; OOB Index ⇒ IndexOob; float IEEE | `crates/mapal-interp/src/eval/helpers.rs:arith` · `crates/mapal-interp/src/eval/helpers.rs:index` | `tests/traps.rs::integer_div_by_zero_traps` · `tests/traps.rs::index_at_n_traps` · `tests/traps.rs::index_negative_traps` · `tests/traps.rs::float_div_by_zero_is_done_not_trap` |
 | The 55 contract / D7 — exit reads the exit-iteration merge state (guard-first, ADR-0016) | `crates/mapal-interp/src/loops.rs:run_loop` (decide→guard→advance) · `mapal_ir::loop_plan` (decide/advance split) | `tests/acceptance.rs::sum_to_n_value_contract` · `tests/acceptance.rs::golden_sum_to_n` |
 | Guard-first (ADR-0016) — advance set not evaluated on the exit step | `mapal_ir::CategoryIr::loop_plan` (`plan.decide_order`/`plan.advance_order`) · `crates/mapal-interp/src/loops.rs:run_loop` | `tests/acceptance.rs::golden_fir` · `tests/acceptance.rs::golden_countdown` |
-| One definition per object / product seal (ir I3) — `env[o]` written once, product `arity` times then sealed | `crates/mapal-interp/src/eval.rs:stage_pair` (finalize on last slot) | `tests/acceptance.rs::golden_sepia` · `tests/acceptance.rs::sepia_input_ty_is_named_product` |
+| One definition per object / product seal (ir I3) — `env[o]` written once, product `arity` times then sealed | `crates/mapal-interp/src/eval/helpers.rs:stage_pair` (finalize on last slot) | `tests/acceptance.rs::golden_sepia` · `tests/acceptance.rs::sepia_input_ty_is_named_product` |
 | Determinism (E2 / §10) — no `HashMap`; `SecondaryMap`+`Vec` only | `crates/mapal-interp/src/eval.rs:EvalCtx` (env/staging are `SecondaryMap`) | `tests/determinism.rs::deterministic_*` |
 | Entry protocol (§7) — IoToken ⇒ seed `Token("")`; Unit ⇒ `RValue::Unit`, output "" | `crates/mapal-interp/src/lib.rs:run` | `tests/acceptance.rs::golden_*` (all six) |
-| Newline (ADR-0015) — `print` raw, `println` appends `\n` | `crates/mapal-interp/src/eval.rs:print_op` (`if newline`) | `tests/acceptance.rs::golden_pipeline` · `tests/acceptance.rs::golden_fanout` |
-| Clock (§5, S29) — one process-lifetime epoch ⇒ two reads finite and non-decreasing; the bracketed work still computes | `crates/mapal-interp/src/eval.rs:time_epoch` (`OnceLock<Instant>`, same clock as mapal-rt's `mapal_time_ms`) | `tests/acceptance.rs::time_brackets_are_monotone_and_finite` |
+| Newline (ADR-0015) — `print` raw, `println` appends `\n` | `crates/mapal-interp/src/eval/helpers.rs:print_op` (`if newline`) | `tests/acceptance.rs::golden_pipeline` · `tests/acceptance.rs::golden_fanout` |
+| Clock (§5, S29) — one process-lifetime epoch ⇒ two reads finite and non-decreasing; the bracketed work still computes | `crates/mapal-interp/src/eval/helpers.rs:time_epoch` (`OnceLock<Instant>`, same clock as mapal-rt's `mapal_time_ms`) | `tests/acceptance.rs::time_brackets_are_monotone_and_finite` |
 | Float render (IN4) — Rust shortest round-trip Display | `crates/mapal-interp/src/value.rs:render` | `tests/acceptance.rs::golden_fir` · `tests/acceptance.rs::golden_sepia` |
 | Out-of-M1 loop shapes error, not miscompute (§4) | `mapal_ir::CategoryIr::loop_plan` returns `None` for non-canonical shapes; `crates/mapal-interp/src/loops.rs:run_loop` unwraps (M1-guaranteed) | — (no fixture; `loop_plan` encodes the single merge / one LoopBack / one LoopExit predicate, lower OQ7 never generates a non-canonical one) |
 | Zip/Enumerate denotation (ADR-0018) — elementwise pairs; `(i as i32, x)`; total/pure, legal under fanout | `crates/mapal-interp/src/eval.rs:eval_morphism` (`Zip`/`Enumerate` arms) | `tests/zip_enumerate.rs::zip_add_value_contract` (c[0]=100, c[15]=115) · `::enumerate_indices_contract` · `::enumerate_under_fanout` |
@@ -101,7 +101,7 @@ Resolution per FRAMEWORK §6.6 (the model is a specification, not a transcript).
   violated.
 - **The clock epoch is process state, not run state (S29).** Every other value the evaluator reads lives in `EvalCtx`; `eval.rs:time_epoch` is a `OnceLock<Instant>` static, i.e. one `DataLoc` outside the `run` boundary — deliberate, and the same choice mapal-rt's `mapal_time_ms` makes, so interp and the LLVM backend measure against the same kind of epoch. Consequence, recorded once: two `run`s in one process share it, so a clock reading is comparable only *within* a run (§5 contracts only monotonicity + finiteness) and `tests/determinism.rs`' byte-identical rule does not extend to a `time`-bearing program. **Consistent** with DESIGN §5 / C-interp-3 as amended.
 - **`num_le` uses native `<=`, not `!num_lt`.** Deliberate (IEEE NaN ordering: `Le(NaN,x)`
-  must be false); documented in `crates/mapal-interp/src/eval.rs:compare`. **Consistent** with
+  must be false); documented in `crates/mapal-interp/src/eval/helpers.rs:compare`. **Consistent** with
   DESIGN §3 "IEEE ordering for floats."
 - **`Abort` ↔ `Outcome` is not duplication.** `Result<RValue, Abort>` is exactly
   `Done(RValue) ⊕ Abort` with `Ok` carrying the `Done` payload; the split buys straight-line

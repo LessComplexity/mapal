@@ -1,3 +1,5 @@
+//! Unit tests of the resident plan: grouped stream lookups, arena coloring and the wave-merge rule.
+
 use super::{ARENA_ALIGN, color, color_by};
 
 #[test]

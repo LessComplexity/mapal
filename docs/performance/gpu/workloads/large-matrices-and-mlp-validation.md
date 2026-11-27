@@ -152,7 +152,7 @@ is reported separately below.
 | RTX 5090 final-only recurrence | Shipped LLVM byte-identical to both-retention-OFF control |
 | GPU values and timing | Unvalidated |
 
-The full recurrent checkpoint source triggered `replay.rs:989` with unmapped
+The full recurrent checkpoint source triggered `replay/emit.rs:189` with unmapped
 `ObjectId(5907v1)` (exit 101) in that frozen build. Its SHA256 is
 `0e4c05b403550da3a3afaeebcea8323e2af1dca887aa6a94d95c1e0dd7c57142`.
 A subsequent instrumented diagnostic proved that this is an acyclic token/value exit
@@ -206,8 +206,8 @@ blanket purity or lifetime annotations without proving each call's actual effect
 
 Current emission runs shared rewrites before splitting the host and device work.
 The host then receives ordinary LLVM optimization. However,
-`crates/backends/llvm/src/lib.rs:emit_detailed` disables the CPU task-parallel path
-for GPU profiles, and `func/gpu.rs:gpu_site` tests device eligibility rather than
+`crates/backends/llvm/src/emit.rs:emit_detailed` disables the CPU task-parallel path
+for GPU profiles, and `func/gpu/placement.rs:gpu_site` tests device eligibility rather than
 whole-program placement cost. A joint policy remains an open architecture question:
 use dependency, alias, lifetime and numerical facts to establish legal placement,
 retention and overlap; use measured compute, transfer and launch costs to choose

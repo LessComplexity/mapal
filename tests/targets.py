@@ -89,18 +89,23 @@ def plan(files, base):
             fns = changed_tests(f, base)
             for fn in sorted(fns) or ['']:
                 add(f'cargo test {FLAGS} -p {name} --test {p.stem} {fn}'.rstrip())
-        elif rel.parts[0] == 'tests':  # a shared module: every target that includes its directory
+        elif rel.parts[0] == 'tests':  # a shared module or a target's submodule: every target including its directory
             mod = rel.parts[1]
             for t in sorted(all_tests):
-                if re.search(rf'\bmod {mod}\b|/{mod}/', t.read_text()):
+                if re.search(rf'\bmod {mod}\b|["/]{mod}/', t.read_text()):
                     tn, _ = package(str(t.relative_to(ROOT)))
                     add(f'cargo test {FLAGS} -p {tn} --test {t.stem}')
         else:
-            stem = p.parent.name if p.stem in ('mod', 'lib', 'main') else p.stem
+            stems = [p.parent.name if p.stem in ('mod', 'lib', 'main') else p.stem]
+            q = p.parent  # a submodule of a split file (`func/gpu/k_mma.rs`): its root's targets too
+            while (ROOT / q.with_suffix('.rs')).exists():
+                stems.append(q.name)
+                q = q.parent
             ts = targets(d)
-            for t in ts:
-                if stem in t:
-                    add(f'cargo test {FLAGS} -p {name} --test {t}')
+            for stem in stems:
+                for t in ts:
+                    if stem in t:
+                        add(f'cargo test {FLAGS} -p {name} --test {t}')
             add(f'cargo test {FLAGS} -p {name} --lib')
             for t in ts:
                 add(f'cargo test {FLAGS} -p {name} --test {t}')

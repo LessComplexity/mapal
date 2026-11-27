@@ -1,3 +1,5 @@
+//! Unit tests of the horizontal kernel groups: which grids merge, residency, merged text.
+
 use super::device::*;
 use super::emit::*;
 use super::*;

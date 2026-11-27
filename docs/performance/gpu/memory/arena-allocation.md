@@ -2,7 +2,7 @@
 
 Shipped 2026-07-21 (suggestions #18, `docs/components/backend-cuda/plans/plan-smart-arenas.md` — status: shipped v1.0). One arena `cudaMalloc` per fn-scope zone (capacity deduced from the graph, `abi_sizeof` C-layout-exact, 256 B-aligned offsets, 4 GiB `EmitError` guard); per-site `arena0 + OFF` pointer inits; one zone release at fn exit under the pointer-range escape veto. Loop-cone sites keep per-buffer `cudaMalloc` (v1.1 debt, then partially discharged by W3's in-place `Update` — see the last-use row).
 
-## Structural counts (static text, deterministic — asserted in `tests/golden_cu.rs::arena_gates_plan_section_7`)
+## Structural counts (static text, deterministic — asserted in `tests/golden_cu/arena.rs::arena_gates_plan_section_7`)
 
 | program | `cudaMalloc` before → after | `cudaFree` before → after | note |
 |---|---|---|---|

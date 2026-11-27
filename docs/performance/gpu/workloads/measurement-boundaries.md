@@ -2,7 +2,7 @@
 
 The captured wall clocks do include GPU completion. I found no proved missing-sync, wrong-unit, or output-copy-in-clock accounting defect. They measure a warmed compute region, not full request latency or pure device kernel time. Attribution of the performance gap is not established by these measurements.
 
-The frozen link command links `matrix/emission/host.o`, `mapal_wrapper.c`, `runtime/mapal_gpu.c` and `libmapal_rt.a`; it does not use a linker `--wrap` timer. Wrapped emitted IR calls `mapal_bench_time_ms`. The underlying `mapal_time_ms` at frozen source head `3a0d4350dc2f5b13b53ed86821cf427922fe99d9`, `crates/mapal-rt/src/lib.rs:514–519`, returns process-lifetime `Instant` elapsed milliseconds. The GPU runtime's separate `now_ms` trace timer is not that function.
+The frozen link command links `matrix/emission/host.o`, `mapal_wrapper.c`, `runtime/mapal_gpu.c` and `libmapal_rt.a`; it does not use a linker `--wrap` timer. Wrapped emitted IR calls `mapal_bench_time_ms`. The underlying `mapal_time_ms` at frozen source head `3a0d4350dc2f5b13b53ed86821cf427922fe99d9`, `crates/mapal-rt/src/sched.rs:238–243`, returns process-lifetime `Instant` elapsed milliseconds. The GPU runtime's separate `now_ms` trace timer is not that function.
 
 ## Exact boundaries
 

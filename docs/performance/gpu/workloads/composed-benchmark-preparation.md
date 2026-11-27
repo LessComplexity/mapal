@@ -22,8 +22,8 @@ workstreams. Root reviewed the code, numerical contracts, emitted clocks and fin
 
 ## What the kernel investigation establishes
 
-`crates/backends/llvm/src/func/gpu.rs:launch` calls
-`crates/backends/llvm/src/profile.rs:TargetProfile::gpu_tile` with `wide=false, fill=false`
+`crates/backends/llvm/src/func/gpu/launch_rules.rs:launch` calls
+`crates/backends/llvm/src/profile/tp_split.rs:TargetProfile::gpu_tile` with `wide=false, fill=false`
 to derive the `Fill` key before `rungs_at`. It calls the helper again after choosing
 wide/fill rungs. Changing helper admission therefore changes more than final tile
 dimensions: it can change the selected arithmetic route through the existing policy.

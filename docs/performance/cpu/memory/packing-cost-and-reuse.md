@@ -230,7 +230,7 @@ at all, because `fmopa` fuses and the rung's output is deliberately not bit-equa
 interpreter oracle. Pinned instead by
 `sme_rung.rs::the_a_pack_is_blocked_exactly_when_it_stops_fitting_l1d` (both halves — a
 change that blocked unconditionally would pass the positive assertion alone) and
-`profile.rs::pack_block_fires_only_once_the_pack_buffer_leaves_l1d`. Both were verified
+`profile/tests/host_tiles.rs::pack_block_fires_only_once_the_pack_buffer_leaves_l1d`. Both were verified
 to **fail** on an injected bug before being trusted.
 
 Gate: **1058 passed / 0 failed**, fmt clean, `--target=generic` 0 of 174 cells moved,

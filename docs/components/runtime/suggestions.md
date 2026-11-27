@@ -27,7 +27,7 @@ is testable from `mapal-rt`'s own suite.
 
 ## 4. `path_plan_is_acyclic` should become unnecessary — §6.6
 
-`llvm/src/lib.rs:258` carries a `ponytail:` note saying to delete the fallback "when
+`llvm/src/gpu_rungs/kernel_rounds.rs:152` carries a `ponytail:` note saying to delete the fallback "when
 `path_plan`'s total-DAG contract is enforced before backend entry". S49 removed the
 sibling-merge cycle class but not the general one, and a cyclic plan is still silently
 demoted to sequential emission — the failure mode that hid every chained matmul for

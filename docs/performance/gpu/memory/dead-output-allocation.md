@@ -23,7 +23,7 @@ Requested bytes are neither physical driver peaks nor a latency measurement. Cou
 tracing synchronizes launches and cannot establish ordinary timing or stream overlap.
 The ordinary checks observe the fixture outputs, not every possible output or schedule.
 
-`resident.rs:FnEmit::chain_prologue` now consumes the existing selected `Epi.store_out`
+`resident/emit_site.rs:FnEmit::chain_prologue` now consumes the existing selected `Epi.store_out`
 fact. It omits only raw storage that the grouped kernel does not write. No source hint,
 benchmark name, runtime cache, arena-guard removal or new dependency representation is
 introduced. Twenty-eight device LLVM units remain unchanged; preserved S58 static proof

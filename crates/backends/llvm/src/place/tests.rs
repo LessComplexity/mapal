@@ -1,3 +1,5 @@
+//! Unit tests of the machine-model placement: profile translation, search, lowered launches.
+
 use super::machine::prim_of;
 use super::search::{PICKS, PROBE, search_site};
 use super::*;

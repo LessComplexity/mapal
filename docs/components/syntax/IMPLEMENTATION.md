@@ -82,7 +82,7 @@ algorithm corpus exercise composition across syntax constructs. It has no I/O.
 | J5 — presentation-free: no `Display` anywhere in crate | `crates/mapal-syntax/src/ast.rs`, `diag.rs` (only `Debug`) | grep/review |
 | J6 — `parse(s).diagnostics ⊇ lex(s).diagnostics` (same values) | `crates/mapal-syntax/src/parser.rs:parse` (seeds `Parser` with lex diags, then stable-sorts) | `tests/proptest_parser.rs::flow_soup_total` |
 | Pipe-weld — `t_to(lex) = t_from(parse_program) = Token*` (Coherence Law 1, specialized) | `crates/mapal-syntax/src/parser.rs:parse` (`lex` → `Parser::new(&lexed.tokens)`) | `tests/golden_trees.rs` (end-to-end), `tests/out_of_core.rs::full_surface_exact_pcode_multiset` |
-| ADR-0041 D2 — `: compute` (`f32`, `tf32`, `|`-joined) on anything that opens a body: `-> fold: tf32 \| f32 { … }` / `map`, `loop: … { … }`, `seq: … { … }`, `fn f(a) -> T: … { … }` (after the output); stored as `Block::compute`, innermost wins in lowering | `crates/mapal-syntax/src/parser.rs:Parser::parse_compute`; `crates/mapal-lower/src/emit.rs:ir_prec` | `crates/mapal-lower/tests/compute_type.rs` |
+| ADR-0041 D2 — `: compute` (`f32`, `tf32`, `|`-joined) on anything that opens a body: `-> fold: tf32 \| f32 { … }` / `map`, `loop: … { … }`, `seq: … { … }`, `fn f(a) -> T: … { … }` (after the output); stored as `Block::compute`, innermost wins in lowering | `crates/mapal-syntax/src/parser/items.rs:Parser::parse_compute`; `crates/mapal-lower/src/emit.rs:ir_prec` | `crates/mapal-lower/tests/compute_type.rs` |
 
 ## Notes / divergences
 Per FRAMEWORK §6.6 — where code carries structure the model's diagram abstracts over, or
@@ -112,15 +112,15 @@ vice versa.
   done right, not a morphism.
 - **`keyword_kind` and `SourceLoc::{new,empty_at,len,is_empty}`** are lexer-internal helpers
   with no model element; expected for a Level-B crate. Not divergences.
-- **`seq` statement block (ADR-0019).** The `KwSeq` arm of `crates/mapal-syntax/src/parser.rs:Parser::parse_stage_body`
+- **`seq` statement block (ADR-0019).** The `KwSeq` arm of `crates/mapal-syntax/src/parser/chains.rs:Parser::parse_stage_body`
   builds `StageKind::SeqBlock` via `Parser::parse_block` (the ordinary block production,
   `guard_ok=false`), not `parse_fanout_block`. `FanoutKind` lost its `Seq` summand.
-  **P0117** is emitted in `crates/mapal-syntax/src/parser.rs:Parser::parse_fanout_block`
+  **P0117** is emitted in `crates/mapal-syntax/src/parser/chains.rs:Parser::parse_fanout_block`
   (now `void`-only) for each dropped non-chain statement — a diagnostic, not a model
   morphism (like the other P-codes, off the `Dat`/`Trn` tables). `SeqBlock` is a block form
   in `stage_is_block_form` and widened in `stage_kind_extent` (both `parser.rs`).
 - **Unit literal `()` (S29, `time` builtin).** `crates/mapal-syntax/src/ast.rs:ExprKind::Unit`
-  is a new `Expr` variant, built by `crates/mapal-syntax/src/parser.rs:Parser::parse_paren_or_tuple`
+  is a new `Expr` variant, built by `crates/mapal-syntax/src/parser/exprs.rs:Parser::parse_paren_or_tuple`
   (the `at(RParen)` arm, which used to emit **P0001** "empty parentheses `()` are not an
   expression" and return `error_expr()`). Like every other `ExprKind` variant it gets no row
   of its own above — the `Expr` object row covers it (see the §15 sub-node-zoo note) — but the
@@ -132,7 +132,7 @@ vice versa.
   `crates/mapal-syntax/tests/support/mod.rs:TreeWriter::expr`.
 - **Element-update bind `c[i] <- x` (ADR-0021).** `BindStmt` gained an optional
   `index: Option<Expr>` field (`crates/mapal-syntax/src/ast.rs:BindStmt`): `Some` = the indexed
-  form, parsed in `crates/mapal-syntax/src/parser.rs:parse_bind_stmt` (the optional `[' expr ']`
+  form, parsed in `crates/mapal-syntax/src/parser/blocks.rs:parse_bind_stmt` (the optional `[' expr ']`
   after the name). Three warnings, all diagnostics (off the `Dat`/`Trn` tables like every P-code):
   **P0013** `mut` on an indexed target, **P0014** type annotation on one, **P0015** a nested
   `c[i][j]` target (recovered to a clean one-dimensional bind). The desugar to `Update` is

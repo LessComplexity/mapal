@@ -9,7 +9,7 @@
 
 | 3 | §5 (one source of truth) + §4.5 Law 1 (a decision must be visible where it is checked) | **A value-changing permission is expressed as a backend flag, so the oracle cannot see it.** `EmitOpts::contract` puts a `contract` fast-math flag on the emitted `fmul`/`fadd` and *LLVM* then picks which pairs fuse; `graph.rs` has no `Fma` and `mapal-interp` has no `mul_add`. The fusion set is therefore unknowable to the interpreter, which is why the two faces cannot be byte-compared and why `contract` cannot become the default | `Operation::Fma` in Core, emitted by `lower` when the type's ADR-0032 D1 contract permits; interp evaluates it with `f32::mul_add` (IEEE single rounding ⟹ bit-identical to the instruction) | the permission becomes a graph fact both backends and the oracle agree on; byte-equality with the interpreter survives a fused build, so the **default can flip to `contract`** — worth 1.62× on matmul 1024² — without weakening the 1,280-run differential to a tolerance. Same `Ty` change unlocks fold reassociation (`plans/plan-s37-scan-recurrence.md` §4, §8) |
 
-_(Suggestion 1 — the §5.1 typing-table golden oracle — applied Session 09: `src/validate.rs::typing_table_golden::edge_type_ok_matches_design_5_1`.)_
+_(Suggestion 1 — the §5.1 typing-table golden oracle — applied Session 09: `src/validate/typing_table_golden.rs::typing_table_golden::edge_type_ok_matches_design_5_1`.)_
 
 ## Detail
 

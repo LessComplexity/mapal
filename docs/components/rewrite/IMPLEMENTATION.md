@@ -67,7 +67,7 @@ falls to `false`, so its target is a DCE keep-root), `ty_contains_token` on the 
 target stops CSE (`graph_rewrites.rs:analyze_cse`), forwarding (`equations.rs:forward`) and
 lifting (`lift.rs:analyze_loop` rejects any token-bearing SCC object), and
 `graph_rewrites.rs:reads_packed_source` returns `false` for it, matching replay's bare-token
-feed. So the only new code is `replay.rs:emit_op`'s `TimeMs` arm — without it a rewritten
+feed. So the only new code is `replay/emit.rs:emit_op`'s `TimeMs` arm — without it a rewritten
 clock-bearing program would hit the `unreachable!` fallthrough. Coverage gap, recorded not
 papered over: testgen emits no clock read, and both S29 `time` fixtures
 (`differential_time_bracket` in `crates/backends/llvm/tests/differential.rs`,

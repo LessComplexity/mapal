@@ -37,10 +37,10 @@ machine fact enters the IR).
 | Object | Semantics | Fact (file:symbol) |
 | --- | --- | --- |
 | array `x: [T; n]` | immutable, static `n` | `Ty::Array` |
-| tile site `S` | `out[i,j] = fold_k a·b` with affine reads, `k > 0` | `algo.rs:TileSite`, `TileRead{ci,clane,ck}` |
+| tile site `S` | `out[i,j] = fold_k a·b` with affine reads, `k > 0` | `algo/tile_types.rs:TileSite`, `TileRead{ci,clane,ck}` |
 | strided one-row site | `out[j] = fold_k a[k]·b[j·s + k]`, `s ≠ 1` (`q·Kᵀ`) | **`tile_plan_strided` (S54)**; `tile_plan` (the CPU's) refuses it |
-| per-cell morphism `m` | a `Map` with no inner fold whose cell `t` reads a fixed set of cells | `algo.rs:ElemSrc::Apply` (law), **`cell_plan` (S54: the read footprint)** |
-| row fold `R` | a `Map` over rows whose body is one in-order `Fold` of one affine read `base + ci·i + ck·k`, step `acc ⊕ e` (`+ − ×`, or a compare-select: max/min) | **`algo.rs:row_fold` → `RowFoldSite{rows, k, a, op, seed}` (S54)** |
+| per-cell morphism `m` | a `Map` with no inner fold whose cell `t` reads a fixed set of cells | `algo/plan_types.rs:ElemSrc::Apply` (law), **`cell_plan` (S54: the read footprint)** |
+| row fold `R` | a `Map` over rows whose body is one in-order `Fold` of one affine read `base + ci·i + ck·k`, step `acc ⊕ e` (`+ − ×`, or a compare-select: max/min) | **`algo/site_plans.rs:row_fold` → `RowFoldSite{rows, k, a, op, seed}` (S54)** |
 | exact use count | every reader of `x`: the `Pair`s out of `x` and the morphisms their products feed | `out_edges` (`rowfold.rs:only_reader`) |
 | element read | a host `Index` at a proven constant | `BoundsProof::proven` |
 | carried state | a loop-state component and the rows one iteration writes | `LoopPlan`, `write_delta → Delta::Rows` |
@@ -69,10 +69,10 @@ body, no `Call`/`Map`/`Fold`, no float `%`) plus every `Index` proven.
 | --- | --- | --- |
 | tile site | `(a, b) → out` | host nest (`tile.rs`); device `naive` / `tiled` / `mma` / `wgmma` (`gpu.rs`) |
 | per-cell morphism | `(x₁…xₙ) → out` | host loop (`bulk.rs:emit_map`); `devgen` kernel (captures 0, closed form); **S54: epilogue in a site's store; `cell` kernel (`resident.rs:Cell`, the host body called with device pointers); `cell-law`: a closed-form `Same` capture evaluated in the cell (`fnN_cell`, the capture as a value)** |
-| row fold | `x → r` | host nest; **S54: `rowfold` kernel (`gpu.rs:rowfold_kernel_text`), one thread per row, `k` in order, the host's step instruction** |
+| row fold | `x → r` | host nest; **S54: `rowfold` kernel (`gpu/epi_rowfold.rs:rowfold_kernel_text`), one thread per row, `k` in order, the host's step instruction** |
 | whole float fold | `x → scalar` | host only (ADR-0028 D4: one in-order chain; one device thread is slower than the copy-out) |
 | element read | `x → T` | host load; one-element `d2h` (`resident.rs:Use::Elem`) |
-| restricted site | the site over the rows `Δ` says changed | `retain.rs:Retained.row`; **S54: launched into the output's resident buffer at the row's offset (`resident.rs:emit_row_resident`)** |
+| restricted site | the site over the rows `Δ` says changed | `retain.rs:Retained.row`; **S54: launched into the output's resident buffer at the row's offset (`resident/emit_site.rs:emit_row_resident`)** |
 
 One `Trn` placed twice is two `TrnLoc` rows and may be two texts (FRAMEWORK §4.2). The rule
 that keeps them the same *value*: a per-cell body is emitted once (`drive.rs`) and the device
@@ -114,8 +114,8 @@ reads the facts of §2 and the device facts of `profile.rs` (`sms`, `max_blocks_
 `smem_per_sm`, `l2_bytes`), never a workload name.
 
 - **R0 (anchor).** A tile site with `k > 0` and plain affine reads is a device site
-  (`gpu.rs:gpu_site`). Its output cell exists in the owning thread's `Reg` before the store.
-  A strided one-row site is one too (`gpu.rs:tile_plan`, rung `lane-stride`): the
+  (`gpu/placement.rs:gpu_site`). Its output cell exists in the owning thread's `Reg` before the store.
+  A strided one-row site is one too (`gpu/placement.rs:tile_plan`, rung `lane-stride`): the
   one-thread-per-cell kernel addresses any affine read. Its step keeps the host map's
   `fmul` + `fadd` on the contract face, where the CPU does not tile it.
   A row fold whose read array a device site produced is a device site (one thread per row, `k`
@@ -178,7 +178,7 @@ reads the facts of §2 and the device facts of `profile.rs` (`sms`, `max_blocks_
   is under one wave (`blocks < sms · max_blocks_per_sm`, from the launch geometry): a filled part
   has nothing to overlap. On sm_90+ a dependent launch in one stream may begin its prologue
   before the producer's grid drains (`griddepcontrol`).
-  *As built (S54 `streams`, `resident.rs:chains`):* straight-line sites are covered by chains in
+  *As built (S54 `streams`, `resident/plan.rs:chains`):* straight-line sites are covered by chains in
   topo order (a site continues the chain whose last site is a `PathPlan` ancestor). Streams open
   only when (a) every one of those sites' outputs stays in `Gmem` — a whole `d2h` puts the host
   between the chains (diamond and mlp2 with a host join ran 0.60–0.96× on streams on every part,
@@ -261,8 +261,9 @@ historical compiler baseline. Neither `raster` nor `l2-window` is a `Trn` or a `
 the grid order is how one realization walks its blocks, the window a cache policy on a `launch`
 over `Gmem` the graph proves is read again — `l2-window`'s output case is R6's residency seen from
 the L2 (a chain's intermediate, read by the next launch). A rung's fill key belongs to
-its launch context (`profile.rs:Fill`). For a tile, `gpu.rs:launch` derives the key from
-the preliminary `profile.rs:TargetProfile::gpu_tile` query with wide/fill disabled,
+its launch context (`profile/target.rs:TargetProfile::gpu_rungs_on`: a site's warps per
+scheduler and face). For a tile, `gpu/launch_rules.rs:launch` derives the key from
+the preliminary `profile/tp_split.rs:TargetProfile::gpu_tile` query with wide/fill disabled,
 before `rungs_at`; it queries geometry again after selecting those rungs. Thus changing
 geometry admission may also change the selected realization of the same tile `Trn` over
 `Gmem`, `Smem` and `Reg`. This is an existing selection dependency, not a new semantic
@@ -284,7 +285,7 @@ when every session measures the other sign; host-read rungs (`gpu.rs:host_rungs`
 execution order; a member's group value read only at `Same`, every other operand complete in
 `Gmem` at a cell-only footprint, the same loop phase as the site); members are skipped on the
 host and their reads are device uses, so `keep`, `devgen` and the loop carry follow unchanged.
-`gpu.rs:store_cells` evaluates the chain at each of the four store sites (`naive`, `tiled`,
+`gpu/k_core.rs:store_cells` evaluates the chain at each of the four store sites (`naive`, `tiled`,
 `mma`, `wgmma`) with the host body, or its `_cell` variant (a captured `Same` read from a
 one-cell buffer, which SROA turns into a register); `mapal_gpu_launchv` passes the extra
 pointers. Static counts: `benches/results/gpu/fusion/epilogues/epilogue-fusion-report.txt`.
@@ -390,8 +391,8 @@ reinterpret requested precision or contraction.
 
 | Transformation | Domain → codomain | Realization |
 | --- | --- | --- |
-| Resolve launch (`Trn`) | IR geometry/order + permissions + device facts/policy → Launch including actual Arithmetic | `gpu.rs:launch`, `Arithmetic::scalar`, `Arithmetic::face` |
-| Emit selected arithmetic (`Trn`) | Launch + TileSite → device LLVM | `gpu.rs:kernel_text`, `Kernel::step` and selected tensor emitters |
+| Resolve launch (`Trn`) | IR geometry/order + permissions + device facts/policy → Launch including actual Arithmetic | `gpu/launch_rules.rs:launch`, `Arithmetic::scalar`, `Arithmetic::face` |
+| Emit selected arithmetic (`Trn`) | Launch + TileSite → device LLVM | `gpu/device_text.rs:kernel_text`, `Kernel::step` and selected tensor emitters |
 
 ```mermaid
 flowchart LR

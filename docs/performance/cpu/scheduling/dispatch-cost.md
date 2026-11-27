@@ -55,7 +55,7 @@ more pieces is cheap; opening a dispatch is not.
 
 ### Why — read off the source
 
-`Pool::enqueue` (`mapal-rt/src/lib.rs:519`) pushes each item, bumps one global
+`Pool::enqueue` (`mapal-rt/src/sched.rs:243`) pushes each item, bumps one global
 `wake_epoch`, and calls **`self.wake.notify_all()`** on one condvar. Every worker wakes, for
 a dispatch that may carry one slice.
 

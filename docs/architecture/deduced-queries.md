@@ -139,7 +139,7 @@ the backend decides.
 ### Two honest caveats to the picture above
 
 - **It is a cycle, not a pipeline.** The rewriter reads queries too — `lift.rs:31`
-  and `replay.rs:291` consume `loop_plan` — and after a rewrite every fact is
+  and `replay.rs:304` consume `loop_plan` — and after a rewrite every fact is
   simply recomputed. That is safe and cheap precisely because queries are pure
   functions of the graph with nothing stored to invalidate.
 - **Queries are a menu, not a stage.** `path_plan` is consumed by llvm,
@@ -191,7 +191,7 @@ fn main() {
 The two maps are independent paths across nodes → two tasks. The zip+map depends
 on both → one task with two dependencies. The print is effectful → the host waits.
 
-**How the algorithm works** (`CategoryIr::path_plan`, `crates/mapal-ir/src/algo.rs:946`):
+**How the algorithm works** (`CategoryIr::path_plan`, `crates/mapal-ir/src/algo/paths.rs:CategoryIr::path_plan`):
 
 1. Put the function's morphisms in execution order (`topo_order`).
 2. Set aside the **host spine**: anything that touches the effect token (prints,
@@ -236,7 +236,7 @@ graph TD
 ```
 
 **Who consumes the answer:** the llvm backend
-(`crates/backends/llvm/src/lib.rs:105`). If the plan isn't `is_single_path()`, it
+(`crates/backends/llvm/src/gpu_rungs.rs:19`). If the plan isn't `is_single_path()`, it
 emits one `@task{i}` function per task plus a static dependency/rank table, and
 `mapal-rt` (`crates/mapal-rt/src/lib.rs`) executes it on a work-stealing thread pool
 (`MAPAL_PAR` sets the thread count; `MAPAL_PAR=1` is the sequential lever). If the
@@ -275,7 +275,7 @@ Read it as: each cell `c[i*4+j]` is an independent dot product,
 order-pinned. That is exactly what a SIMD unit wants: run 4/8/16 cells in lanes,
 each lane doing its own `acc + x*y`, one lane's `b`-read being the neighbor's.
 
-**How the algorithm works** (`CategoryIr::tile_plan`, `crates/mapal-ir/src/algo.rs:510`;
+**How the algorithm works** (`CategoryIr::tile_plan`, `crates/mapal-ir/src/algo/site_plans.rs:CategoryIr::tile_plan`;
 the recognition pipeline is `tile_site` → `tile_fold_shape` → `tile_affine`, with
 `tile_trap_free` as the safety gate):
 
@@ -375,7 +375,7 @@ In the matmul example above: `a[i * 4 + k]` where `t ∈ [0, 16)`, so `i = t / 4
 [0, 16)` — provably inside a `[f64; 16]`. Guard deleted.
 
 **How the algorithm works** (`CategoryIr::bounds_proof`,
-`crates/mapal-ir/src/algo.rs:2008` — interval analysis over the object graph):
+`crates/mapal-ir/src/algo/bounds/compute.rs:CategoryIr::bounds_proof` — interval analysis over the object graph):
 
 1. **Seed ranges.** Non-negative integer constants know their exact value;
    elements of an `iota(n)` array lie in `[0, n)`; so does the `.0` of an
@@ -455,7 +455,7 @@ also receives an edge from outside the cycle (the init arriving).
 **The firing problem, and the exemption.** Dataflow's rule is "fire a node when
 its inputs have fired" — but in a cycle every node waits on another node in the
 cycle: deadlock. The emission scheduler (`topo_order`,
-`crates/mapal-ir/src/algo.rs:1383`) breaks it with two rules:
+`crates/mapal-ir/src/algo/site_plans.rs:54`) breaks it with two rules:
 
 - a `LoopMerge` completes on its `LoopEnter` alone — **the `LoopBack` edge is
   emitted but never gates** (header-first: the init arrives, the merge fires, the
@@ -475,7 +475,7 @@ graph TD
 ```
 
 **How the recognition algorithm works** (`CategoryIr::loop_plan`,
-`crates/mapal-ir/src/algo.rs:1553`):
+`crates/mapal-ir/src/algo/site_plans.rs:224`):
 
 1. **Find the cycles.** `loop_structure` runs iterative Tarjan SCC over the
    function's object graph; a non-trivial SCC (more than one node, or a
@@ -521,7 +521,7 @@ everything else compiles as-is.
 
 **Who consumes the answer:** everyone who needs loop attribution derives it from
 this one plan — the interpreter's loop driver (`crates/mapal-interp/src/loops.rs:32`),
-the rewrite replayer (`crates/mapal-rewrite/src/replay.rs:256`), and both backends
+the rewrite replayer (`crates/mapal-rewrite/src/replay.rs:269`), and both backends
 (llvm `loops.rs`, cuda `loops.rs`). The code comment explains why it's one query:
 the rule's two hand-maintained copies both regressed in S12, so now there is one
 source of truth.
@@ -543,7 +543,7 @@ update, the "fresh array" can be the same buffer mutated in place (S20 deleted a
 per-iteration 16 KB `memcpy` this way).
 
 **How the algorithm works** (`CategoryIr::last_use_plan`,
-`crates/mapal-ir/src/algo.rs:1747`):
+`crates/mapal-ir/src/algo/site_plans.rs:418`):
 
 1. **Lay the program out in execution order.** `topo_order` gives every morphism
    a rank; each canonical loop is re-ranked into the order trips actually
@@ -580,7 +580,7 @@ graph TD
 **Who consumes the answer:** the llvm backend gates in-place `Update` on it
 (`crates/backends/llvm/src/func.rs:1861` — write into the source buffer instead
 of materializing a fresh array); the cuda backend uses it for back-edge freeing
-and arena coloring (`crates/backends/cuda/src/func.rs:393`).
+and arena coloring (`crates/backends/cuda/src/func/copies.rs:13`).
 
 **Correctness gate:** like everything else — the differential, which includes the
 loop-driven `Update` cases at both opt levels.

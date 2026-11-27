@@ -29,7 +29,7 @@ and [receipt](../../../../benches/results/gpu/memory/ordering/audit/consumers/re
 record all fixture files and hashes. Interpreter outputs match the independent integer
 value oracles; that does not establish asynchronous GPU ordering.
 
-The current compiler already knows the grouped writer: `resident.rs:FnEmit::epilogues`
+The current compiler already knows the grouped writer: `resident/epilogues.rs:FnEmit::epilogues`
 records member-to-site ownership while forming groups, and `FnEmit::arena` uses that
 relationship to place a member's birth at its producer launch. `ResidentPlan::stream_of`
 instead queries the object's original IR producer. These are investigation touch sites;

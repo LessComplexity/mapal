@@ -54,6 +54,11 @@ jobs:
           echo "cores: $(getconf _NPROCESSORS_ONLN)"
           command -v ld.lld && ld.lld --version || echo "lld: not installed (platform default linker)"
 
+      # No code file under crates/ or editors/ over 1,000 lines (a split is a pure
+      # move into submodules). Needs no toolchain: the cheapest check, run before the rest.
+      - name: File size
+        run: scripts/check_file_size.sh
+
       - name: Formatting
         run: cargo fmt --all --check
 

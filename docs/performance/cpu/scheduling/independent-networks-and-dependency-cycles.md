@@ -26,7 +26,7 @@ task 11: Split    deps=[0, 8]        layer-1 map @476
 task 14: Split    deps=[0, 8]        layer-1 map @791
 ```
 
-`8 → 11 → 8`. A cycle. Nothing crashes: `llvm/src/lib.rs:261` filters a cyclic plan out
+`8 → 11 → 8`. A cycle. Nothing crashes: `llvm/src/gpu_rungs/kernel_rounds.rs:155` filters a cyclic plan out
 with `path_plan_is_acyclic` and emits the sequential form, so the symptom is *silently lost
 parallelism*. `path_plan`'s own `debug_assert_eq!(task_topo.len(), tasks.len())` does catch
 it — and is compiled out of every release build. In debug it says `left: 6, right: 11`.
@@ -221,8 +221,8 @@ the control makes that legible, which is why it is in the table (rule 22).
    `mapal_par_task` — but the fence lives in task edges and the sequential path has none.
 2. **`path_plan_is_acyclic` is still needed.** The fix removes the sibling-merge cycle
    class, not every cycle: a scalar value that feeds a bulk op *and* feeds a scalar consumer
-   of that op's output would still close one. The `ponytail:` note at `llvm/src/lib.rs:258`
+   of that op's output would still close one. The `ponytail:` note at `llvm/src/gpu_rungs/kernel_rounds.rs:152`
    ("delete this fallback when `path_plan`'s total-DAG contract is enforced") stands.
-   `mapal-ir/tests/algos.rs::assert_acyclic` is the pin that exists now.
+   `mapal-ir/tests/algos/path.rs::assert_acyclic` is the pin that exists now.
 3. **1 thread is still 0.60–0.87× of numpy** on both machines — S48's standing P0,
    untouched here.

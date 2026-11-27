@@ -59,7 +59,7 @@ two rejected M1 TF32 invocations. A harness pass does not certify application ac
    lowered by offline ptxas into integer adjustment/check sequences. The pinned CUTLASS
    executable uses 96 hardware `F2FP` conversion instructions. Their tie rules differ;
    the halfway example is independently verified. `Reduced::Tf32` explicitly specifies
-   `cvt.rna` in `crates/backends/llvm/src/lib.rs:408`. The ties-even proposal in ADR-0039
+   `cvt.rna` in `crates/backends/llvm/src/gpu_rungs/kernel_rounds.rs:302`. The ties-even proposal in ADR-0039
    is undecided. Changing conversion is a semantic change, and its timing benefit is
    unproven. Keep the current contract unless the language decision changes.
 3. **Tiled pipeline:** inspected TF32 kernels already use MMA and asynchronous copies.

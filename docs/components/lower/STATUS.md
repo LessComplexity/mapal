@@ -34,7 +34,7 @@ no tail draws L1611. `FanoutKind` shrank to `Plain | Void`. **Element update `c[
 `Update(cur,i,x)`-then-`rebind()` path (never `bind_new`), reusing existing diagnostics
 (non-`mut`/L1104; no new L-codes); the three enclosing-scope sub-passes each recognize it
 (carried-set `collect_assigns_stmt`, Phi-arm `scan_stmt` → L1408); typing unifies the value
-with the array element type (LD27). **U3-1 capture fix:** `typing.rs:capture_stmt`'s
+with the array element type (LD27). **U3-1 capture fix:** `typing/captures.rs:capture_stmt`'s
 indexed-bind branch capture-checks the target/index/value as reads without registering the
 target as a fresh body-local — so a target/index that captures an enclosing local draws
 L1108, not a misleading L1101. Golden: `array_update_straightline` + loop-carried
