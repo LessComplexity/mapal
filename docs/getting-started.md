@@ -42,9 +42,26 @@ Start in [`examples/`](../examples/): `softmax.mapal` for a first look (the READ
 `sepia.mapal` for most of the language, `fir.mapal` for a loop, `llama.mapal` for a whole model. The forms
 themselves, one by one: [syntax](syntax.md).
 
+## Interactive
+
+`mapal repl` is a prompt on the interpreter. Type a function, a value or an expression; it answers at once.
+A definition is kept (typing it again replaces it), a value you name with `-> name` is kept, and an expression is
+shown and forgotten. A line that fails prints what is wrong, pointing at what you typed, and changes nothing.
+`:help` lists the commands: `:load` a file's functions, `:list` or `:save` the session as a formatted program,
+`:reset`, `:bound`, `:quit`.
+
+```text
+mapal> :load examples/softmax.mapal
+loaded 1 item(s) from examples/softmax.mapal: softmax
+mapal> [1.0, 2.0, 3.0, 4.0] -> softmax -> p
+p = [0.032058604, 0.08714432, 0.23688284, 0.6439143]
+mapal> p[3] * 2.0
+1.2878286
+```
+
 ## The command-line tool
 
-`mapal build`, `run`, `test`, `dump-ir`, `fmt`, `lsp`:
+`mapal build`, `run`, `test`, `dump-ir`, `fmt`, `repl`, `lsp`:
 
 | command | what it does |
 | --- | --- |
@@ -54,6 +71,7 @@ themselves, one by one: [syntax](syntax.md).
 | `mapal dump-ir file.mapal` | the program's graph at a stage (`--stage=lowered`, `rewritten`, `llvm`, `device`) |
 | `mapal dump-ir --mermaid file.mapal` | the program as a Mermaid string diagram (steps are boxes, named values are wires); `--mermaid=category` draws it as a commutative diagram, `--mermaid=graph` is the stored graph, `=flow` the named values; `string` / `category` take `,condensed` |
 | `mapal fmt files…` | format source ([below](#formatting)) |
+| `mapal repl` | an interactive session on the interpreter ([below](#interactive)) |
 | `mapal lsp` | the language server, over stdin / stdout (editors start it) |
 
 `--target=native-gpu` compiles for the CUDA GPU in this machine. `mapal` with no arguments lists every command and

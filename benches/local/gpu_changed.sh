@@ -11,15 +11,19 @@
 # the same host object and PTX on both: null by construction, not timed. Nothing differs: no bundle, nothing to time.
 # The full suite (gpu_bundle.sh + gpu_run.sh) still runs once per step: the safety net for what text equality
 # cannot see (the runtime, the driver, the machine's state).
+# `--arch <profile>` (a rented part) needs PART=<profile>:<sm_NN> for the bundle (gpu_bundle.sh).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT=$1; shift
 mkdir -p "$OUT"
+arch=rtx-5080; prev=; for a in "$@"; do [ "$prev" = --arch ] && arch=$a; prev=$a; done
+PART=${PART:-rtx-5080:sm_120}
+[ "${PART%%:*}" = "$arch" ] || { echo "gpu_changed: --arch $arch needs PART=$arch:<sm_NN> (PART=$PART)" >&2; exit 2; }
 eval "$(python3 "$ROOT/benches/local/suite_diff.py" "$OUT" "$@")"
 if [ -z "$STEMS$CELLS" ]; then
     echo "gpu_changed: no suite program or cell differs on the two arms: nothing to time"
     exit 0
 fi
 echo "gpu_changed: STEMS='$STEMS' CELLS='$CELLS'"
-STEMS="$STEMS" CELLS="$CELLS" ARMS="$ARMS" BASE_EMIT="${BASE_EMIT:-}" "$ROOT/benches/local/gpu_bundle.sh" "$OUT/bundle"
+PART="$PART" STEMS="$STEMS" CELLS="$CELLS" ARMS="$ARMS" BASE_EMIT="${BASE_EMIT:-}" "$ROOT/benches/local/gpu_bundle.sh" "$OUT/bundle"
 echo "gpu_changed: time with  LADDER=1 LOCAL_GPU=$OUT benches/local/gpu_run.sh $OUT/bundle"

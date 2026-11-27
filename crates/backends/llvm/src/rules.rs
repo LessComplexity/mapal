@@ -994,6 +994,7 @@ mod native_tests {
         crate::profile::PlaceFacts {
             prov: &[],
             cite: "",
+            lat_l2_cite: "",
             start: f.start.map(|(s, _)| (s, "")),
             ..*f
         }

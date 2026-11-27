@@ -3,8 +3,10 @@
 # usage: bundle.sh <outdir> [stems...]   (stems default: the README table's 35 programs, benches/local/suite.txt)
 # STEMS= in the environment (empty too) replaces the stems (gpu_changed.sh: only the programs an A/B moves); CELLS= and
 # ARMS= (BASE_EMIT=) pass through. Built objects come from the bundle cache where a stem's emitted text is unchanged
-# (integrated_bundle.sh, BUNDLE_CACHE=0 builds everything).
+# (integrated_bundle.sh, BUNDLE_CACHE=0 builds everything). PART=<profile>:<sm_NN> builds for another part (a rented
+# part's A/B, gpu_changed.sh --arch; default this box's rtx-5080:sm_120).
 set -euo pipefail
+PART=${PART:-rtx-5080:sm_120}
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT=$1; shift
 SUITE=${STEMS-${*:-$(tr '\n' ' ' < "$ROOT/benches/local/suite.txt")}}
@@ -19,6 +21,6 @@ cargo build -q --release -p mapal-rt --target x86_64-unknown-linux-gnu
 cargo build -q --release -p mapal-rt
 export PATH=/opt/cuda/bin:$PATH CUDA=/opt/cuda LLVM=/usr/bin CPU_TARGET=x86-64-v3
 CELLS=${CELLS-"4096x4096x4096 16x2048x7168"} PROGS="" SUITE="$SUITE" SUITE_ARMS=0 ARMS="${ARMS-}" \
-    benches/gpu/integrated_bundle.sh "$OUT" rtx-5080:sm_120 > "$OUT/bundle.log" 2>&1 || { tail -20 "$OUT/bundle.log"; exit 1; }
+    benches/gpu/integrated_bundle.sh "$OUT" "$PART" > "$OUT/bundle.log" 2>&1 || { tail -20 "$OUT/bundle.log"; exit 1; }
 grep -h '^bundle cache:' "$OUT/bundle.log" || true
-python3 benches/gpu/preflight.py "$OUT" rtx-5080 2>&1 | tee "$OUT/preflight.log" | tail -5
+python3 benches/gpu/preflight.py "$OUT" "${PART%%:*}" 2>&1 | tee "$OUT/preflight.log" | tail -5

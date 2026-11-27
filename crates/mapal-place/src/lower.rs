@@ -8,8 +8,22 @@
 use crate::machine::{Class, Machine, OpId};
 use crate::schedule::{Schedule, Site, Traversal};
 
+/// How a slot's operand panels arrive (the cost model's mover row).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Move {
+    /// Not declared: an asynchronous copy of 16 bytes a lane.
+    #[default]
+    Unsaid,
+    /// Lane loads of `bytes` into registers (register staging).
+    Load(u64),
+    /// Asynchronous lane copies of `bytes` into the scratchpad.
+    Copy(u64),
+    /// Bulk-copy boxes of `bytes`.
+    Bulk(u64),
+}
+
 /// A schedule's declared counts.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Declared {
     /// Lanes a slot launches (producers included).
     pub threads: u64,
@@ -39,6 +53,25 @@ pub struct Declared {
     /// under it): a hybrid's zero pass is then the walked tiles' rows only;
     /// `false`, every piece adds into the zeroed output.
     pub whole_stores: bool,
+    /// **The cost model's declarations** (ADR-0050, cost-model.md): how the
+    /// panels arrive ([`Move`]).
+    pub mover: Move,
+    /// Bytes a slot reads from the unit scratchpad a trip (its fragment
+    /// loads; 0: unsaid, the issue counts alone), the bytes of them in
+    /// flight ahead of their use, and whether the fragment loader
+    /// (`ldmatrix`) reads them.
+    pub scratch: u64,
+    pub scratch_fly: u64,
+    pub scratch_matrix: bool,
+    /// Slot barriers a slot passes a trip.
+    pub barriers: f64,
+    /// The epilogue: bytes a lane stores at once (0: 16), and whether it
+    /// overlaps the loop (`false`: it follows it — every present emitter).
+    pub store: u64,
+    pub epi_overlap: bool,
+    /// The 32-byte sectors one group instruction of the partial adds
+    /// touches (0: 4, the group's lanes contiguous).
+    pub add_sectors: u64,
 }
 
 impl Declared {

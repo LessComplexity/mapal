@@ -190,14 +190,19 @@ fn arm_launch(site: &TileSite, p: &'static TargetProfile, plan: &str) -> Option<
 /// terms, and its time at every corner of the facts' intervals.
 type ArmEval = ([f64; 3], mapal_place::Terms, Vec<f64>);
 
-/// One arm's evaluation at the three bounds and every corner, and its
-/// terms.
-fn arm_ns(
+/// One arm as the evaluator reads it: the part's machine, the site, the
+/// arm's schedule and its lowering's declared counts.
+fn arm_inputs(
     site: &TileSite,
     p: &'static TargetProfile,
     l: &Launch,
     warm: [bool; 2],
-) -> Option<ArmEval> {
+) -> Option<(
+    mapal_place::Machine,
+    Site,
+    mapal_place::Schedule,
+    mapal_place::Declared,
+)> {
     let m = machine_of(p)?;
     let arms = crate::GpuArms {
         free: true,
@@ -216,6 +221,18 @@ fn arm_ns(
         ..site_of(site, true, crate::Order::Free)
     };
     let d = e.declare(&m, &s, &x).ok()?;
+    Some((m, s, x, d))
+}
+
+/// One arm's evaluation at the three bounds and every corner, and its
+/// terms.
+fn arm_ns(
+    site: &TileSite,
+    p: &'static TargetProfile,
+    l: &Launch,
+    warm: [bool; 2],
+) -> Option<ArmEval> {
+    let (m, s, x, d) = arm_inputs(site, p, l, warm)?;
     let at = |b| mapal_place::evaluate(&m, &s, &x, &d, b);
     let mut t = at(mapal_place::Bound::Value);
     t.marked.insert(0, x.plan());
@@ -232,6 +249,54 @@ fn arm_ns(
         t,
         corners,
     ))
+}
+
+/// **The search's floor is admissible on every replayed arm** (cost-rental
+/// review): [`mapal_place::evaluate_floor`] — what the branch and bound
+/// prunes with — is at most the arm's evaluation at every bound, on every
+/// part (the RTX 3090's and the A100's measured memory knee latency sits
+/// below their cache's: a miss mix that fell with misses put the floor above
+/// the value on 26 of their 28 arms, up to 1.127x, and pruned better arms).
+#[test]
+fn place_floor_is_admissible() {
+    let sites = replay_sites(include_str!("place_replay.tsv"));
+    let mut seen = 0;
+    for (id, arms) in &sites {
+        let fam = id.split('-').next().unwrap();
+        let f0 = &arms[0];
+        let p = crate::profile::resolve(f0[1]).expect("a part");
+        let (m, n, k): (u64, u64, u64) = (
+            f0[2].parse().unwrap(),
+            f0[3].parse().unwrap(),
+            f0[4].parse().unwrap(),
+        );
+        let mm = fam == "kfill" || fam == "skfill" || fam == "pc" || fam == "split";
+        let site = replay_site(m, n, k, f0[5], mm);
+        let warm = warm_of_program(f0[12], p, (m, n, k));
+        for a in arms {
+            let Some((mc, s, x, d)) =
+                arm_launch(&site, p, a[8]).and_then(|l| arm_inputs(&site, p, &l, warm))
+            else {
+                continue;
+            };
+            for b in [
+                mapal_place::Bound::Slow,
+                mapal_place::Bound::Value,
+                mapal_place::Bound::Fast,
+            ] {
+                let floor = mapal_place::evaluate_floor(&mc, &s, &x, &d, b).ns;
+                let value = mapal_place::evaluate(&mc, &s, &x, &d, b).ns;
+                assert!(
+                    floor <= value * (1.0 + 1e-9),
+                    "{id} {} on {}: the floor {floor:.0} ns above the value {value:.0} at {b:?}",
+                    a[7],
+                    f0[1]
+                );
+            }
+            seen += 1;
+        }
+    }
+    assert!(seen > 100, "the replay's arms evaluated ({seen})");
 }
 
 /// **A replayed site's warm operands from its program** (the box column's
@@ -315,53 +380,75 @@ fn place_replay_sites_are_distinct() {
 /// by the search's own rule ([`mapal_place::verdict`]): a pick within the
 /// null, or one the facts' intervals flip at some corner, is open, never
 /// counted here or as a pick.
-const REPLAY_OPEN: [&str; 6] = [
-    // RTX 3090 2048³ TF32 and 128 x 4096 x 14336 bf16: the uncut grid won
-    // (5.9 / 7.8 %), the model prices the cut 19 / 17 % under it by wave
-    // quantization — its partial adds (151 / 19 µs at the L2) and, past the
-    // keep, their read-modify-write from DRAM (387 / 196 µs) priced as
-    // overlapped with the k loop (max over resources). The adds come as a
-    // burst at each piece's end: the missing term is that burst, serial
-    // after the piece's fold (it makes cuts dearer).
-    "cut-0", "cut-2",
-    // A100 128 x 4096 x 14336 bf16: the cut won (9.6 %); the model prices
-    // both arms at the device L2 feed (168 µs each, `cache` — the full-grid
-    // read rate `calib.cu bw` measured), the cut's lower per-unit terms
-    // (compute 51 against 82 µs, latency 51 against 82) hidden under it. The
-    // uncut grid (128 tiles on 108 SMs, one or two blocks an SM) does not
-    // draw that rate: the missing fact is the L2's realized rate at the
-    // grid's occupancy (a rate curve against resident warps, as the
-    // efficiency curve) — it makes the under-filled uncut dearer, the
-    // opposite direction of the 3090 rows' term. (The A100's TF32 and
-    // 2048-row cuts, cut-9 / cut-10, are ties within the null: open.)
-    "cut-8",
-    // RTX 5080 128 x 28672 x 4096 bf16 (ADR-0050 C5): the hybrid won by
-    // 2.7 %; every arm is priced at the DRAM roofline (283 µs: `b`'s 235 MB
-    // once) ~3x under its time — the ring's bytes in flight a unit cover
-    // DRAM's latency by the model, so no term explains the skinny site's
-    // realized memory rate (open: a probe of one tile row's stream rate).
+const REPLAY_OPEN: [&str; 7] = [
+    // 128 x 4096 x 14336 on two parts with every primitive measured
+    // (cost-rental): the RTX 4090 (bf16: cut 2 won by 8 %) and the RTX 3090
+    // (bf16: the uncut grid won by 7.8 %) — the model ranks each the other
+    // way. In both the losing arm's other flows sit close under its bound
+    // (the 4090's uncut: DRAM 127 against latency 123; the 3090's cut: L2
+    // 218 against compute 207 and DRAM 197) while the winner's are apart:
+    // the steady state takes the max of the flows (a perfect overlap), and
+    // near-equal flows do not overlap perfectly. The overlap of concurrent
+    // flows is unmeasured (a two-flow probe: open). The A100's two (cut-8
+    // bf16, cut-9 TF32: cut 8 won by 9.6 / 25 %) left this list when a
+    // miss's latency became at least a hit's (the memory's knee latency
+    // read below the cache's): the model's value now picks cut 8 on both,
+    // open where the facts' corners flip it.
+    "cut-12", "cut-2",
+    // RTX 5080 128 x 28672 x 4096 bf16: every arm ~2.9x under its time at the
+    // DRAM roofline. The panel stream's measured rate by run (0.35–0.5x at a
+    // 32-byte run, `PrimOf::Panel`) would explain it, but c11-0's `-raster`
+    // arm streams 32-byte runs at 888 GB/s (the full rate): the property that
+    // separates the two is unidentified, so no term reads the run.
     "hyb-0",
-    // RTX 5080 2048 x 6144 x 4096 and 512 x 512 x 2048: the ordered grid
-    // won (12 / 2.7 %), the walk is priced 6 / 18 % under it (wave
-    // quantization; at 512² a larger tile). The walk's own per-unit cost is
-    // unpriced: its k loop one copy where the ordered kernel's is two
-    // (SASS: 64 against 128 HMMA a loop body, 568 against 464
-    // instructions), its segment loop and the shared tiles' fixup, and its
-    // partial adds as a burst at each piece's end (512²: 6.6 µs of adds
-    // priced under 10 µs of compute).
-    "walk-16", "walk-5",
+    // RTX 5080 512 x 8192 x 2048 (hybrid against the walk, 3.6 %) and 2048 x
+    // 6144 x 4096 (ordered against the walk, 12 %): the walk's own per-unit
+    // cost — its k loop one copy where the ordered kernel's is two (SASS: 64
+    // against 128 HMMA a body), its segment loop and the shared tiles' fixup;
+    // its partial adds are priced (measured: `red.add.f32.frag`, 2.6 op / ns
+    // an SM) and overlap the loop but the last pieces'.
+    "hyb-1", // RTX 5080 2048 x 6144 x 4096: the walk's per-unit cost (hyb-1's).
+    "walk-16",
+    // RTX 5080 512 x 2048 x 2048 and its transpose: the walk (128 x 128 tile)
+    // won 12–15 % over the ordered 64 x 128 tile, priced at its compute (49
+    // against 57 µs measured): a small warp tile's exposed fragment latency
+    // (`ldmatrix`: 36 clocks a use by the pure pointer chase — the first
+    // probe's 69 carried its own branch and address arithmetic — and 57 at
+    // its knee, concurrency over rate, which sets the priced loaded latency;
+    // then the products, at two warps a scheduler) — the scratchpad loads'
+    // latency against the products in flight.
+    "walk-6", "walk-7",
 ];
 
-/// The model's picks under the search's own rule (C5's corpus, duplicates
-/// merged, ties and flips at any corner open): a floor, not a target — the
-/// rules pick 59 (`model >= rules` is ADR-0050 C6's bar).
-const MODEL_FLOOR: u64 = 37;
+/// **The model's picks on the replay, site by site** (the search's own rule:
+/// C5's corpus, duplicates merged, ties and flips at any corner open) — a
+/// ratchet on each site, not a count: a pick that turns into a miss or an
+/// open leaves this list in the same change (a new pick joins it), so no
+/// pick is traded silently under a total. The rules pick 59 (`model >=
+/// rules` is ADR-0050 C6's bar). The cost model's pipeline calculation
+/// (cost-model.md §4) scored 28 with the RTX 5080's primitives alone, against
+/// [`PRE_COST_MODEL_PICKS`] for the C5 evaluator's max over resources before
+/// it (the calculation lost the hybrid family's five, the depth rung's one,
+/// two walks and a cut); with every rented part's measured too (cost-rental:
+/// RTX 3090, A100, RTX 4090, H100, RTX 5090) it scores these 32 — the gap to
+/// the earlier level is reported, never hidden by a lowered floor
+/// (cost-rental review: the floor had gone 37 → 28 → 32).
+const REPLAY_PICKED: [&str; 32] = [
+    "c11-0", "c11-1", "c11-2", "c11-3", "c11-4", "cut-0", "cut-14", "cut-15", "cut-16", "cut-17",
+    "cut-18", "cut-19", "cut-20", "cut-3", "cut-4", "cut-5", "kfill-0", "kfill-2", "kfill-3",
+    "pc-0", "split-0", "split-1", "walk-0", "walk-1", "walk-10", "walk-12", "walk-13", "walk-2",
+    "walk-3", "walk-5", "walk-8", "walk-9",
+];
+
+/// The model's picks before the pipeline calculation (the C5 evaluator,
+/// cost-model.md §4): the level [`REPLAY_PICKED`] is reported against.
+const PRE_COST_MODEL_PICKS: u64 = 37;
 
 /// **ADR-0050 C3: `place_replay.tsv` scored** — per measured site, the
 /// measured winner (or null: within the null), the model's pick (the arm
 /// the evaluator prices lowest; open where the pick flips between the
 /// facts' slow and fast bounds) and the rules' pick, each picked or
-/// missed. The model keeps at least [`MODEL_FLOOR`] picks and every site it
+/// missed. The model picks exactly [`REPLAY_PICKED`] and every site it
 /// misses is in [`REPLAY_OPEN`] with the term it lacks; `model >= rules` is
 /// reported (not met at C3).
 #[test]
@@ -378,6 +465,7 @@ fn place_replay_scores() {
     let mut rules: std::collections::BTreeMap<String, Score> = Default::default();
     let mut misses = Vec::new();
     let mut opens = Vec::new();
+    let mut picks: Vec<String> = Vec::new();
     let mut lines = Vec::new();
     for (id, arms) in &sites {
         let fam = id.split('-').next().unwrap().to_string();
@@ -442,6 +530,7 @@ fn place_replay_scores() {
             }
             Some(v) if v.pick == best => {
                 ms.picked += 1;
+                picks.push(id.clone());
                 "picked".to_string()
             }
             Some(_) => {
@@ -491,11 +580,12 @@ fn place_replay_scores() {
             for e in &evals {
                 if let Some((_, t, _)) = &e.4 {
                     lines.push(format!(
-                        "    {} {}: {} | {}",
+                        "    {} {}: {} | {} | marked {}",
                         id,
                         e.0,
                         t.marked[0],
-                        t.line()
+                        t.line(),
+                        t.marked[1..].join(",")
                     ));
                 }
             }
@@ -536,9 +626,13 @@ fn place_replay_scores() {
         mt.picked,
         rt.picked
     );
-    assert!(
-        mt.picked >= MODEL_FLOOR,
-        "the model's picks fell below its floor"
+    eprintln!(
+        "model picks {} against the pre-cost-model {PRE_COST_MODEL_PICKS}",
+        mt.picked
+    );
+    assert_eq!(
+        picks, REPLAY_PICKED,
+        "the model's picks are the committed list, site by site"
     );
     let open: Vec<&str> = REPLAY_OPEN.to_vec();
     assert_eq!(

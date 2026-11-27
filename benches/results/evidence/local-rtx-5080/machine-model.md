@@ -8,6 +8,9 @@ Their run-output files are rows of `benches/results/evidence/RAW-manifest.tsv` (
 `pending:raw-machine-model.tar.gz`: the upload (`benches/gpu/archive_raw.sh`, a GitHub release) publishes, so it is
 the user's step.
 
+**Next step (2026-11-27): `cost-model.md`** — the primitives measured in one calibration run, stored as machine
+facts, and the evaluator's max-over-resources replaced by a pipeline calculation over them.
+
 ## What landed
 
 | commit | what | check |
