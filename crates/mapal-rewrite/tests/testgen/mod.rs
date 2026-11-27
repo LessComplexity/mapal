@@ -5159,12 +5159,12 @@ pub fn gemm_bound_src_at(
         "fn main() {{
     {mk} -> iota -> ia;
     ia -> map {{
-        t -> (t * {a1} + 13) % 101 - 50 -> widen_f32 -> v;
+        t -> (t * {a1} + 13) % 101 - 50 -> widen<f32> -> v;
         v / 7.0
     }} -> a;
     {kn} -> iota -> ib;
     ib -> map {{
-        t -> (t * {a2} + 57) % 103 - 51 -> widen_f32 -> v;
+        t -> (t * {a2} + 57) % 103 - 51 -> widen<f32> -> v;
         v / 9.0
     }} -> b;
     {k} -> iota -> kr;
