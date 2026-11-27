@@ -1228,7 +1228,10 @@ impl Walk<'_> {
             self.diags.push(diag(
                 LCode::BodyEffectful,
                 sp,
-                "effectful operation inside a map/fold body".to_string(),
+                "a map/fold body cannot print, read the clock or call something that does: its \
+                 cells have no set order (they may run in parallel). Map to values, then print \
+                 the result (`arr -> map { a -> a * 2 }`)"
+                    .to_string(),
             ));
         }
         // ADR-0027: bodies may READ enclosing bindings (pure read captures —
