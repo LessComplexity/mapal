@@ -22,14 +22,16 @@ pub mod search;
 pub mod space;
 
 pub use eval::{
-    Corner, Phase, Terms, efficiency, evaluate, evaluate_corner, evaluate_floor, lower_bound,
+    Corner, Flow, Phase, Terms, efficiency, evaluate, evaluate_corner, evaluate_floor, lower_bound,
+    pipeline, steady,
 };
 pub use fact::{Bound, Fact, Row, Src};
-pub use lower::{Declared, Lowering, Refusal, TravKind};
+pub use lower::{Declared, Lowering, Move, Refusal, TravKind};
 pub use machine::{
-    Atomics, Banking, Cache, CapacityGroup, Class, Dispatch, EffPoint, Exec, ExecId, ExecKind, Fmt,
-    InstanceMap, Keep, LaunchCost, LaunchMode, Layout, Machine, Major, Mgmt, Mover, MoverKind,
-    NSet, Op, OpId, Pattern, Pipe, Place, PlaceId, Policy, Reach, Res, Resource, Start,
+    Atomics, Banking, Cache, CapacityGroup, Class, Cost, Dispatch, EffPoint, Exec, ExecId,
+    ExecKind, Fmt, InstanceMap, Keep, LaunchCost, LaunchMode, Layout, Machine, Major, Mgmt, Mover,
+    MoverKind, NSet, Op, OpId, Pattern, Pipe, Place, PlaceId, Policy, Prim, PrimOf, Reach, Res,
+    Resource, Start,
 };
 pub use reuse::{Grid, Order, Reads};
 pub use schedule::{Bind, Comb, Fold, Home, Level, Schedule, Site, Traversal};

@@ -1,33 +1,40 @@
-//! **One evaluator for every schedule** (ADR-0050 D4): predicted time =
-//! over the schedule's phases (waves, a walk, a tail, a prologue), the
-//! maximum over resources of work ÷ rate, summed, plus fixed costs.
+//! **One evaluator for every schedule** (ADR-0050 D4) — **the cost model's
+//! pipeline calculation** over the primitives (`cost-model.md`): every term
+//! reads a measured or declared fact ([`Machine::cost`]: a primitive's rate,
+//! its one use's latency and the concurrency that saturates it).
 //!
-//! - **compute** — the busiest unit's work at the operation's rate, its
-//!   efficiency (measured curve, else the latency rule: independent chains
-//!   against latency × issue), at the sustained clock;
-//! - **movement** — the device cache's misses by distinct bytes
-//!   ([`crate::reuse`]) at the memory's rate; the panels into each unit at
-//!   the cache's rate (device-wide and per unit);
-//! - **latency** — bytes in flight the ring keeps a unit against the
-//!   source's latency (Little's law);
-//! - **issue** — the lowering's declared counts per class against the unit's
-//!   pipes;
-//! - **combine** — atomic adds as a resource at their place (overlapped while
-//!   the output stays within the keep, a memory read-modify-write past it),
-//!   workspace bytes and the reduce, the zero pass once, a per-piece
-//!   pipeline fill;
-//! - **fixed** — launches.
+//! - **a trip's steady state** — the slowest of compute (the operation at
+//!   its measured efficiency for the resident groups), issue (the declared
+//!   counts against the pipes), the scratchpad's fragment loads, and every
+//!   mover: the panels into the unit by the declared mover (its rate, or —
+//!   where the ring keeps less than its loaded latency × rate in flight —
+//!   latency × work ÷ in flight), the device cache's feed, and the memory's
+//!   pages by each operand's run and the rows the units stream at once
+//!   ([`Flow`], [`steady`]);
+//! - **a wave** — each piece's fill (the ring's first stage at its loaded
+//!   latency) + trips × (steady + the declared barriers at their measured
+//!   cost) + the drain (the last trip's shorter half) + the result's
+//!   movement: the epilogue's stores and the partial adds at their measured
+//!   rates, after the loop where the lowering declares it so ([`pipeline`]);
+//! - **the grid** — its waves on the busiest unit (whole waves and the tail,
+//!   each at its own residency) by the traversal: ordered, split, the walk
+//!   and the hybrid's phases (misses by distinct bytes, [`crate::reuse`]);
+//! - **fixed** — the zero pass, the workspace's reduce and the launches.
 //!
 //! No term reads a fit of a kernel's time; a marked fact read is named in
 //! [`Terms::marked`].
 
 use crate::fact::Bound;
-use crate::lower::Declared;
-use crate::machine::{Class, EffPoint, Machine, Pattern, Start};
+use crate::lower::{Declared, Move};
+use crate::machine::{Class, EffPoint, Machine, Pattern, PlaceId, PrimOf, Start};
 use crate::reuse::{self, Grid, Order, Reads};
 use crate::schedule::{Comb, Schedule, Site, Traversal};
 
-/// One phase's resource times, ns.
+/// One phase's resource times, ns: each resource's own total over the
+/// phase's trips (the evidence: which bounds), its fills (`prologue`),
+/// barriers, drains and the result's movement (`epilogue` stores, `atomics`
+/// the partial adds), and the phase's time — their pipeline sum, never
+/// below its memory bytes at the memory's rate.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Phase {
     pub compute: f64,
@@ -36,28 +43,16 @@ pub struct Phase {
     pub cache: f64,
     pub unit_in: f64,
     pub latency: f64,
+    pub scratch: f64,
     pub atomics: f64,
+    pub epilogue: f64,
+    pub barrier: f64,
+    pub drain: f64,
     pub prologue: f64,
     pub ns: f64,
 }
 
 impl Phase {
-    fn close(mut self) -> Self {
-        self.ns = [
-            self.compute,
-            self.issue,
-            self.dram,
-            self.cache,
-            self.unit_in,
-            self.latency,
-            self.atomics,
-        ]
-        .into_iter()
-        .fold(0.0, f64::max)
-            + self.prologue;
-        self
-    }
-
     /// The resource that bounds the phase.
     pub fn bound(&self) -> &'static str {
         let v = [
@@ -67,12 +62,77 @@ impl Phase {
             (self.cache, "cache"),
             (self.unit_in, "unit_in"),
             (self.latency, "latency"),
+            (self.scratch, "scratch"),
             (self.atomics, "atomics"),
+            (self.epilogue, "epilogue"),
         ];
         v.iter()
             .fold((0.0, "none"), |b, &(x, n)| if x > b.0 { (x, n) } else { b })
             .1
     }
+}
+
+/// **One resource of a loop trip** (the cost model): its work a trip
+/// (bytes, operations or flops), its rate (work a ns), the latency of one
+/// use (ns: the loaded latency, the concurrency at the knee over the rate)
+/// and the work the ring keeps in flight (∞: unbounded).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Flow {
+    pub work: f64,
+    pub rate: f64,
+    pub latency: f64,
+    pub fly: f64,
+}
+
+impl Flow {
+    /// A flow bounded by its rate alone (unbounded in flight).
+    pub fn rate_only(work: f64, rate: f64) -> Flow {
+        Flow {
+            work,
+            rate,
+            latency: 0.0,
+            fly: f64::INFINITY,
+        }
+    }
+
+    /// A time already priced, as a flow.
+    pub fn time(ns: f64) -> Flow {
+        Flow::rate_only(ns, 1.0)
+    }
+
+    /// Its time a trip: work ÷ rate where the ring keeps at least latency ×
+    /// rate in flight, else latency × work ÷ in flight (Little's law: the
+    /// larger of the two).
+    pub fn ns(&self) -> f64 {
+        if self.work <= 0.0 {
+            return 0.0;
+        }
+        let thr = self.work / self.rate.max(1e-12);
+        let lat = match self.fly {
+            f if f.is_infinite() => 0.0,
+            f => self.work * self.latency / f.max(1.0),
+        };
+        thr.max(lat)
+    }
+}
+
+/// A trip's steady state: its slowest flow.
+pub fn steady(flows: &[Flow]) -> f64 {
+    flows.iter().map(Flow::ns).fold(0.0, f64::max)
+}
+
+/// **The pipeline calculation**: a loop of `trips` trips whose `compute`
+/// and `movers` overlap — `fill` (the first use's latency) + trips × (the
+/// steady state + `serial`, a trip's barriers) + the drain (the shorter of a
+/// trip's compute and its movement: the last trip's other half). Monotone in
+/// every rate and latency; with every ring unbounded and no fill or serial
+/// term, within one trip of `trips` × the slowest resource (the max form).
+pub fn pipeline(trips: f64, compute: &[Flow], movers: &[Flow], fill: f64, serial: f64) -> f64 {
+    if trips <= 0.0 {
+        return 0.0;
+    }
+    let (c, mv) = (steady(compute), steady(movers));
+    fill + trips * (c.max(mv) + serial) + c.min(mv)
 }
 
 /// The evaluator's terms for one schedule.
@@ -110,7 +170,7 @@ impl Terms {
             .iter()
             .map(|p| {
                 format!(
-                    "{}:{:.0}[c{:.0} i{:.0} d{:.0} l2{:.0} u{:.0} lat{:.0} at{:.0} pro{:.0}]",
+                    "{}:{:.0}[c{:.0} i{:.0} d{:.0} l2{:.0} u{:.0} lat{:.0} sh{:.0} at{:.0} st{:.0} bar{:.0} dr{:.0} pro{:.0}]",
                     p.bound(),
                     p.ns,
                     p.compute,
@@ -119,7 +179,11 @@ impl Terms {
                     p.cache,
                     p.unit_in,
                     p.latency,
+                    p.scratch,
                     p.atomics,
+                    p.epilogue,
+                    p.barrier,
+                    p.drain,
                     p.prologue
                 )
             })
@@ -321,10 +385,7 @@ fn evaluate_at(m: &Machine, s: &Site, x: &Schedule, d: &Declared, c: Corner, flo
         })
         .unwrap_or(1.0)
         .max(1e-9);
-    let mem_lat = mem
-        .and_then(|p| m.reach(p, crate::machine::ExecKind::Device))
-        .map_or(0.0, |r| r.latency_ns.cost(c.memory));
-    let (cache_bw, cache_lat, unit_bw) = cache
+    let (cache_bw, unit_bw) = cache
         .map(|p| {
             let b = c.cache;
             let dev = m.reach(p, crate::machine::ExecKind::Device);
@@ -336,11 +397,10 @@ fn evaluate_at(m: &Machine, s: &Site, x: &Schedule, d: &Declared, c: Corner, flo
             }
             (
                 dev.map_or(f64::INFINITY, |r| r.total_bytes_per_ns.rate(b)),
-                dev.map_or(0.0, |r| r.latency_ns.cost(b)),
                 unit.map_or(f64::INFINITY, |r| r.bytes_per_ns.rate(b)),
             )
         })
-        .unwrap_or((f64::INFINITY, 0.0, f64::INFINITY));
+        .unwrap_or((f64::INFINITY, f64::INFINITY));
     // Start timing: a measured start is read; an unmeasured one is the
     // worse of the two at the slow bound, the better at the fast one.
     let starts: Vec<Start> = match (m.dispatch.start_src.marked(), c.dispatch) {
@@ -548,56 +608,238 @@ fn evaluate_at(m: &Machine, s: &Site, x: &Schedule, d: &Declared, c: Corner, flo
         }
         worst.max(trips * all / (m.subs().max(1) as f64 * ghz))
     };
-    let atomic_rate = m
-        .dispatch
-        .atomics
-        .first()
-        .map_or(0.0, |a| a.ops_per_ns.rate(c.dispatch));
-    // A phase of `blocks` slots of `trips` panels each over `w` slots.
-    // `needed`: the bytes the phase's requests wait on together (a lockstep
-    // wave's distinct slices; a walk's every request), of which
-    // `cache_reads` come from memory.
-    // The latency a request waits: the cache's, and memory's for the share
-    // of the bytes waited on together that come from memory.
-    let lat_of = |cache_reads: f64, needed: f64| {
-        let miss = (cache_reads / needed.max(1.0)).clamp(0.0, 1.0);
-        cache_lat + miss * (mem_lat - cache_lat).max(0.0)
+    // ---- the cost model's primitives at their corners ----
+    let mark_cost = |t: &mut Terms, what: &str, marked: bool| {
+        if marked && !t.marked.iter().any(|x| x == what) {
+            t.marked.push(what.to_string());
+        }
     };
-    let phase =
-        |t: &mut Terms, blocks: u64, trips: u64, flops_trip: f64, cache_reads: f64, needed: f64| {
-            let nb = blocks.div_ceil(units); // the busiest unit's slots
-            let resident = u.min(nb).max(1);
-            let eff = eff_at(t, resident);
-            t.eff = eff;
-            let unit_trips = (nb * trips) as f64;
-            let compute = unit_trips * flops_trip / (rate_unit * eff);
-            let issue = issue_ns(unit_trips);
-            let panel = (sa + sb) as f64;
-            let unit_in = unit_trips * panel / unit_bw;
-            let cache = (blocks * trips) as f64 * panel / cache_bw;
-            let lat = lat_of(cache_reads, needed);
-            let fly = (resident * d.in_flight).max(1) as f64;
-            let latency = unit_trips * panel * lat / fly;
-            let prologue = nb.div_ceil(resident) as f64 * d.fill as f64 * lat;
-            Phase {
-                compute,
-                issue,
-                cache,
-                unit_in,
-                latency,
-                prologue,
-                ..Phase::default()
-            }
+    // The panels' mover from the cache (its unit rate, loaded latency) and
+    // from the memory (loaded latency).
+    let mover = |from: PlaceId, b: Bound| {
+        let of = match d.mover {
+            Move::Load(w) => PrimOf::Load { from, bytes: w },
+            Move::Bulk(w) => PrimOf::Bulk { from, bytes: w },
+            Move::Copy(w) => PrimOf::Copy { from, bytes: w },
+            Move::Unsaid => PrimOf::Copy { from, bytes: 16 },
         };
+        m.cost(of, b)
+    };
+    let (mv_cache, mv_mem) = match (cache, mem) {
+        (Some(cp), Some(mp)) => (mover(cp, c.cache), mover(mp, c.memory)),
+        (Some(cp), None) => (mover(cp, c.cache), mover(cp, c.cache)),
+        (None, Some(mp)) => (mover(mp, c.memory), mover(mp, c.memory)),
+        (None, None) => {
+            let z = crate::machine::Cost {
+                rate: f64::INFINITY,
+                latency: 0.0,
+                loaded: 0.0,
+                marked: false,
+            };
+            (z, z)
+        }
+    };
+    mark_cost(&mut t, "prim.mover.cache", mv_cache.marked);
+    mark_cost(&mut t, "prim.mover.memory", mv_mem.marked);
+    // The unit's ingress: its reach from the cache (one unit alone); the
+    // device cache's feed: the mover's rate over the units, at most the
+    // cache's device reach.
+    let unit_rate = unit_bw;
+    let feed_rate = (mv_cache.rate * units as f64).min(cache_bw);
+    // The memory's rate for the operands' misses: the mover's stream from
+    // the memory over the units, at most the memory's device reach. (The
+    // panel stream's rate by run and rows, `PrimOf::Panel`, is a measured
+    // fact no term reads: the replay contradicts it — cost-model.md.)
+    let mem_rate = (mv_mem.rate * units as f64).min(dram_bw);
+    let scratch = m.cost(
+        PrimOf::Scratch {
+            bytes: 16,
+            matrix: d.scratch_matrix,
+        },
+        c.compute,
+    );
+    if d.scratch > 0 {
+        mark_cost(&mut t, "prim.scratch", scratch.marked);
+    }
+    let bar = m.cost(PrimOf::Barrier { lanes: d.threads }, c.dispatch);
+    if d.barriers > 0.0 {
+        mark_cost(&mut t, "prim.barrier", bar.marked);
+    }
+    // The epilogue's stores: into the cache where the output fits its keep
+    // (written back later), else to the memory.
+    let out_fits = out_bytes <= keep;
+    let store = match (out_fits, cache, mem) {
+        (true, Some(p), _) | (false, _, Some(p)) => m.cost(
+            PrimOf::Store {
+                to: p,
+                bytes: match d.store {
+                    0 => 16,
+                    w => w,
+                },
+            },
+            if out_fits { c.cache } else { c.memory },
+        ),
+        _ => crate::machine::Cost {
+            rate: dram_bw / units as f64,
+            latency: 0.0,
+            loaded: 0.0,
+            marked: true,
+        },
+    };
+    let red = m.cost(
+        PrimOf::Reduce {
+            at: cache.unwrap_or(0),
+            sharing: 1,
+            sectors: match d.add_sectors {
+                0 => 4,
+                x => x,
+            },
+        },
+        c.dispatch,
+    );
+    // ---- the pipeline: a phase of `blocks` slots of `trips` trips ----
+    // `miss`: the share of the bytes the phase's requests wait on together
+    // that come from memory (the loaded latency between the cache's and the
+    // memory's); `mem_a` / `mem_b`: each operand's bytes from memory a slot
+    // a trip; `ends`: a block's result movement — tiles stored, cells added,
+    // pieces (each a fill).
+    #[derive(Clone, Copy)]
+    struct Ends {
+        stores: f64,
+        adds: f64,
+        pieces: f64,
+    }
+    let pb = (sa + sb) as f64;
+    let phase = |t: &mut Terms,
+                 blocks: u64,
+                 trips: u64,
+                 flops_trip: f64,
+                 miss: f64,
+                 mem_ab: [f64; 2],
+                 ends: Ends,
+                 floor_bytes: f64|
+     -> Phase {
+        let nb = blocks.div_ceil(units); // the busiest unit's slots
+        let r = u.min(nb).max(1);
+        let lat = (1.0 - miss) * mv_cache.loaded + miss * mv_mem.loaded;
+        let mut ph = Phase::default();
+        // Whole waves of `r` slots a unit, then the tail's.
+        let per_wave = units * r;
+        let full = blocks / per_wave;
+        let rest = blocks % per_wave;
+        // (count, slots a unit, slots in all)
+        let waves = [
+            (full, r, per_wave),
+            (u64::from(rest > 0), rest.div_ceil(units), rest),
+        ];
+        let tr = trips as f64;
+        let mut last = 0.0;
+        for (count, rw, sw) in waves.into_iter().filter(|w| w.0 > 0) {
+            let k = count as f64;
+            let eff = eff_at(t, rw);
+            t.eff = eff;
+            let rwf = rw as f64;
+            let swf = sw as f64;
+            // Compute and issue: the unit's.
+            let compute = Flow::rate_only(rwf * flops_trip, rate_unit * eff);
+            let issue = Flow::time(issue_ns(rwf));
+            // The panels into the unit: the mover's rate, its loaded latency
+            // against the ring's bytes in flight.
+            let unit_in = Flow::rate_only(rwf * pb, unit_rate);
+            let fly = Flow {
+                work: rwf * pb,
+                rate: f64::INFINITY,
+                latency: lat,
+                fly: (rw * d.in_flight).max(1) as f64,
+            };
+            // The device cache's feed.
+            let l2 = Flow::rate_only(swf * pb, feed_rate);
+            // The scratchpad's fragment loads.
+            let sh = Flow {
+                work: rwf * d.scratch as f64,
+                rate: scratch.rate,
+                latency: scratch.loaded,
+                fly: match d.scratch_fly {
+                    0 => f64::INFINITY,
+                    f => (rw * f) as f64,
+                },
+            };
+            let serial = d.barriers * bar.latency;
+            // Each piece's fill: the ring's first stage at its loaded latency.
+            let fill = ends.pieces * lat;
+            // The result's movement — the epilogue's stores (into the cache
+            // where the output fits its keep, else to the memory) and the
+            // partial adds (the reductions' rate; past the keep their
+            // read-modify-write in the memory) — is issued and left (a store,
+            // a `red`): a throughput beside the next wave's loops, a trip's
+            // share of it, the memory's bytes in the memory's flow; only the
+            // last wave's waits (the phase's drain, below).
+            let st_bytes = swf * ends.stores * (so as f64);
+            let st = st_bytes / (store.rate * units as f64).max(1e-12);
+            let add_ops = swf * ends.adds;
+            let adds = add_ops / (red.rate * units as f64).max(1e-12);
+            let mem_bytes = match out_fits {
+                true => 0.0,
+                false => st_bytes + add_ops * 2.0 * s.eo as f64,
+            };
+            let dram = Flow::time(
+                swf * (mem_ab[0] + mem_ab[1]) / mem_rate + mem_bytes / tr.max(1.0) / dram_bw,
+            );
+            let result = Flow::time((st + adds) / tr.max(1.0));
+            let moving = [unit_in, fly, l2, dram, sh, result];
+            let loop_ns = pipeline(tr, &[compute, issue], &moving, 0.0, serial);
+            let wave = fill + loop_ns;
+            // What is left at the wave's end: a lockstep wave's whole result
+            // (its slots end together), a walk's blocks' last pieces only
+            // (their pieces end at every offset: `1 / pieces` of it).
+            let tail = match ends.pieces > 1.0 {
+                true => 1.0 / ends.pieces,
+                false => 1.0,
+            };
+            last = tail * (st + adds)
+                + if st > 0.0 { store.latency } else { 0.0 }
+                + if adds > 0.0 { red.latency } else { 0.0 };
+            ph.ns += k * wave;
+            ph.compute += k * tr * compute.ns();
+            ph.issue += k * tr * issue.ns();
+            ph.unit_in += k * tr * unit_in.ns();
+            ph.latency += k * tr * fly.ns();
+            ph.cache += k * tr * l2.ns();
+            ph.dram += k * tr * dram.ns();
+            ph.scratch += k * tr * sh.ns();
+            ph.barrier += k * tr * serial;
+            ph.drain += k * steady(&[compute, issue]).min(steady(&moving));
+            ph.prologue += k * fill;
+            ph.epilogue += k * st;
+            ph.atomics += k * adds;
+        }
+        // The drain: the last wave's result, waited on (unless the lowering
+        // overlaps its epilogue with the loop).
+        if !d.epi_overlap {
+            ph.ns += last;
+        }
+        // Never below the phase's memory bytes at the memory's rate.
+        let floor_ns = floor_bytes / dram_bw;
+        ph.dram = ph.dram.max(floor_ns);
+        ph.ns = ph.ns.max(floor_ns);
+        ph
+    };
     // The operation's work a trip: the useful flops, or what the lowering
     // declares it issues (a split form's passes).
     let flops_trip = match d.work {
         w if w > 0.0 => w,
         _ => (2 * bm * bn * bk) as f64,
     };
+    let miss_of = |cache_reads: f64, needed: f64| (cache_reads / needed.max(1.0)).clamp(0.0, 1.0);
+    let per_trip = |r: &Reads, blocks: u64, trips: u64| {
+        let n = (blocks * trips).max(1) as f64;
+        [r.a as f64 / n, r.b as f64 / n]
+    };
+    let (bmn, epi_out) = ((bm * bn) as f64, (out_bytes + epi_bytes) as f64);
     match x.trav {
         Traversal::Ordered { .. } | Traversal::Split { .. } | Traversal::Persistent { .. } => {
             let blocks = tiles * s_parts;
+            let trips = panels / s_parts;
             let needed = needed_of(
                 floor,
                 &grid(
@@ -611,45 +853,48 @@ fn evaluate_at(m: &Machine, s: &Site, x: &Schedule, d: &Declared, c: Corner, flo
                 x.trav.raster(),
                 s_parts,
             );
-            let mut p = phase(
+            let ends = match (x.trav, atomic) {
+                (Traversal::Split { .. }, true) => Ends {
+                    stores: 0.0,
+                    adds: bmn,
+                    pieces: 1.0,
+                },
+                _ => Ends {
+                    stores: 1.0,
+                    adds: 0.0,
+                    pieces: 1.0,
+                },
+            };
+            let p = phase(
                 &mut t,
                 blocks,
-                panels / s_parts,
+                trips,
                 flops_trip,
-                reads.operands() as f64,
-                needed as f64,
+                miss_of(reads.operands() as f64, needed as f64),
+                per_trip(&reads, blocks, trips),
+                ends,
+                dram_bytes as f64,
             );
-            p.dram = dram_bytes as f64 / dram_bw;
-            if atomic {
-                p.atomics = (s_parts * batch * s.m * s.n) as f64 / atomic_rate.max(1e-9);
-            }
-            t.phases.push(p.close());
+            t.phases.push(p);
         }
         Traversal::Walk { ctas, iters, .. } => {
             let requested = (tiles * panels * (sa + sb)) as f64;
-            let mut p = phase(
+            let ends = walk_ends(tiles, panels, iters, ctas, floor, bmn, d.whole_stores);
+            let p = phase(
                 &mut t,
                 ctas,
                 iters,
                 flops_trip,
-                reads.operands() as f64,
-                requested,
+                miss_of(reads.operands() as f64, requested),
+                per_trip(&reads, ctas, iters),
+                Ends {
+                    stores: ends.0,
+                    adds: ends.1,
+                    pieces: ends.2,
+                },
+                dram_bytes as f64,
             );
-            // A piece a tile a block crosses: its fill, at the latency its
-            // requests wait (the walk's misses over its requests).
-            let pieces = ctas + tiles;
-            p.prologue = pieces.div_ceil(units) as f64
-                * d.fill as f64
-                * lat_of(reads.operands() as f64, requested)
-                / u.min(ctas.div_ceil(units)).max(1) as f64;
-            p.dram = dram_bytes as f64 / dram_bw;
-            let shared = if floor {
-                0
-            } else {
-                shared_pieces(tiles, panels, iters)
-            };
-            p.atomics = (shared * bm * bn) as f64 / atomic_rate.max(1e-9);
-            t.phases.push(p.close());
+            t.phases.push(p);
         }
         Traversal::Hybrid { ctas, iters, .. } => {
             let whole = tiles / w * w;
@@ -670,39 +915,41 @@ fn evaluate_at(m: &Machine, s: &Site, x: &Schedule, d: &Declared, c: Corner, flo
                     1,
                 ) as f64;
                 let r = phase_reads[0];
-                let mut p = phase(
+                let p = phase(
                     &mut t,
                     whole,
                     panels,
                     flops_trip,
-                    r.operands() as f64,
-                    needed * frac(whole),
+                    miss_of(r.operands() as f64, needed * frac(whole)),
+                    per_trip(&r, whole, panels),
+                    Ends {
+                        stores: 1.0,
+                        adds: 0.0,
+                        pieces: 1.0,
+                    },
+                    r.operands() as f64 + epi_out * frac(whole),
                 );
-                // Its own misses; the stores of its tiles.
-                p.dram =
-                    (r.operands() as f64 + (out_bytes + epi_bytes) as f64 * frac(whole)) / dram_bw;
-                t.phases.push(p.close());
+                t.phases.push(p);
             }
             if tail > 0 {
                 let r = phase_reads[1];
                 let requested = (tail * panels * (sa + sb)) as f64;
-                let mut p = phase(
+                let ends = walk_ends(tail, panels, iters, ctas, floor, bmn, d.whole_stores);
+                let p = phase(
                     &mut t,
                     ctas,
                     iters,
                     flops_trip,
-                    r.operands() as f64,
-                    requested,
+                    miss_of(r.operands() as f64, requested),
+                    per_trip(&r, ctas, iters),
+                    Ends {
+                        stores: ends.0,
+                        adds: ends.1,
+                        pieces: ends.2,
+                    },
+                    r.operands() as f64 + epi_out * frac(tail),
                 );
-                p.dram =
-                    (r.operands() as f64 + (out_bytes + epi_bytes) as f64 * frac(tail)) / dram_bw;
-                let shared = if floor {
-                    0
-                } else {
-                    shared_pieces(tail, panels, iters)
-                };
-                p.atomics = (shared * bm * bn) as f64 / atomic_rate.max(1e-9);
-                t.phases.push(p.close());
+                t.phases.push(p);
             }
         }
     }
@@ -734,6 +981,42 @@ fn evaluate_at(m: &Machine, s: &Site, x: &Schedule, d: &Declared, c: Corner, flo
     }
     t.ns = t.phases.iter().map(|p| p.ns).sum::<f64>() + t.combine + t.zero + t.fixed;
     t
+}
+
+/// A walk's result movement a block: tiles it stores whole (a lowering whose
+/// whole pieces store), cells it adds (each shared tile's pieces; every
+/// piece where whole pieces add too), and the pieces it crosses (each a
+/// fill) — over `ctas` blocks of `iters` units, `tiles` tiles of `panels`
+/// (on the floor no tile is shared: no adds).
+fn walk_ends(
+    tiles: u64,
+    panels: u64,
+    iters: u64,
+    ctas: u64,
+    floor: bool,
+    cells: f64,
+    whole_stores: bool,
+) -> (f64, f64, f64) {
+    let ctas = ctas.max(1) as f64;
+    // One pass: each tile's pieces (its units over the blocks' runs), shared
+    // where more than one block holds it (none on the floor).
+    let it = iters.max(1);
+    let (mut shared, mut shared_tiles) = (0u64, 0u64);
+    if !floor {
+        for t in 0..tiles {
+            let (c0, c1) = (t * panels / it, ((t + 1) * panels - 1) / it);
+            if c1 > c0 {
+                shared += c1 - c0 + 1;
+                shared_tiles += 1;
+            }
+        }
+    }
+    let whole = tiles.saturating_sub(shared_tiles) as f64;
+    let pieces = whole + shared as f64;
+    match whole_stores {
+        true => (whole / ctas, shared as f64 * cells / ctas, pieces / ctas),
+        false => (0.0, pieces * cells / ctas, pieces / ctas),
+    }
 }
 
 /// [`reuse::needed`], or unbounded on the floor (every request then waits

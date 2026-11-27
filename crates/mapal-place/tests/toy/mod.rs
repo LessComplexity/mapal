@@ -198,6 +198,7 @@ pub fn machine(r: &[f64; 9]) -> Machine {
             grid_sync_ns: None,
             rr_jitter: None,
         },
+        prims: vec![],
     }
 }
 
@@ -265,5 +266,7 @@ pub fn declared(x: &Schedule) -> Declared {
         groups: threads.div_ceil(32),
         work: 0.0,
         whole_stores: false,
+        barriers: 1.0,
+        ..Declared::default()
     }
 }

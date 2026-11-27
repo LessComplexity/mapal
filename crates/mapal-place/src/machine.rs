@@ -482,6 +482,105 @@ pub struct Dispatch {
     pub rr_jitter: Option<Fact<f64>>,
 }
 
+/// **What a primitive is** (the cost model, ADR-0050): an operation row, a
+/// mover's use from a place, a result's movement, a synchronization or a
+/// launch — keyed by what it does and the place it reaches, never by an
+/// instruction's or a part's name (the row's `name` is the probe's, for the
+/// evidence).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum PrimOf {
+    /// An operation row (compute): flops a clock a unit.
+    Op(OpId),
+    /// A lane's synchronous load of `bytes` from `from` into registers.
+    Load {
+        from: PlaceId,
+        bytes: u64,
+    },
+    /// A lane's asynchronous copy of `bytes` from `from` into the unit
+    /// scratchpad.
+    Copy {
+        from: PlaceId,
+        bytes: u64,
+    },
+    /// A bulk-copy engine's box of `bytes` from `from`.
+    Bulk {
+        from: PlaceId,
+        bytes: u64,
+    },
+    /// A tile's panel stream from `from`: `run` contiguous bytes of each of
+    /// `rows` rows a unit streams at once, a trip, `fly` bytes in flight a
+    /// unit (the memory's pages; a line's sectors missing at once).
+    Panel {
+        from: PlaceId,
+        run: u64,
+        rows: u64,
+        fly: u64,
+    },
+    /// Unit-scratchpad loads of `bytes` a lane (`matrix`: the fragment
+    /// loader's tiles); bytes a clock a unit.
+    Scratch {
+        bytes: u64,
+        matrix: bool,
+    },
+    /// A lane's stores of `bytes` to `to`.
+    Store {
+        to: PlaceId,
+        bytes: u64,
+    },
+    /// A tile staged in the unit scratchpad and stored to `to` (an
+    /// epilogue's).
+    Staged {
+        to: PlaceId,
+    },
+    /// Reductions resolved at `at`: `sharing` lanes on one address (1: a
+    /// lane its own; 0: every lane of the grid on a few), `sectors` 32-byte
+    /// sectors one group instruction touches (4: a group's lanes contiguous;
+    /// 8: a matrix accumulator's fragment rows; 32: a sector a lane).
+    Reduce {
+        at: PlaceId,
+        sharing: u64,
+        sectors: u64,
+    },
+    /// A slot barrier over `lanes` lanes (clocks).
+    Barrier {
+        lanes: u64,
+    },
+    /// A transaction barrier's phase (clocks).
+    Phase,
+    /// A barrier over every slot of a co-resident grid.
+    GridSync,
+    /// A launch's host issue, and the device's gap between dependent
+    /// launches.
+    Issue,
+    Gap,
+}
+
+/// **A primitive's measured costs** (the cost model's rows): its rate when
+/// saturated (per unit, per ns — per clock where `per_clk`), the latency of
+/// one use (ns, or clocks where `per_clk`), and the concurrency a unit keeps
+/// in flight to reach 90 % of the rate (in the rate's own unit: bytes,
+/// operations or instructions). Every value a [`Fact`] with its interval.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Prim {
+    pub name: &'static str,
+    pub of: PrimOf,
+    pub per_clk: bool,
+    pub rate: Fact<f64>,
+    pub latency: Fact<f64>,
+    pub conc: Fact<f64>,
+}
+
+/// A primitive's costs at one bound, in ns: its rate a unit (work a ns), its
+/// one use's latency, its loaded latency (the concurrency at the knee over
+/// the rate, at least the one use's), and whether it read a marked fact.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Cost {
+    pub rate: f64,
+    pub latency: f64,
+    pub loaded: f64,
+    pub marked: bool,
+}
+
 /// **The machine**: its executor tree, its places and capacity groups, its
 /// unit resources and issue pipes, its operation rows, movers and dispatch.
 /// `label` is for display only: no decision reads it (D1).
@@ -496,9 +595,251 @@ pub struct Machine {
     pub ops: Vec<Op>,
     pub movers: Vec<Mover>,
     pub dispatch: Dispatch,
+    /// The cost model's primitives measured on the part (empty: every cost
+    /// derived from the places' reaches and dispatch — [`Machine::cost`]).
+    pub prims: Vec<Prim>,
 }
 
 impl Machine {
+    /// The measured row of primitive `of`, if any.
+    pub fn prim(&self, of: PrimOf) -> Option<&Prim> {
+        self.prims.iter().find(|p| p.of == of)
+    }
+
+    /// **A primitive's costs at bound `b`** (ns; a clock row converted at the
+    /// sustained clock): its measured row, else the nearest measured row of
+    /// its kind (a panel stream: the largest run at most its own, then the
+    /// fewest rows at least its own; a copy or load: the largest width at
+    /// most its own), else derived from the machine's other facts and
+    /// marked — a mover from the place's unit reach (rate) and loaded
+    /// latency, a store or a panel from the memory's device reach over the
+    /// units, the scratchpad from its banking, reductions from the
+    /// atomics, barriers and launches from dispatch.
+    pub fn cost(&self, of: PrimOf, b: Bound) -> Cost {
+        let ghz = self.ghz(b).max(1e-9);
+        let units = self.units().max(1) as f64;
+        let row = |p: &Prim| {
+            let (r, l, c) = (p.rate.rate(b), p.latency.cost(b), p.conc.cost(b));
+            let (r, l) = match p.per_clk {
+                true => (r * ghz, l / ghz),
+                false => (r, l),
+            };
+            Cost {
+                rate: r,
+                latency: l,
+                loaded: l.max(if r > 0.0 { c / r } else { 0.0 }),
+                marked: p.rate.marked() || p.latency.marked() || p.conc.marked(),
+            }
+        };
+        if let Some(p) = self.prim(of) {
+            return row(p);
+        }
+        // The nearest measured row of the same kind.
+        let near = match of {
+            PrimOf::Panel {
+                from,
+                run,
+                rows,
+                fly,
+            } => {
+                // The largest measured run at most this one (else the
+                // smallest), then the fewest rows at least these (else the
+                // most), then the nearest bytes in flight (by ratio).
+                let panels: Vec<(&Prim, u64, u64, u64)> = self
+                    .prims
+                    .iter()
+                    .filter_map(|p| match p.of {
+                        PrimOf::Panel {
+                            from: f,
+                            run: r,
+                            rows: w,
+                            fly: y,
+                        } if f == from => Some((p, r, w, y)),
+                        _ => None,
+                    })
+                    .collect();
+                let run_ = panels
+                    .iter()
+                    .map(|x| x.1)
+                    .filter(|&r| r <= run)
+                    .max()
+                    .or_else(|| panels.iter().map(|x| x.1).min());
+                let at_run: Vec<_> = panels.iter().filter(|x| Some(x.1) == run_).collect();
+                let rows_ = at_run
+                    .iter()
+                    .map(|x| x.2)
+                    .filter(|&w| w >= rows)
+                    .min()
+                    .or_else(|| at_run.iter().map(|x| x.2).max());
+                let ratio = |y: u64| ((y.max(1) as f64) / (fly.max(1) as f64)).ln().abs();
+                at_run
+                    .iter()
+                    .filter(|x| Some(x.2) == rows_)
+                    .min_by(|a, b| ratio(a.3).total_cmp(&ratio(b.3)))
+                    .map(|x| x.0)
+            }
+            PrimOf::Copy { from, bytes } | PrimOf::Load { from, bytes } => {
+                let copy = matches!(of, PrimOf::Copy { .. });
+                self.prims
+                    .iter()
+                    .filter(|p| match p.of {
+                        PrimOf::Copy { from: f, bytes: w } => copy && f == from && w <= bytes,
+                        PrimOf::Load { from: f, bytes: w } => !copy && f == from && w <= bytes,
+                        _ => false,
+                    })
+                    .max_by_key(|p| match p.of {
+                        PrimOf::Copy { bytes, .. } | PrimOf::Load { bytes, .. } => bytes,
+                        _ => 0,
+                    })
+            }
+            PrimOf::Barrier { lanes } => self
+                .prims
+                .iter()
+                .filter(|p| matches!(p.of, PrimOf::Barrier { .. }))
+                .min_by_key(|p| match p.of {
+                    PrimOf::Barrier { lanes: l } => l.abs_diff(lanes),
+                    _ => u64::MAX,
+                }),
+            PrimOf::Reduce {
+                at,
+                sharing,
+                sectors,
+            } => self
+                .prims
+                .iter()
+                .filter(|p| matches!(p.of, PrimOf::Reduce { at: a, sharing: h, .. } if a == at && h == sharing))
+                .min_by_key(|p| match p.of {
+                    // The fewest sectors at least these, else the most.
+                    PrimOf::Reduce { sectors: x, .. } if x >= sectors => (0, x),
+                    PrimOf::Reduce { sectors: x, .. } => (1, u64::MAX - x),
+                    _ => (2, 0),
+                }),
+            PrimOf::Store { to, bytes } => self
+                .prims
+                .iter()
+                .filter(|p| matches!(p.of, PrimOf::Store { to: t, bytes: w } if t == to && w <= bytes))
+                .max_by_key(|p| match p.of {
+                    PrimOf::Store { bytes, .. } => bytes,
+                    _ => 0,
+                }),
+            _ => None,
+        };
+        if let Some(p) = near {
+            return row(p);
+        }
+        // Derived from the other facts: marked.
+        let reach = |p: PlaceId, k: ExecKind| self.reach(p, k);
+        let derived = |rate: f64, latency: f64| Cost {
+            rate,
+            latency,
+            loaded: latency,
+            marked: true,
+        };
+        let device_mem = |p: PlaceId| {
+            reach(p, ExecKind::Device)
+                .map(|r| (r.total_bytes_per_ns.rate(b) / units, r.latency_ns.cost(b)))
+        };
+        match of {
+            PrimOf::Op(o) => {
+                let op = &self.ops[o];
+                Cost {
+                    rate: op.rate.rate(b) * ghz,
+                    latency: op.latency.cost(b) / ghz,
+                    loaded: op.latency.cost(b) / ghz,
+                    marked: op.rate.marked() || op.latency.marked(),
+                }
+            }
+            PrimOf::Load { from, .. } | PrimOf::Copy { from, .. } | PrimOf::Bulk { from, .. } => {
+                match (reach(from, ExecKind::Unit), device_mem(from)) {
+                    (Some(r), _) => derived(r.bytes_per_ns.rate(b), r.latency_ns.cost(b)),
+                    (None, Some((r, l))) => derived(r, l),
+                    _ => derived(f64::INFINITY, 0.0),
+                }
+            }
+            PrimOf::Panel { from, run, .. } => {
+                // Unmeasured: the copy from the place (the memory's pages
+                // unpriced), its rate's interval opened below for runs
+                // shorter than a line.
+                let c = self.cost(PrimOf::Copy { from, bytes: 16 }, b);
+                let short = (run as f64 / 128.0).clamp(0.25, 1.0);
+                let rate = match b {
+                    Bound::Slow => c.rate * short,
+                    _ => c.rate,
+                };
+                Cost {
+                    rate,
+                    marked: true,
+                    ..c
+                }
+            }
+            PrimOf::Store { to, .. } | PrimOf::Staged { to } => match device_mem(to) {
+                Some((r, l)) => derived(r, l),
+                None => derived(f64::INFINITY, 0.0),
+            },
+            PrimOf::Scratch { .. } => {
+                let bw = self
+                    .unit_scratch()
+                    .and_then(|p| self.places[p].banking)
+                    .map_or(128.0, |k| (k.banks * k.width) as f64);
+                derived(bw * ghz, 30.0 / ghz)
+            }
+            PrimOf::Reduce {
+                sharing, sectors, ..
+            } => {
+                let a = self.dispatch.atomics.first();
+                let r = a.map_or(0.0, |a| a.ops_per_ns.rate(b)) / units;
+                let share = match sharing {
+                    0 => 32.0,
+                    s => s as f64,
+                };
+                Cost {
+                    rate: r / share.sqrt() * (4.0 / sectors.max(4) as f64),
+                    latency: self
+                        .device_cache()
+                        .and_then(|c| reach(c, ExecKind::Device))
+                        .map_or(0.0, |r| r.latency_ns.cost(b)),
+                    loaded: 0.0,
+                    marked: true,
+                }
+            }
+            PrimOf::Barrier { .. } | PrimOf::Phase => {
+                let l = self.dispatch.barrier_clk.cost(b) / ghz;
+                Cost {
+                    rate: 1.0 / l.max(1e-9),
+                    latency: l,
+                    loaded: l,
+                    marked: self.dispatch.barrier_clk.marked() || matches!(of, PrimOf::Phase),
+                }
+            }
+            PrimOf::GridSync => {
+                let g = self.dispatch.grid_sync_ns.unwrap_or(Fact::nominal(
+                    1000.0,
+                    500.0,
+                    3000.0,
+                    "grid sync unmeasured",
+                ));
+                Cost {
+                    rate: 1.0 / g.cost(b).max(1e-9),
+                    latency: g.cost(b),
+                    loaded: g.cost(b),
+                    marked: g.marked(),
+                }
+            }
+            PrimOf::Issue => Cost {
+                rate: 1.0 / self.dispatch.issue_ns.cost(b).max(1e-9),
+                latency: self.dispatch.issue_ns.cost(b),
+                loaded: self.dispatch.issue_ns.cost(b),
+                marked: self.dispatch.issue_ns.marked(),
+            },
+            PrimOf::Gap => Cost {
+                rate: 1.0 / self.dispatch.gap_ns.cost(b).max(1e-9),
+                latency: self.dispatch.gap_ns.cost(b),
+                loaded: self.dispatch.gap_ns.cost(b),
+                marked: self.dispatch.gap_ns.marked(),
+            },
+        }
+    }
+
     /// The first executor level of `kind`.
     pub fn level(&self, kind: ExecKind) -> Option<ExecId> {
         self.exec.iter().position(|e| e.kind == kind)
@@ -752,6 +1093,11 @@ impl Machine {
         put("dispatch.barrier_clk".into(), d.barrier_clk);
         if let Some(g) = d.grid_sync_ns {
             put("dispatch.grid_sync_ns".into(), g);
+        }
+        for p in &self.prims {
+            put(format!("prim.{}.rate", p.name), p.rate);
+            put(format!("prim.{}.latency", p.name), p.latency);
+            put(format!("prim.{}.conc", p.name), p.conc);
         }
         out
     }

@@ -4032,6 +4032,26 @@ fn streaming(site: &TileSite, gpu: &Gpu) -> bool {
 /// are one aligned vector too), `a` the same for every lane (one `a` load a
 /// `k` step serves every cell), plain affine reads, a streaming site. 1 (one
 /// cell a thread) otherwise or with the rung off.
+/// **The vector-cells kernel's structural constraint** (`naive_cells`): a
+/// thread's `cells` consecutive lanes of one row read `b` as one vector at an
+/// affine offset a `k` step (no mixed radix, no `k` split; `a` ignores the
+/// lane, `b`'s lanes unit-stride), whole vectors at every row and step, and a
+/// row holds whole groups of `cells`. The rules' [`vec_fit`] prices within it;
+/// the placement search's lowering declares it.
+pub(crate) fn naive_cells_admit(site: &TileSite, cells: u64) -> bool {
+    let eb = site.b.elem_bytes(&site.elem);
+    let whole = |x: u64| (x * eb).is_multiple_of((cells * eb).min(GPU_VEC_BYTES));
+    site.radix.is_none()
+        && site.a.ksplit.is_none()
+        && site.b.ksplit.is_none()
+        && site.a.clane == 0
+        && site.b.clane == 1
+        && whole(site.b.base)
+        && whole(site.b.ci)
+        && whole(site.b.ck)
+        && site.c.is_multiple_of(cells)
+}
+
 pub(crate) fn vec_fit(site: &TileSite, gpu: &Gpu, rungs: &crate::GpuRungs) -> u64 {
     let eb = site.b.elem_bytes(&site.elem);
     let v = GPU_VEC_BYTES / eb.max(1);

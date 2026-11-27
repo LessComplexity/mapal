@@ -33,8 +33,8 @@ use mapal_ir::{TileSite, Ty};
 use mapal_place::{
     Atomics, Banking, Bind, Cache, Class, Comb, Declared, Dispatch, EffPoint, Exec, ExecKind, Fact,
     Fmt, Fold, Home, InstanceMap, Keep, LaunchCost, LaunchMode, Layout, Level, Lowering, Machine,
-    Major, Mgmt, Mover, MoverKind, NSet, Op, Pipe, Place, Policy, Reach, Refusal, Res, Resource,
-    Schedule, Site, Src, Start, TravKind, Traversal,
+    Major, Mgmt, Mover, MoverKind, NSet, Op, Pipe, Place, Policy, Prim, PrimOf, Reach, Refusal,
+    Res, Resource, Schedule, Site, Src, Start, TravKind, Traversal,
 };
 
 // ---- the machine ------------------------------------------------------------
@@ -735,6 +735,33 @@ pub fn machine_of(p: &TargetProfile) -> Option<Machine> {
         },
         rr_jitter: None,
     };
+    // The cost model's primitives the part measured (`place_calib.cu
+    // prim`): each a row of its rate, one use's latency and the concurrency
+    // that saturates it; an operation's measured rate and latency are its
+    // row's.
+    let mut prims = Vec::new();
+    for &(name, v) in g.place.prim {
+        let Some((of, per_clk)) = prim_of(name, &ops) else {
+            continue;
+        };
+        let f = |i: usize| {
+            Fact::measured(v[i] as f64 / 1000.0, g.place.cite)
+                .within(v[i + 1] as f64 / 1000.0, v[i + 2] as f64 / 1000.0)
+        };
+        let (rate, latency, conc) = (f(0), f(3), f(6));
+        if let PrimOf::Op(o) = of {
+            ops[o].rate = rate;
+            ops[o].latency = latency;
+        }
+        prims.push(Prim {
+            name,
+            of,
+            per_clk,
+            rate,
+            latency,
+            conc,
+        });
+    }
     Some(Machine {
         label: p.name.to_string(),
         exec,
@@ -745,6 +772,108 @@ pub fn machine_of(p: &TargetProfile) -> Option<Machine> {
         ops,
         movers,
         dispatch,
+        prims,
+    })
+}
+
+/// **A probe's primitive** (`place_calib.cu prim`'s names) as what it does
+/// and the place it reaches, and whether its row is in clocks: `ld.global.<w>.<l2|dram>`,
+/// `cp.async.<w>.<src>` (and `.run<r>.rows<n>.fly<bytes>`: a panel stream),
+/// `tma.box<bytes>.<src>`, `ld.shared.<w>`, `ldmatrix.x4`, `st.global.<w>.<dst>`,
+/// `epilogue.smem.st.global.16`, `red.add.f32[.warp|.one|.frag|.sector]`,
+/// `bar.sync.<lanes>`, `mbarrier.<lanes>`, `grid.sync`,
+/// `launch.{issue,gap}.sms`, and an operation row's own name.
+fn prim_of(name: &str, ops: &[Op]) -> Option<(PrimOf, bool)> {
+    let f: Vec<&str> = name.split('.').collect();
+    let place = |x: &str| match x {
+        "l2" => Some(L2),
+        "dram" => Some(DRAM),
+        _ => None,
+    };
+    let n = |x: &str, pre: &str| x.strip_prefix(pre)?.parse::<u64>().ok();
+    Some(match f.as_slice() {
+        ["ld", "global", w, src] => (
+            PrimOf::Load {
+                from: place(src)?,
+                bytes: w.parse().ok()?,
+            },
+            false,
+        ),
+        ["cp", "async", w, src] => (
+            PrimOf::Copy {
+                from: place(src)?,
+                bytes: w.parse().ok()?,
+            },
+            false,
+        ),
+        ["cp", "async", _, src, run, rows, fly] => (
+            PrimOf::Panel {
+                from: place(src)?,
+                run: n(run, "run")?,
+                rows: n(rows, "rows")?,
+                fly: n(fly, "fly")?,
+            },
+            false,
+        ),
+        ["tma", bx, src] => (
+            PrimOf::Bulk {
+                from: place(src)?,
+                bytes: n(bx, "box")?,
+            },
+            false,
+        ),
+        ["ld", "shared", w] => (
+            PrimOf::Scratch {
+                bytes: w.parse().ok()?,
+                matrix: false,
+            },
+            true,
+        ),
+        ["ldmatrix", "x4"] => (
+            PrimOf::Scratch {
+                bytes: 16,
+                matrix: true,
+            },
+            true,
+        ),
+        ["st", "global", w, dst] => (
+            PrimOf::Store {
+                to: place(dst)?,
+                bytes: w.parse().ok()?,
+            },
+            false,
+        ),
+        ["epilogue", ..] => (PrimOf::Staged { to: DRAM }, false),
+        ["red", "add", "f32", rest @ ..] => {
+            let (sharing, sectors) = match rest {
+                [] => (1, 4),
+                ["warp"] => (32, 1),
+                ["one"] => (0, 1),
+                ["frag"] => (1, 8),
+                ["sector"] => (1, 32),
+                _ => return None,
+            };
+            (
+                PrimOf::Reduce {
+                    at: L2,
+                    sharing,
+                    sectors,
+                },
+                false,
+            )
+        }
+        ["bar", "sync", l] => (
+            PrimOf::Barrier {
+                lanes: l.parse().ok()?,
+            },
+            true,
+        ),
+        ["mbarrier", _] => (PrimOf::Phase, true),
+        ["grid", "sync"] => (PrimOf::GridSync, false),
+        ["launch", "issue", "sms"] => (PrimOf::Issue, false),
+        ["launch", "gap", "sms"] => (PrimOf::Gap, false),
+        ["launch", ..] => return None,
+        _ => (PrimOf::Op(ops.iter().position(|o| o.name == name)?), true),
     })
 }
 
@@ -1937,6 +2066,16 @@ impl Lowering for Emitter<'_> {
                     return Err(Refusal::new("not the naive kernel"));
                 }
                 let cells = param(x, "cells").max(1);
+                // The vector-cells kernel (`naive_cells`) reads `b` as one
+                // vector of a row's `cells` consecutive lanes at an affine
+                // offset a `k` step and `a` once a row: a declared constraint
+                // (cost-model ABBA: the 2048 x 2048 x 25 window's mixed-radix
+                // `b` at 16 cells a thread stored wrong values).
+                if cells > 1 && !gpu::naive_cells_admit(site, cells) {
+                    return Err(Refusal::new(
+                        "vector cells: affine rows only (no radix, no k split, b lanes unit-stride)",
+                    ));
+                }
                 // A thread folds its cells over `k`: NAIVE_UNROLL loads of
                 // `b` (one vector) and one of `a` a trip in flight.
                 let trip = NAIVE_UNROLL as f64;
@@ -1965,6 +2104,11 @@ impl Lowering for Emitter<'_> {
                     groups: NAIVE_THREADS / warp,
                     work: 0.0,
                     whole_stores: false,
+                    // A lane loads its cells' `b` and its row's `a` into
+                    // registers.
+                    mover: mapal_place::Move::Load(GPU_VEC_BYTES.min(cells * s.eb)),
+                    store: GPU_VEC_BYTES.min(cells * s.eo),
+                    ..Declared::default()
                 })
             }
             FMA => {
@@ -2025,6 +2169,20 @@ impl Lowering for Emitter<'_> {
                     groups: t.threads().div_ceil(warp),
                     work: 0.0,
                     whole_stores: false,
+                    // A `cp.async` ring of whole 16-byte copies, or one panel
+                    // staged through registers; a lane stores its `tn`
+                    // consecutive cells.
+                    mover: match stages {
+                        0 | 1 => mapal_place::Move::Load(GPU_VEC_BYTES),
+                        _ => mapal_place::Move::Copy(GPU_VEC_BYTES),
+                    },
+                    barriers: if stages > 1 { 1.0 } else { 2.0 },
+                    store: GPU_VEC_BYTES.min(t.tn * s.eo),
+                    // A lane's `tn` consecutive cells over `tn` reductions:
+                    // each instruction's sectors the next ones revisit — the
+                    // probe's contiguous row (`red.add.f32`, the default),
+                    // not its sector-a-lane one (no revisit).
+                    ..Declared::default()
                 })
             }
             MMA => {
@@ -2080,6 +2238,20 @@ impl Lowering for Emitter<'_> {
                     // `mma_walk_store`: a whole piece stores as the ordered
                     // kernel does.
                     whole_stores: true,
+                    // A `cp.async` ring of 16-byte copies; the fragments by
+                    // `ldmatrix.x4` (512 bytes a warp; 32-bit operands' lane
+                    // loads), one `k` step's ahead of their products; a lane
+                    // stores its accumulator fragment's two cells.
+                    mover: mapal_place::Move::Copy(GPU_VEC_BYTES),
+                    scratch: (warps * ldsm * 512.0) as u64,
+                    scratch_fly: (warps * ldsm / ksteps.max(1.0) * 512.0) as u64,
+                    scratch_matrix: o.fmt != MmaFmt::Tf32,
+                    barriers: 1.0,
+                    store: 2 * s.eo,
+                    // The accumulator fragment: 8 rows of 32 bytes a warp's
+                    // reduction instruction.
+                    add_sectors: 8,
+                    ..Declared::default()
                 })
             }
             _ => {
@@ -2131,6 +2303,19 @@ impl Lowering for Emitter<'_> {
                     groups: w.groups * WARPGROUP_WARPS,
                     work: 0.0,
                     whole_stores: false,
+                    // The warp-specialized tile's panels by tensor boxes, the
+                    // plain one's by `cp.async`; the products read the
+                    // scratchpad by descriptor (no lane loads).
+                    mover: match w.ws {
+                        true => mapal_place::Move::Bulk(
+                            (pb as u64 / (1 + w.ws_b_boxes()).max(1)).max(1),
+                        ),
+                        false => mapal_place::Move::Copy(GPU_VEC_BYTES),
+                    },
+                    barriers: 1.0,
+                    store: 2 * s.eo,
+                    add_sectors: 8,
+                    ..Declared::default()
                 })
             }
         }
@@ -2584,11 +2769,11 @@ pub const PLACE_NULL: f64 = 0.02;
 /// (`place_replay.rs` `place_band_is_the_replays_residuals` recomputes it;
 /// a term with fewer than three pairs takes `all`'s). Per mille.
 pub const PLACE_BAND_PM: [(&str, u64); 5] = [
-    ("all", 163),
-    ("compute", 137),
-    ("dram", 212),
-    ("cache", 259),
-    ("latency", 163),
+    ("all", 176),
+    ("compute", 143),
+    ("dram", 217),
+    ("cache", 247),
+    ("latency", 176),
 ];
 
 /// The search's options at the band and null above.
@@ -3232,6 +3417,60 @@ mod tests {
     /// search may give a thread (1–16, f32 and bf16 `b`), so the footprint's
     /// occupancy is never above the kernel's. `PLACE_NAIVE_REGS=1` prints
     /// the table; without `llc` / `ptxas`, nothing to check.
+    /// **The vector-cells kernel's declared constraint** (cost-model ABBA):
+    /// on the 2048 x 2048 x 25 window program's own tile sites (mixed-radix
+    /// `b`), the one-thread-per-cell lowering refuses more than one cell a
+    /// thread — the search's 16-cell pick stored wrong values on the RTX
+    /// 5080 — and keeps admitting them on a plain GEMV row.
+    #[test]
+    fn naive_vector_cells_refuse_a_window_site() {
+        let src = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../benches/algorithms/pt_conv_2048_5.mapal"),
+        )
+        .expect("the window program");
+        let po = mapal_syntax::parse(&src);
+        let ir = mapal_rewrite::rewrite(mapal_lower::lower(&src, &po.program).expect("lowers")).ir;
+        let p = crate::profile::resolve("rtx-5080").unwrap();
+        let m = machine_of(p).unwrap();
+        let arms = crate::GpuArms {
+            free: true,
+            site_cands: 1,
+            ..crate::GpuArms::default()
+        };
+        let sites = warm_sites(&ir, p.gpu().unwrap().l2_keep_bytes());
+        let mut windows = 0;
+        for (site, _) in &sites {
+            let rules = gpu::launch_in_rules(site, p, true, arms, crate::Order::Free);
+            if rules.tiled.is_some() || rules.mma.is_some() || rules.wgmma.is_some() {
+                continue;
+            }
+            let e = Emitter {
+                id: NAIVE,
+                site,
+                profile: p,
+                contract: true,
+                arms,
+            };
+            let s = site_of(site, true, crate::Order::Free);
+            let at = |cells| {
+                let x = schedule_of(site, p, arms, &Launch { cells, ..rules });
+                e.declare(&m, &s, &x)
+            };
+            assert!(at(1).is_ok(), "one cell a thread stays admitted");
+            if !gpu::naive_cells_admit(site, 16) {
+                windows += 1;
+                assert!(at(16).is_err(), "16 cells on a window site refused");
+            }
+        }
+        assert!(windows > 0, "the program has a window site");
+        let row = crate::place_replay::replay_site(1, 4096, 2048, "f32", true);
+        assert!(
+            gpu::naive_cells_admit(&row, 4),
+            "a GEMV row admits vector cells"
+        );
+    }
+
     #[test]
     fn naive_declared_registers_cover_ptxas() {
         use std::process::Command;

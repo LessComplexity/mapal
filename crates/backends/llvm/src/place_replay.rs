@@ -315,47 +315,49 @@ fn place_replay_sites_are_distinct() {
 /// by the search's own rule ([`mapal_place::verdict`]): a pick within the
 /// null, or one the facts' intervals flip at some corner, is open, never
 /// counted here or as a pick.
-const REPLAY_OPEN: [&str; 6] = [
-    // RTX 3090 2048³ TF32 and 128 x 4096 x 14336 bf16: the uncut grid won
-    // (5.9 / 7.8 %), the model prices the cut 19 / 17 % under it by wave
-    // quantization — its partial adds (151 / 19 µs at the L2) and, past the
-    // keep, their read-modify-write from DRAM (387 / 196 µs) priced as
-    // overlapped with the k loop (max over resources). The adds come as a
-    // burst at each piece's end: the missing term is that burst, serial
-    // after the piece's fold (it makes cuts dearer).
-    "cut-0", "cut-2",
-    // A100 128 x 4096 x 14336 bf16: the cut won (9.6 %); the model prices
-    // both arms at the device L2 feed (168 µs each, `cache` — the full-grid
-    // read rate `calib.cu bw` measured), the cut's lower per-unit terms
-    // (compute 51 against 82 µs, latency 51 against 82) hidden under it. The
-    // uncut grid (128 tiles on 108 SMs, one or two blocks an SM) does not
-    // draw that rate: the missing fact is the L2's realized rate at the
-    // grid's occupancy (a rate curve against resident warps, as the
-    // efficiency curve) — it makes the under-filled uncut dearer, the
-    // opposite direction of the 3090 rows' term. (The A100's TF32 and
-    // 2048-row cuts, cut-9 / cut-10, are ties within the null: open.)
-    "cut-8",
-    // RTX 5080 128 x 28672 x 4096 bf16 (ADR-0050 C5): the hybrid won by
-    // 2.7 %; every arm is priced at the DRAM roofline (283 µs: `b`'s 235 MB
-    // once) ~3x under its time — the ring's bytes in flight a unit cover
-    // DRAM's latency by the model, so no term explains the skinny site's
-    // realized memory rate (open: a probe of one tile row's stream rate).
+const REPLAY_OPEN: [&str; 9] = [
+    // RTX 3090 2048³ TF32: the uncut grid won (5.9 %); the model prices the
+    // cut 15 % under it by wave quantization. The 3090 measured no cost
+    // model primitive: its reductions, stores and movers are derived from
+    // its other facts (marked) — the missing facts are its own `prim` rows
+    // (the rental round's `place_calib.sh`).
+    "cut-0",
+    // A100 128 x 4096 x 14336 (bf16, TF32) and 2048 x 4096 x 14336 bf16: the
+    // cut won (9.6 / 25 / 8.3 %); the model prices the uncut 3–6 % under it
+    // at the L2's device rate. The uncut grid (128 tiles on 108 SMs) does not
+    // draw that rate: the L2's realized rate at the grid's in-flight bytes —
+    // the `prim` sweep's points on the part (unmeasured: rental).
+    "cut-10", "cut-8", "cut-9",
+    // RTX 5080 128 x 28672 x 4096 bf16: every arm ~2.9x under its time at the
+    // DRAM roofline. The panel stream's measured rate by run (0.35–0.5x at a
+    // 32-byte run, `PrimOf::Panel`) would explain it, but c11-0's `-raster`
+    // arm streams 32-byte runs at 888 GB/s (the full rate): the property that
+    // separates the two is unidentified, so no term reads the run.
     "hyb-0",
-    // RTX 5080 2048 x 6144 x 4096 and 512 x 512 x 2048: the ordered grid
-    // won (12 / 2.7 %), the walk is priced 6 / 18 % under it (wave
-    // quantization; at 512² a larger tile). The walk's own per-unit cost is
-    // unpriced: its k loop one copy where the ordered kernel's is two
-    // (SASS: 64 against 128 HMMA a loop body, 568 against 464
-    // instructions), its segment loop and the shared tiles' fixup, and its
-    // partial adds as a burst at each piece's end (512²: 6.6 µs of adds
-    // priced under 10 µs of compute).
-    "walk-16", "walk-5",
+    // RTX 5080 512 x 8192 x 2048 (hybrid against the walk, 3.6 %) and 2048 x
+    // 6144 x 4096 (ordered against the walk, 12 %): the walk's own per-unit
+    // cost — its k loop one copy where the ordered kernel's is two (SASS: 64
+    // against 128 HMMA a body), its segment loop and the shared tiles' fixup;
+    // its partial adds are priced (measured: `red.add.f32.frag`, 2.6 op / ns
+    // an SM) and overlap the loop but the last pieces'.
+    "hyb-1", // RTX 5080 2048 x 6144 x 4096: the walk's per-unit cost (hyb-1's).
+    "walk-16",
+    // RTX 5080 512 x 2048 x 2048 and its transpose: the walk (128 x 128 tile)
+    // won 12–15 % over the ordered 64 x 128 tile, priced at its compute (49
+    // against 57 µs measured): a small warp tile's exposed fragment latency
+    // (`ldmatrix` 69 clocks, then the products, at two warps a scheduler) —
+    // the scratchpad loads' latency against the products in flight.
+    "walk-6", "walk-7",
 ];
 
 /// The model's picks under the search's own rule (C5's corpus, duplicates
 /// merged, ties and flips at any corner open): a floor, not a target — the
-/// rules pick 59 (`model >= rules` is ADR-0050 C6's bar).
-const MODEL_FLOOR: u64 = 37;
+/// rules pick 59 (`model >= rules` is ADR-0050 C6's bar). The cost model's
+/// pipeline calculation (cost-model.md) scores 28: the residual of the
+/// absolute times fell (median |log| 0.126 → 0.107) while the ranking of
+/// near-equal arms did not improve (36 open: ties within the null and flips
+/// at marked facts; the misses above).
+const MODEL_FLOOR: u64 = 28;
 
 /// **ADR-0050 C3: `place_replay.tsv` scored** — per measured site, the
 /// measured winner (or null: within the null), the model's pick (the arm

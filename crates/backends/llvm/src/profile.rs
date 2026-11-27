@@ -255,6 +255,16 @@ pub struct PlaceFacts {
     /// %globaltimer (0: unmeasured — the profile's `clock_khz`). Read by the
     /// placement model only: the rules keep the profile's clock.
     pub clock_khz: u64,
+    /// **The cost model's primitives** (`place_calib.cu prim`): per probe
+    /// name its saturated rate, one use's latency and the concurrency that
+    /// saturates it, each with its interval — `[rate, lo, hi, latency, lo,
+    /// hi, conc, lo, hi]` in milli-units of the probe's units (compute:
+    /// flop / clock / SM, clocks, instructions / SM; movers and stores:
+    /// bytes / ns / SM, ns, bytes / SM; the scratchpad: bytes / clock / SM,
+    /// clocks; reductions: operations / ns / SM; barriers: clocks; launches:
+    /// ns). `place::machine_of` reads each as a [`mapal_place::Prim`] (empty:
+    /// unmeasured — every cost derived and marked).
+    pub prim: &'static [(&'static str, [u64; 9])],
     /// The cite of the efficiency, latency and clock probes.
     pub cite: &'static str,
 }
@@ -271,6 +281,7 @@ pub const PLACE_NONE: PlaceFacts = PlaceFacts {
     eff: &[],
     latency: &[],
     clock_khz: 0,
+    prim: &[],
     cite: "",
 };
 
@@ -6080,93 +6091,96 @@ pub const PLACE_RTX_5080_PROV: &[(&str, Src)] = &[
     ("acc_g", m("mma_calib.cu g_j probes")),
 ];
 
-/// ADR-0050 C3: the RTX 5080's placement probes (`benches/local/place_calib.cu`
-/// on the local box, 2026-11-26, driver 620.73.04, 360 W;
-/// `benches/results/evidence/local-rtx-5080/machine-model.md`): a uniform
-/// grid's waves past the first start together (spread 0-10 per mille of a
-/// run at 1 and 2 blocks an SM: lockstep); the L2 keeps 1.025 x its 64 MiB
-/// for a cyclic stream, a walk's rotated readers and a strided column panel
-/// alike (68 784 128 B each; the hit curve the cyclic one's); FFMA and the
-/// warp TF32 / bf16 products' efficiency over chains a lane x warps a
-/// scheduler, their dependent latencies (4.56 / 35.2 / 35.2 clocks); the SM
-/// clock under sustained FFMA load 2.867 GHz (clock64 over %globaltimer, 4 s).
+/// ADR-0050: the RTX 5080's placement probes — one run of
+/// `benches/local/place_calib.sh` on the local box (2026-11-27, driver
+/// 620.73.04, 360 W; `benches/results/evidence/local-rtx-5080/cost-model.md`):
+/// a uniform grid's waves past the first start together (lockstep under an
+/// L2-resident, a DRAM-contended and a GEMM's panel load); the L2 keeps 1.025
+/// x its 64 MiB for a cyclic stream, a walk's rotated readers and a strided
+/// column panel alike (68 784 128 B each; the hit curve the cyclic one's);
+/// FFMA and the warp TF32 / bf16 / f16 / e4m3 products' efficiency over
+/// chains a lane x warps a scheduler (fractions of each sweep's own saturated
+/// rate), their dependent latencies; the SM clock under sustained FFMA load
+/// (clock64 over %globaltimer, 4 s); and the cost model's primitives
+/// (`prim`: every operation, mover, result movement, synchronization and
+/// launch as its saturated rate, one use's latency and the concurrency that
+/// saturates it).
 pub const PLACE_RTX_5080: PlaceFacts = PlaceFacts {
     prov: PLACE_RTX_5080_PROV,
     // Lockstep under an L2-resident, a DRAM-contended and a GEMM's panel
-    // load alike (review run: median spread 0-22 per mille).
+    // load alike (cost-model run: median spread 0-24 per mille).
     start: Some((
         mapal_place::Start::Lockstep,
         "place_calib.cu start: l2, dram and gemm loads",
     )),
     keep_rotated: 68_784_128,
     keep_strided: 68_784_128,
-    // The sweep's next point (1.05 x 64 MiB): the keep lies below it
-    // (review run, `keep-review.txt`).
+    // The sweep's next point (1.05 x 64 MiB): the keep lies below it.
     keep_hi: 70_463_488,
     hit_curve: &[
-        (250, 960),
-        (500, 994),
+        (250, 957),
+        (500, 992),
         (625, 998),
         (750, 1000),
         (812, 1000),
         (875, 1000),
         (938, 1000),
-        (1000, 997),
-        (1025, 852),
-        (1050, 484),
-        (1100, 21),
+        (1000, 1000),
+        (1025, 845),
+        (1050, 467),
+        (1100, 36),
         (1200, 0),
         (1350, 0),
         (1500, 0),
     ],
     lat_l2_ns: 328,
     eff: &[
-        ("ffma", 1, 250, 55),
-        ("ffma", 1, 500, 110),
-        ("ffma", 1, 1000, 219),
-        ("ffma", 1, 2000, 427),
-        ("ffma", 1, 4000, 747),
-        ("ffma", 1, 8000, 823),
-        ("ffma", 2, 250, 109),
-        ("ffma", 2, 500, 217),
-        ("ffma", 2, 1000, 434),
-        ("ffma", 2, 2000, 814),
-        ("ffma", 2, 4000, 898),
-        ("ffma", 2, 8000, 907),
-        ("ffma", 4, 250, 206),
-        ("ffma", 4, 500, 413),
-        ("ffma", 4, 1000, 825),
-        ("ffma", 4, 2000, 945),
-        ("ffma", 4, 4000, 921),
-        ("ffma", 4, 8000, 938),
-        ("ffma", 8, 250, 226),
-        ("ffma", 8, 500, 452),
-        ("ffma", 8, 1000, 904),
-        ("ffma", 8, 2000, 971),
-        ("ffma", 8, 4000, 959),
-        ("ffma", 8, 8000, 968),
-        ("ffma", 16, 250, 227),
-        ("ffma", 16, 500, 455),
-        ("ffma", 16, 1000, 909),
-        ("ffma", 16, 2000, 974),
-        ("ffma", 16, 4000, 968),
-        ("ffma", 16, 8000, 969),
-        ("ffma", 32, 250, 228),
-        ("ffma", 32, 500, 456),
-        ("ffma", 32, 1000, 912),
-        ("ffma", 32, 2000, 976),
-        ("ffma", 32, 4000, 972),
-        ("ffma", 32, 8000, 975),
-        ("ffma", 64, 250, 225),
-        ("ffma", 64, 500, 450),
-        ("ffma", 64, 1000, 900),
-        ("ffma", 64, 2000, 977),
-        ("ffma", 64, 4000, 974),
+        ("ffma", 1, 250, 56),
+        ("ffma", 1, 500, 112),
+        ("ffma", 1, 1000, 225),
+        ("ffma", 1, 2000, 438),
+        ("ffma", 1, 4000, 763),
+        ("ffma", 1, 8000, 843),
+        ("ffma", 2, 250, 111),
+        ("ffma", 2, 500, 223),
+        ("ffma", 2, 1000, 446),
+        ("ffma", 2, 2000, 835),
+        ("ffma", 2, 4000, 920),
+        ("ffma", 2, 8000, 929),
+        ("ffma", 4, 250, 211),
+        ("ffma", 4, 500, 423),
+        ("ffma", 4, 1000, 845),
+        ("ffma", 4, 2000, 967),
+        ("ffma", 4, 4000, 941),
+        ("ffma", 4, 8000, 960),
+        ("ffma", 8, 250, 231),
+        ("ffma", 8, 500, 463),
+        ("ffma", 8, 1000, 926),
+        ("ffma", 8, 2000, 995),
+        ("ffma", 8, 4000, 985),
+        ("ffma", 8, 8000, 991),
+        ("ffma", 16, 250, 233),
+        ("ffma", 16, 500, 466),
+        ("ffma", 16, 1000, 931),
+        ("ffma", 16, 2000, 998),
+        ("ffma", 16, 4000, 991),
+        ("ffma", 16, 8000, 992),
+        ("ffma", 32, 250, 233),
+        ("ffma", 32, 500, 467),
+        ("ffma", 32, 1000, 934),
+        ("ffma", 32, 2000, 999),
+        ("ffma", 32, 4000, 996),
+        ("ffma", 32, 8000, 998),
+        ("ffma", 64, 250, 230),
+        ("ffma", 64, 500, 461),
+        ("ffma", 64, 1000, 922),
+        ("ffma", 64, 2000, 1000),
+        ("ffma", 64, 4000, 1000),
         ("mma.m16n8k8.tf32", 1, 250, 227),
         ("mma.m16n8k8.tf32", 1, 500, 454),
         ("mma.m16n8k8.tf32", 1, 1000, 909),
         ("mma.m16n8k8.tf32", 1, 2000, 993),
-        ("mma.m16n8k8.tf32", 1, 4000, 993),
+        ("mma.m16n8k8.tf32", 1, 4000, 994),
         ("mma.m16n8k8.tf32", 1, 8000, 995),
         ("mma.m16n8k8.tf32", 2, 250, 244),
         ("mma.m16n8k8.tf32", 2, 500, 488),
@@ -6175,15 +6189,15 @@ pub const PLACE_RTX_5080: PlaceFacts = PlaceFacts {
         ("mma.m16n8k8.tf32", 2, 4000, 998),
         ("mma.m16n8k8.tf32", 2, 8000, 999),
         ("mma.m16n8k8.tf32", 4, 250, 247),
-        ("mma.m16n8k8.tf32", 4, 500, 495),
-        ("mma.m16n8k8.tf32", 4, 1000, 989),
+        ("mma.m16n8k8.tf32", 4, 500, 494),
+        ("mma.m16n8k8.tf32", 4, 1000, 988),
         ("mma.m16n8k8.tf32", 4, 2000, 999),
-        ("mma.m16n8k8.tf32", 4, 4000, 999),
+        ("mma.m16n8k8.tf32", 4, 4000, 1000),
         ("mma.m16n8k8.tf32", 4, 8000, 1000),
         ("mma.m16n8k8.tf32", 8, 250, 249),
         ("mma.m16n8k8.tf32", 8, 500, 497),
         ("mma.m16n8k8.tf32", 8, 1000, 994),
-        ("mma.m16n8k8.tf32", 8, 2000, 999),
+        ("mma.m16n8k8.tf32", 8, 2000, 1000),
         ("mma.m16n8k8.tf32", 8, 4000, 1000),
         ("mma.m16n8k8.tf32", 8, 8000, 1000),
         ("mma.m16n8k8.tf32", 16, 250, 249),
@@ -6194,24 +6208,24 @@ pub const PLACE_RTX_5080: PlaceFacts = PlaceFacts {
         ("mma.m16n8k16.bf16", 1, 250, 227),
         ("mma.m16n8k16.bf16", 1, 500, 454),
         ("mma.m16n8k16.bf16", 1, 1000, 908),
-        ("mma.m16n8k16.bf16", 1, 2000, 989),
-        ("mma.m16n8k16.bf16", 1, 4000, 995),
+        ("mma.m16n8k16.bf16", 1, 2000, 986),
+        ("mma.m16n8k16.bf16", 1, 4000, 994),
         ("mma.m16n8k16.bf16", 1, 8000, 996),
         ("mma.m16n8k16.bf16", 2, 250, 244),
         ("mma.m16n8k16.bf16", 2, 500, 489),
-        ("mma.m16n8k16.bf16", 2, 1000, 977),
+        ("mma.m16n8k16.bf16", 2, 1000, 978),
         ("mma.m16n8k16.bf16", 2, 2000, 996),
         ("mma.m16n8k16.bf16", 2, 4000, 998),
         ("mma.m16n8k16.bf16", 2, 8000, 999),
         ("mma.m16n8k16.bf16", 4, 250, 247),
-        ("mma.m16n8k16.bf16", 4, 500, 495),
-        ("mma.m16n8k16.bf16", 4, 1000, 990),
+        ("mma.m16n8k16.bf16", 4, 500, 494),
+        ("mma.m16n8k16.bf16", 4, 1000, 989),
         ("mma.m16n8k16.bf16", 4, 2000, 999),
         ("mma.m16n8k16.bf16", 4, 4000, 1000),
         ("mma.m16n8k16.bf16", 4, 8000, 1000),
         ("mma.m16n8k16.bf16", 8, 250, 249),
         ("mma.m16n8k16.bf16", 8, 500, 497),
-        ("mma.m16n8k16.bf16", 8, 1000, 995),
+        ("mma.m16n8k16.bf16", 8, 1000, 994),
         ("mma.m16n8k16.bf16", 8, 2000, 1000),
         ("mma.m16n8k16.bf16", 8, 4000, 1000),
         ("mma.m16n8k16.bf16", 8, 8000, 1000),
@@ -6220,14 +6234,552 @@ pub const PLACE_RTX_5080: PlaceFacts = PlaceFacts {
         ("mma.m16n8k16.bf16", 16, 1000, 997),
         ("mma.m16n8k16.bf16", 16, 2000, 1000),
         ("mma.m16n8k16.bf16", 16, 4000, 1000),
+        ("mma.m16n8k16.f16", 1, 250, 227),
+        ("mma.m16n8k16.f16", 1, 500, 454),
+        ("mma.m16n8k16.f16", 1, 1000, 908),
+        ("mma.m16n8k16.f16", 1, 2000, 988),
+        ("mma.m16n8k16.f16", 1, 4000, 994),
+        ("mma.m16n8k16.f16", 1, 8000, 997),
+        ("mma.m16n8k16.f16", 4, 250, 247),
+        ("mma.m16n8k16.f16", 4, 500, 494),
+        ("mma.m16n8k16.f16", 4, 1000, 989),
+        ("mma.m16n8k16.f16", 4, 2000, 999),
+        ("mma.m16n8k16.f16", 4, 4000, 1000),
+        ("mma.m16n8k16.f16", 4, 8000, 1000),
+        ("mma.m16n8k16.f16", 16, 250, 249),
+        ("mma.m16n8k16.f16", 16, 500, 499),
+        ("mma.m16n8k16.f16", 16, 1000, 997),
+        ("mma.m16n8k16.f16", 16, 2000, 1000),
+        ("mma.m16n8k16.f16", 16, 4000, 1000),
+        ("mma.m16n8k32.e4m3", 1, 250, 227),
+        ("mma.m16n8k32.e4m3", 1, 500, 455),
+        ("mma.m16n8k32.e4m3", 1, 1000, 910),
+        ("mma.m16n8k32.e4m3", 1, 2000, 990),
+        ("mma.m16n8k32.e4m3", 1, 4000, 995),
+        ("mma.m16n8k32.e4m3", 1, 8000, 997),
+        ("mma.m16n8k32.e4m3", 2, 250, 244),
+        ("mma.m16n8k32.e4m3", 2, 500, 489),
+        ("mma.m16n8k32.e4m3", 2, 1000, 978),
+        ("mma.m16n8k32.e4m3", 2, 2000, 998),
+        ("mma.m16n8k32.e4m3", 2, 4000, 999),
+        ("mma.m16n8k32.e4m3", 2, 8000, 1000),
+        ("mma.m16n8k32.e4m3", 4, 250, 247),
+        ("mma.m16n8k32.e4m3", 4, 500, 495),
+        ("mma.m16n8k32.e4m3", 4, 1000, 989),
+        ("mma.m16n8k32.e4m3", 4, 2000, 999),
+        ("mma.m16n8k32.e4m3", 4, 4000, 1000),
+        ("mma.m16n8k32.e4m3", 4, 8000, 1000),
+        ("mma.m16n8k32.e4m3", 8, 250, 245),
+        ("mma.m16n8k32.e4m3", 8, 500, 491),
+        ("mma.m16n8k32.e4m3", 8, 1000, 979),
+        ("mma.m16n8k32.e4m3", 8, 2000, 998),
+        ("mma.m16n8k32.e4m3", 8, 4000, 999),
+        ("mma.m16n8k32.e4m3", 8, 8000, 999),
     ],
     latency: &[
         ("ffma", 46),
-        ("mma.m16n8k8.tf32", 352),
+        ("mma.m16n8k8.tf32", 351),
         ("mma.m16n8k16.bf16", 352),
+        ("mma.m16n8k16.f16", 349),
+        ("mma.m16n8k32.e4m3", 352),
     ],
-    clock_khz: 2_866_818,
-    cite: "place_calib.cu, machine-model.md (calib B: L2 loaded latency 328 ns)",
+    clock_khz: 2_879_474,
+    // The cost model's primitives (`place_calib.cu prim`, the same run).
+    prim: &[
+        (
+            "ffma",
+            [
+                250023, 250023, 250023, 4552, 4551, 4555, 32000, 16000, 32000,
+            ],
+        ),
+        (
+            "mma.m16n8k16.bf16",
+            [
+                511934, 511934, 511934, 35238, 34865, 35238, 4000, 2000, 4000,
+            ],
+        ),
+        (
+            "mma.m16n8k16.f16",
+            [
+                511932, 511932, 511932, 34864, 34863, 35240, 4000, 2000, 4000,
+            ],
+        ),
+        (
+            "mma.m16n8k32.e4m3",
+            [
+                1023537, 1023537, 1023537, 35184, 35153, 35184, 4000, 2000, 4000,
+            ],
+        ),
+        (
+            "mma.m16n8k8.tf32",
+            [
+                255962, 255962, 255962, 35112, 34896, 35115, 4000, 2000, 4000,
+            ],
+        ),
+        (
+            "ld.global.4.l2",
+            [
+                52317, 51739, 52373, 125725, 125616, 125747, 8192000, 4096000, 8192000,
+            ],
+        ),
+        (
+            "ld.global.8.l2",
+            [
+                52429, 52345, 52457, 129704, 129642, 129726, 8192000, 4096000, 8192000,
+            ],
+        ),
+        (
+            "ld.global.16.l2",
+            [
+                56142, 55791, 56142, 132184, 132179, 132200, 16384000, 8192000, 16384000,
+            ],
+        ),
+        (
+            "cp.async.4.l2",
+            [
+                52317, 51685, 52429, 140219, 140162, 140229, 16384000, 8192000, 16384000,
+            ],
+        ),
+        (
+            "cp.async.8.l2",
+            [
+                52206, 52178, 52262, 140219, 140162, 140229, 8192000, 4096000, 8192000,
+            ],
+        ),
+        (
+            "cp.async.16.l2",
+            [
+                55982, 55633, 55982, 140219, 140162, 140229, 16384000, 8192000, 16384000,
+            ],
+        ),
+        (
+            "ld.global.4.dram",
+            [
+                10875, 10874, 10886, 306266, 305563, 306480, 4096000, 2048000, 4096000,
+            ],
+        ),
+        (
+            "ld.global.8.dram",
+            [
+                10903, 10896, 10913, 309979, 309506, 310365, 4096000, 2048000, 4096000,
+            ],
+        ),
+        (
+            "ld.global.16.dram",
+            [
+                10903, 10902, 10904, 313006, 312866, 313506, 4096000, 2048000, 4096000,
+            ],
+        ),
+        (
+            "cp.async.4.dram",
+            [
+                10851, 10847, 10857, 320998, 320394, 321859, 4096000, 2048000, 4096000,
+            ],
+        ),
+        (
+            "cp.async.8.dram",
+            [
+                10899, 10894, 10904, 320998, 320394, 321859, 4096000, 2048000, 4096000,
+            ],
+        ),
+        (
+            "cp.async.16.dram",
+            [
+                10904, 10903, 10919, 320998, 320394, 321859, 4096000, 2048000, 4096000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run16.rows128.fly2048",
+            [
+                3247, 3235, 3256, 320998, 320394, 321859, 2048000, 1024000, 2048000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run16.rows128.fly4096",
+            [
+                3255, 3251, 3256, 320998, 320394, 321859, 4096000, 2048000, 4096000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run16.rows128.fly8192",
+            [
+                4269, 4222, 4291, 320998, 320394, 321859, 8192000, 4096000, 8192000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run16.rows128.fly16384",
+            [
+                4087, 4023, 4117, 320998, 320394, 321859, 16384000, 8192000, 16384000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run16.rows256.fly4096",
+            [
+                3789, 3782, 3791, 320998, 320394, 321859, 4096000, 2048000, 4096000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run16.rows256.fly8192",
+            [
+                3789, 3775, 3795, 320998, 320394, 321859, 8192000, 4096000, 8192000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run16.rows256.fly16384",
+            [
+                3742, 3693, 3761, 320998, 320394, 321859, 16384000, 8192000, 16384000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run16.rows256.fly32768",
+            [
+                3654, 3615, 3678, 320998, 320394, 321859, 32768000, 16384000, 32768000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run16.rows512.fly8192",
+            [
+                3808, 3802, 3809, 320998, 320394, 321859, 8192000, 4096000, 8192000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run16.rows512.fly16384",
+            [
+                3783, 3774, 3784, 320998, 320394, 321859, 16384000, 8192000, 16384000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run16.rows512.fly32768",
+            [
+                3629, 3620, 3634, 320998, 320394, 321859, 32768000, 16384000, 32768000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run16.rows512.fly65536",
+            [
+                3617, 3614, 3621, 320998, 320394, 321859, 65536000, 32768000, 65536000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run32.rows128.fly4096",
+            [
+                3255, 3235, 3258, 320998, 320394, 321859, 4096000, 2048000, 4096000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run32.rows128.fly8192",
+            [
+                5429, 5404, 5431, 320998, 320394, 321859, 8192000, 4096000, 8192000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run32.rows128.fly16384",
+            [
+                4712, 4643, 4753, 320998, 320394, 321859, 16384000, 8192000, 16384000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run32.rows128.fly32768",
+            [
+                3429, 3364, 3514, 320998, 320394, 321859, 32768000, 16384000, 32768000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run32.rows256.fly8192",
+            [
+                3797, 3797, 3799, 320998, 320394, 321859, 8192000, 4096000, 8192000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run32.rows256.fly16384",
+            [
+                5080, 4725, 5113, 320998, 320394, 321859, 16384000, 8192000, 16384000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run32.rows256.fly32768",
+            [
+                3417, 3408, 3515, 320998, 320394, 321859, 32768000, 16384000, 32768000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run32.rows256.fly65536",
+            [
+                3505, 3504, 3552, 320998, 320394, 321859, 65536000, 32768000, 65536000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run32.rows512.fly16384",
+            [
+                3805, 3805, 3813, 320998, 320394, 321859, 16384000, 8192000, 16384000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run32.rows512.fly32768",
+            [
+                2610, 2561, 2946, 320998, 320394, 321859, 32768000, 16384000, 32768000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run32.rows512.fly65536",
+            [
+                3529, 3509, 3551, 320998, 320394, 321859, 65536000, 32768000, 65536000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run64.rows128.fly8192",
+            [
+                6504, 6457, 6542, 320998, 320394, 321859, 8192000, 4096000, 8192000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run64.rows128.fly16384",
+            [
+                8494, 8353, 8511, 320998, 320394, 321859, 16384000, 8192000, 16384000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run64.rows128.fly32768",
+            [
+                7723, 7681, 7723, 320998, 320394, 321859, 32768000, 16384000, 32768000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run64.rows128.fly65536",
+            [
+                6166, 6117, 6581, 320998, 320394, 321859, 65536000, 32768000, 65536000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run64.rows256.fly16384",
+            [
+                7569, 7556, 7570, 320998, 320394, 321859, 16384000, 8192000, 16384000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run64.rows256.fly32768",
+            [
+                8695, 8588, 8733, 320998, 320394, 321859, 32768000, 16384000, 32768000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run64.rows256.fly65536",
+            [
+                7241, 7049, 7250, 320998, 320394, 321859, 65536000, 32768000, 65536000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run64.rows512.fly32768",
+            [
+                7605, 7576, 7606, 320998, 320394, 321859, 32768000, 16384000, 32768000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run64.rows512.fly65536",
+            [
+                6709, 6433, 6798, 320998, 320394, 321859, 65536000, 32768000, 65536000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run128.rows128.fly16384",
+            [
+                10005, 9996, 10082, 320998, 320394, 321859, 16384000, 8192000, 16384000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run128.rows128.fly32768",
+            [
+                10360, 10189, 10383, 320998, 320394, 321859, 32768000, 16384000, 32768000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run128.rows128.fly65536",
+            [
+                9984, 9978, 10082, 320998, 320394, 321859, 65536000, 32768000, 65536000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run128.rows256.fly32768",
+            [
+                10744, 10737, 10751, 320998, 320394, 321859, 32768000, 16384000, 32768000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run128.rows256.fly65536",
+            [
+                10745, 10740, 10806, 320998, 320394, 321859, 65536000, 32768000, 65536000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run128.rows512.fly65536",
+            [
+                10878, 10876, 10880, 320998, 320394, 321859, 65536000, 32768000, 65536000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run256.rows128.fly32768",
+            [
+                10608, 10601, 10632, 320998, 320394, 321859, 32768000, 16384000, 32768000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run256.rows128.fly65536",
+            [
+                10389, 10389, 10513, 320998, 320394, 321859, 65536000, 32768000, 65536000,
+            ],
+        ),
+        (
+            "cp.async.16.dram.run256.rows256.fly65536",
+            [
+                10804, 10733, 10811, 320998, 320394, 321859, 65536000, 32768000, 65536000,
+            ],
+        ),
+        (
+            "tma.box4096.l2",
+            [
+                43066, 42939, 43151, 262703, 261734, 262781, 16384000, 8192000, 16384000,
+            ],
+        ),
+        (
+            "tma.box16384.l2",
+            [
+                56726, 56628, 56830, 399719, 399312, 399781, 32768000, 16384000, 32768000,
+            ],
+        ),
+        (
+            "tma.box4096.dram",
+            [
+                10855, 10849, 10858, 262438, 262313, 262719, 8192000, 4096000, 8192000,
+            ],
+        ),
+        (
+            "tma.box16384.dram",
+            [
+                10991, 10991, 10997, 400313, 399828, 400469, 16384000, 8192000, 16384000,
+            ],
+        ),
+        (
+            "ld.shared.4",
+            [
+                63941, 63895, 63944, 67788, 67788, 67788, 1024000, 512000, 1024000,
+            ],
+        ),
+        (
+            "ld.shared.16",
+            [
+                253877, 253699, 253965, 67788, 67788, 67788, 16384000, 8192000, 16384000,
+            ],
+        ),
+        (
+            "ldmatrix.x4",
+            [
+                288277, 287827, 288524, 69038, 69038, 69038, 16384000, 8192000, 16384000,
+            ],
+        ),
+        (
+            "st.global.4.dram",
+            [
+                10899, 10885, 10936, 302844, 302648, 302859, 128000, 64000, 128000,
+            ],
+        ),
+        (
+            "st.global.8.dram",
+            [
+                10897, 10804, 10899, 302844, 302648, 302859, 256000, 128000, 256000,
+            ],
+        ),
+        (
+            "st.global.16.dram",
+            [
+                10887, 10842, 10898, 302844, 302648, 302859, 512000, 256000, 512000,
+            ],
+        ),
+        (
+            "st.global.4.l2",
+            [
+                28714, 28526, 28739, 302844, 302648, 302859, 512000, 256000, 512000,
+            ],
+        ),
+        (
+            "st.global.16.l2",
+            [
+                28719, 28544, 28752, 302844, 302648, 302859, 512000, 256000, 512000,
+            ],
+        ),
+        (
+            "red.add.f32",
+            [
+                5697, 5666, 5726, 138016, 137906, 138055, 512000, 256000, 512000,
+            ],
+        ),
+        (
+            "red.add.f32.warp",
+            [735, 717, 738, 138016, 137906, 138055, 64000, 32000, 64000],
+        ),
+        (
+            "red.add.f32.one",
+            [
+                184, 183, 184, 138016, 137906, 138055, 512000, 256000, 512000,
+            ],
+        ),
+        (
+            "red.add.f32.frag",
+            [
+                2596, 2578, 2596, 138016, 137906, 138055, 256000, 128000, 256000,
+            ],
+        ),
+        (
+            "red.add.f32.sector",
+            [829, 827, 830, 138016, 137906, 138055, 64000, 32000, 64000],
+        ),
+        (
+            "epilogue.smem.st.global.16",
+            [
+                10858, 10811, 10882, 473500, 464500, 507500, 32768000, 16384000, 32768000,
+            ],
+        ),
+        (
+            "bar.sync.128",
+            [48, 48, 48, 20701, 20689, 20703, 1000, 500, 1000],
+        ),
+        (
+            "bar.sync.256",
+            [35, 35, 35, 28719, 28700, 28806, 1000, 500, 1000],
+        ),
+        (
+            "bar.sync.512",
+            [22, 22, 22, 44672, 44672, 44672, 1000, 500, 1000],
+        ),
+        (
+            "bar.sync.1024",
+            [13, 13, 13, 76679, 76679, 76679, 1000, 500, 1000],
+        ),
+        (
+            "mbarrier.256",
+            [7, 7, 7, 145519, 145519, 145519, 1000, 500, 1000],
+        ),
+        (
+            "grid.sync",
+            [1, 1, 1, 798544, 798240, 798832, 1000, 500, 1000],
+        ),
+        (
+            "launch.issue.1",
+            [1, 1, 1, 1665750, 1662100, 1697800, 1000, 500, 1000],
+        ),
+        (
+            "launch.gap.1",
+            [2, 2, 2, 591360, 589312, 600576, 1000, 500, 1000],
+        ),
+        (
+            "launch.issue.sms",
+            [1, 1, 1, 1634195, 1629100, 1652700, 1000, 500, 1000],
+        ),
+        (
+            "launch.gap.sms",
+            [2, 2, 2, 583680, 581120, 587776, 1000, 500, 1000],
+        ),
+    ],
+    cite: "place_calib.cu (one run, cost-model.md; calib B: L2 loaded latency 328 ns)",
 };
 
 /// ADR-0050 provenance of [`RTX_3090`]'s values (cross-arch box).
@@ -7696,9 +8248,12 @@ pub fn calib_line(text: &str, key: &str) -> Option<CostOver> {
 /// sweep's next point: every keep's resolution), `place.hit` (`x:y`
 /// pairs, reuse distance ÷ cyclic keep and hit fraction, per mille),
 /// `place.lat_l2_ns`, `place.eff` (`op:chains:groups×1000:per mille`),
-/// `place.latency` (`op:clocks×10`), `place.clock_khz` (sustained), and
-/// `place.bar_cycles` (the barrier's measured cycles). An unknown `place.`
-/// name or a malformed value rejects the line's placement facts.
+/// `place.latency` (`op:clocks×10`), `place.clock_khz` (sustained),
+/// `place.bar_cycles` (the barrier's measured cycles), and `place.prim`
+/// (the cost model's primitives: `name:rate:lo:hi:latency:lo:hi:conc:lo:hi`
+/// in milli-units, [`PlaceFacts::prim`]; `place.prim_ghz`, the clock the
+/// probe converted with, is evidence only). An unknown `place.` name or a
+/// malformed value rejects the line's placement facts.
 pub fn place_line(text: &str, key: &str) -> Option<(PlaceFacts, Option<u64>)> {
     let line = text
         .lines()
@@ -7760,6 +8315,26 @@ pub fn place_line(text: &str, key: &str) -> Option<(PlaceFacts, Option<u64>)> {
                     })
                     .collect();
                 f.latency = Box::leak(pts?.into_boxed_slice());
+            }
+            "prim" => {
+                let rows: Option<Vec<(&'static str, [u64; 9])>> = v
+                    .split(',')
+                    .map(|e| {
+                        let f: Vec<&str> = e.split(':').collect();
+                        if f.len() != 10 {
+                            return None;
+                        }
+                        let mut a = [0u64; 9];
+                        for (i, x) in f[1..].iter().enumerate() {
+                            a[i] = num(x)?;
+                        }
+                        Some((leak(f[0]), a))
+                    })
+                    .collect();
+                f.prim = Box::leak(rows?.into_boxed_slice());
+            }
+            "prim_ghz" => {
+                num(v)?;
             }
             _ => return None,
         }
