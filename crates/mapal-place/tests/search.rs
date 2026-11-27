@@ -156,20 +156,30 @@ fn bnb_is_the_exhaustive_best() {
     runner(12)
         .run(&strat, |(mp, np, kp)| {
             let s = site(1 << mp, 1 << np, 1 << kp);
-            let m = toy::machine(&[1.0; 9]);
-            let lows: [&dyn Lowering; 1] = [&Toy];
-            let Some(r) = search(&m, &s, &lows, &Opts::default(), None, &mut ok) else {
-                prop_assert!(exhaustive(&m, &s).is_infinite());
-                return Ok(());
-            };
-            let best = exhaustive(&m, &s);
-            prop_assert!(
-                (r.top[0].value() - best).abs() <= best * 1e-12,
-                "{}: b&b {} exhaustive {best} ({:?})",
-                r.top[0].x.plan(),
-                r.top[0].value(),
-                r.stats
-            );
+            // The toy's derived costs, and its primitives measured in both
+            // latency regimes (the memory's knee latency below the cache's:
+            // the RTX 3090's and the A100's rows — the floor must stay
+            // admissible there too).
+            let one = vec![1.0; toy::prim_rows(false).len()];
+            for m in [
+                toy::machine(&[1.0; 9]),
+                toy::primed(false, &one, &one, &one),
+                toy::primed(true, &one, &one, &one),
+            ] {
+                let lows: [&dyn Lowering; 1] = [&Toy];
+                let Some(r) = search(&m, &s, &lows, &Opts::default(), None, &mut ok) else {
+                    prop_assert!(exhaustive(&m, &s).is_infinite());
+                    continue;
+                };
+                let best = exhaustive(&m, &s);
+                prop_assert!(
+                    (r.top[0].value() - best).abs() <= best * 1e-12,
+                    "{}: b&b {} exhaustive {best} ({:?})",
+                    r.top[0].x.plan(),
+                    r.top[0].value(),
+                    r.stats
+                );
+            }
             Ok(())
         })
         .expect("B&B");

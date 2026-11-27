@@ -168,23 +168,70 @@ fn rate_field(o: &MatrixOp) -> &'static str {
     }
 }
 
-/// Measured efficiency points of operation `name` (the part's probes).
-fn eff_points(g: &Gpu, name: &str) -> Vec<EffPoint> {
+/// **Whether probe row `row` measures operation `name`** of `n`s: its own
+/// name, or — a family whose `n` the schedule chooses (a warpgroup's, a
+/// single thread's: `NSet::Step`) — the family's form at an `n` it admits,
+/// every other part of the geometry, the format and the operands' source
+/// equal (the H100's `wg.m64n128k16.bf16` measures the `wg.m64n256k16.bf16`
+/// family at `n = 128`; never the `.rs` form, whose `a` comes from
+/// registers).
+fn measures(row: &str, name: &str, n: NSet) -> bool {
+    if row == name {
+        return true;
+    }
+    // `<pre>.m<M>n<N>k<K>.<rest>` as (`<pre>.m<M>`, N, `k<K>.<rest>`).
+    let split = |x: &str| -> Option<(String, u64, String)> {
+        let (pre, geo) = x.split_once(".m")?;
+        let (ni, ki) = (geo.find('n')?, geo.find('k')?);
+        let nv = geo.get(ni + 1..ki)?.parse().ok()?;
+        Some((format!("{pre}.m{}", &geo[..ni]), nv, geo[ki..].to_string()))
+    };
+    matches!(
+        (split(row), split(name)),
+        (Some((p, rn, r)), Some((q, _, t))) if p == q && r == t && n.admits(rn)
+    )
+}
+
+/// The cite of a row `row` read for operation `name`: the part's, and the
+/// member it measured where it measured the family at another `n`.
+fn row_cite(g: &Gpu, row: &str, name: &str) -> &'static str {
+    match row == name {
+        true => g.place.cite,
+        false => Box::leak(format!("{} (measured as {row})", g.place.cite).into_boxed_str()),
+    }
+}
+
+/// Measured efficiency points of operation `name` of `n`s (the part's
+/// probes: its own rows, else a measured member's — [`measures`]).
+fn eff_points(g: &Gpu, name: &str, n: NSet) -> Vec<EffPoint> {
+    let own = g.place.eff.iter().any(|(r, ..)| *r == name);
     g.place
         .eff
         .iter()
-        .filter(|(n, ..)| *n == name)
-        .map(|&(_, chains, groups, pm)| EffPoint {
+        .filter(|(r, ..)| {
+            if own {
+                *r == name
+            } else {
+                measures(r, name, n)
+            }
+        })
+        .map(|&(row, chains, groups, pm)| EffPoint {
             chains: chains as f64,
             groups: groups as f64 / 1000.0,
-            eff: Fact::measured(pm as f64 / 1000.0, g.place.cite),
+            eff: Fact::measured(pm as f64 / 1000.0, row_cite(g, row, name)),
         })
         .collect()
 }
 
-fn latency(g: &Gpu, name: &str, nominal: (f64, f64, f64)) -> Fact<f64> {
-    match g.place.latency.iter().find(|(n, _)| *n == name) {
-        Some(&(_, x10)) => Fact::measured(x10 as f64 / 10.0, g.place.cite),
+fn latency(g: &Gpu, name: &str, n: NSet, nominal: (f64, f64, f64)) -> Fact<f64> {
+    let row = g
+        .place
+        .latency
+        .iter()
+        .find(|(r, _)| *r == name)
+        .or_else(|| g.place.latency.iter().find(|(r, _)| measures(r, name, n)));
+    match row {
+        Some(&(row, x10)) => Fact::measured(x10 as f64 / 10.0, row_cite(g, row, name)),
         None => Fact::nominal(
             nominal.0,
             nominal.1,
@@ -257,7 +304,13 @@ pub fn machine_of(p: &TargetProfile) -> Option<Machine> {
             0.7 * lat_dram.v,
             "loaded L2 latency unmeasured: a share of the DRAM one",
         ),
-        v => Fact::measured(v as f64, g.place.cite),
+        v => Fact::measured(
+            v as f64,
+            match g.place.lat_l2_cite {
+                "" => g.place.cite,
+                c => c,
+            },
+        ),
     };
     let l2_total = match d.l2_bytes_per_ns {
         0 => Fact::nominal(
@@ -490,10 +543,10 @@ pub fn machine_of(p: &TargetProfile) -> Option<Machine> {
         homes: [&[REGS], &[REGS], &[REGS]],
         majors: [&[Major::K, Major::Mn], &[Major::K, Major::Mn]],
         frag: [1, 1, 1],
-        latency: latency(g, name, (4.0, 4.0, 6.0)),
+        latency: latency(g, name, NSet::One(1), (4.0, 4.0, 6.0)),
         async_depth: 0,
         rate,
-        eff: eff_points(g, name),
+        eff: eff_points(g, name, NSet::One(1)),
         widths: &[1],
         acc_u: Fact::declared(-24, "IEEE f32 rounding"),
         acc_g: Fact::declared(u32::MAX, "exact alignment"),
@@ -533,19 +586,20 @@ pub fn machine_of(p: &TargetProfile) -> Option<Machine> {
                 "unmeasured on this part: the RTX 5080's accumulator rounding",
             ),
         };
+        let n = if o.shape.threads > 32 || o.shape.threads == 1 {
+            NSet::Step {
+                step: WGMMA_N_STEP,
+                max: o.shape.n.min(WGMMA_N_MAX),
+            }
+        } else {
+            NSet::One(o.shape.n)
+        };
         ops.push(Op {
             name,
             exec: if o.shape.threads > 1 { E_GROUP } else { E_LANE },
             lanes: o.shape.threads,
             m: o.shape.m,
-            n: if o.shape.threads > 32 || o.shape.threads == 1 {
-                NSet::Step {
-                    step: WGMMA_N_STEP,
-                    max: o.shape.n.min(WGMMA_N_MAX),
-                }
-            } else {
-                NSet::One(o.shape.n)
-            },
+            n,
             k: o.shape.k,
             fa: fmt_of(o.fmt),
             fb: fmt_of(o.fmt),
@@ -557,10 +611,10 @@ pub fn machine_of(p: &TargetProfile) -> Option<Machine> {
                 false => [&[Major::K], &[Major::K]],
             },
             frag: [a_regs, b_regs, acc_regs],
-            latency: latency(g, name, (32.0, 16.0, 64.0)),
+            latency: latency(g, name, n, (32.0, 16.0, 64.0)),
             async_depth: u64::from(o.shape.threads > 32),
             rate,
-            eff: eff_points(g, name),
+            eff: eff_points(g, name, n),
             widths: Box::leak(vec![o.shape.threads].into_boxed_slice()),
             acc_u: numerics(o.acc_u),
             acc_g: match src(g, "acc_g") {
@@ -744,8 +798,19 @@ pub fn machine_of(p: &TargetProfile) -> Option<Machine> {
         let Some((of, per_clk)) = prim_of(name, &ops) else {
             continue;
         };
+        // A family's member row stands for the family only where the
+        // family's own form is not measured.
+        let cite = match of {
+            PrimOf::Op(o) if ops[o].name != name => {
+                if g.place.prim.iter().any(|(r, _)| *r == ops[o].name) {
+                    continue;
+                }
+                row_cite(g, name, ops[o].name)
+            }
+            _ => g.place.cite,
+        };
         let f = |i: usize| {
-            Fact::measured(v[i] as f64 / 1000.0, g.place.cite)
+            Fact::measured(v[i] as f64 / 1000.0, cite)
                 .within(v[i + 1] as f64 / 1000.0, v[i + 2] as f64 / 1000.0)
         };
         let (rate, latency, conc) = (f(0), f(3), f(6));
@@ -873,7 +938,14 @@ fn prim_of(name: &str, ops: &[Op]) -> Option<(PrimOf, bool)> {
         ["launch", "issue", "sms"] => (PrimOf::Issue, false),
         ["launch", "gap", "sms"] => (PrimOf::Gap, false),
         ["launch", ..] => return None,
-        _ => (PrimOf::Op(ops.iter().position(|o| o.name == name)?), true),
+        _ => (
+            PrimOf::Op(
+                ops.iter()
+                    .position(|o| o.name == name)
+                    .or_else(|| ops.iter().position(|o| measures(name, o.name, o.n)))?,
+            ),
+            true,
+        ),
     })
 }
 
@@ -1004,6 +1076,70 @@ impl WarmScope {
             prev: WARM.with(|w| w.replace(map)),
         }
     }
+}
+
+thread_local! {
+    /// The tile sites whose output the emission stores column-major
+    /// ([`ColScope`]); `None` outside an emission under `machine-place`.
+    static COLMAJOR: std::cell::RefCell<Option<std::collections::HashSet<String>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// **The sites an emission stores column-major, while it runs** (the row
+/// folds' `colmajor`: a producing tile a fold reads in order, the rules'
+/// base launch able to store so): a pick that cannot store column-major is
+/// dropped for such a site alone — the layout is the site's, decided before
+/// any placement, never the rules' launch's capability (R3: a 4096 x 8192 x
+/// 8192 TF32 site stores row-major, yet its rules' FMA tile could store
+/// column-major, so the filter on the capability dropped the tensor pick and
+/// no kernel carried a place line). Only under `machine-place`.
+pub struct ColScope {
+    prev: Option<std::collections::HashSet<String>>,
+}
+
+impl ColScope {
+    pub fn new(
+        ir: &mapal_ir::CategoryIr,
+        p: &TargetProfile,
+        contract: bool,
+        arms: crate::GpuArms,
+    ) -> Self {
+        let set = match (p.gpu(), arms.on.machine_place) {
+            (Some(_), true) => {
+                let mut set = std::collections::HashSet::new();
+                for (f, _) in ir.funcs() {
+                    let tiles = ir.tile_plan(f);
+                    for (_, fold) in crate::func::rowfold::rowfold_sites(ir, f, p, contract, arms) {
+                        if let Some(t) = fold.colmajor.and_then(|m| tiles.sites.get(m)) {
+                            set.insert(format!("{t:?}"));
+                        }
+                    }
+                }
+                Some(set)
+            }
+            _ => None,
+        };
+        ColScope {
+            prev: COLMAJOR.with(|c| c.replace(set)),
+        }
+    }
+}
+
+impl Drop for ColScope {
+    fn drop(&mut self) {
+        let prev = self.prev.take();
+        COLMAJOR.with(|c| *c.borrow_mut() = prev);
+    }
+}
+
+/// Whether `site`'s output is stored column-major: the emission's
+/// [`ColScope`], else (no scope: a launch derived outside an emission) the
+/// rules' launch `rules` able to store so — the conservative reading.
+fn stores_col(site: &TileSite, rules: &Launch) -> bool {
+    COLMAJOR.with(|c| match &*c.borrow() {
+        Some(set) => set.contains(&format!("{site:?}")),
+        None => gpu::col_store(rules, site),
+    })
 }
 
 thread_local! {
@@ -2811,11 +2947,11 @@ pub const PLACE_NULL: f64 = 0.02;
 /// (`place_replay.rs` `place_band_is_the_replays_residuals` recomputes it;
 /// a term with fewer than three pairs takes `all`'s). Per mille.
 pub const PLACE_BAND_PM: [(&str, u64); 5] = [
-    ("all", 160),
-    ("compute", 127),
+    ("all", 161),
+    ("compute", 126),
     ("dram", 217),
-    ("cache", 253),
-    ("latency", 160),
+    ("cache", 202),
+    ("latency", 161),
 ];
 
 /// The search's options at the band and null above.
@@ -3234,12 +3370,13 @@ pub(crate) fn placed(
         return rules;
     }
     // The host launches the kernel the device emits ([`placed_for`]): a
-    // pick that cannot store column-major where the rules' tile can keeps
-    // the rules' tile there, so it does here too (cost-rental: the A100's
-    // 1024 x 256 x 256 site launched the pick's 32 x 32 grid over the rules'
-    // 64 x 32 kernel — an illegal address, no output).
+    // pick that cannot store column-major where the site stores so
+    // ([`ColScope`]) keeps the rules' tile there, so it does here too
+    // (cost-rental: the A100's 1024 x 256 x 256 site launched the pick's
+    // 32 x 32 grid over the rules' 64 x 32 kernel — an illegal address, no
+    // output).
     search_site(site, p, contract, arms, order, &rules)
-        .filter(|x| !gpu::col_store(&rules, site) || gpu::col_store(&x.launch, site))
+        .filter(|x| !stores_col(site, &rules) || gpu::col_store(&x.launch, site))
         .map_or(rules, |x| x.launch)
 }
 
@@ -3280,7 +3417,7 @@ pub(crate) fn placed_for(
         };
         if let Some(x) = hit
             && x.launch.combine == combine
-            && (!gpu::col_store(&r, site) || gpu::col_store(&x.launch, site))
+            && (!stores_col(site, &r) || gpu::col_store(&x.launch, site))
         {
             // A kept pick is the rules' launch, and at the kernel the rules'
             // launch of this realization is `r` (its own resize: the register
@@ -3466,6 +3603,87 @@ mod tests {
         assert!(m.dispatch.launches[0].ns.marked());
     }
 
+    /// **Every measured row is read** (cost-rental review): on every part,
+    /// each `prim` row maps to a machine primitive or operation, and each
+    /// efficiency and latency row to an operation — none dropped by its
+    /// name (the H100's `wg.m64n128k16.bf16` rows measure the warpgroup
+    /// family `wg.m64n256k16.bf16` at `n = 128`).
+    #[test]
+    fn every_measured_row_is_read() {
+        // Measured and read by no machine row: the one-block launch (a
+        // grid's launch reads the `.sms` rows).
+        const UNREAD: [&str; 2] = ["launch.issue.1", "launch.gap.1"];
+        for name in [
+            "rtx-3090", "a100", "rtx-4090", "h100", "rtx-5090", "rtx-5080",
+        ] {
+            let p = crate::profile::resolve(name).unwrap();
+            let g = p.gpu().unwrap();
+            let m = machine_of(p).unwrap();
+            for &(row, _) in g.place.prim {
+                if UNREAD.contains(&row) {
+                    continue;
+                }
+                let (of, _) = prim_of(row, &m.ops)
+                    .unwrap_or_else(|| panic!("{name}: the prim row {row} maps to no machine row"));
+                match of {
+                    PrimOf::Op(o) => {
+                        let op = &m.ops[o];
+                        assert!(
+                            !op.rate.marked() && !op.latency.marked(),
+                            "{name}: {row} sets {}'s rate and latency",
+                            op.name
+                        );
+                    }
+                    _ => assert!(
+                        m.prims.iter().any(|p| p.name == row),
+                        "{name}: the prim row {row} is a machine primitive"
+                    ),
+                }
+            }
+            for &(row, ..) in g.place.eff {
+                assert!(
+                    m.ops
+                        .iter()
+                        .any(|o| measures(row, o.name, o.n) && !o.eff.is_empty()),
+                    "{name}: the efficiency row {row} is an operation's"
+                );
+            }
+            for &(row, _) in g.place.latency {
+                assert!(
+                    m.ops
+                        .iter()
+                        .any(|o| measures(row, o.name, o.n) && !o.latency.marked()),
+                    "{name}: the latency row {row} is an operation's"
+                );
+            }
+        }
+        // The H100's warpgroup bf16 family reads its measured member; the
+        // register-`a` form, never measured, stays nominal.
+        let m = machine_of(crate::profile::resolve("h100").unwrap()).unwrap();
+        let op = |n: &str| m.ops.iter().find(|o| o.name == n).expect("the op");
+        let wg = op("wg.m64n256k16.bf16");
+        assert!(!wg.rate.marked() && !wg.latency.marked() && !wg.eff.is_empty());
+        assert!(op("wg.m64n256k16.bf16.rs").latency.marked());
+        assert!(!measures("wg.m64n128k16.bf16", "wg.m64n256k16.f16", wg.n));
+        // A value from another box of the part keeps its own provenance
+        // (the RTX 4090's L2 latency: an earlier box, not the rental run's).
+        let m = machine_of(crate::profile::resolve("rtx-4090").unwrap()).unwrap();
+        let lat = m
+            .reach(L2, mapal_place::ExecKind::Unit)
+            .unwrap()
+            .latency_ns
+            .src;
+        assert!(
+            matches!(lat, Src::Measured(c) if c.contains("earlier RTX 4090 box")),
+            "the 4090's L2 latency cites its own box: {lat:?}"
+        );
+        assert!(!measures(
+            "mma.m16n8k16.bf16",
+            "mma.m16n16k16.bf16",
+            NSet::One(16)
+        ));
+    }
+
     /// **The host launches the kernel the device emits** (cost-rental): on
     /// every GPU part, each placed ordered site of the attention programs
     /// launches the geometry its kernel is emitted with — the A100's
@@ -3532,33 +3750,64 @@ mod tests {
             }
         }
         assert!(ordered > 0 && kept > 0, "ordered and kept sites placed");
-        // The fixed face of the 16 x 2048 x 7168 cell, its kernel emitted
-        // before the host's search (the emission's order): the H100's split
-        // pick and its kernel.
-        let fixed = crate::GpuArms {
+    }
+
+    /// **A fixed-order site launches the kernel the device emits**
+    /// (cost-rental, `OrderScope`): on every part, fixed-order sites whose
+    /// pick moves the launch off the rules' (a split's `S`, its tile) — the
+    /// kernel of the host's realization emitted before the host's search —
+    /// launch the device's whole kernel (grid, tile, rungs), never only its
+    /// tile (the H100's 16 x 2048 x 7168 split pick launched over the rules'
+    /// kernel: wrong values). Without `OrderScope` the kernel is the pick of
+    /// the arms' own order (`Sequential`: no split) and this fails.
+    #[test]
+    fn placed_fixed_order_kernel_is_the_host_launch() {
+        let mut fixed = crate::GpuArms {
             free: false,
-            ..arms
+            site_cands: 1,
+            ..crate::GpuArms::default()
         };
-        let site = crate::place_replay::replay_site(16, 2048, 7168, "f32", true);
-        for name in [
-            "rtx-3090", "a100", "rtx-4090", "h100", "rtx-5090", "rtx-5080",
+        *fixed.on.rung("machine-place").expect("the rung") = true;
+        let mut moved = 0;
+        for (m, n, k) in [
+            (16, 2048, 7168),
+            (16, 18432, 7168),
+            (128, 4096, 4096),
+            (128, 6144, 4096),
         ] {
-            let p = crate::profile::resolve(name).unwrap();
-            let _order = OrderScope::new(crate::Order::Fixed);
-            let rules = gpu::launch_in_rules(&site, p, false, fixed, crate::Order::Fixed);
-            let pick = search_site(&site, p, false, fixed, crate::Order::Fixed, &rules);
-            let combine = pick.map_or(rules.combine, |x| x.launch.combine);
-            PICKS.with(|c| c.borrow_mut().clear());
-            let dev = gpu::launch_for(&site, p, false, fixed, combine);
-            let host = gpu::launch_in(&site, p, false, fixed, crate::Order::Fixed);
-            if host.combine == combine {
+            let site = crate::place_replay::replay_site(m, n, k, "f32", true);
+            for name in [
+                "rtx-3090", "a100", "rtx-4090", "h100", "rtx-5090", "rtx-5080",
+            ] {
+                let p = crate::profile::resolve(name).unwrap();
+                let at = format!("{m} x {n} x {k} on {name}");
+                let _order = OrderScope::new(crate::Order::Fixed);
+                // The host's launch, searched alone.
+                PICKS.with(|c| c.borrow_mut().clear());
+                let host = gpu::launch_in(&site, p, false, fixed, crate::Order::Fixed);
+                let rules = self::rules(|| {
+                    gpu::launch_in_rules(&site, p, false, fixed, crate::Order::Fixed)
+                });
+                moved += usize::from(host != rules);
+                // The kernel of its realization emitted first, then the
+                // host's launch.
+                PICKS.with(|c| c.borrow_mut().clear());
+                let dev = gpu::launch_for(&site, p, false, fixed, host.combine);
+                let again = gpu::launch_in(&site, p, false, fixed, crate::Order::Fixed);
+                assert_eq!(again, host, "{at}: one launch whichever comes first");
+                // The device's launch is its realization's kernel (its
+                // `combine` field the host's to set).
                 assert_eq!(
-                    (host.tiled, host.mma, host.wgmma),
-                    (dev.tiled, dev.mma, dev.wgmma),
-                    "the fixed cell on {name}: the launched geometry is the kernel's"
+                    Launch {
+                        combine: host.combine,
+                        ..dev
+                    },
+                    host,
+                    "{at}: the host launches the kernel the device emits"
                 );
             }
         }
+        assert!(moved > 0, "the search moves some fixed-order launch");
     }
 
     /// **The warpgroup lowering's declared constraint** (cost-rental): a

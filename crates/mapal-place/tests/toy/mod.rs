@@ -270,3 +270,106 @@ pub fn declared(x: &Schedule) -> Declared {
         ..Declared::default()
     }
 }
+
+/// The memory place behind the toy's L2.
+pub const MEM: usize = 3;
+
+/// **The primitives an evaluator term reads**, as measured rows on the toy
+/// machine `m`: the copy from the cache and from the memory, the
+/// scratchpad's fragment load, the slot barrier, the store into the cache
+/// and to the memory, the partial add — each `(name, of, per_clk, rate,
+/// latency, concurrency)`. `mem_below`: the memory's knee latency
+/// (concurrency over rate) below the cache's, as the RTX 3090's and the
+/// A100's measured rows read (cp.async.16: 624 ns from L2, 383 from DRAM).
+pub fn prim_rows(mem_below: bool) -> Vec<(&'static str, PrimOf, bool, f64, f64, f64)> {
+    let (cache, mem) = match mem_below {
+        // rate B/ns a unit, latency ns, concurrency B a unit.
+        true => ((26.0, 154.0, 16384.0), (10.7, 298.0, 4096.0)),
+        false => ((50.0, 150.0, 16384.0), (35.0, 350.0, 16384.0)),
+    };
+    vec![
+        (
+            "cp.l2",
+            PrimOf::Copy {
+                from: L2,
+                bytes: 16,
+            },
+            false,
+            cache.0,
+            cache.1,
+            cache.2,
+        ),
+        (
+            "cp.mem",
+            PrimOf::Copy {
+                from: MEM,
+                bytes: 16,
+            },
+            false,
+            mem.0,
+            mem.1,
+            mem.2,
+        ),
+        (
+            "lds",
+            PrimOf::Scratch {
+                bytes: 16,
+                matrix: false,
+            },
+            true,
+            128.0,
+            30.0,
+            8192.0,
+        ),
+        ("bar", PrimOf::Barrier { lanes: 256 }, true, 0.03, 30.0, 1.0),
+        (
+            "st.l2",
+            PrimOf::Store { to: L2, bytes: 16 },
+            false,
+            40.0,
+            150.0,
+            512.0,
+        ),
+        (
+            "st.mem",
+            PrimOf::Store { to: MEM, bytes: 16 },
+            false,
+            30.0,
+            300.0,
+            512.0,
+        ),
+        (
+            "red",
+            PrimOf::Reduce {
+                at: L2,
+                sharing: 1,
+                sectors: 4,
+            },
+            false,
+            20.0,
+            150.0,
+            512.0,
+        ),
+    ]
+}
+
+/// The toy machine with [`prim_rows`] measured, row `i`'s rate scaled by
+/// `r[i]`, its latency by `l[i]` and its concurrency by `c[i]`, each fact
+/// with the interval `[0.8, 1.25]` of its value (the bounds differ).
+pub fn primed(mem_below: bool, r: &[f64], l: &[f64], c: &[f64]) -> Machine {
+    let mut m = machine(&[1.0; 9]);
+    let f = |v: f64| Fact::measured(v, "toy").within(0.8 * v, 1.25 * v);
+    m.prims = prim_rows(mem_below)
+        .into_iter()
+        .enumerate()
+        .map(|(i, (name, of, per_clk, rate, lat, conc))| Prim {
+            name,
+            of,
+            per_clk,
+            rate: f(rate * r[i]),
+            latency: f(lat * l[i]),
+            conc: f(conc * c[i]),
+        })
+        .collect();
+    m
+}

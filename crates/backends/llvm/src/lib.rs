@@ -2185,6 +2185,9 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     // ADR-0050 D3 `machine-place`: the sites' warm operands
     // (`residence_plan`), one map every launch of this emission reads.
     let _warm = crate::place::WarmScope::new(ir, profile, opts.gpu);
+    // ... and the sites it stores column-major (the row folds' layout): a
+    // pick that cannot store so is dropped there alone.
+    let _col = crate::place::ColScope::new(ir, profile, opts.contract, opts.gpu);
     // cost-rental: the order this emission's host launches place each site
     // under — the kernel of a realization is that order's pick.
     let _order = crate::place::OrderScope::new(opts.order);

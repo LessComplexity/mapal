@@ -801,28 +801,39 @@ __global__ void ldsm_k(int iters, int zero, long long *cyc, unsigned *out) {
   if (acc == 0x9e3779b9u) *out = acc;
   if (threadIdx.x == 0) atomicMax((unsigned long long *)cyc + blockIdx.x % 1024, (unsigned long long)(t1 - t0));
 }
-// One use's latency in shared memory: a dependent chain of `kind` 0 ld.shared.u32, 1 ldmatrix.x4 (the address
-// moved by the loaded value times a run-time zero), clocks a use.
-__global__ void lds_chase_k(int kind, int steps, int zero, long long *out) {
+// One use's latency in shared memory: a pointer chase — each lane's next address is the word it loads (the shared
+// words hold their own lanes' addresses), nothing else on the chain (no branch, no address arithmetic: test
+// `place_calib_chase_is_pure` reads the SASS) — of `KIND` 0 ld.shared.u32 (lane l at word l: conflict-free), 1
+// ld.shared.v4.u32 (lane l at bytes 16 l: the 512-byte access's own wavefronts), 2 ldmatrix.x4 (lane l supplies
+// row l % 8 of matrix l / 8 at bytes 16 l and receives matrix 0's row l / 4, word l % 4 — word l, which holds
+// bytes 16 l), clocks a use.
+template <int KIND>
+__global__ void lds_chase_k(int steps, long long *out) {
   __shared__ __align__(16) unsigned sm[8192];
-  for (int i = threadIdx.x; i < 8192; i += blockDim.x) sm[i] = 0;
+  unsigned lane = threadIdx.x % 32, base = sm32(sm);
+  unsigned a = base + lane * (KIND == 0 ? 4 : 16);
+  sm[KIND == 1 ? lane * 4 : lane] = a;
   __syncwarp();
-  unsigned v = 0, lane = threadIdx.x % 32, base = sm32(sm);
+  // The other words a wide load returns, folded off the chain (else ptxas narrows the load to the one word read).
+  unsigned sink = 0;
   long long t0 = clock64();
+#pragma unroll 8
   for (int s = 0; s < steps; s++) {
-    unsigned a = base + lane * 16 + v * zero;
-    if (kind == 0) {
-      asm volatile("ld.shared.u32 %0, [%1];" : "=r"(v) : "r"(a));
+    if (KIND == 0) {
+      asm volatile("ld.shared.u32 %0, [%0];" : "+r"(a));
+    } else if (KIND == 1) {
+      unsigned y, z, w;
+      asm volatile("ld.shared.v4.u32 {%0,%1,%2,%3}, [%0];" : "+r"(a), "=r"(y), "=r"(z), "=r"(w));
+      sink ^= y ^ z ^ w;
     } else {
-      unsigned x, y, z, w;
-      asm volatile("ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0,%1,%2,%3}, [%4];"
-                   : "=r"(x), "=r"(y), "=r"(z), "=r"(w)
-                   : "r"(a));
-      v = x ^ y ^ z ^ w;
+      unsigned y, z, w;
+      asm volatile("ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0,%1,%2,%3}, [%0];"
+                   : "+r"(a), "=r"(y), "=r"(z), "=r"(w));
+      sink ^= y ^ z ^ w;
     }
   }
   long long t1 = clock64();
-  if (threadIdx.x == 0) out[0] = t1 - t0, out[1] = v;
+  if (threadIdx.x == 0) out[0] = t1 - t0, out[1] = a ^ sink;
 }
 
 // red.global.add.f32: `mode` 0 a lane its own address, a warp's 32 lanes contiguous (4 sectors an instruction; an
@@ -1263,11 +1274,11 @@ static void prim_run() {
       }
       return v;
     };
-    auto lat = [&](int kind) {
+    auto lat = [&](void (*chase)(int, long long *)) {
       std::vector<double> v;
       long long h[2];
       for (int r = 0; r < 4; r++) {
-        lds_chase_k<<<1, 32>>>(kind, 4096, 0, o);
+        chase<<<1, 32>>>(4096, o);
         CK(cudaMemcpy(h, o, 16, cudaMemcpyDeviceToHost));
         if (r > 0) v.push_back(double(h[0]) / 4096);
       }
@@ -1294,9 +1305,9 @@ static void prim_run() {
       pm.push_back(shpt(w * 512.0, b, span([&](int t) { ldsm_k<1><<<sms, t>>>(iters, zero, cyc, out); }, w * 32)));
       pm.push_back(shpt(w * 2048.0, 4 * b, span([&](int t) { ldsm_k<4><<<sms, t>>>(iters, zero, cyc, out); }, w * 32)));
     }
-    put("ld.shared.4", p4, lat(0), "B/clk/sm", "clk", "B/sm");
-    put("ld.shared.16", p16, lat(0), "B/clk/sm", "clk", "B/sm");
-    put("ldmatrix.x4", pm, lat(1), "B/clk/sm", "clk", "B/sm");
+    put("ld.shared.4", p4, lat(lds_chase_k<0>), "B/clk/sm", "clk", "B/sm");
+    put("ld.shared.16", p16, lat(lds_chase_k<1>), "B/clk/sm", "clk", "B/sm");
+    put("ldmatrix.x4", pm, lat(lds_chase_k<2>), "B/clk/sm", "clk", "B/sm");
     CK(cudaFree(cyc));
     CK(cudaFree(o));
     CK(cudaFree(out));

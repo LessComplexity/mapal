@@ -771,7 +771,7 @@ mod ops;
 mod packed;
 pub(crate) mod resident;
 mod retain;
-mod rowfold;
+pub(crate) mod rowfold;
 mod sme;
 mod tile;
 mod trio;

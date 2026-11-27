@@ -311,8 +311,10 @@ pub fn evaluate_corner(m: &Machine, s: &Site, x: &Schedule, d: &Declared, c: Cor
 /// **The evaluation's floor** (the search's cheap admissible bound, D5):
 /// [`evaluate`] with the device cache missing every operand byte exactly
 /// once — no term falls as misses rise (memory bytes, the miss ratio's
-/// latency and fill), so no schedule's time is below it; it skips the
-/// reuse closed forms (a walk's per-reader windows).
+/// latency: a miss waits at least a hit's, and fill), so no schedule's time
+/// is below it (`place_replay.rs` test `place_floor_is_admissible`, every
+/// replay arm); it skips the reuse closed forms (a walk's per-reader
+/// windows).
 pub fn evaluate_floor(m: &Machine, s: &Site, x: &Schedule, d: &Declared, b: Bound) -> Terms {
     evaluate_at(m, s, x, d, Corner::all(b), true)
 }
@@ -609,9 +611,15 @@ fn evaluate_at(m: &Machine, s: &Site, x: &Schedule, d: &Declared, c: Corner, flo
         worst.max(trips * all / (m.subs().max(1) as f64 * ghz))
     };
     // ---- the cost model's primitives at their corners ----
-    let mark_cost = |t: &mut Terms, what: &str, marked: bool| {
-        if marked && !t.marked.iter().any(|x| x == what) {
-            t.marked.push(what.to_string());
+    // A cost read from a marked fact is marked by its term; one borrowed
+    // from a neighbouring measured row names that row (`term<-row`).
+    let mark_cost = |t: &mut Terms, what: &str, c: &crate::machine::Cost| {
+        let what = match c.borrowed {
+            Some(row) => format!("{what}<-{row}"),
+            None => what.to_string(),
+        };
+        if c.marked && !t.marked.iter().any(|x| *x == what) {
+            t.marked.push(what);
         }
     };
     // The panels' mover from the cache (its unit rate, loaded latency) and
@@ -635,12 +643,21 @@ fn evaluate_at(m: &Machine, s: &Site, x: &Schedule, d: &Declared, c: Corner, flo
                 latency: 0.0,
                 loaded: 0.0,
                 marked: false,
+                borrowed: None,
             };
             (z, z)
         }
     };
-    mark_cost(&mut t, "prim.mover.cache", mv_cache.marked);
-    mark_cost(&mut t, "prim.mover.memory", mv_mem.marked);
+    mark_cost(&mut t, "prim.mover.cache", &mv_cache);
+    mark_cost(&mut t, "prim.mover.memory", &mv_mem);
+    // A miss's path is a hit's and then the memory's: a request that misses
+    // waits at least what a hit waits (the memory's measured knee sits at
+    // its own concurrency, the cache's at its own — on a part whose cache
+    // knee lies further out, the RTX 3090's and the A100's, the memory's
+    // loaded latency reads below the cache's). The latency the phase's
+    // requests wait on so never falls as misses rise: the floor (misses at
+    // their least) stays admissible.
+    let miss_loaded = mv_mem.loaded.max(mv_cache.loaded);
     // The unit's ingress: its reach from the cache (one unit alone); the
     // device cache's feed: the mover's rate over the units, at most the
     // cache's device reach.
@@ -659,11 +676,11 @@ fn evaluate_at(m: &Machine, s: &Site, x: &Schedule, d: &Declared, c: Corner, flo
         c.compute,
     );
     if d.scratch > 0 {
-        mark_cost(&mut t, "prim.scratch", scratch.marked);
+        mark_cost(&mut t, "prim.scratch", &scratch);
     }
     let bar = m.cost(PrimOf::Barrier { lanes: d.threads }, c.dispatch);
     if d.barriers > 0.0 {
-        mark_cost(&mut t, "prim.barrier", bar.marked);
+        mark_cost(&mut t, "prim.barrier", &bar);
     }
     // The epilogue's stores: into the cache where the output fits its keep
     // (written back later), else to the memory.
@@ -684,6 +701,7 @@ fn evaluate_at(m: &Machine, s: &Site, x: &Schedule, d: &Declared, c: Corner, flo
             latency: 0.0,
             loaded: 0.0,
             marked: true,
+            borrowed: None,
         },
     };
     let red = m.cost(
@@ -721,7 +739,7 @@ fn evaluate_at(m: &Machine, s: &Site, x: &Schedule, d: &Declared, c: Corner, flo
      -> Phase {
         let nb = blocks.div_ceil(units); // the busiest unit's slots
         let r = u.min(nb).max(1);
-        let lat = (1.0 - miss) * mv_cache.loaded + miss * mv_mem.loaded;
+        let lat = (1.0 - miss) * mv_cache.loaded + miss * miss_loaded;
         let mut ph = Phase::default();
         // Whole waves of `r` slots a unit, then the tail's.
         let per_wave = units * r;

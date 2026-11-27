@@ -9,9 +9,11 @@
 //! - **Q3** with every ring unbounded (no latency term), no fill and no serial
 //!   term, a trip's steady state is the max over the resources of work ÷ rate,
 //!   and the loop within one trip of `trips` × it (the max form);
-//! - **Q4** the evaluator on the toy machine with measured primitives: never
-//!   slower with any primitive's rate up, never faster with any latency or
-//!   concentration up, never below the admissible bound.
+//! - **Q4** the evaluator on the toy machine with every primitive a term
+//!   reads measured, in both latency regimes and at every bound: never
+//!   slower with any primitive's rate up, never faster with its latency or
+//!   its concurrency up, never below the admissible bound or the search's
+//!   floor.
 
 mod toy;
 
@@ -168,119 +170,29 @@ fn q3_unbounded_rings_reduce_to_the_max_form() {
         .expect("Q3");
 }
 
-/// The toy machine with every cost model primitive a measured row, each
-/// rate scaled by `r[i]` and each latency by `l[i]` (the primitive `i`).
-fn primed(r: &[f64; 8], l: &[f64; 8]) -> Machine {
-    let mut m = toy::machine(&[1.0; 9]);
-    let row = |i: usize, name, of, per_clk, rate: f64, lat: f64, conc: f64| Prim {
-        name,
-        of,
-        per_clk,
-        rate: Fact::measured(rate * r[i], "toy"),
-        latency: Fact::measured(lat * l[i], "toy"),
-        conc: Fact::measured(conc, "toy"),
-    };
-    let (l2, mem) = (toy::L2, 3);
-    m.prims = vec![
-        row(
-            0,
-            "cp.l2",
-            PrimOf::Copy {
-                from: l2,
-                bytes: 16,
-            },
-            false,
-            50.0,
-            150.0,
-            16384.0,
-        ),
-        row(
-            1,
-            "cp.mem",
-            PrimOf::Copy {
-                from: mem,
-                bytes: 16,
-            },
-            false,
-            35.0,
-            350.0,
-            8192.0,
-        ),
-        row(
-            2,
-            "panel",
-            PrimOf::Panel {
-                from: mem,
-                run: 64,
-                rows: 128,
-                fly: 8192,
-            },
-            false,
-            25.0,
-            350.0,
-            8192.0,
-        ),
-        row(
-            3,
-            "lds",
-            PrimOf::Scratch {
-                bytes: 16,
-                matrix: false,
-            },
-            true,
-            128.0,
-            30.0,
-            8192.0,
-        ),
-        row(
-            4,
-            "bar",
-            PrimOf::Barrier { lanes: 256 },
-            true,
-            0.03,
-            30.0,
-            1.0,
-        ),
-        row(
-            5,
-            "st",
-            PrimOf::Store { to: mem, bytes: 16 },
-            false,
-            30.0,
-            300.0,
-            512.0,
-        ),
-        row(
-            6,
-            "red",
-            PrimOf::Reduce {
-                at: l2,
-                sharing: 1,
-                sectors: 4,
-            },
-            false,
-            20.0,
-            150.0,
-            512.0,
-        ),
-        row(7, "op", PrimOf::Op(0), true, 256.0, 4.0, 32.0),
-    ];
-    m
-}
-
+/// **Q4** over every primitive an evaluator term reads (`toy::prim_rows`:
+/// no row that no term reads, so no case is vacuous), in both latency
+/// regimes (the memory's knee latency above the cache's, and below it — the
+/// RTX 3090's and the A100's rows), at every bound: raising one row's rate
+/// never slows the schedule, raising its latency or its concurrency never
+/// speeds it, and neither the admissible bound nor the search's floor
+/// ([`evaluate_floor`], what the branch and bound prunes with) is ever above
+/// the evaluation.
 #[test]
 fn q4_the_evaluator_over_primitives_is_monotone_and_admissible() {
+    let rows = toy::prim_rows(false).len();
     let strat = (
         (0u32..3, 0u32..3, 2u32..4, 2u32..4, 2u32..5, 1u64..4),
         (4u32..9, 4u32..9, 7u32..12),
         0u32..4,
-        0usize..8,
+        0usize..rows,
         1.5f64..4.0,
+        any::<bool>(),
     );
     runner(400)
         .run(
             &strat,
-            |((tmp, tnp, txp, typ, bkp, st), (mp, np, kp), tk, which, x)| {
+            |((tmp, tnp, txp, typ, bkp, st), (mp, np, kp), tk, which, x, below)| {
                 let (tm, tn, tx, ty, bk) = (1 << tmp, 1 << tnp, 1 << txp, 1 << typ, 1 << bkp);
                 let (m, n, k) = (1u64 << mp, 1u64 << np, 1u64 << kp);
                 let s = Site {
@@ -326,33 +238,44 @@ fn q4_the_evaluator_over_primitives_is_monotone_and_admissible() {
                     },
                 };
                 let xs = Schedule { trav, ..x0 };
-                let one = [1.0; 8];
-                let t0 = evaluate(&primed(&one, &one), &s, &xs, &d, Bound::Value);
-                if !t0.feasible() {
-                    return Ok(());
+                let one = vec![1.0; rows];
+                let mut up = one.clone();
+                up[which] = x;
+                let m0 = toy::primed(below, &one, &one, &one);
+                for b in [Bound::Slow, Bound::Value, Bound::Fast] {
+                    let t0 = evaluate(&m0, &s, &xs, &d, b);
+                    if !t0.feasible() {
+                        return Ok(());
+                    }
+                    let name = toy::prim_rows(below)[which].0;
+                    for (what, mx, faster) in [
+                        ("rate", toy::primed(below, &up, &one, &one), true),
+                        ("latency", toy::primed(below, &one, &up, &one), false),
+                        ("concurrency", toy::primed(below, &one, &one, &up), false),
+                    ] {
+                        let t1 = evaluate(&mx, &s, &xs, &d, b);
+                        let ok = match faster {
+                            true => t1.ns <= t0.ns * (1.0 + 1e-9),
+                            false => t1.ns >= t0.ns * (1.0 - 1e-9),
+                        };
+                        prop_assert!(
+                            ok,
+                            "{name} {what} up at {b:?}: {} -> {}\n{}\n{}",
+                            t0.ns,
+                            t1.ns,
+                            t0.line(),
+                            t1.line()
+                        );
+                    }
+                    let lb = lower_bound(&m0, &s, &[0], b);
+                    prop_assert!(lb <= t0.ns, "bound {} above {} at {b:?}", lb, t0.ns);
+                    let floor = evaluate_floor(&m0, &s, &xs, &d, b).ns;
+                    prop_assert!(
+                        floor <= t0.ns * (1.0 + 1e-9),
+                        "the floor {floor} above the value {} at {b:?} (memory below: {below})",
+                        t0.ns
+                    );
                 }
-                let mut r = one;
-                r[which] = x;
-                let t1 = evaluate(&primed(&r, &one), &s, &xs, &d, Bound::Value);
-                prop_assert!(
-                    t1.ns <= t0.ns * (1.0 + 1e-9),
-                    "prim {which} rate up: {} -> {}\n{}\n{}",
-                    t0.ns,
-                    t1.ns,
-                    t0.line(),
-                    t1.line()
-                );
-                let t2 = evaluate(&primed(&one, &r), &s, &xs, &d, Bound::Value);
-                prop_assert!(
-                    t2.ns >= t0.ns * (1.0 - 1e-9),
-                    "prim {which} latency up: {} -> {}\n{}\n{}",
-                    t0.ns,
-                    t2.ns,
-                    t0.line(),
-                    t2.line()
-                );
-                let lb = lower_bound(&primed(&one, &one), &s, &[0], Bound::Value);
-                prop_assert!(lb <= t0.ns, "bound {} above {}", lb, t0.ns);
                 Ok(())
             },
         )

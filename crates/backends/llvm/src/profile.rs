@@ -244,8 +244,11 @@ pub struct PlaceFacts {
     /// The L2's hit fraction against reuse distance ÷ cyclic keep, both per
     /// mille.
     pub hit_curve: &'static [(u64, u64)],
-    /// The L2's loaded latency, ns (0: unmeasured).
+    /// The L2's loaded latency, ns (0: unmeasured), and the run it comes
+    /// from where that is not [`PlaceFacts::cite`]'s (empty: the cite's) —
+    /// a value from another box of the part keeps its own provenance.
     pub lat_l2_ns: u64,
+    pub lat_l2_cite: &'static str,
     /// Measured efficiency points: `(operation, chains a lane, groups a
     /// scheduler × 1000, achieved fraction of the row's rate per mille)`.
     pub eff: &'static [(&'static str, u64, u64, u64)],
@@ -278,6 +281,7 @@ pub const PLACE_NONE: PlaceFacts = PlaceFacts {
     keep_hi: 0,
     hit_curve: &[],
     lat_l2_ns: 0,
+    lat_l2_cite: "",
     eff: &[],
     latency: &[],
     clock_khz: 0,
@@ -5928,14 +5932,19 @@ pub const PLACE_RTX_4090: PlaceFacts = PlaceFacts {
         ("bar_cycles", m("calib.cu bar 57.2 cycles, 5fcb401b")),
         (
             "mma_tf32_per_clk",
-            Src::Derived("datasheet dense TF32 over sms x boost"),
+            Src::Derived(
+                "datasheet dense TF32 over sms x boost: the rules' rate; the machine model reads the measured prim row",
+            ),
         ),
         (
             "mma_half_per_clk",
-            Src::Derived("datasheet dense FP16/f32 over sms x boost"),
+            Src::Derived(
+                "datasheet dense FP16/f32 over sms x boost: the rules' rate; the machine model reads the measured prim row",
+            ),
         ),
     ],
     lat_l2_ns: 240,
+    lat_l2_cite: "plan-cost v2 calib B on an earlier RTX 4090 box (Ryzen 3 3300X host, plan-cost.md), not the cost-rental run's",
     start: Some((
         mapal_place::Start::Lockstep,
         "place_calib.cu start (cost-rental 2026-11-27: RTX 4090, driver 615.71.09, 450 W, sustained 2.550 GHz, EPYC 7702 host)",
@@ -6579,7 +6588,7 @@ pub const PLACE_RTX_4090: PlaceFacts = PlaceFacts {
             [1, 1, 1, 1024000, 1024000, 1024000, 1000, 500, 1000],
         ),
     ],
-    cite: "place_calib.cu (one run, cost-rental 2026-11-27: RTX 4090, driver 615.71.09, 450 W, sustained 2.550 GHz, EPYC 7702 host); plan-cost v2 calib B (L2 loaded latency 240 ns)",
+    cite: "place_calib.cu (one run, cost-rental 2026-11-27: RTX 4090, driver 615.71.09, 450 W, sustained 2.550 GHz, EPYC 7702 host; the L2 loaded latency: `lat_l2_cite`)",
     ..PLACE_NONE
 };
 
@@ -7385,14 +7394,19 @@ pub const PLACE_RTX_5090: PlaceFacts = PlaceFacts {
         ),
         (
             "mma_tf32_per_clk",
-            Src::Derived("datasheet dense TF32 over sms x boost"),
+            Src::Derived(
+                "datasheet dense TF32 over sms x boost: the rules' rate; the machine model reads the measured prim row",
+            ),
         ),
         (
             "mma_half_per_clk",
-            Src::Derived("datasheet dense FP16/f32 over sms x boost"),
+            Src::Derived(
+                "datasheet dense FP16/f32 over sms x boost: the rules' rate; the machine model reads the measured prim row",
+            ),
         ),
     ],
     lat_l2_ns: 290,
+    lat_l2_cite: "plan-cost v2 calib B on an earlier RTX 5090 box (plan-cost.md), not the cost-rental run's",
     start: Some((
         mapal_place::Start::Lockstep,
         "place_calib.cu start (cost-rental 2026-11-27: RTX 5090, driver 580.126.09, 500 W, sustained 2.821 GHz, EPYC 7R32 host)",
@@ -8058,7 +8072,7 @@ pub const PLACE_RTX_5090: PlaceFacts = PlaceFacts {
             [0, 0, 0, 2549760, 2549760, 2549760, 1000, 500, 1000],
         ),
     ],
-    cite: "place_calib.cu (one run, cost-rental 2026-11-27: RTX 5090, driver 580.126.09, 500 W, sustained 2.821 GHz, EPYC 7R32 host); plan-cost v2 calib B (L2 loaded latency 290 ns)",
+    cite: "place_calib.cu (one run, cost-rental 2026-11-27: RTX 5090, driver 580.126.09, 500 W, sustained 2.821 GHz, EPYC 7R32 host; the L2 loaded latency: `lat_l2_cite`)",
     ..PLACE_NONE
 };
 
@@ -8152,6 +8166,7 @@ pub const PLACE_RTX_5080: PlaceFacts = PlaceFacts {
         (1500, 0),
     ],
     lat_l2_ns: 328,
+    lat_l2_cite: "calib.cu B on this box (the local RTX 5080, cost-model.md)",
     eff: &[
         ("ffma", 1, 250, 56),
         ("ffma", 1, 500, 112),
@@ -8679,19 +8694,19 @@ pub const PLACE_RTX_5080: PlaceFacts = PlaceFacts {
         (
             "ld.shared.4",
             [
-                63941, 63895, 63944, 67788, 67788, 67788, 1024000, 512000, 1024000,
+                63918, 63915, 63934, 28030, 28030, 28030, 1024000, 512000, 1024000,
             ],
         ),
         (
             "ld.shared.16",
             [
-                253877, 253699, 253965, 67788, 67788, 67788, 16384000, 8192000, 16384000,
+                253925, 253357, 253995, 41911, 41911, 41911, 16384000, 8192000, 16384000,
             ],
         ),
         (
             "ldmatrix.x4",
             [
-                288277, 287827, 288524, 69038, 69038, 69038, 16384000, 8192000, 16384000,
+                288563, 287833, 288568, 35911, 35911, 35911, 16384000, 8192000, 16384000,
             ],
         ),
         (
@@ -8797,7 +8812,7 @@ pub const PLACE_RTX_5080: PlaceFacts = PlaceFacts {
             [2, 2, 2, 583680, 581120, 587776, 1000, 500, 1000],
         ),
     ],
-    cite: "place_calib.cu (one run, cost-model.md; calib B: L2 loaded latency 328 ns)",
+    cite: "place_calib.cu (one run, cost-model.md; the scratchpad rows ld.shared.4 / .16 and ldmatrix.x4: the pure pointer-chase rerun on the same box, review-fix 2026-11-27, every other row within 6 % of the first run)",
 };
 
 /// ADR-0050 provenance of [`RTX_3090`]'s values (cross-arch box).
@@ -8824,11 +8839,15 @@ pub const PLACE_RTX_3090: PlaceFacts = PlaceFacts {
         ("bar_cycles", m("calib.cu bar 56.7 cycles, 5fcb401b")),
         (
             "mma_tf32_per_clk",
-            Src::Derived("datasheet dense TF32 over sms x boost"),
+            Src::Derived(
+                "datasheet dense TF32 over sms x boost: the rules' rate; the machine model reads the measured prim row",
+            ),
         ),
         (
             "mma_half_per_clk",
-            Src::Derived("datasheet dense FP16/f32 over sms x boost"),
+            Src::Derived(
+                "datasheet dense FP16/f32 over sms x boost: the rules' rate; the machine model reads the measured prim row",
+            ),
         ),
     ],
     start: Some((

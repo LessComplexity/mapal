@@ -63,16 +63,24 @@ Rates are a sweep's best (min / max over three runs the interval), latencies one
 5080's from `cost-model.md` beside them. Checks against the parts' published figures: DRAM 10.7 / 13.6 / 7.46 / 23.2 /
 9.95 B/ns/SM × SMs = 878 GB/s, 1.47, 0.95, 3.07, 1.69 TB/s; the H100's warpgroup bf16 product 4094 flop/clk/SM (989
 TFLOPS at 1.83 GHz, its dense peak); the A100's `mma.sync` bf16 2030 (its 312 TFLOPS); the 3090's L2 keep 6.1 MiB of
-its 6 MiB. A capability is a module the driver's JIT accepts: fp8 `mma.sync` (compute_89 PTX) on the 4090 / H100 /
-5090 / 5080, TMA boxes (compute_90) on the H100 / 5090 / 5080, `wgmma` (compute_90a) on the H100 alone.
+its 6 MiB. A capability was taken as a module the driver's JIT accepts: fp8 `mma.sync` (compute_89 PTX) on the 4090
+/ H100 / 5090 / 5080, TMA boxes (compute_90) on the H100 / 5090 / 5080, `wgmma` (compute_90a) on the H100 alone. That
+is not sound (review, §9): the H100's JIT accepted the fp8 module and ran it emulated. `place_calib.sh` now keeps a
+module only where the box's own SASS of it holds the probed instruction (an MMA reading E4M3, `UTMALDG`, `HGMMA`;
+offline: sm_90 gives `F2FP.F16.E4M3.UNPACK_B` + `HMMA.16816.F32`, sm_89 / sm_120 `QMMA.16832.F32.E4M3.E4M3`).
+
+**The `ld.shared` / `ldmatrix` latencies above are inflated** (review, §9): the probe's chain branched on a run-time
+kind inside the loop, moved its address by an `IMAD` a step, and its `lane × 16` words gave `ld.shared.u32` a 4-way
+bank conflict. The pure pointer chase on the RTX 5080 measures 28.0 / 41.9 / 35.9 clk (`ld.shared.4` / `.16` /
+`ldmatrix.x4`) against 67.8 / 67.8 / 69.0; the five rented parts' rows are open (§9).
 
 **Two probe defects.** (1) The warpgroup sweep launched 2–4 warpgroups into a kernel bounded at 128 threads and the
 driver-API launch aborted the run (`place_calib.cu:1137 driver error 1`, the first H100 run): the kernels are now
 bounded at 512 / 256 lanes (c = 1 / 2 chains; c = 2's accumulators take 128 registers a lane) and a refused point is
 skipped like any footprint the SM cannot hold (`eff_launch_failed`). (2) The H100's fp8 `mma.sync` row measures 17 175
 flop/clk/SM — above the part's dense fp8 peak: sm_90 has no fp8 warp product, ptxas lowers it to an f16 `HMMA` after an
-`F2FP` unpack (sm_89: `QMMA`), and the probe's loop is not that work. The row stays in the run's line and is left out
-of `PLACE_H100` (open: a probe of the realized lowering).
+`F2FP` unpack (sm_89: `QMMA`), and the probe's loop is not that work. It is left out of `PLACE_H100` and (review,
+§9) out of `calib/h100.place`, with the SASS check above in `place_calib.sh`.
 
 ## 3. The facts
 
@@ -96,7 +104,11 @@ gain the run's start timing, L2 keeps and hit curve, efficiency points, dependen
 Residuals (`log(measured / model)` over the µs-measured arms; pairwise `|log((model_b/model_a)/(meas_b/meas_a))|`
 against each site's measured best):
 
-| | absolute: bias / median abs / p80 | pairwise: median / p80 |
+`bias` here is the **mean** of `log(measured / model)`; `cost-model.md` §4 reports the signed **median** under the same
+name (review, §9: the same state reads mean +0.157 against median +0.055 — the RTX 4090's and 5090's relative-unit
+outliers pull the mean).
+
+| | absolute: bias (mean) / median abs / p80 | pairwise: median / p80 |
 | --- | --- | --- |
 | all, before | +0.157 / 0.107 / 0.409 (126) | 0.088 / 0.193 (88) |
 | **all, after** | **+0.157 / 0.105 / 0.409** | **0.074 / 0.174** |
@@ -106,7 +118,8 @@ against each site's measured best):
 | H100 | −0.200 / 0.286 → −0.198 / 0.282 (18) | 0.090 → 0.090 (10) |
 
 The band re-derived (`PLACE_BAND_PM`, test `place_band_is_the_replays_residuals`): all 176 → 160 ‰, compute 143 →
-127, DRAM 217, cache 247 → 253; `MODEL_FLOOR` 28 → 32.
+127, DRAM 217, cache 247 → 253; `MODEL_FLOOR` 28 → 32 (review, §9: the floor is now the picked sites themselves,
+`REPLAY_PICKED`, against the pre-cost-model level 37).
 
 **Every miss and the term it lacks** (`REPLAY_OPEN`, test-checked):
 
@@ -129,9 +142,12 @@ overlap law of two concurrent flows is a primitive to measure (a two-flow probe 
 stream at controlled ratios, and two movers together), not a parameter to tune. Even p = 2 stays below the rules' 59.
 
 **The H100's nine opens are ties**: its warpgroup arms (`wgmma-ws` against `wgmma`, the rasters) price alike — every
-arm compute-bound at the warpgroup rate. The measured TMA (60.5 B/ns/SM from L2) against `cp.async` (49.4) now
-separates the movers, but the arms' movement lies under their compute; the TF32 warpgroup product's rate is unmeasured
-(the probe measures bf16), and the bf16w arms' f32 `a` operand conversion is an issue term the model does not
+arm compute-bound at the warpgroup rate. The measured TMA (60.5 B/ns/SM from L2) against `cp.async` (49.4) did **not**
+separate the movers (review, §9): no measured box matched the lowering's declared box (21 845 / 32 768 B against the
+4096 / 16 384 B rows) and `Machine::cost` had no nearest-row path for a bulk copy, so every warp-specialized arm
+priced its mover from the derived reach facts; it now borrows the largest measured box at most its own (marked,
+naming the row). The TF32 warpgroup product's rate is unmeasured (the probe measures bf16, and its `n = 128` rows were
+read by no machine row until §9), and the bf16w arms' f32 `a` operand conversion is an issue term the model does not
 separate.
 
 ## 5. ABBA (`machine-place` ON against OFF)
@@ -228,10 +244,15 @@ Cells (`tile_bench --splitk`, ON / OFF): mm_16x2048x7168 0.726 (null 1.016, boun
 **What the round-2 A/B says.**
 
 - **Against the rules' launch the model's picks win on the under-filled sites**: the H100's `pj_m16_n2048`
-  0.415 ×, `indep_512` 0.73, `mlp_512` 0.74, `convmc` 0.76, `attn_1024_64` 0.88; the 5090's `indep_512` 0.60,
-  `pj_m16_n2048` 0.62, `mlp_512` 0.75, `attn` 0.76, `smlp` 0.79; the 4090's `indep_512` 0.77, `mlp_512` 0.86; the
-  16 × 2048 × 7168 cell 0.39 × on the H100, 0.70–0.78 × on the 5090 on every face, and 0.25 / 0.45 × on the 4090's
-  sequential and exact faces (every value within its bound).
+  0.415 ×, `mlp_512` 0.74, `convmc` 0.76, `attn_1024_64` 0.88; the 5090's `pj_m16_n2048` 0.62, `mlp_512` 0.75, `attn`
+  0.76, `smlp` 0.79; the 4090's `mlp_512` 0.86; the 16 × 2048 × 7168 cell 0.39 × on the H100 (and its contract and
+  separate faces 0.43 / 0.53: the cells table labels their kernel "same" by its name, which hashes the site, but the
+  box log shows a moved kernel — 64 lanes, 49 920 B of shared memory, 96 / 62 registers against 256 / 9 216 / 32 / 39),
+  0.70–0.78 × on the 5090 on every face, and 0.25 / 0.45 × on the 4090's sequential and exact faces (every value
+  within its bound).
+- **Open, not wins** (review, §9): `indep_512`'s iteration time falls (H100 0.73 against rules, 0.859 against OFF;
+  5090 0.60 / 0.609; 4090 0.77 / 0.884) while its traced kernels do not (ON / OFF kernel 1.044 / 0.955 / 1.137; the
+  5090's null 0.881): the kernels do not explain the iteration time, so no decision reads these ratios.
 - **Against OFF — the rules plus the per-site trial, the shipped default — the trial wins where the model kept the
   rules' tile**: the H100's 2048² programs 7–10 % (`ON / rules` 1.00: the trial picked candidates 3–4), the A100's
   `convmc` 1.44–1.46 × (`ON / rules` 0.99). A placed site's table is its pick alone (ADR-0050 C4): the run-time
@@ -262,9 +283,12 @@ Cells (`tile_bench --splitk`, ON / OFF): mm_16x2048x7168 0.726 (null 1.016, boun
    3090's `decode_1024_256` site it differs from the OFF arm's kernel). A kept pick now returns `r`. (Round 1's
    2048² losses on the H100 and the 3090 were not this: round 2 shows them equal to the rules' launch — §5.)
 
-Test `placed_host_launch_is_the_device_kernel` (four programs × six parts, and the fixed-order cell with its kernel
-emitted first): the launched geometry is the kernel's, and a kept site's kernel is the OFF arm's; it fails on each
-of 2–4 without its fix.
+Test `placed_host_launch_is_the_device_kernel` (four programs × six parts): the launched geometry is the kernel's,
+and a kept site's kernel is the OFF arm's; it fails without fix 2 or fix 4. It did **not** fail without fix 3 (review,
+§9): its fixed-order cell compared the tile only where the host's realization matched the pick's, and fix 2 kept the
+rules' tile on that cell on every part. Fix 3's test is `placed_fixed_order_kernel_is_the_host_launch` (four
+fixed-order sites × six parts, the kernel of the host's realization emitted first, the whole launch compared): it
+fails without `OrderScope` (16 × 18432 × 7168 on the A100).
 
 
 ## 7. The flip rule (ADR-0050) and what blocks it
@@ -273,7 +297,7 @@ of 2–4 without its fix.
 | --- | --- | --- |
 | (a) model ≥ rules on the replay | **no: 32 against 59** | the overlap of concurrent flows (the cut misses on three parts; the hyb-0 DRAM run); the walk's per-unit cost and a small warp tile's rate (5080); the H100's ties (§4) |
 | (b) no moved program slower beyond the null, every part | **no** | the per-site trial's candidates the ON arm forgoes (a placed site's table is its pick: C6's run-time confirmation is not built) — H100 2048² 7–10 %, A100 `convmc` 1.45 × (both equal to the rules' launch); the TF32 MLP sites (A100 1.22–1.35 ×, H100 1.07–1.13, 5090 1.30–1.31: an FMA walk or a split warp tile priced under the rules' tensor tile); the one-warp FMA tile (`decode_1024_256` 1.85 × on the 4090); the FMA register tile at 128 accumulators a thread (round 1, 3090 4096³: `ptxas` 255 registers + 208 bytes of spill, 3.2–3.4 ×; the declared registers do not cover `ptxas`; `--place-gate=ptxas` refuses it) |
-| (c) value gates pass | **round 1 no; round 2 yes** | §6.2 (A100) and §6.3 (H100), fixed: every round-2 gate passes on every part |
+| (c) value gates pass | **round 1 no; round 2 yes on the four parts it ran** | §6.2 (A100) and §6.3 (H100), fixed: every round-2 gate passes on the A100, RTX 4090, H100 and RTX 5090; the RTX 3090 had no round 2 (§5), and the RTX 5080's local ABBA (`cost-model.md`) predates the four fixes |
 
 ## 8. Spend
 
@@ -287,6 +311,53 @@ of 2–4 without its fix.
 | **round** | | **≈ 5.7** |
 
 Every instance of ours destroyed (`vastai show instances`: none labeled `mapal-cost-*` left).
+
+## 9. Review fixes (2026-11-27, no rental)
+
+Every finding of the round's review confirmed; each fix has a test that fails without it (checked by reverting).
+
+| finding | fix | test |
+| --- | --- | --- |
+| The search's floor above the value on the RTX 3090 / A100 (their memory knee latency, 383 / 1198 ns for `cp.async.16`, below the cache's 624 / 1679): the miss mix fell with misses, the branch and bound could prune a cheaper schedule | A miss's path is a hit's and then the memory's: it waits at least a hit's loaded latency (`eval.rs`, `miss_loaded`). The latency never falls as misses rise; the floor (misses at their least) is admissible on every part | `place_floor_is_admissible` (every replay arm, three bounds; without the fix: `c11-5` on the A100), Q4's floor check and `bnb_is_the_exhaustive_best` on 3090-like rows |
+| Fix 3 (`OrderScope`) had no test that catches its absence | — | `placed_fixed_order_kernel_is_the_host_launch` (§6) |
+| The H100's `wg.m64n128k16.bf16` rows (rate, efficiency, latency) read by no machine row | A row measures an operation family (`n` the schedule's) at a member `n` it admits, every other part of the geometry equal (`place::measures`), its cite naming the member; the `.rs` form (a from registers) stays unmeasured | `every_measured_row_is_read` (every prim / eff / latency row of every part maps) |
+| The measured TMA rows never read | `Machine::near`: a bulk copy borrows the largest measured box at most its own; the warp-specialized arms now read `tma.box16384` / `tma.box4096` (terms `prim.mover.cache<-tma.box16384.l2`) | `a_borrowed_row_is_marked_names_its_row_and_errs_slow` |
+| A borrowed row presented as measured, some on the optimistic side | Every borrowed row is marked and names its row; the side that bounds the request where one is measured (narrower copy, smaller box, shorter run, fewer bytes in flight, more lanes, more sectors), else the nearest scaled by its mechanism's bound (bytes, Little's law, sector throughput, lanes arriving) | the same |
+| `ld.shared` / `ldmatrix` latency ~2× (the probe's branch, `IMAD` and bank conflict) | `lds_chase_k<KIND>`: a pure pointer chase (each lane's next address the word it loads). RTX 5080 re-measured: 28.0 / 41.9 / 35.9 clk (`ld.shared.4` / `.16` / `ldmatrix.x4`) against 67.8 / 67.8 / 69.0; every other row of the rerun within 6 % of the first | `place_calib_chase_is_pure` (the SASS for sm_80 / 86 / 89 / 90 / 120: each load's address the previous load's destination, nothing between writing it, the wide loads wide, unrolled) |
+| Q4 weaker than stated | Q4 over the rows a term reads only (no Panel, no op row), rate / latency / concurrency each raised, at every bound, in both latency regimes, against `lower_bound` and `evaluate_floor` | Q4 (fails without the floor fix) |
+| JIT acceptance taken as a capability | `place_calib.sh` keeps a module only where the box's SASS holds the probed instruction; the fp8 rows left `calib/h100.place` | offline check: sm_90 fp8 `F2FP` + `HMMA` → skipped; sm_89 / 120 `QMMA` kept; TMA / wgmma by `UTMALDG` / `HGMMA` |
+| The report's overstatements | §2, §4, §5, §6, §7 corrected in place (value-gate coverage, the `indep_512` ratios open, the H100 cells' "same" label, both `bias` definitions, the TMA claim, fix 3's test) | — |
+| `MODEL_FLOOR` lowered to fit (37 → 28 → 32) | `REPLAY_PICKED`: the picked sites themselves, asserted like the misses (no pick traded silently under a total), the pre-cost-model 37 reported beside | `place_replay_scores` |
+| `PLACE_RTX_4090` mixing two boxes, stale rate provenance | `lat_l2_cite`: the L2 latency cites its own box (an earlier 4090, 5090; the 5080's own); the datasheet rate labels say the machine model reads the prim row | `every_measured_row_is_read` (the 4090's L2 latency cites its box; every op with a prim row is measured) |
+
+**The replay after the fixes** (`place_replay_scores`): model **32 / 7 / 34 / 3** (picked / missed / open / null)
+against the rules' 59 / 14 / 3 — the A100's cut-8 / cut-9 left the misses: with a miss waiting at least a hit's
+latency the model's value picks the measured winner (cut 8) on both, open where the corners flip it. Picks unchanged
+(`REPLAY_PICKED`). Band (`PLACE_BAND_PM`): all 161, compute 126, DRAM 217, cache 253 → 202. Residuals over the 126
+µs arms: mean +0.155, signed median +0.051, median |log| 0.110, p80 0.404 (before: +0.157 / +0.055 / 0.105 / 0.409);
+pairwise median 0.073, p80 0.176 over 88 pairs. `machine-place` stays OFF (§7).
+
+**Open (each needs a rented part; no rental in this step):**
+
+- The five rented parts' scratchpad rows are the old probe's: run `benches/local/place_calib.sh <out> prim` on an
+  RTX 3090, A100, RTX 4090, H100 and RTX 5090 and replace `ld.shared.4`, `ld.shared.16`, `ldmatrix.x4` in each
+  `PLACE_*` and `calib/<part>.place` (the 5080's rerun changed no other row beyond 6 %).
+- The H100's caps still declare the fp8 warp product (`CAPS_WARPGROUP_MMA` ⊃ `MATRIX_WARP_F8[3..4]`, predating this
+  round), which `Caps::matrix_op` lists before the native warpgroup fp8 form: dropping it changes the H100's fp8
+  emission, so it needs `gpu_changed.sh --arch h100` on the fp8 programs (value gates, then ABBA) with sm_90's caps
+  without the warp fp8 product. The generic direction: the matrix caps from the same SASS check as `place_calib.sh`,
+  not the PTX ISA table.
+
+**The workspace** (release, once, `TMPDIR` on disk — the shared `/tmp` tmpfs ran out mid-run and the linker died of
+`SIGBUS`, failing 70 nvcc / clang-based tests on a first attempt): **1859 passed, 1 failed, 11 ignored**. The failure,
+`machine_place` R3 (`#2 4096 x 8192 x 8192 tf32 | f32`: no `; mapal.place` line on five parts), is §6's fix 2 and
+fails identically at the reviewed HEAD (an export of `34e01cf6` built apart): the filter kept the rules' tile wherever
+the rules' launch *could* store column-major, so a site that stores row-major (its rules an FMA tile, the pick a TF32
+tensor tile) lost its pick and no kernel carried a line. Fixed: the layout is the site's — `place::ColScope` (the row
+folds' `colmajor` sites, set beside `WarmScope` at emission) drops a pick for a site that stores column-major alone;
+outside an emission the conservative reading stays. R3 passes (96 emissions placed, 32 changed, none of the search's
+kernels spilling); after it the backend lib (154 / 0) and `machine_place` (R3, C5 values and picks through the
+emulator: 3 / 0) pass again.
 
 ## Proposed CLAUDE.md facts-table rows (not applied — CLAUDE.md changes need the user)
 
