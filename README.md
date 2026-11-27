@@ -67,8 +67,6 @@ A whole language model, Llama-3.2-1B, is one readable file:
 - **Correct within a stated error.** Results are guaranteed within a precision you can see, not bit for bit, which
   leaves the compiler free to choose the fastest correct way.
 - **Readable code is the target.** If the natural version of a program runs slower, the compiler gets fixed.
-- **Made for AI agents too.** One way to write each thing, exact error messages, a formatter, and a reference
-  interpreter to check every result against.
 
 ## Results
 

@@ -41,5 +41,3 @@ The [README](../README.md#the-ideas) says this in plain words; here it is with t
   development mode for testing and debugging. Reduced precision is opt-in, per product.
 - **Readable, idiomatic source.** Programs read like the math they compute. If natural code compiles worse than a
   hand-shaped version, the compiler is fixed, not the program.
-- **A language AI agents can write and verify.** Deterministic semantics, precise diagnostics with stable codes, one
-  formatter (`mapal fmt`), and the interpreter as an exact reference that any compiled run is checked against.
