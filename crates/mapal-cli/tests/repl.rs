@@ -209,3 +209,12 @@ fn commands_help_type_and_quit() {
     assert!(!out.contains("\n2\n"), "{out}");
     assert!(err.contains(":type is not available"), "{err}");
 }
+
+#[test]
+fn exit_and_quit_leave() {
+    for word in ["exit", "quit", "exit()", "quit()", "  exit  "] {
+        let (out, err) = session(&format!("1 + 1\n{word}\n2 + 2\n"));
+        assert_eq!(out, "2\n", "{word}: {out}");
+        assert_eq!(err, "", "{word}: {err}");
+    }
+}

@@ -27,7 +27,7 @@ Input
   expr                                       evaluate and show the value (kept nowhere)
 Commands
   :help              this text
-  :quit, :q          leave (Ctrl-D too)
+  :quit, :q, exit    leave (Ctrl-D too)
   :reset             forget every definition and binding
   :list              the session as one formatted source file
   :load <file>       add the file's fn / type items (its `main` is ignored, not run)
@@ -274,7 +274,7 @@ fn interactive(repl: &mut Repl) {
         let _ = rl.load_history(h);
     }
     println!(
-        "Mapal {} — the interpreter. :help for commands, Ctrl-D to quit.",
+        "Mapal {} — the interpreter. :help for commands, exit or Ctrl-D to quit.",
         env!("CARGO_PKG_VERSION")
     );
     let mut pending = String::new();
@@ -331,6 +331,10 @@ fn history_file() -> Option<PathBuf> {
 fn feed(repl: &mut Repl, pending: &mut String, line: &str) -> bool {
     if pending.is_empty() && line.trim_start().starts_with(':') {
         return repl.command(line.trim());
+    }
+    // `exit` / `quit` leave too, the words a newcomer types first.
+    if pending.is_empty() && matches!(line.trim(), "exit" | "quit" | "exit()" | "quit()") {
+        return false;
     }
     if !pending.is_empty() {
         pending.push('\n');
