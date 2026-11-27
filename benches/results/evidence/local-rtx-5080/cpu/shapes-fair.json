@@ -1,0 +1,70 @@
+{
+ "machine": "AMD Ryzen Threadripper 9970X, 32 cores / 64 threads",
+ "date": "2026-11-27",
+ "clang": "23.1.5",
+ "numpy": "2.5.5",
+ "cycles": 25,
+ "stat": "ms; par and mt legs: median of 25; 1t legs: best of 25",
+ "workloads": [
+  {
+   "name": "FIR filter, 1M",
+   "mapal_conf_par": 0.1877,
+   "mapal_fma_par": 0.1724,
+   "mapal_conf_1t": 1.0045,
+   "mapal_fma_1t": 1.0006,
+   "cpp_1t": 20.8443,
+   "cpp_mt": 1.71,
+   "numpy_1t": 22.8975
+  },
+  {
+   "name": "conv2d 3x3, 1024²",
+   "mapal_conf_par": 0.1066,
+   "mapal_fma_par": 0.1044,
+   "mapal_conf_1t": 0.1202,
+   "mapal_fma_1t": 0.099,
+   "cpp_1t": 0.1587,
+   "cpp_mt": 0.9747,
+   "numpy_1t": 1.9387
+  },
+  {
+   "name": "saxpy, 1M",
+   "mapal_conf_par": 0.0838,
+   "mapal_fma_par": 0.075,
+   "mapal_conf_1t": 0.1187,
+   "mapal_fma_1t": 0.1097,
+   "cpp_1t": 0.1125,
+   "cpp_mt": 0.9154,
+   "numpy_1t": 0.239
+  },
+  {
+   "name": "sum reduction, 1M",
+   "mapal_conf_par": 0.0439,
+   "mapal_fma_par": 0.0438,
+   "mapal_conf_1t": 0.034,
+   "mapal_fma_1t": 0.0337,
+   "cpp_1t": 0.4716,
+   "cpp_mt": 9.0436,
+   "numpy_1t": 0.1573
+  },
+  {
+   "name": "transpose, 1024²",
+   "mapal_conf_par": 0.3159,
+   "mapal_fma_par": 0.2623,
+   "mapal_conf_1t": 1.1806,
+   "mapal_fma_1t": 1.1575,
+   "cpp_1t": 2.8223,
+   "cpp_mt": 1.3495,
+   "numpy_1t": 3.8453
+  },
+  {
+   "name": "gather x[idx[i]], 1M",
+   "mapal_conf_par": 0.2725,
+   "mapal_fma_par": 0.2208,
+   "mapal_conf_1t": 0.5335,
+   "mapal_fma_1t": 0.5351,
+   "cpp_1t": 0.5177,
+   "cpp_mt": 0.9265,
+   "numpy_1t": 0.8352
+  }
+ ]
+}

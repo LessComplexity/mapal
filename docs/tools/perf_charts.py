@@ -1,7 +1,7 @@
 """Charts and lines of the exposition's Performance section, drawn from the repository's own data.
 
-Inputs (read only): benches/results/evidence/matrix.json, benches/results/evidence/full-model.json and the tables of
-docs/performance/earlier-readme-results.md. Drawing primitives and the colour scale come from
+Inputs (read only): benches/results/evidence/matrix.json, benches/results/evidence/full-model.json and the CPU table
+benches/results/evidence/local-rtx-5080/cpu/shapes-fair.json. Drawing primitives and the colour scale come from
 benches/results/charts/make_charts.py, so these charts look like the repository's own. Standard library only.
 
 Each function returns the page text of one `<!-- exposition:gen ... -->` region (kind=perf, name=...): the SVG in a dark
@@ -23,7 +23,7 @@ _spec.loader.exec_module(mc)
 
 MATRIX = ROOT / "benches/results/evidence/matrix.json"
 FULL_MODEL = ROOT / "benches/results/evidence/full-model.json"
-CPU_MD = ROOT / "docs/performance/earlier-readme-results.md"
+CPU_JSON = ROOT / "benches/results/evidence/local-rtx-5080/cpu/shapes-fair.json"
 
 FAMILIES = [
     ("attn", "Attention and softmax"),
@@ -206,50 +206,63 @@ def _num(s: str) -> float:
 
 
 def cpu(a: dict) -> str:
-    text = CPU_MD.read_text(encoding="utf-8")
-    mm = _md_table(text, "### Matrix multiply, f32 - M4 Pro, threaded")
-    oth = _md_table(text, "### Other shapes - M4 Pro, threaded")
-    items = [("Matrix multiply f32, N = %s" % r[0], _num(r[1]), _num(r[2]), "ms", "mm") for r in mm]
-    items += [(r[0].replace("`", ""), _num(r[2]), _num(r[4]), "ms", "oth") for r in oth]
+    """Two fair pairs on one machine: one thread against one thread, whole machine against whole machine."""
+    d = json.loads(CPU_JSON.read_text(encoding="utf-8"))
+    rows = []
+    for w in d["workloads"]:
+        m1 = min(w["mapal_conf_1t"], w["mapal_fma_1t"])
+        mp = min(w["mapal_conf_par"], w["mapal_fma_par"])
+        cw = min(w["cpp_1t"], w["cpp_mt"])
+        rows.append((w["name"], m1, w["cpp_1t"], w["numpy_1t"], mp, cw))
 
     def draw(t):
-        W, pad, label_w, right_w, row_h = 920, 28, 240, 220, 30
+        W, pad, label_w, right_w, row_h = 920, 28, 190, 280, 22
         ax0, ax1 = pad + label_w, W - pad - right_w
-        lo, hi = math.log(0.03), math.log(8.0)
+        lo, hi = math.log(0.04), math.log(2.0)
 
         def X(r):
-            return ax0 + (math.log(r) - lo) / (hi - lo) * (ax1 - ax0)
+            return ax0 + (math.log(max(0.04, min(2.0, r))) - lo) / (hi - lo) * (ax1 - ax0)
 
-        title = "CPU: Mapal against NumPy"
-        svg = mc.Svg(W, t, title, "Mapal time divided by NumPy's time on an Apple M4 Pro, per workload.")
+        title = "CPU: Mapal against C++ and NumPy"
+        svg = mc.Svg(W, t, title, "Mapal time divided by C++'s and NumPy's time on one AMD Threadripper 9970X, per workload: "
+                     "one thread against one thread, and the whole machine against the whole machine.")
         y = 38
         svg.text(pad, y, title, 17, t["ink"], 600)
         y += 22
-        svg.text(pad, y, "Mapal's time ÷ NumPy's, log scale; left of 1: Mapal faster. Apple M4 Pro, an earlier measurement.", 12.5, t["ink2"])
-        y += 24
-        top = y
-        group = None
-        for name, mp, npy, unit, g in items:
-            if g != group:
-                group = g
-                y += 16
-                svg.text(pad, y, "against NumPy" if g == "mm" else "against single-thread NumPy", 11.5, t["muted"], 600)
-                y += 8
-            r = mp / npy
-            cy = y + row_h / 2
-            svg.text(pad, cy + 4.5, name, 13, t["ink"])
-            col = t["faster"] if r < 0.95 else t["slower"] if r > 1.05 else t["even"]
-            svg.bar(X(1.0), X(r), cy - 8, 16, col, 4)
-            svg.text(ax1 + 16, cy + 4.5, f"{mp:g} vs {npy:g} {unit}  ·  " + (f"{1 / r:.3g}× faster" if r < 1 else f"{r:.3g}× slower"),
-                     12, t["ink"], 500, num=True)
-            y += row_h
-        for r in (0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 4.0):
-            x = X(r)
-            svg.line(x, top, x, y, t["base"] if r == 1.0 else t["grid"], 1.5 if r == 1.0 else 1)
-            svg.text(x, y + 16, f"{r:g}", 11, t["muted"], anchor="middle", num=True)
-        y += 38
-        svg.text(pad, y, "Source: docs/performance/earlier-readme-results.md (the README's CPU tables until 2026-11-25, 92420a89); "
-                 "Mapal threaded, 'FMA on' column.", 11, t["muted"])
+        svg.text(pad, y, f"Mapal's time ÷ the other's, log scale; left of 1: Mapal faster. {d['machine']}, {d['date']}.", 12.5, t["ink2"])
+        y += 10
+
+        def panel(y, head, cols):
+            y += 22
+            svg.text(pad, y, head, 13, t["ink"], 600)
+            y += 12
+            top = y
+            for name, m, others in cols:
+                svg.text(pad, y + len(others) * row_h / 2 + 4, name, 13, t["ink"])
+                for k, (who, other) in enumerate(others):
+                    r = m / other
+                    cy = y + k * row_h + row_h / 2
+                    col = t["faster"] if r < 0.95 else t["slower"] if r > 1.05 else t["even"]
+                    svg.bar(X(1.0), X(r), cy - 7, 14, col, 3)
+                    msg = f"{1 / r:.3g}× faster" if r < 0.95 else f"{r:.3g}× slower" if r > 1.05 else "level"
+                    svg.text(ax1 + 16, cy + 4, f"vs {who}: {msg}", 12, t["ink"], 500, num=True)
+                    svg.text(ax1 + 172, cy + 4, f"{m:#.3g} vs {other:#.3g} ms", 11, t["muted"], num=True)
+                y += len(others) * row_h + 8
+            for r in (0.05, 0.1, 0.25, 0.5, 1.0):
+                x = X(r)
+                svg.line(x, top - 4, x, y - 4, t["base"] if r == 1.0 else t["grid"], 1.5 if r == 1.0 else 1)
+                svg.text(x, y + 10, f"{r:g}", 11, t["muted"], anchor="middle", num=True)
+            return y + 16
+
+        y = panel(y, "One thread against one thread", [(n, m1, [("C++", c1), ("NumPy", npy)]) for n, m1, c1, npy, _, _ in rows])
+        y = panel(y + 6, "Whole machine against whole machine (64 threads)",
+                  [(n, mp, [("C++", cw)]) for n, _, _, _, mp, cw in rows])
+        y += 14
+        svg.text(pad, y, "C++ whole machine: the faster of its one-thread and its threaded build (the threaded one starts its threads on every call, "
+                 "which costs more than it saves at 1M elements).", 11, t["muted"])
+        y += 16
+        svg.text(pad, y, "Times: best of 25 for one thread, median of 25 for the whole machine. NumPy runs these on one thread. "
+                 "Data: benches/results/evidence/local-rtx-5080/cpu/shapes-fair.json.", 11, t["muted"])
         return svg.render(y + 18)
 
     return _both("perf-cpu", draw)
