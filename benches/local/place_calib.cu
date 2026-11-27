@@ -3,7 +3,11 @@
 //   start   the start timing of a grid's blocks past its first wave: a uniform-work kernel at 1 / 2 blocks an SM over
 //           4 waves, each block's %globaltimer start / end and %smid; per wave past the first, the spread of its starts
 //           over a block's run (lockstep: the wave's slots start together; stagger: they start as the ones before end,
-//           spread over a run). `start lockstep|stagger spread_pm=` (median over waves and reps).
+//           spread over a run). `start lockstep|stagger spread_pm=` (median over waves and reps). Three loads: `l2`
+//           (L2-resident, compute-bound: no variance to stagger), `dram` (every block streams its own 1/blocks of a
+//           buffer 16x the L2: DRAM-contended), `gemm` (an ordered grid's operand reads: block (r, c) of a 16-wide grid
+//           streams row panel r and column panel c over 1024 k steps of 8 KiB each (8 MiB a panel, ~4.5x the L2 in
+//           all at 4 waves): the reuse and the DRAM contention a GEMM's waves see).
 //   keep    the L2's hit fraction against reuse distance for three patterns, each a working set `ws` re-read back to
 //           back (one kernel a pass): `cyclic` (one stream through the set), `rotated` (every block its own stream,
 //           block b starting at b/blocks of the set: a walk's readers — a slice re-read by another SM after the rest of
@@ -18,6 +22,9 @@
 //           RTX 5080), and `lat op= clk=` (one chain, one warp: the dependent issue latency).
 //   clock   the sustained SM clock under continuous FFMA load: 4 s back to back, clock64 over %globaltimer per 100 ms
 //           window; `clock sustained_khz= settle_ms=`.
+//   peak    the FFMA peak by wall time (cudaEvent) at 8 chains, 16 warps a scheduler on every SM, 2 s, with the
+//           clock64 / %globaltimer clock of the same launches: `peak tflops= khz= eff_pm=` (the flops a clock an SM over
+//           the row rate) — the check that the sustained clock times the efficiency is the throughput.
 // build: nvcc -O3 -arch=sm_120 -std=c++17 place_calib.cu -o place_calib; run: ./place_calib [start|keep|eff|clock]
 #include <algorithm>
 #include <cstdio>
@@ -49,15 +56,29 @@ __device__ __forceinline__ unsigned smid() {
 }
 
 // ---- start timing -------------------------------------------------------------------------------------------------
-// Uniform work: `iters` trips of 8 FFMA chains plus one L2-resident 16-byte load a thread.
-__global__ void start_k(unsigned long long *t, unsigned *sm, const float4 *buf, size_t n, int iters, float *sink) {
+// Uniform work: `iters` trips of 8 FFMA chains plus one 16-byte load a thread. `mode` 0: L2-resident reads
+// scattered over `n`; 1: the block's own contiguous 1/gridDim of `n` (DRAM); 2: a GEMM's panels — block b of a
+// 16-wide grid reads row panel b/16 and column panel b%16 (`n` holds both families), a k step a trip.
+__global__ void start_k(unsigned long long *t, unsigned *sm, const float4 *buf, size_t n, int iters, float *sink,
+                        int mode) {
   unsigned long long t0 = gtime();
   float a[8];
   for (int i = 0; i < 8; i++) a[i] = threadIdx.x * 1e-3f + i;
-  size_t at = (blockIdx.x * blockDim.x + threadIdx.x) % n;
+  size_t own = n / gridDim.x;
+  size_t at = mode == 1 ? blockIdx.x * own + threadIdx.x : (blockIdx.x * blockDim.x + threadIdx.x) % n;
+  // mode 2: a k step is 8 KiB of a row panel and 8 KiB of a column panel (512 float4 each).
+  size_t half = n / 2, step = 512, row = blockIdx.x / 16, col = blockIdx.x % 16;
   for (int it = 0; it < iters; it++) {
-    float4 v = __ldcg(buf + at);
-    at = (at + 4099) % n;
+    float4 v;
+    if (mode == 2) {
+      size_t k = it % 1024;
+      float4 x = __ldcg(buf + ((row * 1024 + k) * step + threadIdx.x % step) % half);
+      float4 y = __ldcg(buf + half + ((col * 1024 + k) * step + threadIdx.x % step) % half);
+      v = make_float4(x.x + y.x, x.y + y.y, 0, 0);
+    } else {
+      v = __ldcg(buf + at);
+    }
+    at = mode == 1 ? blockIdx.x * own + (at - blockIdx.x * own + blockDim.x) % own : (at + 4099) % n;
 #pragma unroll
     for (int i = 0; i < 8; i++) a[i] = fmaf(a[i], v.x, v.y);
   }
@@ -73,13 +94,16 @@ __global__ void start_k(unsigned long long *t, unsigned *sm, const float4 *buf, 
 }
 
 static void start_run() {
-  size_t n = 1 << 20;  // 16 MiB: L2-resident
+  size_t big = (size_t)l2 * 16 / 16;  // float4s: 16x the L2
   float4 *buf;
   float *sink;
-  CK(cudaMalloc(&buf, n * 16));
-  CK(cudaMemset(buf, 0, n * 16));
+  CK(cudaMalloc(&buf, big * 16));
+  CK(cudaMemset(buf, 0, big * 16));
   CK(cudaMalloc(&sink, 4));
+  const char *names[] = {"l2", "dram", "gemm"};
+  for (int mode = 0; mode < 3; mode++)
   for (int per : {1, 2}) {
+    size_t n = mode == 0 ? (size_t)1 << 20 : big;  // l2: 16 MiB, L2-resident
     int threads = 256, waves = 4, blocks = sms * per * waves;
     unsigned long long *t;
     unsigned *sm;
@@ -88,7 +112,7 @@ static void start_run() {
     std::vector<unsigned long long> h(2 * blocks);
     std::vector<double> spreads;
     for (int rep = 0; rep < 7; rep++) {
-      start_k<<<blocks, threads>>>(t, sm, buf, n, 4000, sink);
+      start_k<<<blocks, threads>>>(t, sm, buf, n, mode == 0 ? 4000 : 1024, sink, mode);
       CK(cudaDeviceSynchronize());
       CK(cudaMemcpy(h.data(), t, blocks * 16, cudaMemcpyDeviceToHost));
       if (rep == 0) continue;  // warm-up
@@ -107,14 +131,14 @@ static void start_run() {
         spreads.push_back(double(se[hi].first - se[lo].first) / run);
       }
       if (rep == 1)
-        printf("start per_sm=%d blocks=%d run_ns=%.0f first_wave_spread_pm=%.0f\n", per, blocks, run,
-               1000.0 * double(se[w - 1 - w / 20].first - se[w / 20].first) / run);
+        printf("start load=%s per_sm=%d blocks=%d run_ns=%.0f first_wave_spread_pm=%.0f\n", names[mode], per,
+               blocks, run, 1000.0 * double(se[w - 1 - w / 20].first - se[w / 20].first) / run);
     }
     std::sort(spreads.begin(), spreads.end());
     double med = spreads[spreads.size() / 2];
     // Lockstep where a wave's slots start within a quarter of a run of each other.
-    printf("start per_sm=%d spread_pm=%.0f min_pm=%.0f max_pm=%.0f verdict=%s\n", per, 1000 * med,
-           1000 * spreads.front(), 1000 * spreads.back(), med < 0.25 ? "lockstep" : "stagger");
+    printf("start load=%s per_sm=%d spread_pm=%.0f min_pm=%.0f max_pm=%.0f verdict=%s\n", names[mode], per,
+           1000 * med, 1000 * spreads.front(), 1000 * spreads.back(), med < 0.25 ? "lockstep" : "stagger");
     CK(cudaFree(t));
     CK(cudaFree(sm));
   }
@@ -207,7 +231,15 @@ static void keep_run() {
              (size_t)(r[ri] * l2) / 4096 * 4096, gbs[ri], 1000 * hit);
       if (gbs[ri] >= mid) keep = std::max(keep, (size_t)(r[ri] * l2) / 4096 * 4096);
     }
-    printf("keep pattern=%s keep_bytes=%zu plateau_gbs=%.0f dram_gbs=%.0f\n", pats[pi], keep, plateau, dram);
+    // The sweep's resolution: the keep lies between its point and the next one the pattern measured.
+    size_t next = keep;
+    for (int ri = 0; ri < nr; ri++)
+      if (gbs[ri] != 0 && (size_t)(r[ri] * l2) / 4096 * 4096 > keep) {
+        next = (size_t)(r[ri] * l2) / 4096 * 4096;
+        break;
+      }
+    printf("keep pattern=%s keep_bytes=%zu keep_hi_bytes=%zu plateau_gbs=%.0f dram_gbs=%.0f\n", pats[pi], keep,
+           next, plateau, dram);
   }
   CK(cudaFree(buf));
 }
@@ -395,6 +427,42 @@ static void clock_run() {
   printf("clock sustained_khz=%.0f settle_windows=%zu windows=%zu first_khz=%.0f\n", sus, settle, n, khz[0]);
 }
 
+// ---- peak: the FFMA throughput by wall time, and the clock of the same launches --------------------------------------
+static void peak_run() {
+  float *out;
+  unsigned long long *span;
+  CK(cudaMalloc(&out, 4));
+  CK(cudaMalloc(&span, 16));
+  cudaEvent_t a, b;
+  cudaEventCreate(&a);
+  cudaEventCreate(&b);
+  // Warm the clock to its sustained state first (1 s), then 2 s timed.
+  double elapsed = 0, flops = 0, ms_all = 0;
+  std::vector<double> khz;
+  int blocks = sms * 8, threads = 256, iters = 200000;
+  while (elapsed < 3000) {
+    cudaEventRecord(a);
+    clock_k<<<blocks, threads>>>(out, iters, span);
+    cudaEventRecord(b);
+    CK(cudaEventSynchronize(b));
+    float ms;
+    cudaEventElapsedTime(&ms, a, b);
+    elapsed += ms;
+    if (elapsed < 1000) continue;
+    unsigned long long h[2];
+    CK(cudaMemcpy(h, span, 16, cudaMemcpyDeviceToHost));
+    khz.push_back(1e6 * double(h[0]) / double(h[1]));
+    flops += double(blocks) * threads * iters * 8 * 2;
+    ms_all += ms;
+  }
+  std::sort(khz.begin(), khz.end());
+  double k = khz[khz.size() / 2];
+  double tflops = flops / (ms_all * 1e9);
+  // flops a clock an SM by wall time, over the FFMA row's 256.
+  double eff = tflops * 1e12 / (double(sms) * k * 1e3) / 256.0;
+  printf("peak tflops=%.2f khz=%.0f eff_pm=%.0f windows=%zu\n", tflops, k, 1000 * eff, khz.size());
+}
+
 int main(int argc, char **argv) {
   CK(cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, 0));
   CK(cudaDeviceGetAttribute(&l2, cudaDevAttrL2CacheSize, 0));
@@ -412,5 +480,6 @@ int main(int argc, char **argv) {
   if (want("start")) start_run();
   if (want("keep")) keep_run();
   if (want("eff")) eff_run();
+  if (want("peak")) peak_run();
   return 0;
 }

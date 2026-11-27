@@ -3,9 +3,10 @@
 //! - **P1** lockstep ordered and split: the closed form equals the exact LRU
 //!   simulation byte for byte, every family (operands, outputs, the zero
 //!   pass), every raster, partition count, slot count and keep.
-//! - **P2** the walk and the hybrid: the closed form within one slice a row
-//!   (column) and panel sample, or 5 %, of the simulation; the staggered
-//!   start's window union reported against it.
+//! - **P2** the walk, the hybrid (every raster height) and the staggered
+//!   start: operands within one slice a row (column), or 5 %, of the
+//!   simulation; the walk's and hybrid's outputs within one tile a row or
+//!   column, or 5 %.
 //! - **P3** every closed form reads each slice at least once and at most once
 //!   a reader, and never more with a larger keep.
 //! - **P4** the evaluator: the time never rises with any rate, never falls
@@ -100,31 +101,120 @@ fn p1_lockstep_closed_form_is_the_lru() {
     }
 }
 
-/// The walk's and hybrid's closed forms against the simulation.
+/// The walk's, the hybrid's and the staggered start's closed forms against
+/// the simulation: operands within one slice a row (`gy·sa`) and a column
+/// (`gx·sb`), or 5 %; the walk's and hybrid's outputs (partial adds that
+/// find their tile, the zero pass's) within one tile a row or column, or
+/// 5 % — at every raster height, with and without the zero pass.
 #[test]
-fn p2_walk_and_hybrid_within_a_slice_or_five_percent() {
+fn p2_walk_hybrid_stagger_within_a_slice_or_five_percent() {
     let strat = (
-        2u64..=16,
-        1u64..=12,
-        2u64..=32,
-        3u64..=40,
-        any::<bool>(),
+        (2u64..=16, 1u64..=12, 2u64..=32, 3u64..=40),
+        (0u32..=3, 0u32..3, any::<bool>()),
+        (1u64..=6, 1u64..=6, 1u64..=6),
         0.0f64..1.4,
     );
     let worst = std::cell::Cell::new(0.0f64);
-    let stag = std::cell::RefCell::new(Vec::<f64>::new());
-    runner(200)
-        .run(&strat, |(gx, gy, p, w, hybrid, kf)| {
+    runner(300)
+        .run(
+            &strat,
+            |((gx, gy, p, w), (hp, kind, zero), (sa, sb, so), kf)| {
+                let tiles = gx * gy;
+                let h = (1u64 << hp).min(gy);
+                let order = match kind {
+                    0 if tiles > w && !tiles.is_multiple_of(w) => {
+                        let tail = tiles - tiles / w * w;
+                        let (ctas, iters) = walk_grid(tail * p, w);
+                        Order::Hybrid { h, ctas, iters }
+                    }
+                    2 => {
+                        let s = [1, 2, 4][(p % 3) as usize].min(p);
+                        Order::Stagger {
+                            h,
+                            s,
+                            atomic: zero && s > 1,
+                        }
+                    }
+                    _ => {
+                        let (ctas, iters) = walk_grid(tiles * p, w);
+                        Order::Walk { h, ctas, iters }
+                    }
+                };
+                let stag = matches!(order, Order::Stagger { .. });
+                let panels = match order {
+                    Order::Stagger { s, .. } => p / s * s,
+                    _ => p,
+                };
+                let g = Grid {
+                    gx,
+                    gy,
+                    panels,
+                    slots: w,
+                    sa,
+                    sb,
+                    so,
+                    order,
+                    zero: zero && !stag,
+                };
+                let ws = (gy * sa + gx * sb) * panels + tiles * so;
+                let keep = (kf * ws as f64) as u64;
+                let sim = lru_bytes(&trace(&g), keep);
+                let cf = reads(&g, keep);
+                let mut fams = vec![(cf.a, sim.a, gy * sa), (cf.b, sim.b, gx * sb)];
+                if !stag {
+                    fams.push((cf.out, sim.out, gx.max(gy) * so));
+                }
+                for (c, s, tol) in fams {
+                    let diff = c.abs_diff(s) as f64;
+                    let tol = (0.05 * s as f64).max(tol as f64);
+                    worst.set(worst.get().max(diff / s.max(1) as f64));
+                    prop_assert!(
+                        diff <= tol,
+                        "{:?} keep {}: closed {} sim {} (tol {})",
+                        g,
+                        keep,
+                        c,
+                        s,
+                        tol
+                    );
+                }
+                Ok(())
+            },
+        )
+        .expect("P2");
+    eprintln!(
+        "P2: walk / hybrid / stagger worst relative {:.3}",
+        worst.get()
+    );
+}
+
+/// P2 on larger grids (the review's harness: gx, gy 8–32, panels 16–115,
+/// slots 40–159): the hybrid at heights up to 8 and the staggered start,
+/// operands within one slice a row or column, or 5 %.
+#[test]
+fn p2_large_grids() {
+    let strat = (
+        (8u64..=32, 8u64..=32, 16u64..=115, 40u64..=159),
+        (0u32..=3, any::<bool>()),
+        0.0f64..1.4,
+    );
+    runner(if cfg!(debug_assertions) { 6 } else { 40 })
+        .run(&strat, |((gx, gy, p, w), (hp, hyb), kf)| {
             let tiles = gx * gy;
-            let (sa, sb, so) = (4, 4, 8);
-            let order = if hybrid && tiles > w && !tiles.is_multiple_of(w) {
-                let tail = tiles - tiles / w * w;
-                let (ctas, iters) = walk_grid(tail * p, w);
-                Order::Hybrid { h: 1, ctas, iters }
-            } else {
-                let (ctas, iters) = walk_grid(tiles * p, w);
-                Order::Walk { h: 1, ctas, iters }
+            let h = (1u64 << hp).min(gy);
+            let order = match hyb && tiles > w && !tiles.is_multiple_of(w) {
+                true => {
+                    let tail = tiles - tiles / w * w;
+                    let (ctas, iters) = walk_grid(tail * p, w);
+                    Order::Hybrid { h, ctas, iters }
+                }
+                false => Order::Stagger {
+                    h,
+                    s: 1,
+                    atomic: false,
+                },
             };
+            let (sa, sb, so) = (3, 5, 4);
             let g = Grid {
                 gx,
                 gy,
@@ -134,53 +224,25 @@ fn p2_walk_and_hybrid_within_a_slice_or_five_percent() {
                 sb,
                 so,
                 order,
-                zero: true,
+                zero: false,
             };
-            let ws = (gy * sa + gx * sb) * p;
-            let keep = (kf * ws as f64) as u64;
+            let keep = (kf * ((gy * sa + gx * sb) * p) as f64) as u64;
             let sim = lru_bytes(&trace(&g), keep);
             let cf = reads(&g, keep);
-            for (c, s, slice, lines) in [(cf.a, sim.a, sa, gy), (cf.b, sim.b, sb, gx)] {
-                let diff = c.abs_diff(s) as f64;
-                // One read a slice (a row or column panel) either way, or 5 %.
-                let tol = (0.05 * s as f64).max((lines * slice * p) as f64);
-                worst.set(worst.get().max(diff / s.max(1) as f64));
+            for (c, s, tol) in [(cf.a, sim.a, gy * sa), (cf.b, sim.b, gx * sb)] {
+                let tol = (0.05 * s as f64).max(tol as f64);
                 prop_assert!(
-                    diff <= tol,
-                    "{:?} keep {}: closed {} sim {} (tol {})",
+                    c.abs_diff(s) as f64 <= tol,
+                    "{:?} keep {}: closed {} sim {}",
                     g,
                     keep,
                     c,
-                    s,
-                    tol
+                    s
                 );
             }
-            // Staggered starts (reported): the window union against the
-            // simulation of the same blocks.
-            let gs = Grid {
-                order: Order::Stagger {
-                    h: 1,
-                    s: 1,
-                    atomic: false,
-                },
-                zero: false,
-                ..g
-            };
-            let sim = lru_bytes(&trace(&gs), keep).operands();
-            let cf = reads(&gs, keep).operands();
-            stag.borrow_mut().push(cf as f64 / sim.max(1) as f64);
             Ok(())
         })
-        .expect("P2");
-    let mut stag = stag.into_inner();
-    let worst = worst.get();
-    stag.sort_by(f64::total_cmp);
-    eprintln!(
-        "P2: walk/hybrid worst relative {worst:.3}; stagger closed/sim median {:.3} [{:.3} .. {:.3}]",
-        stag[stag.len() / 2],
-        stag[0],
-        stag[stag.len() - 1]
-    );
+        .expect("P2 large");
 }
 
 #[test]

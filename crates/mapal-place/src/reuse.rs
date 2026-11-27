@@ -92,6 +92,8 @@ thread_local! {
         std::cell::RefCell::new(std::collections::HashMap::new());
     static NEEDED: std::cell::RefCell<std::collections::HashMap<(Grid, u64, u64), u64>> =
         std::cell::RefCell::new(std::collections::HashMap::new());
+    static SPLIT: std::cell::RefCell<std::collections::HashMap<(Grid, u64), (Reads, Reads)>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
 /// The bytes a cache of `keep` bytes misses on `g`, by its closed form
@@ -117,40 +119,103 @@ fn reads_uncached(g: &Grid, keep: u64) -> Reads {
         Order::Lockstep { h, s, atomic } => lockstep(g, h, s, atomic, 0, tiles, keep),
         Order::Stagger { h, s, atomic } => stagger(g, h, s, atomic, keep),
         Order::Walk { h, ctas, iters } => walk(g, h, 0, tiles, ctas, iters, keep),
-        Order::Hybrid { h, ctas, iters } => {
-            // The lowering's layout (ADR-0050 C5): the whole waves take the
-            // raster order's last `whole` tiles, the walk its first `tail`
-            // (the zero pass a prefix of the output).
-            let whole = tiles / g.slots.max(1) * g.slots.max(1);
-            let tail = tiles - whole;
-            let a = lockstep(g, h, 1, false, tail, whole, keep);
-            // The last ordered wave's rows and columns: the tail's first
-            // reader of one finds it where the rest of that wave and the
-            // walk before the reader fit the keep.
-            let w = g.slots.max(1);
-            let last: Vec<(u64, u64)> = (tiles.saturating_sub(w).max(tail)..tiles)
-                .map(|t| launch_tile(g.gx, g.gy, h, t))
-                .collect();
-            let rows: std::collections::BTreeSet<u64> = last.iter().map(|x| x.0).collect();
-            let cols: std::collections::BTreeSet<u64> = last.iter().map(|x| x.1).collect();
-            let prev = Prev {
-                rows,
-                cols,
-                outs: last.len() as u64,
-            };
-            let b = walk_after(g, h, 0, tail, ctas, iters, keep, Some(&prev));
+        Order::Hybrid { .. } => {
+            let (w, t) = hybrid_split(g, keep);
             Reads {
-                a: a.a + b.a,
-                b: a.b + b.b,
-                out: a.out + b.out,
+                a: w.a + t.a,
+                b: w.b + t.b,
+                out: w.out + t.out,
             }
         }
     };
-    if g.zero && !matches!(g.order, Order::Lockstep { .. }) {
-        // The zero pass writes every output tile once.
+    // The zero pass writes every output tile once (the lockstep form, a
+    // hybrid's waves included, counts its own).
+    if g.zero && matches!(g.order, Order::Walk { .. } | Order::Stagger { .. }) {
         r.out += tiles * g.so;
     }
     r
+}
+
+/// [`hybrid_phases`] of a grid whose order is a hybrid, memoized (the
+/// evaluator prices each phase by its own misses).
+pub fn hybrid_split(g: &Grid, keep: u64) -> (Reads, Reads) {
+    let Order::Hybrid { h, ctas, iters } = g.order else {
+        return (reads(g, keep), Reads::default());
+    };
+    if let Some(r) = SPLIT.with(|c| c.borrow().get(&(*g, keep)).copied()) {
+        return r;
+    }
+    let r = hybrid_phases(g, h, ctas, iters, keep);
+    SPLIT.with(|c| {
+        let mut c = c.borrow_mut();
+        if c.len() > 1 << 16 {
+            c.clear();
+        }
+        c.insert((*g, keep), r);
+    });
+    r
+}
+
+/// **A hybrid's first reads by phase** (raster `h`): every operand slice
+/// its whole waves read, and the walk's slices the waves never read — what
+/// each phase misses at least (the evaluation's floor) and what a warm
+/// operand's first reads are in each.
+pub fn hybrid_first(g: &Grid, h: u64) -> (Reads, Reads) {
+    let tiles = g.gx * g.gy;
+    let w = g.slots.max(1);
+    let tail = tiles - tiles / w * w;
+    let mut rows = std::collections::HashSet::new();
+    let mut cols = std::collections::HashSet::new();
+    for t in tail..tiles {
+        let (r, j) = launch_tile(g.gx, g.gy, h, t);
+        rows.insert(r);
+        cols.insert(j);
+    }
+    let waves = Reads {
+        a: rows.len() as u64 * g.sa * g.panels,
+        b: cols.len() as u64 * g.sb * g.panels,
+        out: (tiles - tail) * g.so,
+    };
+    let (mut ra, mut cb) = (
+        std::collections::HashSet::new(),
+        std::collections::HashSet::new(),
+    );
+    for t in 0..tail {
+        let (r, j) = launch_tile(g.gx, g.gy, h, t);
+        if !rows.contains(&r) {
+            ra.insert(r);
+        }
+        if !cols.contains(&j) {
+            cb.insert(j);
+        }
+    }
+    let walk = Reads {
+        a: ra.len() as u64 * g.sa * g.panels,
+        b: cb.len() as u64 * g.sb * g.panels,
+        out: tail * g.so,
+    };
+    (waves, walk)
+}
+
+/// **A hybrid's two phases' misses** (ADR-0050 C5 layout): the whole waves
+/// over the raster order's last `⌊tiles / slots⌋·slots` tiles (lockstep,
+/// exact; the zero pass, where the grid has one, counted there), then the
+/// walk over its first `tail` — a slice's first walk reader finds it where
+/// the distinct bytes since the waves' last read of it fit the keep.
+pub fn hybrid_phases(g: &Grid, h: u64, ctas: u64, iters: u64, keep: u64) -> (Reads, Reads) {
+    let tiles = g.gx * g.gy;
+    let w = g.slots.max(1);
+    let whole = tiles / w * w;
+    let tail = tiles - whole;
+    let waves_r = lockstep(g, h, 1, false, tail, whole, keep);
+    let blocks: Vec<(u64, u64)> = (tail..tiles)
+        .map(|t| launch_tile(g.gx, g.gy, h, t))
+        .collect();
+    let prev = Prev {
+        waves: blocks.chunks(w as usize).map(<[_]>::to_vec).collect(),
+    };
+    let walk_r = walk_after(g, h, 0, tail, ctas, iters, keep, Some(&prev));
+    (waves_r, walk_r)
 }
 
 /// **The bytes a lockstep grid's waves need**: each wave's distinct slices
@@ -696,15 +761,26 @@ pub fn walk(g: &Grid, h: u64, first: u64, count: u64, ctas: u64, iters: u64, kee
     walk_after(g, h, first, count, ctas, iters, keep, None)
 }
 
-/// The lockstep wave a hybrid's tail walks after: its rows, columns and
-/// output tiles.
+/// The lockstep waves a hybrid's tail walks after: each wave's blocks'
+/// `(row, column)` in launch order (every block reads its slices at a step
+/// in that order, then the wave stores its tiles).
 pub struct Prev {
-    pub rows: std::collections::BTreeSet<u64>,
-    pub cols: std::collections::BTreeSet<u64>,
-    pub outs: u64,
+    pub waves: Vec<Vec<(u64, u64)>>,
 }
 
-/// [`walk`] after the lockstep wave `prev` (a hybrid's tail).
+impl Prev {
+    /// The wave and position of the last block reading row (`fam_a`) or
+    /// column `key`.
+    fn last(&self, fam_a: bool, key: u64) -> Option<(usize, usize)> {
+        self.waves.iter().enumerate().rev().find_map(|(wi, w)| {
+            w.iter()
+                .rposition(|&(r, j)| if fam_a { r } else { j } == key)
+                .map(|q| (wi, q))
+        })
+    }
+}
+
+/// [`walk`] after the lockstep waves `prev` (a hybrid's tail).
 #[allow(clippy::too_many_arguments)]
 pub fn walk_after(
     g: &Grid,
@@ -724,6 +800,7 @@ pub fn walk_after(
     // Every panel offset on short folds; 16 evenly spread past 64.
     let samples = if p <= 64 { p } else { 16 };
     let mut memo: std::collections::HashMap<(u64, u64, u64, u64), u64> = Default::default();
+    let tile = |gu: u64| launch_tile(g.gx, g.gy, h, first + gu / p);
     // The pair's window, with the other family's slice a reader's unit reads
     // beside it (an `a` reader's own `b` after it; a `b` reader's own `a`
     // before it) and the first reader's partials where its piece ends there.
@@ -734,7 +811,6 @@ pub fn walk_after(
                 let (mut rs, mut cs, mut os) =
                     walk_spans(g, h, (first, count), (ctas, iters), a, b);
                 let (g1, g2) = (a.1 * iters + a.0, b.1 * iters + b.0);
-                let tile = |gu: u64| launch_tile(g.gx, g.gy, h, first + gu / p);
                 if fam_a {
                     let (_, j) = tile(g1);
                     cs.entry(j).or_default().push((g1 % p, g1 % p + 1));
@@ -749,6 +825,35 @@ pub fn walk_after(
                 distinct(g, (rs, cs, os))
             })
     };
+    // The waves' slices after the read of a slice of family `fam_a` at
+    // step `kap` by block `q` of wave `wi`: the blocks after it at that
+    // step (and, for an `a` slice, its own block's `b`), every block of the
+    // wave at the later steps, every later wave whole; the waves' stores.
+    let after_waves = |w: &Prev,
+                       (wi, q): (usize, usize),
+                       kap: u64,
+                       fam_a: bool,
+                       rs: &mut Spans,
+                       cs: &mut Spans,
+                       os: &mut std::collections::HashSet<u64>| {
+        for (i, wave) in w.waves.iter().enumerate().skip(wi) {
+            for (x, &(r, j)) in wave.iter().enumerate() {
+                let lo = match i == wi {
+                    true => kap + 1,
+                    false => 0,
+                };
+                rs.entry(r).or_default().push((lo, p));
+                cs.entry(j).or_default().push((lo, p));
+                if i == wi && (x > q || (x == q && fam_a)) {
+                    if x > q {
+                        rs.entry(r).or_default().push((kap, kap + 1));
+                    }
+                    cs.entry(j).or_default().push((kap, kap + 1));
+                }
+                os.insert(r * g.gx + j);
+            }
+        }
+    };
     // The tiles of the walk by row and by column (raster order).
     let mut by_row: std::collections::BTreeMap<u64, Vec<u64>> = Default::default();
     let mut by_col: std::collections::BTreeMap<u64, Vec<u64>> = Default::default();
@@ -757,87 +862,134 @@ pub fn walk_after(
         by_row.entry(r).or_default().push(t);
         by_col.entry(j).or_default().push(t);
     }
-    let wave_outs = prev.map_or(0, |w| w.outs * g.so);
-    let mut reads = |groups: &std::collections::BTreeMap<u64, Vec<u64>>,
-                     size: u64,
-                     fam_a: bool,
-                     warm: Option<&std::collections::BTreeSet<u64>>|
-     -> u64 {
-        let other = if fam_a { g.sb } else { g.sa };
-        let mut n = 0u64;
-        for s in 0..samples {
-            let kap = s * p / samples;
-            for (key, ts) in groups.iter() {
-                let at = |t: u64| ((t * p + kap) % iters, (t * p + kap) / iters);
-                // The readers' gaps take at most three sizes
-                // ([`three_gap_steps`]): where the widest window — every
-                // block's units over the widest gap, both slices each, the
-                // pieces they end — fits the keep, every reader after the
-                // first finds the slice. Else each consecutive pair of
-                // readers `(unit, block)` in time order, its window exact.
-                let step_t = if ts.len() > 1 { ts[1] - ts[0] } else { 1 };
-                let affine = ts.windows(2).all(|w| w[1] - w[0] == step_t);
-                let widest = affine
-                    .then(|| three_gap_steps(step_t * p, ts.len() as u64, iters))
-                    .flatten()
-                    .map(|gaps| gaps.iter().map(|x| x.0).max().unwrap_or(0));
-                let all_fit = widest.is_some_and(|gw| {
-                    (gw + 1) * ctas * (g.sa + g.sb + g.so) + other + size <= keep
-                });
-                let pairs: Vec<ReaderPair> = if all_fit {
-                    Vec::new()
-                } else {
-                    let mut tc: Vec<(u64, u64)> = ts.iter().map(|&t| at(t)).collect();
-                    tc.sort_unstable();
-                    tc.windows(2).map(|w| (w[0], w[1], 1)).collect()
-                };
-                // The first reader: from memory, unless the wave before
-                // read the slice and the rest of that wave plus the walk
-                // before the reader (distinct, one union) fit.
-                let first_at = ts.iter().map(|&t| at(t)).min().unwrap_or((0, 0));
-                let fresh = warm.is_some_and(|w| w.contains(key)) && {
-                    let (mut rs, mut cs, outs) =
-                        walk_spans(g, h, (first, count), (ctas, iters), (0, u64::MAX), first_at);
-                    let w = prev.expect("a wave before");
-                    for r in &w.rows {
-                        rs.entry(*r).or_default().push((kap + 1, p));
-                    }
-                    for c in &w.cols {
-                        cs.entry(*c).or_default().push((kap + 1, p));
-                    }
-                    distinct(g, (rs, cs, outs)) + wave_outs + size <= keep
-                };
-                n += u64::from(!fresh);
-                for (a, b, c) in pairs {
-                    if d(a, b, fam_a) + size > keep {
-                        n += c;
+    let mut reads =
+        |groups: &std::collections::BTreeMap<u64, Vec<u64>>, size: u64, fam_a: bool| -> u64 {
+            let other = if fam_a { g.sb } else { g.sa };
+            let mut n = 0u64;
+            for s in 0..samples {
+                let kap = s * p / samples;
+                for (key, ts) in groups.iter() {
+                    let at = |t: u64| ((t * p + kap) % iters, (t * p + kap) / iters);
+                    // The readers' gaps take at most three sizes
+                    // ([`three_gap_steps`]): where the widest window — every
+                    // block's units over the widest gap, both slices each, the
+                    // pieces they end — fits the keep, every reader after the
+                    // first finds the slice. Else each consecutive pair of
+                    // readers `(unit, block)` in time order, its window exact.
+                    let step_t = if ts.len() > 1 { ts[1] - ts[0] } else { 1 };
+                    let affine = ts.windows(2).all(|w| w[1] - w[0] == step_t);
+                    let widest = affine
+                        .then(|| three_gap_steps(step_t * p, ts.len() as u64, iters))
+                        .flatten()
+                        .map(|gaps| gaps.iter().map(|x| x.0).max().unwrap_or(0));
+                    let all_fit = widest.is_some_and(|gw| {
+                        (gw + 1) * ctas * (g.sa + g.sb + g.so) + other + size <= keep
+                    });
+                    let pairs: Vec<ReaderPair> = if all_fit {
+                        Vec::new()
+                    } else {
+                        let mut tc: Vec<(u64, u64)> = ts.iter().map(|&t| at(t)).collect();
+                        tc.sort_unstable();
+                        tc.windows(2).map(|w| (w[0], w[1], 1)).collect()
+                    };
+                    // The first reader: from memory, unless the waves before
+                    // read the slice and everything since their last read of it
+                    // — the rest of the waves, the walk before the reader
+                    // (distinct, one union) — fits.
+                    let first_at = ts.iter().map(|&t| at(t)).min().unwrap_or((0, 0));
+                    let fresh = prev
+                        .and_then(|w| w.last(fam_a, *key).map(|l| (w, l)))
+                        .is_some_and(|(w, l)| {
+                            let (mut rs, mut cs, mut os) = walk_spans(
+                                g,
+                                h,
+                                (first, count),
+                                (ctas, iters),
+                                (0, u64::MAX),
+                                first_at,
+                            );
+                            after_waves(w, l, kap, fam_a, &mut rs, &mut cs, &mut os);
+                            if !fam_a {
+                                // A `b` reader's own `a` before it.
+                                let gu = first_at.1 * iters + first_at.0;
+                                let (r, _) = tile(gu);
+                                rs.entry(r).or_default().push((kap, kap + 1));
+                            }
+                            distinct(g, (rs, cs, os)) + size <= keep
+                        });
+                    n += u64::from(!fresh);
+                    for (a, b, c) in pairs {
+                        if d(a, b, fam_a) + size > keep {
+                            n += c;
+                        }
                     }
                 }
             }
+            (n * size * p).div_ceil(samples)
+        };
+    let a = reads(&by_row, g.sa, true);
+    let b = reads(&by_col, g.sb, false);
+    // A piece's partials or store, where its tile's pieces end in time order
+    // (unit, block): the first from memory unless the zero pass left it and
+    // everything since fits; each next one where the window since the one
+    // before (its own unit's slices included: they precede its store) fits.
+    let tiles = g.gx * g.gy;
+    let mut out = 0u64;
+    for t in 0..count {
+        let c0 = t * p / iters;
+        let c1 = ((t + 1) * p - 1) / iters;
+        let mut ends: Vec<(u64, u64)> = (c0..=c1)
+            .map(|c| {
+                let end = ((t + 1) * p).min((c + 1) * iters) - 1;
+                (end - c * iters, c)
+            })
+            .collect();
+        ends.sort_unstable();
+        let (r, j) = launch_tile(g.gx, g.gy, h, first + t);
+        let id = r * g.gx + j;
+        let own = |rs: &mut Spans, cs: &mut Spans, (u, c): (u64, u64)| {
+            let gu = c * iters + u;
+            let (r, j) = tile(gu);
+            rs.entry(r).or_default().push((gu % p, gu % p + 1));
+            cs.entry(j).or_default().push((gu % p, gu % p + 1));
+        };
+        let first_hit = g.zero && {
+            let (mut rs, mut cs, mut os) =
+                walk_spans(g, h, (first, count), (ctas, iters), (0, u64::MAX), ends[0]);
+            own(&mut rs, &mut cs, ends[0]);
+            // Every wave whole (the zero pass precedes them), its stores.
+            for wave in prev.iter().flat_map(|w| &w.waves) {
+                for &(r, j) in wave {
+                    rs.entry(r).or_default().push((0, p));
+                    cs.entry(j).or_default().push((0, p));
+                    os.insert(r * g.gx + j);
+                }
+            }
+            os.extend(id + 1..tiles);
+            os.remove(&id);
+            distinct(g, (rs, cs, os)) + g.so <= keep
+        };
+        out += u64::from(!first_hit) * g.so;
+        for e in ends.windows(2) {
+            let (mut rs, mut cs, mut os) =
+                walk_spans(g, h, (first, count), (ctas, iters), e[0], e[1]);
+            own(&mut rs, &mut cs, e[1]);
+            os.remove(&id);
+            if distinct(g, (rs, cs, os)) + g.so > keep {
+                out += g.so;
+            }
         }
-        (n * size * p).div_ceil(samples)
-    };
-    let a = reads(&by_row, g.sa, true, prev.map(|w| &w.rows));
-    let b = reads(&by_col, g.sb, false, prev.map(|w| &w.cols));
-    // A piece's partials or store: a tile's pieces.
-    let pieces: u64 = (0..count)
-        .map(|t| {
-            let c0 = t * p / iters;
-            let c1 = ((t + 1) * p - 1) / iters;
-            c1 - c0 + 1
-        })
-        .sum();
-    Reads {
-        a,
-        b,
-        out: pieces * g.so,
     }
+    Reads { a, b, out }
 }
 
 /// **Staggered starts**: block `L` reads panel step `st` at time
 /// `L·pb + st·slots` (in `1/slots` panel times). A slice's consecutive
 /// readers are its row's (column's) blocks; the distinct bytes between are
-/// the union of the active blocks' step windows, taken at the middle step.
+/// the union of every block's steps inside the window (the blocks launched
+/// after the later reader that start before it included), per sampled step
+/// (every step on short folds, 32 past 64) — within one slice a row or
+/// column, or 5 %, of the simulation (P2).
 pub fn stagger(g: &Grid, h: u64, s: u64, atomic: bool, keep: u64) -> Reads {
     let s = s.max(1);
     let tiles = g.gx * g.gy;
@@ -850,33 +1002,59 @@ pub fn stagger(g: &Grid, h: u64, s: u64, atomic: bool, keep: u64) -> Reads {
             (r, j, z)
         })
         .collect();
-    let window = |l1: u64, l2: u64, st: u64| -> u64 {
-        // Times (l1·pb + st·w, l2·pb + st·w): block L's steps in it.
+    // A block's output: its tile's, or its partition's workspace tile.
+    let okey = |tile: u64, z: u64| if atomic || s <= 1 { tile } else { tile * s + z };
+    // The distinct bytes between block `l1`'s read at step `st` and block
+    // `l2`'s (events in time order, a tie in launch order — the trace's).
+    // `fam_a`: the slice is an `a` panel (its own event's `b` follows it);
+    // else a `b` panel (its event's `a` precedes it).
+    let window = |l1: u64, l2: u64, st: u64, fam_a: bool| -> u64 {
         let (t1, t2) = (l1 * pb + st * w, l2 * pb + st * w);
         let first = (t1 + 1).saturating_sub(pb * w + pb) / pb;
         let mut rows: std::collections::HashMap<(u64, u64), Vec<(u64, u64)>> = Default::default();
         let mut cols: std::collections::HashMap<(u64, u64), Vec<(u64, u64)>> = Default::default();
-        let mut outs = 0;
-        for l in first..=l2.min(blocks.len() as u64 - 1) {
+        let mut outs = std::collections::HashSet::new();
+        // Every block started before the later read — the blocks launched
+        // after its reader included (they start `pb / slots` panel times
+        // apart, so `st·slots / pb` of them run before step `st`).
+        for l in first..blocks.len() as u64 {
             let start = l * pb;
-            if start >= t2 {
+            if start > t2 || (start == t2 && l >= l2) {
                 break;
             }
-            // Steps st' with t1 < start + st'·w < t2.
-            let a = if t1 >= start { (t1 - start) / w + 1 } else { 0 };
-            let b = (t2 - start).div_ceil(w).min(pb + 1);
+            // Steps st' (the output at st' = pb) whose event lies strictly
+            // between the two reads: after (t1, l1), before (t2, l2).
+            let a = match t1.checked_sub(start) {
+                None => 0,
+                Some(d) if d % w == 0 && l > l1 => d / w,
+                Some(d) => d / w + 1,
+            };
+            let d2 = t2 - start;
+            let b = match d2 % w == 0 && l < l2 {
+                true => d2 / w + 1,
+                false => d2.div_ceil(w),
+            }
+            .min(pb + 1);
             if b <= a {
                 continue;
             }
             let (r, j, z) = blocks[l as usize];
             if b > pb {
-                outs += 1;
+                outs.insert(okey(r * g.gx + j, z));
             }
             let b = b.min(pb);
             if b > a {
                 rows.entry((r, z)).or_default().push((a, b));
                 cols.entry((j, z)).or_default().push((a, b));
             }
+        }
+        // The slice read beside it in its own event.
+        if fam_a {
+            let (_, j, z) = blocks[l1 as usize];
+            cols.entry((j, z)).or_default().push((st, st + 1));
+        } else {
+            let (r, _, z) = blocks[l2 as usize];
+            rows.entry((r, z)).or_default().push((st, st + 1));
         }
         let union = |v: &mut Vec<(u64, u64)>| -> u64 {
             v.sort_unstable();
@@ -892,32 +1070,38 @@ pub fn stagger(g: &Grid, h: u64, s: u64, atomic: bool, keep: u64) -> Reads {
         };
         let na: u64 = rows.values_mut().map(union).sum();
         let nb: u64 = cols.values_mut().map(union).sum();
-        na * g.sa + nb * g.sb + outs * g.so
+        na * g.sa + nb * g.sb + outs.len() as u64 * g.so
     };
-    let mid = pb / 2;
+    // The window between a slice's two readers depends on the panel step
+    // it is read at (the later reader's steps before it and the earlier
+    // one's after it change sides as the step moves): every step on short
+    // folds, 32 evenly spread past 64 — a step's miss stands for its share.
+    let samples = if pb <= 64 { pb } else { 32 };
     type KeyOf<'a> = &'a dyn Fn(&(u64, u64, u64)) -> (u64, u64);
-    let fam = |key: KeyOf, size: u64| -> u64 {
+    let fam = |key: KeyOf, size: u64, fam_a: bool| -> u64 {
         let mut last: std::collections::HashMap<(u64, u64), u64> = Default::default();
         let mut n = 0;
         for (l, bk) in blocks.iter().enumerate() {
             let l = l as u64;
             let k = key(bk);
             match last.get(&k) {
-                None => n += pb,
+                None => n += samples,
                 Some(&l1) => {
-                    if window(l1, l, mid) + size > keep {
-                        n += pb;
+                    for i in 0..samples {
+                        let st = (2 * i + 1) * pb / (2 * samples);
+                        if window(l1, l, st, fam_a) + size > keep {
+                            n += 1;
+                        }
                     }
                 }
             }
             last.insert(k, l);
         }
-        n * size
+        (n * pb).div_ceil(samples) * size
     };
-    let a = fam(&|&(r, _, z)| (r, z), g.sa);
-    let b = fam(&|&(_, j, z)| (j, z), g.sb);
+    let a = fam(&|&(r, _, z)| (r, z), g.sa, true);
+    let b = fam(&|&(_, j, z)| (j, z), g.sb, false);
     // Every block stores (or adds) its tile once.
-    let _ = atomic;
     let outs = tiles * s;
     Reads {
         a,

@@ -14,16 +14,18 @@
 //! The `top` candidates go through the **post-lowering gate** in rank order
 //! (the code generator's real registers and spills: a refusal makes the
 //! candidate infeasible and the next is taken); the survivors are priced at
-//! the facts' three bounds and the pick is their **minimax** (the least
-//! largest regret against each bound's best). A pick whose slow- and
-//! fast-bound winners differ is **open** (`flip`), so is one whose runner-up
-//! is within the measurements' null (`tie`: the model cannot separate
-//! them). The **error band** (per bounding term, the replay's residuals) is
+//! the facts' values and at every corner of their intervals (each group —
+//! the operation, the cache, the memory, dispatch — at its slow or fast
+//! end: [`Corner`]) and the pick is their **minimax** (the least largest
+//! regret against each corner's best, [`verdict`]). A pick another
+//! candidate beats beyond the measurements' null at some corner is **open**
+//! (`flip`), so is one whose runner-up is within the null at the values
+//! (`tie`: the model cannot separate them). The **error band** (per bounding term, the replay's residuals) is
 //! the margin a pick must clear to replace the incumbent (the rules' launch):
 //! within it the incumbent stays, so a re-measured rate does not churn
 //! emission.
 
-use crate::eval::{Terms, efficiency, evaluate, evaluate_floor};
+use crate::eval::{Corner, Terms, efficiency, evaluate, evaluate_corner, evaluate_floor};
 use crate::fact::Bound;
 use crate::lower::{Declared, Lowering, TravKind};
 use crate::machine::{ExecKind, LaunchMode, Machine};
@@ -86,6 +88,9 @@ pub struct Cand {
     pub d: Declared,
     pub t: Terms,
     pub ns: [f64; 3],
+    /// Its time at every [`Corner::corners`] (empty until the gate passes
+    /// it): each fact group at its own slow or fast end.
+    pub corners: Vec<f64>,
 }
 
 impl Cand {
@@ -340,6 +345,7 @@ fn settle(m: &Machine, s: &Site, best: &mut Best, st: &mut Stats) {
             d,
             t: terms,
             ns: [f64::NAN, v, f64::NAN],
+            corners: Vec::new(),
         });
     }
 }
@@ -390,11 +396,95 @@ fn walk(
     }
 }
 
-/// Price a candidate at the facts' three bounds.
+/// Price a candidate at every corner of the facts' intervals (the all-slow
+/// and all-fast corners its slow and fast bounds).
 fn bounds(m: &Machine, s: &Site, c: &mut Cand) {
-    for (i, b) in [(0, Bound::Slow), (2, Bound::Fast)] {
-        c.ns[i] = evaluate(m, s, &c.x, &c.d, b).ns;
+    c.corners = Corner::corners()
+        .into_iter()
+        .map(|k| evaluate_corner(m, s, &c.x, &c.d, k).ns)
+        .collect();
+    c.ns[0] = c.corners[0];
+    c.ns[2] = c.corners[c.corners.len() - 1];
+}
+
+/// **D5's verdict over priced candidates**: `value[i]` candidate `i`'s time
+/// at the facts' values, `corners[i]` at every [`Corner::corners`] (one
+/// length for all), `names[i]` its plan (the last tie-break). The pick is
+/// the minimax — the least largest regret over the value and every corner,
+/// ties to the lower value, then the name. **Open** where the facts'
+/// intervals, not the model, decide: `flip` — at some corner another
+/// candidate is cheaper than the pick beyond the null; `tie` — a runner-up
+/// within the null at the value (equal prices included: no order of the
+/// candidates decides a pick). The search and the replay's score read this
+/// one rule.
+pub fn verdict(value: &[f64], corners: &[Vec<f64>], names: &[String], null: f64) -> Verdict {
+    let n = value.len();
+    assert!(n > 0, "a candidate");
+    let k = corners.first().map_or(0, Vec::len);
+    let best_v = value.iter().copied().fold(f64::INFINITY, f64::min);
+    let best_c: Vec<f64> = (0..k)
+        .map(|j| corners.iter().map(|c| c[j]).fold(f64::INFINITY, f64::min))
+        .collect();
+    let regret = |i: usize| {
+        (0..k)
+            .map(|j| corners[i][j] / best_c[j].max(1e-12))
+            .fold(value[i] / best_v.max(1e-12), f64::max)
+    };
+    let pick = (0..n)
+        .min_by(|&a, &b| {
+            regret(a)
+                .total_cmp(&regret(b))
+                .then(value[a].total_cmp(&value[b]))
+                .then(names[a].cmp(&names[b]))
+        })
+        .expect("a candidate");
+    let mut open = Vec::new();
+    // The corner the pick loses most at, beyond the null.
+    let worst = (0..k)
+        .map(|j| (j, corners[pick][j] / best_c[j].max(1e-12)))
+        .max_by(|a, b| a.1.total_cmp(&b.1));
+    if let Some((j, r)) = worst
+        && r > 1.0 + null
+    {
+        let by = (0..n)
+            .min_by(|&a, &b| {
+                corners[a][j]
+                    .total_cmp(&corners[b][j])
+                    .then(names[a].cmp(&names[b]))
+            })
+            .expect("a candidate");
+        open.push(format!(
+            "flip: at {} {} is {:.1}% under {}",
+            Corner::corners()[j].name(),
+            names[by],
+            (1.0 - 1.0 / r) * 100.0,
+            names[pick]
+        ));
     }
+    // The runner-up nearest the pick at the values, either side.
+    let near = |i: usize| (value[i] / value[pick].max(1e-12)).ln().abs();
+    if let Some(r) = (0..n)
+        .filter(|&i| i != pick)
+        .min_by(|&a, &b| near(a).total_cmp(&near(b)))
+        && value[r] <= value[pick] * (1.0 + null)
+        && value[pick] <= value[r] * (1.0 + null)
+    {
+        open.push(format!(
+            "tie: {} {:.0} ns within {:.0}% of {:.0}",
+            names[r],
+            value[r],
+            null * 100.0,
+            value[pick]
+        ));
+    }
+    Verdict { pick, open }
+}
+
+/// [`verdict`]'s result: the pick's index and why it is open.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Verdict {
+    pub pick: usize,
+    pub open: Vec<String>,
 }
 
 /// **Search** site `s` on machine `m` over lowerings `lows` (D5): the
@@ -430,6 +520,7 @@ pub fn search(
                 d,
                 t,
                 ns: [f64::NAN, v, f64::NAN],
+                corners: Vec::new(),
             }
         })
     });
@@ -486,67 +577,35 @@ pub fn search(
     });
     if top.is_empty() {
         let c = inc?;
+        // Nothing priced below the incumbent (the cap pruned the rest) is a
+        // decision, not an open; only a gate that refused candidates is.
+        let open = match st.gated.is_empty() {
+            true => Vec::new(),
+            false => vec![format!(
+                "the gate refused every candidate below the incumbent ({})",
+                st.gated.len()
+            )],
+        };
         return Some(Ranked {
             pick: c.clone(),
             top: vec![c.clone()],
             best: c.clone(),
             incumbent: Some(c),
             kept: true,
-            open: vec!["the gate refused every candidate".into()],
+            open,
             stats: st,
         });
     }
-    // Minimax over the bounds: the least largest regret.
-    let best_at = |j: usize| top.iter().map(|c| c.ns[j]).fold(f64::INFINITY, f64::min);
-    let lows_b = [best_at(0), best_at(1), best_at(2)];
-    let regret = |c: &Cand| {
-        (0..3)
-            .map(|j| c.ns[j] / lows_b[j].max(1e-12))
-            .fold(1.0, f64::max)
-    };
-    let pick_i = (0..top.len())
-        .min_by(|&a, &b| {
-            regret(&top[a])
-                .total_cmp(&regret(&top[b]))
-                .then(top[a].value().total_cmp(&top[b].value()))
-                .then(top[a].x.plan().cmp(&top[b].x.plan()))
-        })
-        .expect("a candidate");
-    let argmin = |j: usize| {
-        (0..top.len())
-            .min_by(|&a, &b| {
-                top[a].ns[j]
-                    .total_cmp(&top[b].ns[j])
-                    .then(top[a].x.plan().cmp(&top[b].x.plan()))
-            })
-            .expect("a candidate")
-    };
-    let mut open = Vec::new();
-    let (slow, fast) = (argmin(0), argmin(2));
-    if slow != fast {
-        open.push(format!(
-            "flip: slow {} fast {}",
-            top[slow].x.plan(),
-            top[fast].x.plan()
-        ));
-    }
-    let bestc = top[pick_i].clone();
-    if let Some(r) = top
-        .iter()
-        .enumerate()
-        .filter(|&(i, _)| i != pick_i)
-        .map(|(_, c)| c)
-        .min_by(|a, b| a.value().total_cmp(&b.value()))
-        && r.value() <= bestc.value() * (1.0 + opts.null)
-    {
-        open.push(format!(
-            "tie: {} {:.0} ns within {:.0}% of {:.0}",
-            r.x.plan(),
-            r.value(),
-            opts.null * 100.0,
-            bestc.value()
-        ));
-    }
+    // Minimax over the corners, the opens (one rule: [`verdict`]).
+    let names: Vec<String> = top.iter().map(|c| c.x.plan()).collect();
+    let v = verdict(
+        &top.iter().map(Cand::value).collect::<Vec<_>>(),
+        &top.iter().map(|c| c.corners.clone()).collect::<Vec<_>>(),
+        &names,
+        opts.null,
+    );
+    let open = v.open;
+    let bestc = top[v.pick].clone();
     let (pick, kept) = match &inc {
         Some(i) if i.value() <= bestc.value() * (1.0 + opts.band_of(&bestc.t)) => (i.clone(), true),
         _ => (bestc.clone(), false),

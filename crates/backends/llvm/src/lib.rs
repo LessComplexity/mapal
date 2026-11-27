@@ -2182,6 +2182,9 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     {
         return emit_detailed(&stored, opts);
     }
+    // ADR-0050 D3 `machine-place`: the sites' warm operands
+    // (`residence_plan`), one map every launch of this emission reads.
+    let _warm = crate::place::WarmScope::new(ir, profile, opts.gpu);
     // S62 `hostopt`: everything outside a device site is emitted against the
     // host's CPU facts; off, against `generic`'s — the S52–S54 GPU build.
     let rungs = crate::func::gpu::host_rungs(profile, opts.contract, opts.gpu);

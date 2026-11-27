@@ -258,3 +258,100 @@ fn the_gate_takes_the_next_and_the_band_keeps_the_incumbent() {
         assert!(!moved.kept && moved.pick.x.plan() == a.best.x.plan());
     }
 }
+
+/// **The verdict** ([`verdict`], the search's and the replay's one rule):
+/// equal prices are a tie (no candidate order decides); a runner-up within
+/// the null at the values is a tie; candidates equal at one end of the
+/// intervals and apart at the other are no flip (the one better at the
+/// other end is the pick at every corner); a pick another beats beyond the
+/// null at some corner is a flip — mixed corners included.
+#[test]
+fn the_verdict_opens_ties_and_flips_only() {
+    let names = |n: usize| (0..n).map(|i| format!("c{i}")).collect::<Vec<_>>();
+    let flat = |v: f64| vec![v; 16];
+    // Equal prices: a tie, whichever comes first.
+    for order in [[0usize, 1], [1, 0]] {
+        let value = [100.0, 100.0];
+        let v = verdict(
+            &[value[order[0]], value[order[1]]],
+            &[flat(100.0), flat(100.0)],
+            &names(2),
+            0.02,
+        );
+        assert!(v.open.iter().any(|o| o.starts_with("tie")), "{v:?}");
+    }
+    // A runner-up 1 % above: a tie; 5 % above: decided.
+    let v = verdict(
+        &[100.0, 101.0],
+        &[flat(100.0), flat(101.0)],
+        &names(2),
+        0.02,
+    );
+    assert!(v.pick == 0 && v.open.iter().any(|o| o.starts_with("tie")));
+    let v = verdict(
+        &[100.0, 105.0],
+        &[flat(100.0), flat(105.0)],
+        &names(2),
+        0.02,
+    );
+    assert!(v.pick == 0 && v.open.is_empty(), "{v:?}");
+    // Equal at the slow end, apart at the fast end: c1 is never worse, so it
+    // is the pick and nothing flips (the arm order once made this "open").
+    let mut c0 = flat(100.0);
+    let mut c1 = flat(100.0);
+    c0[15] = 80.0;
+    c1[15] = 60.0;
+    let v = verdict(&[90.0, 80.0], &[c0, c1], &names(2), 0.02);
+    assert!(v.pick == 1 && v.open.is_empty(), "{v:?}");
+    // A mixed corner only (index 0b0010: compute, cache and dispatch slow,
+    // memory fast): c1 wins there by 10 %, c0 everywhere else — the all-slow
+    // and all-fast corners too, which alone saw no flip — by 3 %. Whichever
+    // the minimax takes, it is open.
+    let mut c0 = flat(103.0);
+    let mut c1 = flat(106.0);
+    c0[0b0010] = 110.0;
+    c1[0b0010] = 100.0;
+    assert!(c0[0] < c1[0] && c0[15] < c1[15]);
+    let v = verdict(&[100.0, 103.0], &[c0, c1], &names(2), 0.02);
+    assert!(v.open.iter().any(|o| o.starts_with("flip")), "{v:?}");
+    let mut c0 = flat(100.0);
+    let mut c1 = flat(120.0);
+    c0[0b0010] = 130.0;
+    c1[0b0010] = 100.0;
+    let v = verdict(&[100.0, 120.0], &[c0, c1], &names(2), 0.02);
+    assert!(v.open.iter().any(|o| o.starts_with("flip")), "{v:?}");
+    // A cheaper runner-up the minimax passed over is no tie.
+    assert!(!v.open.iter().any(|o| o.starts_with("tie")), "{v:?}");
+}
+
+/// A search whose every candidate prices above the incumbent keeps it, and
+/// that is a decision, not an open (the gate refused nothing).
+#[test]
+fn an_incumbent_below_every_candidate_is_no_open() {
+    let s = site(128, 128, 128);
+    let m = toy::machine(&[1.0; 9]);
+    let lows: [&dyn Lowering; 1] = [&Toy];
+    let a = search(&m, &s, &lows, &Opts::default(), None, &mut ok).expect("a pick");
+    let inc = a.best.x.clone();
+    // The incumbent is the best: every other candidate prices above it.
+    let r = search(&m, &s, &lows, &Opts::default(), Some((0, inc)), &mut ok).unwrap();
+    assert!(r.kept);
+    assert!(
+        !r.open.iter().any(|o| o.contains("gate refused")),
+        "{:?}",
+        r.open
+    );
+    // A gate refusing everything but the incumbent says so.
+    let plan = a.best.x.plan();
+    let mut only = |x: &Schedule, _: &Declared| match x.plan() == plan {
+        true => Ok(()),
+        false => Err("spills".to_string()),
+    };
+    let worse = a.top.last().unwrap().x.clone();
+    let r = search(&m, &s, &lows, &Opts::default(), Some((0, worse)), &mut only).unwrap();
+    assert!(
+        !r.stats.gated.is_empty() || r.open.is_empty(),
+        "{:?}",
+        r.open
+    );
+}

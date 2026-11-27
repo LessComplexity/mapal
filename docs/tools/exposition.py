@@ -100,7 +100,11 @@ def program(file: str, scale: str | None) -> Path:
         text, n = re.subn(rf"(?m)^\d+ -> {name};", f"{val} -> {name};", text, count=1)
         if n != 1:
             raise SystemExit(f"{file}: no `N -> {name};` line to scale")
-    out = src.parent / f".scaled-{abs(hash((file, scale)))}.mapal"
+    # A scratch copy beside the source (its run-time data files resolve from
+    # there), named by its content so a run that dies leaves one file per
+    # scaling, never one per process; git ignores `.scaled-*` (.gitignore).
+    tag = hashlib.sha256(f"{file}\0{scale}".encode()).hexdigest()[:16]
+    out = src.parent / f".scaled-{tag}.mapal"
     out.write_text(text, encoding="utf-8")
     CACHE.setdefault("scaled", []).append(out)
     return out
@@ -555,6 +559,12 @@ def main() -> int:
         for f in CACHE.get("scaled", []):
             f.unlink(missing_ok=True)
     bad = check_excerpts(page)
+    # The scratch copies are never part of the page's sources.
+    tracked = subprocess.run(["git", "ls-files", "docs/exposition/.scaled-*"], cwd=ROOT,
+                             capture_output=True, text=True).stdout.split()
+    if tracked:
+        print(f"scratch copies tracked by git: {', '.join(tracked)}")
+        bad = list(bad) + tracked
     if bad:
         print(f"excerpt differs from its file: {', '.join(bad)}")
     if args.check:

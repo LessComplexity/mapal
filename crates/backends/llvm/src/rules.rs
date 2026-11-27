@@ -989,6 +989,16 @@ mod native_tests {
         ])
     }
 
+    /// A part's placement facts without their provenance's wording.
+    fn place_values(f: &crate::profile::PlaceFacts) -> crate::profile::PlaceFacts {
+        crate::profile::PlaceFacts {
+            prov: &[],
+            cite: "",
+            start: f.start.map(|(s, _)| (s, "")),
+            ..*f
+        }
+    }
+
     /// **hardware-properties: the native GPU profile is the device query and
     /// the calibration file** — on the 5080's facts it is the hand spelling's
     /// physical properties, so it takes the same rungs at every fill and
@@ -1000,8 +1010,16 @@ mod native_tests {
         let p = q.profile(Some(CALIB));
         assert_eq!(p.name, NATIVE_GPU);
         let (g, h) = (p.gpu().expect("gpu"), RTX_5080.gpu().expect("gpu"));
-        // The physical properties; the placement facts and provenance
-        // (ADR-0050 `PlaceFacts`) are the hand profile's own.
+        // The physical properties and the placement probes' facts (ADR-0050
+        // `PlaceFacts`: start timing, keeps, hit curve, latencies, efficiency
+        // points, sustained clock — the calibration line's `place.` names)
+        // are the hand profile's; only the provenance's wording differs (the
+        // calibration file against the hand profile's cites).
+        assert_eq!(
+            place_values(g.place),
+            place_values(h.place),
+            "the calibration line carries the placement facts"
+        );
         assert_eq!(
             crate::profile::Gpu {
                 place: h.place,
@@ -1045,6 +1063,10 @@ mod native_tests {
         if q == rtx_5080_query() {
             let p = q.profile(Some(CALIB));
             let h = RTX_5080.gpu().expect("gpu");
+            assert_eq!(
+                place_values(p.gpu().expect("gpu").place),
+                place_values(h.place)
+            );
             assert_eq!(
                 crate::profile::Gpu {
                     place: h.place,

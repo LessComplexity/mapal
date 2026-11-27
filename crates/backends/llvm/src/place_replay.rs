@@ -186,13 +186,18 @@ fn arm_launch(site: &TileSite, p: &'static TargetProfile, plan: &str) -> Option<
     })
 }
 
-/// One arm's evaluation at the three bounds, and its terms.
+/// One arm's evaluation: its time at the slow, value and fast bounds, its
+/// terms, and its time at every corner of the facts' intervals.
+type ArmEval = ([f64; 3], mapal_place::Terms, Vec<f64>);
+
+/// One arm's evaluation at the three bounds and every corner, and its
+/// terms.
 fn arm_ns(
     site: &TileSite,
     p: &'static TargetProfile,
     l: &Launch,
     warm: [bool; 2],
-) -> Option<([f64; 3], mapal_place::Terms)> {
+) -> Option<ArmEval> {
     let m = machine_of(p)?;
     let arms = crate::GpuArms {
         free: true,
@@ -214,6 +219,10 @@ fn arm_ns(
     let at = |b| mapal_place::evaluate(&m, &s, &x, &d, b);
     let mut t = at(mapal_place::Bound::Value);
     t.marked.insert(0, x.plan());
+    let corners: Vec<f64> = mapal_place::Corner::corners()
+        .into_iter()
+        .map(|c| mapal_place::evaluate_corner(&m, &s, &x, &d, c).ns)
+        .collect();
     Some((
         [
             at(mapal_place::Bound::Slow).ns,
@@ -221,43 +230,132 @@ fn arm_ns(
             at(mapal_place::Bound::Fast).ns,
         ],
         t,
+        corners,
     ))
+}
+
+/// **A replayed site's warm operands from its program** (the box column's
+/// `program=<stem>`, `benches/algorithms/<stem>.mapal`): the program
+/// lowered, its tile site of these extents, `residence_plan` at the part's
+/// keep ([`crate::place::warm_sites`] — what an emission reads); none
+/// without a program.
+fn warm_of_program(boxes: &str, p: &TargetProfile, (m, n, k): (u64, u64, u64)) -> [bool; 2] {
+    let Some(stem) = boxes
+        .split_whitespace()
+        .find_map(|b| b.strip_prefix("program="))
+    else {
+        return [false, false];
+    };
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../benches/algorithms")
+        .join(format!("{stem}.mapal"));
+    let src = std::fs::read_to_string(&path).expect("the replayed program");
+    let po = mapal_syntax::parse(&src);
+    assert!(po.diagnostics.is_empty(), "{stem} parses");
+    let ir = mapal_lower::lower(&src, &po.program).expect("lowers");
+    let ir = mapal_rewrite::rewrite(ir).ir;
+    let keep = p.gpu().expect("a GPU part").l2_keep_bytes();
+    crate::place::warm_sites(&ir, keep)
+        .into_iter()
+        .find(|(s, _)| (s.rows, s.c, s.k) == (m, n, k))
+        .map(|(_, w)| w)
+        .expect("the program's site of the replayed extents")
+}
+
+/// The replay's sites: rows grouped by id. Two ids of one site (part,
+/// extents, formats, order, box and every arm's plan) would count one
+/// measurement twice — refused (`place_replay_sites_are_distinct`).
+fn replay_sites(text: &str) -> std::collections::BTreeMap<String, Vec<Vec<&str>>> {
+    let mut sites: std::collections::BTreeMap<String, Vec<Vec<&str>>> = Default::default();
+    for l in text
+        .lines()
+        .filter(|l| !l.starts_with('#') && !l.is_empty())
+    {
+        let f: Vec<&str> = l.split('\t').collect();
+        sites.entry(f[0].to_string()).or_default().push(f);
+    }
+    sites
+}
+
+/// A site's identity: what the model sees of it.
+fn site_key(arms: &[Vec<&str>]) -> String {
+    let f0 = &arms[0];
+    let plans: Vec<&str> = arms.iter().map(|a| a[8]).collect();
+    format!(
+        "{} {}x{}x{} {} {} {} {}",
+        f0[1],
+        f0[2],
+        f0[3],
+        f0[4],
+        f0[5],
+        f0[6],
+        f0[12],
+        plans.join(",")
+    )
+}
+
+/// **One measured site, one replay site**: no two ids of the corpus are
+/// the same site (a repeated measurement is merged into one row, its
+/// source naming both — `mma_cut_replay`'s two runs of the RTX 3090's and
+/// the A100's 2048³ TF32 cut).
+#[test]
+fn place_replay_sites_are_distinct() {
+    let sites = replay_sites(include_str!("place_replay.tsv"));
+    let mut seen: std::collections::BTreeMap<String, &str> = Default::default();
+    for (id, arms) in &sites {
+        if let Some(other) = seen.insert(site_key(arms), id) {
+            panic!("{id} and {other} are one site: {}", site_key(arms));
+        }
+    }
 }
 
 /// **The model's misses on the replay, each with the term it lacks**
 /// (`benches/results/evidence/local-rtx-5080/machine-model.md`): checked —
-/// a miss that turns into a pick must leave this list.
-const REPLAY_OPEN: [&str; 15] = [
-    // H100 TF32 128 x 4096 x 4096, raster or not: both arms bound by the L2
-    // feed at one price; the measured 12 % is the copy engine's (movers are
-    // not yet priced: TMA boxes against cp.async lane copies).
-    "c11-7",
-    // RTX 3090 / A100 cuts the model takes for their wave quantization
-    // (2048³ TF32, 128 x 4096 x 14336 bf16): the tensor tile's efficiency at
-    // its occupancy on those parts is unmeasured (the RTX 5080's curve is
-    // its own), and the cut's partial adds burst at each piece's end.
-    "cut-0", "cut-1", "cut-10", "cut-2", "cut-8", "cut-9",
-    // RTX 5080 128 x 28672 x 4096 bf16 (ADR-0050 C5): the hybrid won by 2.7 %
-    // where the model prices it 2 % over the ordered grid — every arm priced
-    // ~3x under its time (a DRAM-bound skinny site: the tile's realized
-    // memory rate under its ring, `mma-fly`'s, is not a machine fact yet).
+/// a miss that turns into a pick (or an open) must leave this list. Scored
+/// by the search's own rule ([`mapal_place::verdict`]): a pick within the
+/// null, or one the facts' intervals flip at some corner, is open, never
+/// counted here or as a pick.
+const REPLAY_OPEN: [&str; 6] = [
+    // RTX 3090 2048³ TF32 and 128 x 4096 x 14336 bf16: the uncut grid won
+    // (5.9 / 7.8 %), the model prices the cut 19 / 17 % under it by wave
+    // quantization — its partial adds (151 / 19 µs at the L2) and, past the
+    // keep, their read-modify-write from DRAM (387 / 196 µs) priced as
+    // overlapped with the k loop (max over resources). The adds come as a
+    // burst at each piece's end: the missing term is that burst, serial
+    // after the piece's fold (it makes cuts dearer).
+    "cut-0", "cut-2",
+    // A100 128 x 4096 x 14336 bf16: the cut won (9.6 %); the model prices
+    // both arms at the device L2 feed (168 µs each, `cache` — the full-grid
+    // read rate `calib.cu bw` measured), the cut's lower per-unit terms
+    // (compute 51 against 82 µs, latency 51 against 82) hidden under it. The
+    // uncut grid (128 tiles on 108 SMs, one or two blocks an SM) does not
+    // draw that rate: the missing fact is the L2's realized rate at the
+    // grid's occupancy (a rate curve against resident warps, as the
+    // efficiency curve) — it makes the under-filled uncut dearer, the
+    // opposite direction of the 3090 rows' term. (The A100's TF32 and
+    // 2048-row cuts, cut-9 / cut-10, are ties within the null: open.)
+    "cut-8",
+    // RTX 5080 128 x 28672 x 4096 bf16 (ADR-0050 C5): the hybrid won by
+    // 2.7 %; every arm is priced at the DRAM roofline (283 µs: `b`'s 235 MB
+    // once) ~3x under its time — the ring's bytes in flight a unit cover
+    // DRAM's latency by the model, so no term explains the skinny site's
+    // realized memory rate (open: a probe of one tile row's stream rate).
     "hyb-0",
-    // RTX 5080 walks the model prices under their ordered grids but the
-    // ordered grid won (2048 x 6144 x 4096, 2048 x 8192 x 2048, 512 x 512 x
-    // 2048): the walk's own per-unit cost — its segment loop, the shared
-    // tiles' fixup — and its pipe efficiency are unpriced (the design check's
-    // open line on 2048 x 6144 x 4096).
-    "walk-16", "walk-4", "walk-5",
-    // H100 TF32 warp-specialized against the S53 ring: one L2-bound price
-    // for both; the TMA engine's copies (`tma_copy_ns`) and the cp.async
-    // issue are the unpriced movers.
-    "ws-0", "ws-1", "ws-2", "ws-3",
+    // RTX 5080 2048 x 6144 x 4096 and 512 x 512 x 2048: the ordered grid
+    // won (12 / 2.7 %), the walk is priced 6 / 18 % under it (wave
+    // quantization; at 512² a larger tile). The walk's own per-unit cost is
+    // unpriced: its k loop one copy where the ordered kernel's is two
+    // (SASS: 64 against 128 HMMA a loop body, 568 against 464
+    // instructions), its segment loop and the shared tiles' fixup, and its
+    // partial adds as a burst at each piece's end (512²: 6.6 µs of adds
+    // priced under 10 µs of compute).
+    "walk-16", "walk-5",
 ];
 
-/// The model's picks (C3's 38 on the seeded corpus; C5's hybrid arms add
-/// 9): a floor, not a target — the rules pick 61 (`model >= rules` is
-/// ADR-0050 C6's bar).
-const MODEL_FLOOR: u64 = 47;
+/// The model's picks under the search's own rule (C5's corpus, duplicates
+/// merged, ties and flips at any corner open): a floor, not a target — the
+/// rules pick 59 (`model >= rules` is ADR-0050 C6's bar).
+const MODEL_FLOOR: u64 = 37;
 
 /// **ADR-0050 C3: `place_replay.tsv` scored** — per measured site, the
 /// measured winner (or null: within the null), the model's pick (the arm
@@ -268,15 +366,7 @@ const MODEL_FLOOR: u64 = 47;
 /// reported (not met at C3).
 #[test]
 fn place_replay_scores() {
-    let text = include_str!("place_replay.tsv");
-    let mut sites: std::collections::BTreeMap<String, Vec<Vec<&str>>> = Default::default();
-    for l in text
-        .lines()
-        .filter(|l| !l.starts_with('#') && !l.is_empty())
-    {
-        let f: Vec<&str> = l.split('\t').collect();
-        sites.entry(f[0].to_string()).or_default().push(f);
-    }
+    let sites = replay_sites(include_str!("place_replay.tsv"));
     #[derive(Default, Clone, Copy)]
     struct Score {
         picked: u64,
@@ -287,6 +377,7 @@ fn place_replay_scores() {
     let mut model: std::collections::BTreeMap<String, Score> = Default::default();
     let mut rules: std::collections::BTreeMap<String, Score> = Default::default();
     let mut misses = Vec::new();
+    let mut opens = Vec::new();
     let mut lines = Vec::new();
     for (id, arms) in &sites {
         let fam = id.split('-').next().unwrap().to_string();
@@ -300,11 +391,11 @@ fn place_replay_scores() {
         let mm = fam == "kfill" || fam == "skfill" || fam == "pc" || fam == "split";
         let site = replay_site(m, n, k, f0[5], mm);
         let mut evals = Vec::new();
+        // The operands resident where the site reads them: its program's
+        // `residence_plan`.
+        let warm = warm_of_program(f0[12], p, (m, n, k));
         for a in arms {
             let l = arm_launch(&site, p, a[8]);
-            // `warm=b`: the operand resident from the previous call (the
-            // program's repetitions; `residence_plan`).
-            let warm = [f0[12].contains("warm=a"), f0[12].contains("warm=b")];
             let ev = l.as_ref().and_then(|l| arm_ns(&site, p, l, warm));
             let us: f64 = a[9].parse().unwrap();
             evals.push((a[7], a[8], us, a[11] == "rules", ev, l));
@@ -318,36 +409,46 @@ fn place_replay_scores() {
             .unwrap();
         let worst = evals.iter().map(|e| e.2).fold(0.0, f64::max);
         let measured_null = (worst - evals[best].2) / evals[best].2 <= null;
-        let pick_at = |j: usize| {
-            evals
-                .iter()
-                .enumerate()
-                .filter(|e| e.1.4.is_some())
-                .min_by(|a, b| {
-                    a.1.4.as_ref().unwrap().0[j].total_cmp(&b.1.4.as_ref().unwrap().0[j])
-                })
-                .map(|(i, _)| i)
-        };
-        let (slow, val, fast) = (pick_at(0), pick_at(1), pick_at(2));
+        // The model's pick and opens by the search's own rule (minimax
+        // over the corners; a flip or a tie within the null is open).
+        let lowered = evals.iter().all(|e| e.4.is_some());
+        let v = lowered.then(|| {
+            let ev = |e: &(&str, &str, f64, bool, Option<ArmEval>, Option<Launch>)| {
+                e.4.clone().expect("lowered")
+            };
+            mapal_place::verdict(
+                &evals.iter().map(|e| ev(e).0[1]).collect::<Vec<_>>(),
+                &evals.iter().map(|e| ev(e).2).collect::<Vec<_>>(),
+                &evals.iter().map(|e| e.0.to_string()).collect::<Vec<_>>(),
+                crate::place::PLACE_NULL,
+            )
+        });
         let rules_pick = evals.iter().position(|e| e.3);
         let ms = model.entry(fam.clone()).or_default();
         let rs = rules.entry(fam.clone()).or_default();
-        let model_v = if measured_null {
-            ms.null += 1;
-            "null"
-        } else if val.is_none() || evals.iter().any(|e| e.4.is_none()) {
-            ms.open += 1;
-            "open(unlowered)"
-        } else if slow != fast {
-            ms.open += 1;
-            "open"
-        } else if val == Some(best) {
-            ms.picked += 1;
-            "picked"
-        } else {
-            ms.missed += 1;
-            misses.push(id.clone());
-            "missed"
+        let model_v = match &v {
+            _ if measured_null => {
+                ms.null += 1;
+                "null".to_string()
+            }
+            None => {
+                ms.open += 1;
+                "open(unlowered)".to_string()
+            }
+            Some(v) if !v.open.is_empty() => {
+                ms.open += 1;
+                opens.push(id.clone());
+                format!("open({})", v.open.join("; "))
+            }
+            Some(v) if v.pick == best => {
+                ms.picked += 1;
+                "picked".to_string()
+            }
+            Some(_) => {
+                ms.missed += 1;
+                misses.push(id.clone());
+                "missed".to_string()
+            }
         };
         let rules_v = if measured_null {
             rs.null += 1;
@@ -388,7 +489,7 @@ fn place_replay_scores() {
         ));
         if fam == "pc" || std::env::var("PLACE_TERMS").is_ok() {
             for e in &evals {
-                if let Some((_, t)) = &e.4 {
+                if let Some((_, t, _)) = &e.4 {
                     lines.push(format!(
                         "    {} {}: {} | {}",
                         id,
@@ -425,6 +526,7 @@ fn place_replay_scores() {
         mt.picked, mt.missed, mt.open, mt.null, rt.picked, rt.missed, rt.null
     );
     eprintln!("model misses: {misses:?}");
+    eprintln!("model opens: {opens:?}");
     if std::env::var("PLACE_REPLAY_REPORT").is_ok() {
         return;
     }
@@ -448,21 +550,8 @@ fn place_replay_scores() {
 /// Every replayed site's arms: its family, null, and per arm its name,
 /// measured time and the model's three-bound price with its terms.
 #[allow(clippy::type_complexity)]
-fn replay_evals() -> Vec<(
-    String,
-    String,
-    f64,
-    Vec<(String, f64, Option<([f64; 3], mapal_place::Terms)>)>,
-)> {
-    let text = include_str!("place_replay.tsv");
-    let mut sites: std::collections::BTreeMap<String, Vec<Vec<&str>>> = Default::default();
-    for l in text
-        .lines()
-        .filter(|l| !l.starts_with('#') && !l.is_empty())
-    {
-        let f: Vec<&str> = l.split('\t').collect();
-        sites.entry(f[0].to_string()).or_default().push(f);
-    }
+fn replay_evals() -> Vec<(String, String, f64, Vec<(String, f64, Option<ArmEval>)>)> {
+    let sites = replay_sites(include_str!("place_replay.tsv"));
     let mut out = Vec::new();
     for (id, arms) in &sites {
         let fam = id.split('-').next().unwrap().to_string();
@@ -475,7 +564,7 @@ fn replay_evals() -> Vec<(
         );
         let mm = fam == "kfill" || fam == "skfill" || fam == "pc" || fam == "split";
         let site = replay_site(m, n, k, f0[5], mm);
-        let warm = [f0[12].contains("warm=a"), f0[12].contains("warm=b")];
+        let warm = warm_of_program(f0[12], p, (m, n, k));
         let evals = arms
             .iter()
             .map(|a| {
@@ -508,7 +597,7 @@ fn place_band_is_the_replays_residuals() {
         else {
             continue;
         };
-        let (_, ta, Some((pa, terms))) = &evals[best] else {
+        let (_, ta, Some((pa, terms, _))) = &evals[best] else {
             continue;
         };
         let term = terms
@@ -518,7 +607,7 @@ fn place_band_is_the_replays_residuals() {
             .map_or("all", |p| p.bound())
             .to_string();
         for (i, (_, tb, eb)) in evals.iter().enumerate() {
-            let Some((pb, _)) = eb else { continue };
+            let Some((pb, ..)) = eb else { continue };
             if i == best {
                 continue;
             }

@@ -238,6 +238,9 @@ pub struct PlaceFacts {
     /// bytes (0: unmeasured — the cyclic keep, marked).
     pub keep_rotated: u64,
     pub keep_strided: u64,
+    /// The keep sweep's resolution: the next working set it measured past
+    /// the keep (each pattern's keep lies in `[keep, keep_hi)`; 0: a point).
+    pub keep_hi: u64,
     /// The L2's hit fraction against reuse distance ÷ cyclic keep, both per
     /// mille.
     pub hit_curve: &'static [(u64, u64)],
@@ -262,6 +265,7 @@ pub const PLACE_NONE: PlaceFacts = PlaceFacts {
     start: None,
     keep_rotated: 0,
     keep_strided: 0,
+    keep_hi: 0,
     hit_curve: &[],
     lat_l2_ns: 0,
     eff: &[],
@@ -5960,10 +5964,9 @@ pub const PLACE_H100_PCIE: PlaceFacts = PlaceFacts {
     prov: &[
         ("flops_per_ns", FIT),
         ("bytes_per_ns", FIT),
-        (
-            "launch_ns",
-            m("s62 run2 results-h100-pcie (all-device iter / sites)"),
-        ),
+        // A fit (`place::FITS`): the all-device iteration's time over its
+        // sites, one program's — replay only.
+        ("launch_ns", FIT),
         ("fp32_lanes", DATASHEET),
         (
             "clock_khz",
@@ -6071,6 +6074,10 @@ pub const PLACE_RTX_5080_PROV: &[(&str, Src)] = &[
     ("bar_cycles", m("calib.cu bar 44.6 cycles")),
     ("mma_tf32_per_clk", m("calib.cu matrix")),
     ("mma_half_per_clk", m("calib.cu matrix")),
+    // The warp products' accumulator: rounding and guard bits
+    // (`benches/local/mma_calib.cu`, the `MatrixOp` rows' values).
+    ("acc_u", m("mma_calib.cu")),
+    ("acc_g", m("mma_calib.cu g_j probes")),
 ];
 
 /// ADR-0050 C3: the RTX 5080's placement probes (`benches/local/place_calib.cu`
@@ -6085,9 +6092,17 @@ pub const PLACE_RTX_5080_PROV: &[(&str, Src)] = &[
 /// clock under sustained FFMA load 2.867 GHz (clock64 over %globaltimer, 4 s).
 pub const PLACE_RTX_5080: PlaceFacts = PlaceFacts {
     prov: PLACE_RTX_5080_PROV,
-    start: Some((mapal_place::Start::Lockstep, "place_calib.cu start")),
+    // Lockstep under an L2-resident, a DRAM-contended and a GEMM's panel
+    // load alike (review run: median spread 0-22 per mille).
+    start: Some((
+        mapal_place::Start::Lockstep,
+        "place_calib.cu start: l2, dram and gemm loads",
+    )),
     keep_rotated: 68_784_128,
     keep_strided: 68_784_128,
+    // The sweep's next point (1.05 x 64 MiB): the keep lies below it
+    // (review run, `keep-review.txt`).
+    keep_hi: 70_463_488,
     hit_curve: &[
         (250, 960),
         (500, 994),
@@ -7546,6 +7561,11 @@ impl DeviceQuery {
             place: &PLACE_NONE,
         };
         let over = calib.and_then(|t| calib_line(t, &self.calib_key()));
+        // ADR-0050: the placement probes' facts the line carries (start
+        // timing, keeps per pattern, hit curve, L2 latency, efficiency
+        // points, latencies, sustained clock, barrier cycles) — the device's
+        // own, as the hand profile of the same part spells them.
+        let placed = calib.and_then(|t| place_line(t, &self.calib_key()));
         // ADR-0050 provenance: a calibration line's values are measured; the
         // compute-capability tables' are derived (marked); the rest is the
         // device query's.
@@ -7554,6 +7574,23 @@ impl DeviceQuery {
             if v.is_some() {
                 prov.push((name, Src::Measured("calibration file")));
             }
+        }
+        let gpu = match placed.and_then(|(_, bar)| bar) {
+            Some(bar) => {
+                prov.push((
+                    "bar_cycles",
+                    Src::Measured("calibration file (calib.cu bar)"),
+                ));
+                Gpu {
+                    bar_cycles: bar,
+                    ..gpu
+                }
+            }
+            None => gpu,
+        };
+        // The device query's own attributes: queried (`place::QUERIED`).
+        for name in crate::place::QUERIED {
+            prov.push((name, Src::Queried));
         }
         for name in [
             "fp32_lanes",
@@ -7569,7 +7606,7 @@ impl DeviceQuery {
         }
         let place: &'static PlaceFacts = Box::leak(Box::new(PlaceFacts {
             prov: Box::leak(prov.into_boxed_slice()),
-            ..PLACE_NONE
+            ..placed.map_or(PLACE_NONE, |(f, _)| f)
         }));
         let gpu = Gpu { place, ..gpu };
         TargetProfile {
@@ -7642,10 +7679,95 @@ pub fn calib_line(text: &str, key: &str) -> Option<CostOver> {
     let mut over: CostOver = [None; DeviceCost::NAMES.len()];
     for kv in line.split('\t').skip(1).flat_map(str::split_whitespace) {
         let (k, v) = kv.split_once('=')?;
+        // ADR-0050: the placement probes' facts ([`place_line`]).
+        if k.starts_with("place.") {
+            continue;
+        }
         let i = DeviceCost::NAMES.iter().position(|n| *n == k)?;
         over[i] = Some(v.parse().ok()?);
     }
     Some(over)
+}
+
+/// **ADR-0050: the placement facts a calibration line measured** — the
+/// `place.` names beside the `--cost=` ones (`benches/local/place_calib.cu`;
+/// `None`: the line has none): `place.start=lockstep|stagger`,
+/// `place.keep_rotated` / `place.keep_strided` (bytes), `place.keep_hi` (the
+/// sweep's next point: every keep's resolution), `place.hit` (`x:y`
+/// pairs, reuse distance ÷ cyclic keep and hit fraction, per mille),
+/// `place.lat_l2_ns`, `place.eff` (`op:chains:groups×1000:per mille`),
+/// `place.latency` (`op:clocks×10`), `place.clock_khz` (sustained), and
+/// `place.bar_cycles` (the barrier's measured cycles). An unknown `place.`
+/// name or a malformed value rejects the line's placement facts.
+pub fn place_line(text: &str, key: &str) -> Option<(PlaceFacts, Option<u64>)> {
+    let line = text
+        .lines()
+        .map(|l| l.split('#').next().unwrap_or("").trim())
+        .find(|l| l.split('\t').next() == Some(key))?;
+    let leak = |x: &str| -> &'static str { Box::leak(x.to_string().into_boxed_str()) };
+    let mut f = PLACE_NONE;
+    let mut bar = None;
+    let mut any = false;
+    for kv in line.split('\t').skip(1).flat_map(str::split_whitespace) {
+        let (k, v) = kv.split_once('=')?;
+        let Some(k) = k.strip_prefix("place.") else {
+            continue;
+        };
+        any = true;
+        let num = |x: &str| x.parse::<u64>().ok();
+        match k {
+            "start" => {
+                let st = match v {
+                    "lockstep" => mapal_place::Start::Lockstep,
+                    "stagger" => mapal_place::Start::Stagger,
+                    _ => return None,
+                };
+                f.start = Some((st, "calibration file (place_calib.cu start)"));
+            }
+            "keep_rotated" => f.keep_rotated = num(v)?,
+            "keep_strided" => f.keep_strided = num(v)?,
+            "keep_hi" => f.keep_hi = num(v)?,
+            "lat_l2_ns" => f.lat_l2_ns = num(v)?,
+            "clock_khz" => f.clock_khz = num(v)?,
+            "bar_cycles" => bar = Some(num(v)?),
+            "hit" => {
+                let pts: Option<Vec<(u64, u64)>> = v
+                    .split(',')
+                    .map(|xy| {
+                        let (x, y) = xy.split_once(':')?;
+                        Some((num(x)?, num(y)?))
+                    })
+                    .collect();
+                f.hit_curve = Box::leak(pts?.into_boxed_slice());
+            }
+            "eff" => {
+                let pts: Option<Vec<(&'static str, u64, u64, u64)>> = v
+                    .split(',')
+                    .map(|e| {
+                        let mut it = e.rsplitn(4, ':');
+                        let (pm, g, c, op) = (it.next()?, it.next()?, it.next()?, it.next()?);
+                        Some((leak(op), num(c)?, num(g)?, num(pm)?))
+                    })
+                    .collect();
+                f.eff = Box::leak(pts?.into_boxed_slice());
+            }
+            "latency" => {
+                let pts: Option<Vec<(&'static str, u64)>> = v
+                    .split(',')
+                    .map(|e| {
+                        let (op, x10) = e.rsplit_once(':')?;
+                        Some((leak(op), num(x10)?))
+                    })
+                    .collect();
+                f.latency = Box::leak(pts?.into_boxed_slice());
+            }
+            _ => return None,
+        }
+    }
+    any.then(|| {
+        f.cite = "calibration file (place_calib.cu)";
+        (f, bar)
+    })
 }
 
 /// The driver API, opened at run time: the compiler links no CUDA library

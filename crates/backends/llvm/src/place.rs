@@ -25,9 +25,9 @@ use crate::func::gpu::{
     site_rungs,
 };
 use crate::profile::{
-    CHAIN_CYCLES_RTX_5080, DeviceCost, Face, GPU_VEC_BYTES, Gpu, GpuMmaTile, GpuTile, GpuWgmmaTile,
-    Home as MHome, MatrixOp, MmaFmt, NAIVE_UNROLL, NO_PLAN, TargetProfile, WARPGROUP_WARPS,
-    WGMMA_N_MAX, WGMMA_N_STEP, fma_held_regs,
+    DeviceCost, Face, GPU_VEC_BYTES, Gpu, GpuMmaTile, GpuTile, GpuWgmmaTile, Home as MHome,
+    MatrixOp, MmaFmt, NAIVE_UNROLL, NO_PLAN, TargetProfile, WARPGROUP_WARPS, WGMMA_N_MAX,
+    WGMMA_N_STEP, fma_held_regs,
 };
 use mapal_ir::{TileSite, Ty};
 use mapal_place::{
@@ -60,29 +60,40 @@ pub const OP_FFMA: usize = 0;
 pub const OP_MULADD: usize = 1;
 
 /// The source of profile field `name` ([`crate::profile::PlaceFacts::prov`]):
-/// listed, else a device-query attribute, else unlabeled (nominal).
+/// listed (the native profile lists its device-query attributes as
+/// queried), else a geometry field a hand profile spells (declared: its
+/// datasheet, or a device query once — not this process's), else unlabeled
+/// (nominal).
 fn src(g: &Gpu, name: &str) -> Src {
     if let Some((_, s)) = g.place.prov.iter().find(|(n, _)| *n == name) {
         return *s;
     }
     match name {
-        "warp"
-        | "max_threads_per_block"
-        | "sms"
-        | "regs_per_thread"
-        | "regs_per_sm"
-        | "smem_per_sm"
-        | "smem_per_block"
-        | "smem_reserved_per_block"
-        | "max_threads_per_sm"
-        | "max_blocks_per_sm"
-        | "l2_bytes"
-        | "mem_clock_khz"
-        | "mem_bus_bits"
-        | "schedulers" => Src::Queried,
+        "regs_per_thread" => Src::Declared("the ISA's registers a thread"),
+        "schedulers" => Src::Declared("the SM design's warp schedulers"),
+        n if QUERIED.contains(&n) => {
+            Src::Declared("the hand profile's geometry (datasheet or a past query)")
+        }
         _ => Src::Nominal("unlabeled profile value"),
     }
 }
+
+/// The geometry fields a device query reads (`cuDeviceGetAttribute`):
+/// queried on the native profile, declared on a hand one ([`src`]).
+pub const QUERIED: [&str; 12] = [
+    "warp",
+    "max_threads_per_block",
+    "sms",
+    "regs_per_sm",
+    "smem_per_sm",
+    "smem_per_block",
+    "smem_reserved_per_block",
+    "max_threads_per_sm",
+    "max_blocks_per_sm",
+    "l2_bytes",
+    "mem_clock_khz",
+    "mem_bus_bits",
+];
 
 /// A profile value as a fact: `v` with its source, an interval only where the
 /// source is marked (`[lo, hi]` × `v`).
@@ -99,8 +110,9 @@ fn fact(g: &Gpu, name: &str, v: f64, spread: (f64, f64)) -> Fact<f64> {
     }
 }
 
-fn qu(v: u64) -> Fact<u64> {
-    Fact::queried(v)
+/// A geometry field's value with its source ([`src`]).
+fn geo(g: &Gpu, name: &str, v: u64) -> Fact<u64> {
+    Fact::point(v, src(g, name))
 }
 
 /// The machine format of a matrix format.
@@ -186,23 +198,18 @@ fn latency(g: &Gpu, name: &str, nominal: (f64, f64, f64)) -> Fact<f64> {
 pub fn machine_of(p: &TargetProfile) -> Option<Machine> {
     let g = p.gpu()?;
     let d = g.cost.unwrap_or(NO_PLAN);
-    let ghz = match g.place.clock_khz {
-        0 => g.clock_khz,
-        v => v,
-    } as f64
-        / 1e6;
     let exec = vec![
         Exec {
             name: "device",
             kind: ExecKind::Device,
             parent: None,
-            per_parent: qu(1),
+            per_parent: Fact::declared(1, "one device"),
         },
         Exec {
             name: "sm",
             kind: ExecKind::Unit,
             parent: Some(E_DEVICE),
-            per_parent: qu(g.sms),
+            per_parent: geo(g, "sms", g.sms),
         },
         Exec {
             name: "scheduler",
@@ -214,13 +221,17 @@ pub fn machine_of(p: &TargetProfile) -> Option<Machine> {
             name: "warp",
             kind: ExecKind::Group,
             parent: Some(E_SUB),
-            per_parent: qu(g.max_threads_per_sm / g.warp.max(1) / g.schedulers()),
+            per_parent: geo(
+                g,
+                "max_threads_per_sm",
+                g.max_threads_per_sm / g.warp.max(1) / g.schedulers(),
+            ),
         },
         Exec {
             name: "lane",
             kind: ExecKind::Lane,
             parent: Some(E_GROUP),
-            per_parent: qu(g.warp),
+            per_parent: geo(g, "warp", g.warp),
         },
     ];
     // Rates: measured where the profile measured them, else derived from the
@@ -280,12 +291,20 @@ pub fn machine_of(p: &TargetProfile) -> Option<Machine> {
                 hi: g.l2_bytes,
                 src: s,
             },
-            s => Fact::point(v, s),
+            s => Fact {
+                hi: g.place.keep_hi.max(v),
+                ..Fact::point(v, s)
+            },
         },
     };
+    // A measured keep lies between its sweep point and the next one
+    // (`keep_hi`): its interval, the sweep's resolution.
     let keep_of = |v: u64| match v {
         0 => None,
-        v => Some(Fact::measured(v, g.place.cite)),
+        v => Some(Fact {
+            hi: g.place.keep_hi.max(v),
+            ..Fact::measured(v, g.place.cite)
+        }),
     };
     let reach = |from, bw: Fact<f64>, total: Fact<f64>, lat: Fact<f64>, granule| Reach {
         from,
@@ -298,7 +317,7 @@ pub fn machine_of(p: &TargetProfile) -> Option<Machine> {
         Place {
             name: "regs",
             exec: E_LANE,
-            capacity: qu(g.regs_per_thread * 4),
+            capacity: geo(g, "regs_per_thread", g.regs_per_thread * 4),
             mgmt: Mgmt::Explicit,
             banking: None,
             granule: 4,
@@ -310,7 +329,7 @@ pub fn machine_of(p: &TargetProfile) -> Option<Machine> {
         Place {
             name: "smem",
             exec: E_UNIT,
-            capacity: qu(g.smem_per_sm),
+            capacity: geo(g, "smem_per_sm", g.smem_per_sm),
             mgmt: Mgmt::Explicit,
             banking: Some(Banking {
                 banks: 32,
@@ -326,7 +345,7 @@ pub fn machine_of(p: &TargetProfile) -> Option<Machine> {
         Place {
             name: "l2",
             exec: E_DEVICE,
-            capacity: qu(g.l2_bytes),
+            capacity: geo(g, "l2_bytes", g.l2_bytes),
             mgmt: Mgmt::Cache(Box::new(Cache {
                 instances: Fact::nominal(1, 1, 2, "L2 partitions unmeasured"),
                 map: InstanceMap::One,
@@ -402,7 +421,7 @@ pub fn machine_of(p: &TargetProfile) -> Option<Machine> {
     let res = vec![
         Resource {
             what: Res::Regs,
-            cap: qu(g.regs_per_sm),
+            cap: geo(g, "regs_per_sm", g.regs_per_sm),
             per_slot: 0,
             per_lane: g.regs_per_thread,
             granule: 256,
@@ -410,7 +429,7 @@ pub fn machine_of(p: &TargetProfile) -> Option<Machine> {
         },
         Resource {
             what: Res::Threads,
-            cap: qu(g.max_threads_per_sm),
+            cap: geo(g, "max_threads_per_sm", g.max_threads_per_sm),
             per_slot: g.max_threads_per_block,
             per_lane: 0,
             granule: 1,
@@ -418,7 +437,7 @@ pub fn machine_of(p: &TargetProfile) -> Option<Machine> {
         },
         Resource {
             what: Res::Slots,
-            cap: qu(g.max_blocks_per_sm),
+            cap: geo(g, "max_blocks_per_sm", g.max_blocks_per_sm),
             per_slot: 0,
             per_lane: 0,
             granule: 1,
@@ -426,7 +445,7 @@ pub fn machine_of(p: &TargetProfile) -> Option<Machine> {
         },
         Resource {
             what: Res::Bytes(SMEM),
-            cap: qu(g.smem_per_sm),
+            cap: geo(g, "smem_per_sm", g.smem_per_sm),
             per_slot: g.smem_per_block,
             per_lane: 0,
             granule: 128,
@@ -434,7 +453,9 @@ pub fn machine_of(p: &TargetProfile) -> Option<Machine> {
         },
     ];
     // Issue pipes: warp-instructions an SM issues a clock by class.
-    let lanes = fact(g, "fp32_lanes", g.fp32_lanes as f64, (1.0, 1.0));
+    // FP32 lanes: a derived value (the compute-capability table's) spans
+    // the SM designs' two widths, half to twice it.
+    let lanes = fact(g, "fp32_lanes", g.fp32_lanes as f64, (0.5, 2.0));
     let lsu = match d.lsu_ipc_pm {
         0 => Fact::nominal(0.5, 0.25, 1.0, "LSU issue rate unmeasured"),
         v => fact(g, "lsu_ipc_pm", v as f64 / 1000.0, (0.9, 1.1)),
@@ -500,9 +521,17 @@ pub fn machine_of(p: &TargetProfile) -> Option<Machine> {
             MHome::Regs => o.shape.m * 8 / o.shape.threads.max(1),
             _ => 0,
         };
+        // The accumulator's numerics: measured where the part ran
+        // `mma_calib.cu`; else the instruction row's (the RTX 5080's
+        // measured datapath, another part's — marked, with its interval).
         let numerics = |v: i32| match src(g, "acc_u") {
             Src::Measured(c) => Fact::measured(v, c),
-            _ => Fact::derived(v, v, v + 1, "the RTX 5080's measured accumulator datapath"),
+            _ => Fact::derived(
+                v,
+                v,
+                v + 1,
+                "unmeasured on this part: the RTX 5080's accumulator rounding",
+            ),
         };
         ops.push(Op {
             name,
@@ -534,9 +563,14 @@ pub fn machine_of(p: &TargetProfile) -> Option<Machine> {
             eff: eff_points(g, name),
             widths: Box::leak(vec![o.shape.threads].into_boxed_slice()),
             acc_u: numerics(o.acc_u),
-            acc_g: match src(g, "acc_u") {
+            acc_g: match src(g, "acc_g") {
                 Src::Measured(c) => Fact::measured(o.acc_g, c),
-                _ => Fact::derived(o.acc_g, 1, o.acc_g, "the RTX 5080's measured guard bits"),
+                _ => Fact::derived(
+                    o.acc_g,
+                    1,
+                    o.acc_g,
+                    "unmeasured on this part: the RTX 5080's guard bits",
+                ),
             },
         });
     }
@@ -611,21 +645,18 @@ pub fn machine_of(p: &TargetProfile) -> Option<Machine> {
         converts: false,
         policies: vec![],
     });
-    // Dispatch: launch costs measured where given; else the RTX 5080's
-    // cycles at this part's clock — another part's number, so nominal.
-    let chain = |measured: u64, name: &str, i: usize| match measured {
-        0 => {
-            let v = CHAIN_CYCLES_RTX_5080[i] as f64 / ghz.max(0.1);
-            Fact::nominal(
-                v,
-                0.5 * v,
-                3.0 * v,
-                "unmeasured: the RTX 5080's cycles at this clock",
-            )
-        }
+    // Dispatch: launch costs measured where given; else a placeholder of a
+    // launch's order of magnitude (no part's number), nominal and wide.
+    let chain = |measured: u64, name: &str, nominal: f64| match measured {
+        0 => Fact::nominal(
+            nominal,
+            nominal / 3.0,
+            nominal * 3.0,
+            "launch cost unmeasured: a placeholder, no part's value",
+        ),
         v => fact(g, name, v as f64, (0.8, 1.3)),
     };
-    let plain = chain(d.dep_launch_ns, "dep_launch_ns", 1);
+    let plain = chain(d.dep_launch_ns, "dep_launch_ns", 1000.0);
     let launches = vec![
         LaunchCost {
             mode: LaunchMode::Plain,
@@ -645,7 +676,7 @@ pub fn machine_of(p: &TargetProfile) -> Option<Machine> {
         },
         LaunchCost {
             mode: LaunchMode::Cooperative,
-            ns: chain(d.coop_launch_ns, "coop_launch_ns", 3),
+            ns: chain(d.coop_launch_ns, "coop_launch_ns", 3000.0),
             per_slot_ps: Fact::nominal(0.0, 0.0, 2.0, "per-slot dispatch unmeasured"),
         },
     ];
@@ -749,6 +780,7 @@ pub fn site_of(site: &TileSite, contract: bool, order: crate::Order) -> Site {
     }
     let window = site.a.ksplit.is_some() || site.b.ksplit.is_some();
     let _ = contract;
+    let warm = warm_of(site);
     Site {
         m: site.rows,
         n: site.c,
@@ -765,11 +797,99 @@ pub fn site_of(site: &TileSite, contract: bool, order: crate::Order) -> Site {
         },
         kcut: site.radix.is_none() && !window,
         fmts,
-        warm: [false, false],
+        warm,
+    }
+}
+
+thread_local! {
+    /// The emission's tile sites' warm operands ([`WarmScope`]), by the
+    /// site's text; `None` outside an emission.
+    static WARM: std::cell::RefCell<Option<std::collections::HashMap<String, [bool; 2]>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// **A site's warm operands** (ADR-0050 D3): `[a, b]` resident in the
+/// device cache when the site reads them — `residence_plan` at the part's
+/// keep: the working set from the operand's producer (a program input:
+/// the call's start, so the previous call's bytes) to its last reader fits
+/// ([`warm_sites`]; the fact `MAPAL_SITE_COLD` reads, its complement).
+/// Read from the emission's [`WarmScope`]; none outside one.
+pub fn warm_of(site: &TileSite) -> [bool; 2] {
+    WARM.with(|w| {
+        w.borrow()
+            .as_ref()
+            .and_then(|m| m.get(&format!("{site:?}")).copied())
+            .unwrap_or([false, false])
+    })
+}
+
+/// Every tile site of `ir` (the IR's tile plans: affine, strided, narrow)
+/// and its warm operands at a cache keeping `keep` bytes: an operand is warm
+/// where `residence_plan` places its bytes on chip or in the cache.
+pub fn warm_sites(ir: &mapal_ir::CategoryIr, keep: u64) -> Vec<(TileSite, [bool; 2])> {
+    let mut out = Vec::new();
+    for (f, _) in ir.funcs() {
+        let res = ir.residence_plan(f);
+        for plan in [
+            ir.tile_plan(f),
+            ir.tile_plan_strided(f),
+            ir.tile_plan_narrow(f),
+        ] {
+            for (m, site) in plan.sites.iter() {
+                let source = ir.morphism(m).expect("a site's morphism").source;
+                let warm = |slot: u32| {
+                    crate::func::pair_source_ir(ir, source, slot)
+                        .is_some_and(|o| res.at(o, keep) != mapal_ir::Residence::Dram)
+                };
+                out.push((site.clone(), [warm(site.a.slot), warm(site.b.slot)]));
+            }
+        }
+    }
+    out
+}
+
+/// **The warm operands of an emission's sites, while it runs**: every
+/// launch of the emission (its plans, its kernels, its host) reads one map,
+/// so a site is placed alike wherever its launch is derived. Sites of one
+/// text in several places take the conjunction (warm only where every one
+/// is). Only under `machine-place` (the map is the search's input alone).
+pub struct WarmScope {
+    prev: Option<std::collections::HashMap<String, [bool; 2]>>,
+}
+
+impl WarmScope {
+    pub fn new(ir: &mapal_ir::CategoryIr, p: &TargetProfile, arms: crate::GpuArms) -> Self {
+        let map = match (p.gpu(), arms.on.machine_place) {
+            (Some(g), true) => {
+                let mut m: std::collections::HashMap<String, [bool; 2]> = Default::default();
+                for (site, w) in warm_sites(ir, g.l2_keep_bytes()) {
+                    let e = m.entry(format!("{site:?}")).or_insert(w);
+                    e[0] &= w[0];
+                    e[1] &= w[1];
+                }
+                Some(m)
+            }
+            _ => None,
+        };
+        WarmScope {
+            prev: WARM.with(|w| w.replace(map)),
+        }
+    }
+}
+
+impl Drop for WarmScope {
+    fn drop(&mut self) {
+        let prev = self.prev.take();
+        WARM.with(|w| *w.borrow_mut() = prev);
     }
 }
 
 // ---- schedules and launches ---------------------------------------------------
+
+/// The one-thread-per-cell kernel's registers at up to eight cells a
+/// thread where the full-occupancy budget allows them (the `ptxas -v`
+/// reports' largest, sm_80 – sm_120).
+pub const NAIVE_REGS: u64 = 40;
 
 /// The lowering ids.
 pub const NAIVE: &str = "naive";
@@ -1530,9 +1650,10 @@ impl Emitter<'_> {
         // The occupancy is the lowering's only where it emits it
         // (`.minnctapersm`, `min-blocks`); elsewhere `per_unit` describes
         // what the rules assumed, and the evaluator takes the footprint's.
-        let emitted = launch_of(self.site, self.profile, self.contract, self.arms, x)
-            .rungs
-            .min_blocks;
+        let back = launch_of(self.site, self.profile, self.contract, self.arms, x);
+        // Only a tile kernel emits it (the cell kernel never does).
+        let emitted = back.rungs.min_blocks
+            && (back.tiled.is_some() || back.mma.is_some() || back.wgmma.is_some());
         if emitted && x.per_unit > occ.max(1) && x.per_unit > 1 {
             return Err(format!(
                 "per_unit {} above the footprint's occupancy {occ} ({} lanes x {} regs, {} B)",
@@ -1821,10 +1942,17 @@ impl Lowering for Emitter<'_> {
                 let trip = NAIVE_UNROLL as f64;
                 Ok(Declared {
                     threads: NAIVE_THREADS,
-                    // The counted address and loop budget (FMA_ADDR_REGS)
-                    // holds a cell's accumulators and its unrolled loads:
-                    // unverified until the post-lowering gate (C4).
-                    regs: crate::profile::FMA_ADDR_REGS,
+                    // The address, loop and in-flight load budget up to the
+                    // registers a lane keeps at full occupancy (the code
+                    // generator fills that budget: 32 where an SM holds 2048
+                    // threads, 40 at 1536), and the cells' accumulators past
+                    // four: `ptxas -v` on sm_80 – sm_120, f32 and bf16 `b`,
+                    // 31–40 registers at 1–8 cells, 43–48 at 16 (test
+                    // `naive_declared_registers_cover_ptxas`).
+                    // (The cell kernel emits no `min-blocks`: no cap.)
+                    regs: (g.regs_per_sm / g.max_threads_per_sm.max(1) / 8 * 8)
+                        .min(NAIVE_REGS)
+                        .max(32 + (cells.saturating_sub(4) * 4).div_ceil(3)),
                     smem: 0,
                     issue: vec![
                         (Class::Math, warps * trip * cells as f64),
@@ -1902,8 +2030,12 @@ impl Lowering for Emitter<'_> {
             MMA => {
                 let mt = l.mma.ok_or_else(|| Refusal::new("no warp mma tile"))?;
                 let o = g.caps.matrix[x.op - 2];
-                if mt.stages < 1 || mt.stages > s.k / bk {
-                    return Err(Refusal::new("stages in [1, k/bk]"));
+                // The warp tile's ring: two stages at least (its emitter
+                // waits on `stages − 2` groups; one stage, a single-panel
+                // fold, computes no product — found by the picks' value
+                // test), at most a stage a panel.
+                if mt.stages < 2 || mt.stages > s.k / bk {
+                    return Err(Refusal::new("stages in [2, k/bk]"));
                 }
                 // HMMA a trip: the warp tile's instructions per `k` step, a
                 // split form's parts each.
@@ -2106,11 +2238,11 @@ impl Emitter<'_> {
                     (bm * bk / la).is_multiple_of(threads) && (bk * bn / lb).is_multiple_of(threads)
                 });
             }
-            // A `cp.async` ring of two stages at least (one serializes the
-            // copy and the products: a count the evaluator does not price),
-            // within the slot's shared memory.
+            // A `cp.async` ring of two stages at least (the emitter's ring
+            // waits on `stages − 2` groups: a single-panel fold of one stage
+            // stores no product), within the slot's shared memory.
             (MMA, "stages") => dom.retain(|&st| {
-                (st >= 2 || site.k / pre[5].max(1) == 1)
+                st >= 2
                     && self
                         .mma_tile(pre, st)
                         .is_some_and(|t| t.smem_bytes() <= g.smem_per_block)
@@ -2453,8 +2585,8 @@ pub const PLACE_NULL: f64 = 0.02;
 /// a term with fewer than three pairs takes `all`'s). Per mille.
 pub const PLACE_BAND_PM: [(&str, u64); 5] = [
     ("all", 163),
-    ("compute", 155),
-    ("dram", 214),
+    ("compute", 137),
+    ("dram", 212),
     ("cache", 259),
     ("latency", 163),
 ];
@@ -2671,7 +2803,11 @@ fn key(
     arms: crate::GpuArms,
     order: crate::Order,
 ) -> String {
-    format!("{site:?}|{}|{contract}|{arms:?}|{order:?}", p.name)
+    format!(
+        "{site:?}|{}|{contract}|{arms:?}|{order:?}|{:?}",
+        p.name,
+        warm_of(site)
+    )
 }
 
 /// **Search** a site (cached): the machine's pick over every emitter's
@@ -3091,6 +3227,142 @@ mod tests {
         assert!(m.dispatch.launches[0].ns.marked());
     }
 
+    /// **ADR-0050 review: the one-thread-per-cell kernel's declared
+    /// registers cover what `ptxas` allocates** at every cell count the
+    /// search may give a thread (1–16, f32 and bf16 `b`), so the footprint's
+    /// occupancy is never above the kernel's. `PLACE_NAIVE_REGS=1` prints
+    /// the table; without `llc` / `ptxas`, nothing to check.
+    #[test]
+    fn naive_declared_registers_cover_ptxas() {
+        use std::process::Command;
+        let have = |t: &str| Command::new(t).arg("--version").output().is_ok();
+        if !have("llc") || !have("ptxas") {
+            return;
+        }
+        let arms = crate::GpuArms {
+            free: true,
+            site_cands: 1,
+            ..crate::GpuArms::default()
+        };
+        let mut over = Vec::new();
+        for part in ["a100", "rtx-3090", "rtx-4090", "h100", "rtx-5080"] {
+            let p = crate::profile::resolve(part).unwrap();
+            let g = p.gpu().unwrap();
+            let m = machine_of(p).unwrap();
+            for fmt in ["f32", "bf16"] {
+                let site = crate::place_replay::replay_site(1, 4096, 2048, fmt, true);
+                let rules = gpu::launch_in_rules(&site, p, true, arms, crate::Order::Free);
+                assert!(
+                    rules.tiled.is_none() && rules.mma.is_none(),
+                    "a cell kernel"
+                );
+                for cells in [1, 2, 4, 8, 16] {
+                    let l = Launch { cells, ..rules };
+                    let x = schedule_of(&site, p, arms, &l);
+                    let e = Emitter {
+                        id: NAIVE,
+                        site: &site,
+                        profile: p,
+                        contract: true,
+                        arms,
+                    };
+                    let s = site_of(&site, true, crate::Order::Free);
+                    let d = e.declare(&m, &s, &x).expect("declared");
+                    let text = gpu::lowered_text(&site, p, true, arms, &l).expect("lowers");
+                    let dir = std::env::temp_dir().join(format!(
+                        "mapal-naive-regs-{}-{fmt}-{cells}",
+                        std::process::id()
+                    ));
+                    std::fs::create_dir_all(&dir).unwrap();
+                    let (ll, ptx) = (dir.join("k.ll"), dir.join("k.ptx"));
+                    std::fs::write(&ll, gpu::kernel_module(&text)).unwrap();
+                    let mut llc = Command::new("llc");
+                    llc.args(["-O3", &format!("-mcpu={}", g.arch), "-nvptx-fma-level=0"]);
+                    if let Some(v) = crate::Ptx::declared(&gpu::kernel_module(&text)) {
+                        llc.arg(format!("-mattr={}", v.mattr()));
+                    }
+                    assert!(llc.arg(&ll).arg("-o").arg(&ptx).status().unwrap().success());
+                    let out = Command::new("ptxas")
+                        .args([&format!("-arch={}", g.arch), "-v"])
+                        .arg(&ptx)
+                        .arg("-o")
+                        .arg(dir.join("k.cubin"))
+                        .output()
+                        .unwrap();
+                    let _ = std::fs::remove_dir_all(&dir);
+                    let log = String::from_utf8_lossy(&out.stderr).to_string();
+                    let regs: u64 = log
+                        .split("Used ")
+                        .nth(1)
+                        .and_then(|r| r.split(' ').next())
+                        .and_then(|r| r.parse().ok())
+                        .expect("a register count");
+                    if std::env::var("PLACE_NAIVE_REGS").is_ok() {
+                        eprintln!(
+                            "naive {part} {fmt} cells={cells}: ptxas {regs}, declared {}",
+                            d.regs
+                        );
+                    }
+                    if regs > d.regs {
+                        over.push(format!(
+                            "{part} {fmt} cells={cells}: ptxas {regs}, declared {}",
+                            d.regs
+                        ));
+                    }
+                }
+            }
+        }
+        assert!(over.is_empty(), "registers above the declared: {over:?}");
+    }
+
+    /// **ADR-0050 review: the native GPU's machine is the hand profile's** —
+    /// the device query and the calibration line (its `place.` facts
+    /// included) translate to the RTX 5080's machine: every fact's value and
+    /// interval, and whether it is marked (what the minimax reads), equal;
+    /// only the cites' wording differs. Without a calibration line the start
+    /// timing and the clock fall back, marked.
+    #[test]
+    fn native_gpu_translates_to_the_hand_profiles_machine() {
+        let q = crate::profile::DeviceQuery {
+            cc: 120,
+            sms: 84,
+            warp: 32,
+            max_threads_per_block: 1024,
+            max_threads_per_sm: 1536,
+            max_blocks_per_sm: 24,
+            regs_per_sm: 65536,
+            smem_per_sm: 102400,
+            smem_per_block: 101_376,
+            smem_reserved_per_block: 1024,
+            l2_bytes: 67108864,
+            clock_khz: 2_640_000,
+            mem_clock_khz: 15_001_000,
+            mem_bus_bits: 256,
+        };
+        let calib = crate::profile::COMMITTED_CALIB[0];
+        let native = q.profile(Some(calib));
+        let hand = crate::profile::resolve("rtx-5080").unwrap();
+        let (a, b) = (machine_of(&native).unwrap(), machine_of(hand).unwrap());
+        let rows = |m: &Machine| {
+            m.rows()
+                .into_iter()
+                .map(|r| (r.name, r.v, r.lo, r.hi, r.src.marked()))
+                .collect::<Vec<_>>()
+        };
+        let (ra, rb) = (rows(&a), rows(&b));
+        assert_eq!(ra.len(), rb.len());
+        for (x, y) in ra.iter().zip(&rb) {
+            assert_eq!(x, y, "native-gpu against rtx-5080");
+        }
+        assert_eq!(a.dispatch.start, b.dispatch.start);
+        assert_eq!(a.dispatch.start_src.marked(), b.dispatch.start_src.marked());
+        // No calibration line: the probes' facts are absent, and visibly so
+        // (marked), never silently the hand profile's.
+        let none = q.profile(None);
+        let c = machine_of(&none).unwrap();
+        assert!(c.dispatch.start_src.marked() && c.dispatch.clock_khz.marked());
+    }
+
     /// **ADR-0050 C4: the search on every GPU profile** — f32, TF32 and
     /// bf16 GEMM sites of several shapes: a pick on each (or the rules' kept
     /// within the band), every candidate it lowers through the gate, its
@@ -3221,6 +3493,16 @@ mod tests {
             ]);
         }
         f
+    }
+
+    /// The order a face's flags emit under (`flags::apply`: `--exact` and
+    /// `--order=sequential` sequential, `--order=fixed` fixed, else free).
+    fn face_order(face: &[&str]) -> crate::Order {
+        let mut opts = EmitOpts::default();
+        for f in face {
+            assert!(crate::flags::apply(&mut opts, f).expect("a flag"), "{f}");
+        }
+        opts.order
     }
 
     fn emit(
@@ -3364,21 +3646,11 @@ mod tests {
                                             persist.push(tag);
                                             continue;
                                         }
-                                        let order = if s.arms.free {
-                                            crate::Order::Free
-                                        } else {
-                                            crate::Order::Sequential
-                                        };
-                                        let site = Site {
-                                            fold: match (s.arms.free, x.trav) {
-                                                (true, _) => Fold::Free,
-                                                // A non-free emission's split
-                                                // is the fixed face's count.
-                                                (false, Traversal::Split { .. }) => Fold::Fixed,
-                                                _ => Fold::Sequential,
-                                            },
-                                            ..site_of(&s.site, s.contract, order)
-                                        };
+                                        // The fold's freedom is the
+                                        // emission's face (its order), never
+                                        // read off the launch checked.
+                                        let order = face_order(&face);
+                                        let site = site_of(&s.site, s.contract, order);
                                         let ts =
                                             space::traversals(&m, &site, &x, &d, e.traversals());
                                         if !ts.contains(&x.trav) {

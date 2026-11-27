@@ -21,3 +21,5 @@ benches/results/evidence/**/run-*
 # VS Code extension: npm install / npm run build output
 editors/vscode/node_modules/
 editors/vscode/dist/
+# docs/tools/exposition.py: the scaled scratch copies beside a demo (deleted when it ends).
+docs/exposition/.scaled-*.mapal

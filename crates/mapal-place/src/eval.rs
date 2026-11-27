@@ -177,10 +177,71 @@ pub fn efficiency(m: &Machine, op: usize, chains: f64, groups: f64, b: Bound) ->
     (e * groups.min(1.0), true)
 }
 
+/// **Which end of each fact group's intervals an evaluation reads** (D5:
+/// facts with intervals are evaluated at their bounds, and a pick that flips
+/// inside them is open — at mixed bounds too, a slow cache with a fast
+/// memory): the operation (its rate, efficiency, latency, the clock, the
+/// issue pipes), the device cache (its keep, rate and latency), the memory
+/// behind it, and dispatch (start timing, launches, atomics, the zero pass).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Corner {
+    pub compute: Bound,
+    pub cache: Bound,
+    pub memory: Bound,
+    pub dispatch: Bound,
+}
+
+impl Corner {
+    /// Every group at bound `b`.
+    pub const fn all(b: Bound) -> Self {
+        Corner {
+            compute: b,
+            cache: b,
+            memory: b,
+            dispatch: b,
+        }
+    }
+
+    /// The sixteen corners: each group at its slow or its fast end (the
+    /// all-slow corner first, the all-fast last).
+    pub fn corners() -> Vec<Corner> {
+        let side = |i: usize, bit: usize| match i >> bit & 1 {
+            0 => Bound::Slow,
+            _ => Bound::Fast,
+        };
+        (0..16)
+            .map(|i| Corner {
+                compute: side(i, 3),
+                cache: side(i, 2),
+                memory: side(i, 1),
+                dispatch: side(i, 0),
+            })
+            .collect()
+    }
+
+    /// `compute/cache/memory/dispatch` as `s` (slow) or `f` (fast).
+    pub fn name(&self) -> String {
+        let c = |b: Bound| match b {
+            Bound::Slow => 's',
+            Bound::Value => 'v',
+            Bound::Fast => 'f',
+        };
+        [self.compute, self.cache, self.memory, self.dispatch]
+            .into_iter()
+            .map(c)
+            .collect()
+    }
+}
+
 /// **Evaluate** schedule `x` of site `s` on machine `m` with its lowering's
 /// declared counts `d`, every fact at bound `b`.
 pub fn evaluate(m: &Machine, s: &Site, x: &Schedule, d: &Declared, b: Bound) -> Terms {
-    evaluate_at(m, s, x, d, b, false)
+    evaluate_at(m, s, x, d, Corner::all(b), false)
+}
+
+/// [`evaluate`] at corner `c`: each fact group at its own bound.
+pub fn evaluate_corner(m: &Machine, s: &Site, x: &Schedule, d: &Declared, c: Corner) -> Terms {
+    evaluate_at(m, s, x, d, c, false)
 }
 
 /// **The evaluation's floor** (the search's cheap admissible bound, D5):
@@ -189,10 +250,10 @@ pub fn evaluate(m: &Machine, s: &Site, x: &Schedule, d: &Declared, b: Bound) -> 
 /// latency and fill), so no schedule's time is below it; it skips the
 /// reuse closed forms (a walk's per-reader windows).
 pub fn evaluate_floor(m: &Machine, s: &Site, x: &Schedule, d: &Declared, b: Bound) -> Terms {
-    evaluate_at(m, s, x, d, b, true)
+    evaluate_at(m, s, x, d, Corner::all(b), true)
 }
 
-fn evaluate_at(m: &Machine, s: &Site, x: &Schedule, d: &Declared, b: Bound, floor: bool) -> Terms {
+fn evaluate_at(m: &Machine, s: &Site, x: &Schedule, d: &Declared, c: Corner, floor: bool) -> Terms {
     let mut t = Terms::default();
     let mark = |t: &mut Terms, what: String| {
         if !t.marked.contains(&what) {
@@ -220,7 +281,7 @@ fn evaluate_at(m: &Machine, s: &Site, x: &Schedule, d: &Declared, b: Bound, floo
     t.per_unit = u;
     t.slots = w;
     let op = &m.ops[x.op];
-    let ghz = m.ghz(b);
+    let ghz = m.ghz(c.compute);
     if m.dispatch.clock_khz.marked() {
         mark(&mut t, "dispatch.clock_khz".into());
     }
@@ -245,7 +306,7 @@ fn evaluate_at(m: &Machine, s: &Site, x: &Schedule, d: &Declared, b: Bound, floo
     let keep_f = cache
         .and_then(|c| m.places[c].cache())
         .map(|c| c.keep.of(pattern));
-    let keep = keep_f.map_or(0, |k| k.rate(b));
+    let keep = keep_f.map_or(0, |k| k.rate(c.cache));
     if keep_f.is_some_and(|k| k.marked()) {
         mark(&mut t, format!("keep.{pattern:?}"));
     }
@@ -256,17 +317,18 @@ fn evaluate_at(m: &Machine, s: &Site, x: &Schedule, d: &Declared, b: Bound, floo
             if r.total_bytes_per_ns.marked() {
                 mark(&mut t, "memory.bw".into());
             }
-            r.total_bytes_per_ns.rate(b)
+            r.total_bytes_per_ns.rate(c.memory)
         })
         .unwrap_or(1.0)
         .max(1e-9);
     let mem_lat = mem
         .and_then(|p| m.reach(p, crate::machine::ExecKind::Device))
-        .map_or(0.0, |r| r.latency_ns.cost(b));
+        .map_or(0.0, |r| r.latency_ns.cost(c.memory));
     let (cache_bw, cache_lat, unit_bw) = cache
-        .map(|c| {
-            let dev = m.reach(c, crate::machine::ExecKind::Device);
-            let unit = m.reach(c, crate::machine::ExecKind::Unit);
+        .map(|p| {
+            let b = c.cache;
+            let dev = m.reach(p, crate::machine::ExecKind::Device);
+            let unit = m.reach(p, crate::machine::ExecKind::Unit);
             if dev.is_some_and(|r| r.total_bytes_per_ns.marked())
                 || unit.is_some_and(|r| r.bytes_per_ns.marked())
             {
@@ -281,7 +343,7 @@ fn evaluate_at(m: &Machine, s: &Site, x: &Schedule, d: &Declared, b: Bound, floo
         .unwrap_or((f64::INFINITY, 0.0, f64::INFINITY));
     // Start timing: a measured start is read; an unmeasured one is the
     // worse of the two at the slow bound, the better at the fast one.
-    let starts: Vec<Start> = match (m.dispatch.start_src.marked(), b) {
+    let starts: Vec<Start> = match (m.dispatch.start_src.marked(), c.dispatch) {
         (false, _) | (true, Bound::Value) => vec![m.dispatch.start],
         (true, _) => {
             mark(&mut t, "dispatch.start".into());
@@ -327,34 +389,116 @@ fn evaluate_at(m: &Machine, s: &Site, x: &Schedule, d: &Declared, b: Bound, floo
                 atomic,
             },
         };
-        reuse::reads(&grid(order, false), keep)
+        // The zero pass streams the output through the cache first.
+        reuse::reads(&grid(order, zero), keep)
     };
-    // Warm operands: resident from the previous call where they fit.
+    let out_bytes = batch * s.m * s.n * s.eo;
+    // The zero pass's bytes: the whole output, or a hybrid's prefix where
+    // its whole pieces store (the walked tiles are the raster order's first
+    // `tiles − whole`: the lowering's layout); none without one.
+    let zeroed = match x.trav {
+        _ if !zero => 0,
+        Traversal::Hybrid { h, .. } if d.whole_stores => {
+            let whole = tiles / w * w;
+            let h = h.max(1);
+            let rows = (bm * h * (tiles - whole).div_ceil(gx * h)).min(batch * s.m);
+            rows * s.n * s.eo
+        }
+        _ => out_bytes,
+    };
+    // Warm operands (resident from the previous call: `residence_plan`):
+    // their first reads find them where they, and the zero pass streamed
+    // through the cache ahead of the kernel, fit the keep — `a` first.
     let once_a = gy * panels * sa;
     let once_b = gx * panels * sb;
-    let mut reads = match floor {
-        true => Reads {
+    let warm = {
+        let mut held = zeroed;
+        let mut w = [false; 2];
+        for (i, once) in [(0, once_a), (1, once_b)] {
+            if s.warm[i] && held + once <= keep {
+                held += once;
+                w[i] = true;
+            }
+        }
+        w
+    };
+    // Per phase (a hybrid's waves and its walk; one phase else): the misses
+    // by the closed form, or every operand slice once on the floor, less
+    // each warm operand's first reads in that phase.
+    let hybrid = match x.trav {
+        Traversal::Hybrid { h, ctas, iters } => Some((h, ctas, iters)),
+        _ => None,
+    };
+    let mut phase_reads: Vec<Reads> = match (floor, hybrid) {
+        (true, None) => vec![Reads {
             a: once_a,
             b: once_b,
             out: tiles * so,
-        },
-        false => starts
-            .iter()
-            .map(|&st| reads_of(st))
-            .max_by_key(|r| match b {
-                Bound::Fast => u64::MAX - r.operands(),
-                _ => r.operands(),
-            })
-            .unwrap_or_default(),
+        }],
+        (true, Some((h, ..))) => {
+            let (wv, tl) = reuse::hybrid_first(
+                &grid(
+                    Order::Walk {
+                        h,
+                        ctas: 0,
+                        iters: 0,
+                    },
+                    false,
+                ),
+                h,
+            );
+            vec![wv, tl]
+        }
+        (false, Some((h, ctas, iters))) => {
+            let (wv, tl) = reuse::hybrid_split(&grid(Order::Hybrid { h, ctas, iters }, zero), keep);
+            vec![wv, tl]
+        }
+        (false, None) => vec![
+            starts
+                .iter()
+                .map(|&st| reads_of(st))
+                .max_by_key(|r| match c.dispatch {
+                    Bound::Fast => u64::MAX - r.operands(),
+                    _ => r.operands(),
+                })
+                .unwrap_or_default(),
+        ],
     };
-    if s.warm[0] && once_a <= keep {
-        reads.a = reads.a.saturating_sub(once_a);
+    let firsts: Vec<Reads> = match hybrid {
+        Some((h, ..)) => {
+            let (wv, tl) = reuse::hybrid_first(
+                &grid(
+                    Order::Walk {
+                        h,
+                        ctas: 0,
+                        iters: 0,
+                    },
+                    false,
+                ),
+                h,
+            );
+            vec![wv, tl]
+        }
+        None => vec![Reads {
+            a: once_a,
+            b: once_b,
+            out: 0,
+        }],
+    };
+    for (r, f) in phase_reads.iter_mut().zip(&firsts) {
+        if warm[0] {
+            r.a = r.a.saturating_sub(f.a);
+        }
+        if warm[1] {
+            r.b = r.b.saturating_sub(f.b);
+        }
     }
-    if s.warm[1] && once_b <= keep {
-        reads.b = reads.b.saturating_sub(once_b);
-    }
+    let reads = phase_reads.iter().fold(Reads::default(), |a, r| Reads {
+        a: a.a + r.a,
+        b: a.b + r.b,
+        out: a.out + r.out,
+    });
     t.reads = reads;
-    let out_bytes = batch * s.m * s.n * s.eo;
     let epi_bytes = batch * s.m * s.n * s.epi;
     // The output: stored once; partial adds past the keep read and write it
     // again from memory each partition.
@@ -381,10 +525,10 @@ fn evaluate_at(m: &Machine, s: &Site, x: &Schedule, d: &Declared, b: Bound, floo
     if op.rate.marked() {
         mark(&mut t, format!("op.{}.rate", op.name));
     }
-    let rate_unit = op.rate.rate(b) * ghz; // flops / ns
+    let rate_unit = op.rate.rate(c.compute) * ghz; // flops / ns
     let groups_per_sub = |slots: u64| (slots * d.groups) as f64 / m.subs().max(1) as f64;
     let eff_at = |t: &mut Terms, slots: u64| -> f64 {
-        let (e, rule) = efficiency(m, x.op, d.chains as f64, groups_per_sub(slots), b);
+        let (e, rule) = efficiency(m, x.op, d.chains as f64, groups_per_sub(slots), c.compute);
         let what = format!("op.{}.eff", op.name);
         if rule && !t.marked.contains(&what) {
             t.marked.push(what);
@@ -396,10 +540,10 @@ fn evaluate_at(m: &Machine, s: &Site, x: &Schedule, d: &Declared, b: Bound, floo
         // dispatch (one group-instruction a scheduler a clock).
         let mut worst: f64 = 0.0;
         let mut all = 0.0;
-        for (c, n) in &d.issue {
+        for (class, n) in &d.issue {
             all += n;
-            if let Some(p) = m.pipe(*c) {
-                worst = worst.max(trips * n / (p.per_clk.rate(b) * ghz));
+            if let Some(p) = m.pipe(*class) {
+                worst = worst.max(trips * n / (p.per_clk.rate(c.compute) * ghz));
             }
         }
         worst.max(trips * all / (m.subs().max(1) as f64 * ghz))
@@ -408,11 +552,17 @@ fn evaluate_at(m: &Machine, s: &Site, x: &Schedule, d: &Declared, b: Bound, floo
         .dispatch
         .atomics
         .first()
-        .map_or(0.0, |a| a.ops_per_ns.rate(b));
+        .map_or(0.0, |a| a.ops_per_ns.rate(c.dispatch));
     // A phase of `blocks` slots of `trips` panels each over `w` slots.
     // `needed`: the bytes the phase's requests wait on together (a lockstep
     // wave's distinct slices; a walk's every request), of which
     // `cache_reads` come from memory.
+    // The latency a request waits: the cache's, and memory's for the share
+    // of the bytes waited on together that come from memory.
+    let lat_of = |cache_reads: f64, needed: f64| {
+        let miss = (cache_reads / needed.max(1.0)).clamp(0.0, 1.0);
+        cache_lat + miss * (mem_lat - cache_lat).max(0.0)
+    };
     let phase =
         |t: &mut Terms, blocks: u64, trips: u64, flops_trip: f64, cache_reads: f64, needed: f64| {
             let nb = blocks.div_ceil(units); // the busiest unit's slots
@@ -425,8 +575,7 @@ fn evaluate_at(m: &Machine, s: &Site, x: &Schedule, d: &Declared, b: Bound, floo
             let panel = (sa + sb) as f64;
             let unit_in = unit_trips * panel / unit_bw;
             let cache = (blocks * trips) as f64 * panel / cache_bw;
-            let miss = (cache_reads / needed.max(1.0)).clamp(0.0, 1.0);
-            let lat = cache_lat + miss * (mem_lat - cache_lat).max(0.0);
+            let lat = lat_of(cache_reads, needed);
             let fly = (resident * d.in_flight).max(1) as f64;
             let latency = unit_trips * panel * lat / fly;
             let prologue = nb.div_ceil(resident) as f64 * d.fill as f64 * lat;
@@ -486,10 +635,12 @@ fn evaluate_at(m: &Machine, s: &Site, x: &Schedule, d: &Declared, b: Bound, floo
                 reads.operands() as f64,
                 requested,
             );
-            // A piece a tile a block crosses: its fill.
+            // A piece a tile a block crosses: its fill, at the latency its
+            // requests wait (the walk's misses over its requests).
             let pieces = ctas + tiles;
-            p.prologue = pieces.div_ceil(units) as f64 * d.fill as f64 * (cache_lat + mem_lat)
-                / 2.0
+            p.prologue = pieces.div_ceil(units) as f64
+                * d.fill as f64
+                * lat_of(reads.operands() as f64, requested)
                 / u.min(ctas.div_ceil(units)).max(1) as f64;
             p.dram = dram_bytes as f64 / dram_bw;
             let shared = if floor {
@@ -518,27 +669,33 @@ fn evaluate_at(m: &Machine, s: &Site, x: &Schedule, d: &Declared, b: Bound, floo
                     x.trav.raster(),
                     1,
                 ) as f64;
+                let r = phase_reads[0];
                 let mut p = phase(
                     &mut t,
                     whole,
                     panels,
                     flops_trip,
-                    reads.operands() as f64 * frac(whole),
+                    r.operands() as f64,
                     needed * frac(whole),
                 );
-                p.dram = dram_bytes as f64 * frac(whole) / dram_bw;
+                // Its own misses; the stores of its tiles.
+                p.dram =
+                    (r.operands() as f64 + (out_bytes + epi_bytes) as f64 * frac(whole)) / dram_bw;
                 t.phases.push(p.close());
             }
             if tail > 0 {
+                let r = phase_reads[1];
+                let requested = (tail * panels * (sa + sb)) as f64;
                 let mut p = phase(
                     &mut t,
                     ctas,
                     iters,
                     flops_trip,
-                    reads.operands() as f64 * frac(tail),
-                    (tail * panels * (sa + sb)) as f64,
+                    r.operands() as f64,
+                    requested,
                 );
-                p.dram = dram_bytes as f64 * frac(tail) / dram_bw;
+                p.dram =
+                    (r.operands() as f64 + (out_bytes + epi_bytes) as f64 * frac(tail)) / dram_bw;
                 let shared = if floor {
                     0
                 } else {
@@ -559,20 +716,8 @@ fn evaluate_at(m: &Machine, s: &Site, x: &Schedule, d: &Declared, b: Bound, floo
         if m.dispatch.zero_bytes_per_ns.marked() {
             mark(&mut t, "dispatch.zero_bytes_per_ns".into());
         }
-        // A hybrid whose whole pieces store zeroes the rows its walked
-        // tiles span: the raster order's first `tiles − whole` (the
-        // lowering's layout); every piece adding, the whole output.
-        let zeroed = match x.trav {
-            Traversal::Hybrid { h, .. } if d.whole_stores => {
-                let whole = tiles / w * w;
-                let h = h.max(1);
-                let rows = (bm * h * (tiles - whole).div_ceil(gx * h)).min(batch * s.m);
-                rows * s.n * s.eo
-            }
-            _ => out_bytes,
-        };
-        t.zero = m.dispatch.zero_ns.cost(b)
-            + zeroed as f64 / m.dispatch.zero_bytes_per_ns.rate(b).max(1e-9);
+        t.zero = m.dispatch.zero_ns.cost(c.dispatch)
+            + zeroed as f64 / m.dispatch.zero_bytes_per_ns.rate(c.dispatch).max(1e-9);
     }
     // Fixed: the launches beyond their work (the reduce is its own).
     let launches = 1 + u64::from(ws_bytes > 0);
@@ -584,8 +729,8 @@ fn evaluate_at(m: &Machine, s: &Site, x: &Schedule, d: &Declared, b: Bound, floo
         if l.ns.marked() {
             mark(&mut t, "dispatch.launch".into());
         }
-        t.fixed = launches as f64 * l.ns.cost(b)
-            + blocks.saturating_sub(units) as f64 * l.per_slot_ps.cost(b) / 1e3;
+        t.fixed = launches as f64 * l.ns.cost(c.dispatch)
+            + blocks.saturating_sub(units) as f64 * l.per_slot_ps.cost(c.dispatch) / 1e3;
     }
     t.ns = t.phases.iter().map(|p| p.ns).sum::<f64>() + t.combine + t.zero + t.fixed;
     t

@@ -803,7 +803,7 @@ fn wait_global(name: &str, wait: &[WaitEntry]) -> String {
 /// The slot-`k` feeder of a product object (the free form of
 /// `FnEmit::pair_source`, for the analysis passes — mirror of cuda
 /// kernel.rs's free helper).
-fn pair_source_ir(ir: &CategoryIr, agg: ObjectId, k: u32) -> Option<ObjectId> {
+pub(crate) fn pair_source_ir(ir: &CategoryIr, agg: ObjectId, k: u32) -> Option<ObjectId> {
     for &m in ir.in_edges(agg) {
         let morph = ir.morphism(m).expect("morphism resolves");
         if let Operation::Pair { slot, .. } = morph.op

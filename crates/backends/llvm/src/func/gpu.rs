@@ -2878,6 +2878,11 @@ fn launch_key(l: &Launch) -> String {
         .replace(", math_hw: false", "")
         .replace(", lanes_unroll: false", "")
         .replace(", fly_unroll: false", "")
+        // ADR-0050 C4 / C5: `machine-place` chooses the launch (no kernel
+        // rung, so always off here), and a walk without whole-tile blocks
+        // (`whole: 0`) is the stream-K launch it was — ids as before them.
+        .replace(", machine_place: false", "")
+        .replace(", whole: 0 }", " }")
         .replace(", cells: 1 }", " }")
 }
 
@@ -15446,6 +15451,46 @@ mod tests {
     /// RTX 5090.
     #[test]
     fn the_off_arms_reproduce_todays_launch() {
+        // ADR-0050 review: a candidate's kernel id keys its launch text
+        // (`launch_key`); the fields C4 / C5 added (`machine_place`, a
+        // walk's `whole: 0`) must not enter it, or every candidate kernel
+        // and reduce id moves with the rung off (`gpu_changed.sh`,
+        // `BUNDLE_CACHE` and wisdom keys see the suite as changed).
+        let s = site(2048, 2048, 2048, true, true, Ty::f32());
+        for p in [&RTX_4090, &RTX_5090, &H100] {
+            let l = launch(&s, p, false, crate::GpuArms::default(), None);
+            for combine in [
+                Combine::None,
+                Combine::Atomic { s: 4 },
+                Combine::Workspace { s: 2 },
+                Combine::StreamK {
+                    ctas: 160,
+                    iters: 9,
+                    whole: 0,
+                },
+            ] {
+                let mut on = Launch { combine, ..l };
+                let off = launch_key(&on);
+                assert!(
+                    !off.contains("machine_place") && !off.contains("whole"),
+                    "{off}"
+                );
+                on.rungs.machine_place = true;
+                assert_eq!(launch_key(&on), off, "the rung keys no kernel");
+            }
+            let hybrid = Launch {
+                combine: Combine::StreamK {
+                    ctas: 160,
+                    iters: 9,
+                    whole: 7,
+                },
+                ..l
+            };
+            assert!(
+                launch_key(&hybrid).contains("whole: 7"),
+                "a hybrid keys its whole blocks"
+            );
+        }
         let arms = off(&[
             "cell-fill",
             "asyncstage",

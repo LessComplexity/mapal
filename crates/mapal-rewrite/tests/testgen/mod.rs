@@ -5114,6 +5114,101 @@ fn gemm_src_reading(p: &GemmProg, m: u64, n: u64, k: u64, bi: &str, kn: u64) -> 
     s + "}\n"
 }
 
+/// ADR-0050 review: **a [`GemmProg`] with float operands whose values are
+/// checked against the a-priori bound** — `a`, `b` non-integer (`v / 7`,
+/// `v / 9` in f32: no order of the sum is exact), at `(m, n, k)`; the cells
+/// `(i, j)` with `i ≡ r₀ (mod si)` and `j ≡ c₀ (mod sj)` (a cell in every
+/// `si × sj` block, so every output tile of at least that size is sampled)
+/// printed in order. Returns the source and the cells; [`gemm_bound_ref`]
+/// gives each one's exact sum and `M = Σ_k |a·b|`.
+pub fn gemm_bound_src_at(
+    p: &GemmProg,
+    m: u64,
+    n: u64,
+    k: u64,
+    (si, sj): (u64, u64),
+) -> (String, Vec<(u64, u64)>) {
+    let ((a1, a2), (r0, c0)) = gemm_bound_laws(p, (si, sj));
+    let bi = match p.bt {
+        true => format!("b[j * {k} + q]"),
+        false => format!("b[q * {n} + j]"),
+    };
+    let cells: Vec<(u64, u64)> = (r0..m)
+        .step_by(si as usize)
+        .flat_map(|i| (c0..n).step_by(sj as usize).map(move |j| (i, j)))
+        .collect();
+    let mut s = format!(
+        "fn main() {{
+    {mk} -> iota -> ia;
+    ia -> map {{
+        t -> (t * {a1} + 13) % 101 - 50 -> widen_f32 -> v;
+        v / 7.0
+    }} -> a;
+    {kn} -> iota -> ib;
+    ib -> map {{
+        t -> (t * {a2} + 57) % 103 - 51 -> widen_f32 -> v;
+        v / 9.0
+    }} -> b;
+    {k} -> iota -> kr;
+    {mn} -> iota -> ic;
+    ic -> map {{
+        t ->
+        t / {n} -> i;
+        t % {n} -> j;
+        (0.0, kr) -> fold {{
+            acc, q -> acc + a[i * {k} + q] * {bi}
+        }}
+    }} -> y;
+",
+        mk = m * k,
+        kn = k * n,
+        mn = m * n,
+    );
+    for &(i, j) in &cells {
+        s += &format!("    y[{}] -> println;\n", i * n + j);
+    }
+    (s + "}\n", cells)
+}
+
+/// [`gemm_bound_src_at`]'s operand laws `(a1, a2)` and first sampled cell.
+fn gemm_bound_laws(p: &GemmProg, (si, sj): (u64, u64)) -> ((u64, u64), (u64, u64)) {
+    (
+        (
+            3 + 2 * u64::from(p.law[0] % 7),
+            5 + 2 * u64::from(p.law[1] % 5),
+        ),
+        (u64::from(p.dims[0]) % si, u64::from(p.dims[1]) % sj),
+    )
+}
+
+/// The exact sum and `M = Σ_k |a·b|` of each of [`gemm_bound_src_at`]'s
+/// cells: the f32 operands as the program makes them (an integer widened,
+/// divided in f32), their products and sums in f64 (exact products, a sum
+/// within `k·2⁻⁵³·M` — far below any member's bound).
+pub fn gemm_bound_ref(
+    p: &GemmProg,
+    (_m, n, k): (u64, u64, u64),
+    (si, sj): (u64, u64),
+    cells: &[(u64, u64)],
+) -> Vec<(f64, f64)> {
+    let ((a1, a2), _) = gemm_bound_laws(p, (si, sj));
+    let a = |t: u64| ((((t * a1 + 13) % 101) as i64 - 50) as f32 / 7.0f32) as f64;
+    let b = |t: u64| ((((t * a2 + 57) % 103) as i64 - 51) as f32 / 9.0f32) as f64;
+    cells
+        .iter()
+        .map(|&(i, j)| {
+            (0..k).fold((0.0, 0.0), |(s, mm), q| {
+                let bt = match p.bt {
+                    true => j * k + q,
+                    false => q * n + j,
+                };
+                let x = a(i * k + q) * b(bt);
+                (s + x, mm + x.abs())
+            })
+        })
+        .collect()
+}
+
 /// [`GemmProg`]'s source at its own extents ([`gemm_dims`]).
 pub fn gemm_src(p: &GemmProg) -> (String, (u64, u64, u64)) {
     let (m, n, k) = gemm_dims(p);

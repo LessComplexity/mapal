@@ -8,6 +8,9 @@
 //!   arm's text has none and equals the default's; where `llc` and `ptxas`
 //!   are present the device module assembles for the part's architecture
 //!   with no spill (the post-lowering gate on: `--place-gate=ptxas`).
+//! - **The picks' values within the bound** (float operands: no order is
+//!   exact): the hybrid's walked and whole tiles (the whole ones bit for bit
+//!   the ordered kernel's), and the search's own picks on every profile.
 //! - **C5, the hybrid's values.** The rules' tile under the hybrid
 //!   traversal (`--place-trav=hybrid --place-tile`: whole waves ordered,
 //!   the tail walked — one launch of `whole + ctas` blocks) and the best
@@ -347,4 +350,177 @@ fn c5_hybrid_values_through_the_emulator() {
     let n: usize = counts.iter().sum();
     eprintln!("hybrid values: {n} hybrid kernels, each equal to the interpreter in 3 modes");
     assert!(n >= 4);
+}
+
+/// The printed floats of an output, in order.
+fn floats(out: &str) -> Vec<f64> {
+    out.split_whitespace()
+        .map(|w| w.parse::<f64>().unwrap_or(f64::NAN))
+        .collect()
+}
+
+/// The printed cells of `got` against their exact sums `want` (`(exact,
+/// M)`): each within `c·M + 2⁻²²·|w|` — the set's a-priori coefficient `c`
+/// of the exact sum (ADR-0049: correct is the flow and the bound, not
+/// bit-identity).
+fn within(got: &str, want: &[(f64, f64)], c: f64, what: &str) {
+    let g = floats(got);
+    assert_eq!(g.len(), want.len(), "{what}");
+    for (i, (&y, &(w, m))) in g.iter().zip(want).enumerate() {
+        let tol = c * m + 2f64.powi(-22) * w.abs();
+        assert!(
+            (y - w).abs() <= tol,
+            "{what} cell {i}: {y} vs {w} (M {m}, tol {tol})"
+        );
+    }
+}
+
+/// The a-priori coefficient of a `fold: <set>` GEMM's product at `k`
+/// against the exact sum: the set's weakest member's (its operands' unit),
+/// and the f32 sum's.
+fn coef(set: &str, k: u64) -> f64 {
+    let unit = match set {
+        "bf16 | f32" => Some(2f64.powi(-8)),
+        "tf32 | f32" => Some(2f64.powi(-11)),
+        _ => None,
+    };
+    mapal_ir::bound_coef_unit(k, unit) + mapal_ir::bound_coef_unit(k, None)
+}
+
+/// **ADR-0050 review: the search's picks' values within the a-priori
+/// bound, with float data.** Integer operands are exact in any order, so
+/// they cannot show a rounding or fold-order defect; these operands are not
+/// (`v / 7`, `v / 9`), and a cell of every 32 × 64 block (every output tile
+/// sampled) is checked against its exact sum and `M` (`testgen::
+/// gemm_bound_ref`, f64 over the program's f32 operands):
+///
+/// - **the hybrid** (the 16-bit warp tile at 512 × 6144 × 64: 168 whole
+///   tiles, the raster order's first 24 walked, the zero pass their tile
+///   row): every sampled cell within the bound in every emulator mode, the
+///   walked tiles' cells among them (counted); a whole tile's cells **bit
+///   for bit** the ordered kernel's (one piece, the same fold);
+/// - **the search's own picks** (the rung alone: the default band and
+///   gate) on every GPU profile — a generated GEMM each, the three sets in
+///   turn: the emulated device within the bound.
+#[test]
+fn picks_within_the_bound_through_the_emulator() {
+    let Some(cc) = emu::clang() else {
+        eprintln!("no clang: emulator runs skipped");
+        return;
+    };
+    let mut runner = TestRunner::deterministic();
+    let strat = testgen::gemm_prog_strategy();
+    let progs: Vec<testgen::GemmProg> = (0..PARTS.len())
+        .map(|_| strat.new_tree(&mut runner).unwrap().current())
+        .collect();
+    let dev = |e: &Emission| e.device.clone().unwrap_or_default();
+    // Case 0: the hybrid against the ordered kernel of the same tile; case
+    // `1 + z`: the search's own pick on part `z` (one parallel pass: the
+    // interpreter's and the emulator's runs overlap).
+    let cases: Vec<usize> = (0..=PARTS.len()).collect();
+    let res = testgen::par_check(&cases, |_, &case| {
+        if case > 0 {
+            let z = case - 1;
+            let part = PARTS[z];
+            let p = &progs[z];
+            let set = ["", "tf32 | f32", "bf16 | f32"][z % 3];
+            let (m, n, k) = [(128u64, 1024u64, 256u64), (256, 512, 128), (64, 2048, 128)][z % 3];
+            let (src, cells) = testgen::gemm_bound_src_at(p, m, n, k, (32, 64));
+            let want = testgen::gemm_bound_ref(p, (m, n, k), (32, 64), &cells);
+            let src = face(src, set);
+            let ir = lower(&src);
+            let on = emission(&ir, part, &["machine-place"], &[]);
+            let replaced = plans(&on)
+                .iter()
+                .filter_map(|(_, l)| l.as_ref())
+                .filter(|l| l.contains(" kept=0 "))
+                .count();
+            let got = emu::run_emulated(&cc, &on.text, &dev(&on));
+            within(
+                &got,
+                &want,
+                coef(set, k),
+                &format!("{part} {m}x{n}x{k} {set}"),
+            );
+            return (cells.len(), replaced, 0, 0);
+        }
+        let p = &progs[0];
+        let (m, n, k) = (512, 6144, 64);
+        let (src, cells) = testgen::gemm_bound_src_at(p, m, n, k, (32, 64));
+        let want = testgen::gemm_bound_ref(p, (m, n, k), (32, 64), &cells);
+        let src = face(src, "bf16 | f32");
+        let ir = lower(&src);
+        let hyb = emission(
+            &ir,
+            "rtx-5080",
+            &["machine-place"],
+            &["--place-trav=hybrid", "--place-tile"],
+        );
+        let ord = emission(
+            &ir,
+            "rtx-5080",
+            &["machine-place"],
+            &["--place-trav=ordered", "--place-tile"],
+        );
+        let ps = plans(&hyb);
+        let (t, _) = ps
+            .iter()
+            .find(|(f, _)| num(f, "whole") > 0)
+            .unwrap_or_else(|| panic!("the forced hybrid\n{ps:?}"));
+        let (gx, gy, h) = (num(t, "gx"), num(t, "gy"), num(t, "raster").max(1));
+        assert!(gx > 0 && gy > 0 && n % gx == 0 && m % gy == 0, "{t:?}");
+        let (bm, bn) = (m / gy, n / gx);
+        let walked_tiles = gx * gy - num(t, "whole");
+        // The raster order's tile `l` (groups of `h` block-rows, column by
+        // column): the walk takes the first `walked_tiles`.
+        let tile_of = |l: u64| {
+            let (grp, rem) = (l / (gx * h), l % (gx * h));
+            let rows = h.min(gy - grp * h);
+            (grp * h + rem % rows, rem / rows)
+        };
+        let walked: std::collections::HashSet<(u64, u64)> =
+            (0..walked_tiles).map(tile_of).collect();
+        let built = emu::build_emulated(&cc, &hyb.text, &dev(&hyb));
+        let c = coef("bf16 | f32", k);
+        let mut got_h = String::new();
+        for (env, (got, _)) in MODES.iter().zip(built.run_each(&MODES)) {
+            within(&got, &want, c, &format!("hybrid {env:?}"));
+            got_h = got;
+        }
+        let got_o = emu::run_emulated(&cc, &ord.text, &dev(&ord));
+        within(&got_o, &want, c, "ordered");
+        let (gh, go) = (floats(&got_h), floats(&got_o));
+        let (mut in_walk, mut whole_equal) = (0, 0);
+        for (x, &(i, j)) in cells.iter().enumerate() {
+            match walked.contains(&(i / bm, j / bn)) {
+                true => in_walk += 1,
+                false => {
+                    assert_eq!(
+                        gh[x].to_bits(),
+                        go[x].to_bits(),
+                        "a whole tile's cell ({i}, {j}) is the ordered kernel's"
+                    );
+                    whole_equal += 1;
+                }
+            }
+        }
+        assert!(
+            in_walk > 0 && whole_equal > 0,
+            "{in_walk} walked, {whole_equal} whole"
+        );
+        (cells.len(), 0, in_walk, whole_equal)
+    });
+    let (h, res) = (res[0], &res[1..]);
+    eprintln!(
+        "hybrid 512x6144x64: {} cells within the bound in 3 modes, {} in walked tiles; {} \
+         whole-tile cells bit-equal to the ordered kernel",
+        h.0, h.2, h.3
+    );
+    let checked: usize = res.iter().map(|r| r.0).sum();
+    let replaced: usize = res.iter().map(|r| r.1).sum();
+    eprintln!(
+        "machine-place picks: {} parts, {checked} cells within the bound, {replaced} placed \
+         kernels replaced the rules' launch",
+        res.len()
+    );
 }
