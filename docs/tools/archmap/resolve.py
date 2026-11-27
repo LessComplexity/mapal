@@ -47,14 +47,30 @@ C_SUFFIXES = (".c", ".h", ".inc")
 ROOT_FILES = ("lib.rs", "main.rs", "mod.rs")
 
 
+def c_includes(rel: str) -> list[str]:
+    """The local files a C file `#include "…"`s, recursively, in include order."""
+    out: list[str] = []
+    todo = [rel]
+    while todo:
+        cur = todo.pop(0)
+        for line in lines_of(cur):
+            m = re.match(r'\s*#\s*include\s+"([^"]+)"', line)
+            if m:
+                inc = str(((ROOT / cur).parent / m.group(1)).resolve().relative_to(ROOT.resolve()))
+                if inc not in out and inc != rel and (ROOT / inc).is_file():
+                    out.append(inc)
+                    todo.append(inc)
+    return out
+
+
 def tiers(rel: str, kind: str) -> list[list[str]]:
     """Where to look, nearest first; the first tier with a match wins. Files get split into submodules, so an
     item named under `x.rs` may now live in `x/**` — and under a crate root or `mod.rs`, anywhere in its
     directory. C files split into `.inc` parts beside them."""
     p = ROOT / rel
     rels = lambda fs: [str(f.relative_to(ROOT)) for f in fs if str(f.relative_to(ROOT)) != rel]
-    if p.suffix in C_SUFFIXES:
-        return [[rel], rels(sorted(f for f in p.parent.glob("*") if f.suffix in C_SUFFIXES))]
+    if p.suffix in C_SUFFIXES:  # the file, then the parts it #includes (a runtime and its emulator share names), then the folder
+        return [[rel], c_includes(rel), rels(sorted(f for f in p.parent.glob("*") if f.suffix in C_SUFFIXES))]
     out = [[rel]] if p.is_file() else []
     stem = p.with_suffix("")
     if p.suffix == ".rs" and stem.is_dir():
