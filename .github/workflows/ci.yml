@@ -1,5 +1,10 @@
 name: CI
 
+# Every push: the quick checks and the suite without its slow tests (~1,730 of ~1,860 tests).
+# The slow ones — generated-program tests that run many programs through the CPU emulator,
+# ~98% of the suite's time — run nightly in full-tests.yml. The list is .config/slow-tests.txt
+# (scripts/slow_tests.py builds .config/nextest.toml from it).
+
 on:
   push:
     branches: [main]
@@ -10,78 +15,62 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
 
-# A superseded run proves nothing about the tip, and the Linux leg holds a runner
-# for ~30 minutes. Newest commit per ref wins.
+# A superseded run proves nothing about the tip. Newest commit per ref wins.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  checks:
+    name: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      # No code file under crates/ or editors/ over 1,000 lines.
+      - name: File size
+        run: scripts/check_file_size.sh
+      # The Architecture Map's every code reference still resolves to one definition, and the page is current.
+      - name: Architecture map
+        run: python3 docs/tools/archmap.py --check
+      # .config/nextest.toml is what the slow-test list gives.
+      - name: Test config
+        run: python3 scripts/slow_tests.py --check
+      - name: Formatting
+        run: cargo fmt --all --check
+
   test:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 300
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-
       - uses: Swatinem/rust-cache@v2
-
-      # The LLVM backend's differential suite emits .ll, compiles it, runs it, and
-      # diffs the output against the interpreter oracle. It SKIPS ITSELF when clang
-      # is absent, so without this the headline suite passes without testing
-      # anything. macOS runners ship clang already.
-      # lld: the differential links ~1,280 tiny binaries per run, and linking is
-      # ~60% of a case (measured: compile+link 0.08 s, compile alone 0.02 s, link
-      # alone 0.05 s). Linux's default GNU ld is the slow one.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+      # The LLVM backend's differential tests compile and run the emitted programs with clang; they skip
+      # themselves without it (MAPAL_REQUIRE_CLANG turns the skip into a failure). lld: Linux's default
+      # GNU ld makes linking ~60% of a case. macOS runners ship clang.
       - name: Install clang + lld (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y clang lld
-
-      - name: Report toolchain
-        run: |
-          rustc --version
-          cargo --version
-          clang --version | head -1
-          echo "cores: $(getconf _NPROCESSORS_ONLN)"
-          command -v ld.lld && ld.lld --version || echo "lld: not installed (platform default linker)"
-
-      # No code file under crates/ or editors/ over 1,000 lines (a split is a pure
-      # move into submodules). Needs no toolchain: the cheapest check, run before the rest.
-      - name: File size
-        run: scripts/check_file_size.sh
-
-      # The Architecture Map names every item by file and item: each must still resolve to exactly one
-      # definition, and the page must be regenerated when map.json or a location changes. Python only.
-      - name: Architecture map
-        run: python3 docs/tools/archmap.py --check
-
-      - name: Formatting
-        run: cargo fmt --all --check
-
-      # MAPAL_REQUIRE_CLANG turns the LLVM differential's skip-with-reason into a hard
-      # failure (`crates/backends/llvm/tests/differential.rs::clang`), so this single
-      # run proves it compiled rather than skipped. It replaces a second full run of
-      # the same 1,280-case suite: that cost ~25 min on the two-core Linux runner and
-      # hit the 60-minute job timeout the first time a run got far enough to reach it.
-      - name: Test (release)
-        run: cargo test --workspace --release
+      - name: Test (quick)
+        run: cargo nextest run --workspace --release --profile quick
         env:
           MAPAL_REQUIRE_CLANG: 1
-          # Empty on macOS ⇒ platform default (ld64, already fast).
           MAPAL_LD: ${{ runner.os == 'Linux' && 'lld' || '' }}
 
-  # The CUDA backend's 161 tests skip themselves without nvcc, which every hosted
-  # runner lacks. Compiling them is still worth gating on: it catches the
-  # emitter-wiring breaks that a skipped test never would.
+  # The CUDA backend's tests skip themselves without nvcc, which hosted runners lack; compiling them
+  # still catches emitter-wiring breaks.
   cuda-builds:
     name: cuda backend compiles
     runs-on: ubuntu-latest

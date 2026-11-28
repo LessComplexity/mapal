@@ -1,0 +1,46 @@
+name: Full tests
+
+# The whole suite, the slow generated-program tests included, split four ways per OS so each job
+# stays well inside a runner's time limit. Nightly, and on demand from the Actions tab.
+
+on:
+  schedule:
+    - cron: "0 18 * * *" # 18:00 UTC
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: full (${{ matrix.os }}, ${{ matrix.shard }}/4)
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: full-${{ matrix.os }}
+          save-if: ${{ matrix.shard == 1 }}
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+      - name: Install clang + lld (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y clang lld
+      - name: Test (shard ${{ matrix.shard }} of 4)
+        run: cargo nextest run --workspace --release --profile full --partition count:${{ matrix.shard }}/4
+        env:
+          MAPAL_REQUIRE_CLANG: 1
+          MAPAL_LD: ${{ runner.os == 'Linux' && 'lld' || '' }}

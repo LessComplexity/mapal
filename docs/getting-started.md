@@ -11,8 +11,9 @@ a CUDA toolchain.
 ## Build, test and run
 
 ```sh
-# the test suite = the correctness argument
-cargo test --workspace --release
+# the test suite = the correctness argument (cargo install cargo-nextest; plain `cargo test` works too, slower)
+cargo nextest run --workspace --release                 # everything; the slow tests two at a time
+cargo nextest run --workspace --release --profile quick # what CI runs on every push (seconds)
 
 # the CLI and the runtime it links against
 cargo build --release -p mapal-cli -p mapal-rt
