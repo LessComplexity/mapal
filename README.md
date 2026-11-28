@@ -71,29 +71,33 @@ A whole language model, Llama-3.2-1B, is one readable file:
 ## Results
 
 The Llama-3.2-1B model above, against the fastest of gpt-fast, vLLM, SGLang, TensorRT-LLM, llama.cpp and Hugging
-Face on five NVIDIA GPUs, each compared at the same precision. A bar below 1.0 means Mapal is faster.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="benches/results/charts/llm-f32-dark.svg">
-  <img alt="Llama-3.2-1B at full precision (f32): Mapal's time over the fastest engine's, on five GPUs" src="benches/results/charts/llm-f32-light.svg">
-</picture>
+Face on five NVIDIA GPUs. A bar below 1.0 means Mapal is faster.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="benches/results/charts/llm-bf16-dark.svg">
-  <img alt="Llama-3.2-1B at half precision (bf16): Mapal's time over the fastest engine's, on five GPUs" src="benches/results/charts/llm-bf16-light.svg">
+  <img alt="Llama-3.2-1B in bf16, like for like: Mapal's time over the fastest engine's, on five GPUs" src="benches/results/charts/llm-bf16-light.svg">
 </picture>
 
-- **Full precision (f32):** the fastest on all five GPUs at generating text, and for prompts of 512 tokens or more.
-- **Half precision (bf16):** mostly still behind the fastest engine: within 5–15% on the RTX 5080, further behind on
-  the other GPUs. On the H100 it is now faster for short prompts; work is in progress.
+- **Like for like (bf16):** Mapal is behind the fastest engine on all five GPUs: 1.06–1.57× slower per generated
+  token and 1.05–2.37× slower to the first token. Closing this is the current work.
 - **Memory:** 2.7–3.5 GB of GPU memory, level with the leanest engines and far below the serving engines.
 
-Across 119 kernels and model layers (matrix products, attention, convolution, reductions and more), Mapal is
-faster on average than the best library or compiler on three of the five GPUs.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="benches/results/charts/llm-f32-dark.svg">
+  <img alt="Llama-3.2-1B, f32 math but not like for like: Mapal on the bf16 weights against engines on f32 weights" src="benches/results/charts/llm-f32-light.svg">
+</picture>
+
+- **f32 math, not like for like:** by default Mapal computes in f32 on the model's bf16 weights, as the model ships.
+  The f32 engines convert the weights to f32 and read twice the bytes for every token. Against them Mapal is faster
+  on every GPU, but mostly because it reads half the bytes, so this is not a same-precision result.
+
+Across 119 kernels and model layers (matrix products, attention, convolution, reductions and more), each bar below
+is one program against the best library or compiler. Mapal is faster on 30 to 57 of them per GPU, level on 8 to 43,
+and slower on 30 to 81; the chart names the largest wins and losses.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="benches/results/charts/suite-gpus-dark.svg">
-  <img alt="Average of Mapal's time over the fastest competitor's, per GPU" src="benches/results/charts/suite-gpus-light.svg">
+  <img alt="Every program's Mapal time over the fastest competitor's, per GPU: wins and losses apart" src="benches/results/charts/suite-gpus-light.svg">
 </picture>
 
 All numbers, how they were measured, and every engine: [`docs/performance/results.md`](docs/performance/results.md).

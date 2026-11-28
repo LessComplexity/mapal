@@ -1,3 +1,5 @@
+SUPERSEDED (2026-11-28): see shapes-fair.md and numpy-mt.md in this directory.
+
 ms; par/mt: median (min); 1t: min (median)
 
 | N | threads | Mapal fma | Mapal conf | NumPy (OpenBLAS) | NumPy / best Mapal | Mapal GFLOP/s | NumPy GFLOP/s |

@@ -1,0 +1,7 @@
+== VALUE GATE — nothing is timed until every leg agrees ==
+fir        values OK ref=[2169 1888 ]
+conv2d     values OK ref=[576 -96 ]
+saxpy      values OK ref=[-104.5 25.5 ]
+reduce     values OK ref=[-136 ]
+transpose  values OK ref=[-37 15 ]
+gather     values OK ref=[37 -40 ]

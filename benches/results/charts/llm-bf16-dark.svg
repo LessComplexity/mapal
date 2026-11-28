@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="920" height="618" viewBox="0 0 920 618" role="img" aria-labelledby="t d">
-<title id="t">Llama-3.2-1B, bf16 class: Mapal against the fastest bf16 engine</title>
+<title id="t">Llama-3.2-1B, bf16, like for like: Mapal against the fastest bf16 engine</title>
 <desc id="d">Mapal with bf16 operands and f32 accumulation on the sums of products and a bf16 KV cache, against the bf16 engines. Time to first token, 512-token prompt: RTX 5080 1.05 (14.1 vs 13.5 ms, llama.cpp bf16); RTX 3090 1.17 (23.8 vs 20.4 ms, SGLang); A100 1.44 (16.1 vs 11.1 ms, SGLang); RTX 4090 1.16 (11.9 vs 10.3 ms, gpt-fast); H100 1.88 (7.60 vs 4.04 ms, gpt-fast). Decode, per generated token, 512-token prompt: RTX 5080 1.10 (3.29 vs 2.98 ms, gpt-fast); RTX 3090 1.23 (4.01 vs 3.27 ms, gpt-fast); A100 1.55 (3.69 vs 2.38 ms, gpt-fast); RTX 4090 1.19 (3.47 vs 2.93 ms, gpt-fast); H100 1.56 (2.06 vs 1.32 ms, gpt-fast).</desc>
 <style>text { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; } .num { font-variant-numeric: tabular-nums; }</style>
 <rect width="920" height="618" rx="10" fill="#1a1a19"/>
-<text x="28.0" y="38.0" font-size="17" font-weight="600" fill="#f0efec" text-anchor="start">Llama-3.2-1B, bf16 class: Mapal against the fastest bf16 engine</text>
+<text x="28.0" y="38.0" font-size="17" font-weight="600" fill="#f0efec" text-anchor="start">Llama-3.2-1B, bf16, like for like: Mapal against the fastest bf16 engine</text>
 <text x="28.0" y="60.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">Mapal with bf16 operands and f32 accumulation on the sums of products and a bf16 KV cache, against the bf16 engines.</text>
 <text x="28.0" y="78.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">Mapal time ÷ the fastest engine's time, per GPU. Batch 1, greedy, 128 generated tokens, medians of 5. Below 1: Mapal faster.</text>
 <rect x="28.0" y="95.0" width="10.0" height="10.0" rx="2" fill="#3987e5"/>

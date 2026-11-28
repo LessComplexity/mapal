@@ -38,7 +38,7 @@ Rules
   (torch eager / compile / sdpa / bf16, gemm_lib, chain_bench, cells): the "what the new legs change" section.
 - A `_pv` program's torch legs serve its natural twin (the same layer); `_pv` rows are not matrix rows. `px_` rows
   are not timed programs. LLM decode rows (`llm_dec`, `llm_blkdec`) are per step (the program's 16 steps / 16).
-- Verdict: win / even / loss; even = |ratio - 1| <= max(null, 5 %). Geomeans over a family's rows per part.
+- Verdict: win / even / loss; even = |ratio - 1| <= max(null, 5 %). Counts of faster / level / slower per family per part; no geomeans.
 - `old_*`: gap.py's mixed rule on the same data (every torch leg within, bf16 included, TF32 modes kept off
   non-tf32 rows; chain legs; no gemm_lib legs) — the flips section lists rows whose verdict differs.
 """
@@ -304,8 +304,9 @@ def cell_md(r):
 
 
 def gcell(rs):
-    g = gm([r['ratio'] for r in rs if r['ratio']])
-    return f'{g:.3f} ({sum(1 for r in rs if r["ratio"])})' if g else '-'
+    """faster / level / slower counts of the rows with a verdict (no mean of ratios: outliers move one)."""
+    v = [r['verdict'] for r in rs if r['ratio'] and r['verdict']]
+    return f"{v.count('win')} / {v.count('even')} / {v.count('loss')} of {len(v)}" if v else '-'
 
 
 def main(argv):
@@ -378,7 +379,7 @@ def main(argv):
         commits = sorted({c for _, c in cnt})
         L.append(f'| {p} | {", ".join(commits)} | '
                  + '; '.join(f'{s}@{c}: {n}' for (s, c), n in sorted(cnt.items(), key=lambda kv: -kv[1])) + ' |')
-    L += ['', '## Overall', '', '| geomean Mapal/best | ' + ' | '.join(parts) + ' |',
+    L += ['', '## Overall', '', '| faster / level / slower | ' + ' | '.join(parts) + ' |',
           '|---|' + '---:|' * len(parts)]
     for k, title, _ in FAMILIES:
         if any(r['family'] == k for r in counted):
@@ -390,8 +391,7 @@ def main(argv):
     L.append('| **all rows** | ' + ' | '.join(gcell([r for r in counted if r['part'] == p]) for p in parts) + ' |')
     L.append(f'| rows timed on every part ({len(common)}) | ' + ' | '.join(
         gcell([by[(p, w)] for w in common]) for p in parts) + ' |')
-    L.append('| win / even / loss | ' + ' | '.join(wel([r for r in counted if r['part'] == p]) for p in parts) + ' |')
-    L += ['', 'Geomean cells: value (rows). ' + ('Every part times the same rows.' if len(common) == len(names) else
+    L += ['', 'Cells: programs faster / level / slower than the best, of the rows timed. ' + ('Every part times the same rows.' if len(common) == len(names) else
           'Parts time different row sets; compare columns on the "every part" row.')]
 
     for k, title, _ in FAMILIES:
@@ -406,10 +406,9 @@ def main(argv):
         precs = [pr for pr in PRECS if any(r['precision'] == pr for r in fr)]
         if len(precs) > 1:
             for pr in precs:
-                L.append(f'| geomean {pr} | | ' + ' | '.join(
+                L.append(f'| {pr} | | ' + ' | '.join(
                     gcell([r for r in fr if r['part'] == p and r['precision'] == pr]) for p in parts) + ' |')
-        L.append('| **geomean** | | ' + ' | '.join(gcell([r for r in fr if r['part'] == p]) for p in parts) + ' |')
-        L.append('| win / even / loss | | ' + ' | '.join(wel([r for r in fr if r['part'] == p]) for p in parts) + ' |')
+        L.append('| **all** | | ' + ' | '.join(gcell([r for r in fr if r['part'] == p]) for p in parts) + ' |')
 
     bases = [w for w in names if family(w) in ('gemm', 'llm') and row_prec(w) == 'f32'
              and any(by.get((p, w), {}).get('bf16_ref_ms') for p in parts)]

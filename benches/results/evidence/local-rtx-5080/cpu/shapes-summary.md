@@ -1,3 +1,5 @@
+SUPERSEDED (2026-11-28): see shapes-fair.md and numpy-mt.md in this directory.
+
 ms; par/mt legs: median (min), 1t legs: min (median); n = samples per leg
 
 | workload | mapal-conf-par | mapal-fma-par | mapal-conf-1t | mapal-fma-1t | cpp-1t | cpp-mt | numpy-1t | best Mapal vs C++ mt | vs NumPy 1t |

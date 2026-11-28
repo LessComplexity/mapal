@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Move a sweep's raw output (profile archives, box logs, raw results) to a GitHub release instead of git.
-# usage: benches/gpu/archive_raw.sh <release-tag> <evidence-dir>...
+# usage: benches/gpu/archive_raw.sh <release-tag> <evidence-dir>...   (RAW_ALL=1: every file, not only the logs)
 # Appends path / bytes / sha256 / asset rows to benches/results/evidence/RAW-manifest.tsv; the raw files stay on disk
 # (git ignores them, see .gitignore) and the asset is raw-<dir name>.tar.gz.
 set -euo pipefail
@@ -12,7 +12,11 @@ tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 for dir in "$@"; do
   rel=$(cd "$root" && realpath --relative-to=. "$dir" 2>/dev/null || python3 -c 'import os,sys;print(os.path.relpath(sys.argv[1],sys.argv[2]))' "$dir" "$root")
   asset="raw-$(basename "$rel").tar.gz"
-  (cd "$root" && find "$rel" -type f \( -name '*.tgz' -o -name '*.out' -o -name '*.log' -o -name 'results-*' -o -name 'run-*' \)) | sort > "$tmp/list"
+  if [ "${RAW_ALL:-0}" = 1 ]; then   # every file of the round: evidence tables, summaries, scripts too (traceability)
+    (cd "$root" && find "$rel" -type f) | sort > "$tmp/list"
+  else
+    (cd "$root" && find "$rel" -type f \( -name '*.tgz' -o -name '*.out' -o -name '*.log' -o -name 'results-*' -o -name 'run-*' \)) | sort > "$tmp/list"
+  fi
   [ -s "$tmp/list" ] || { echo "$rel: no raw files"; continue; }
   (cd "$root" && tar -czf "$tmp/$asset" -T "$tmp/list")
   while IFS= read -r p; do

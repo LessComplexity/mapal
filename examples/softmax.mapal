@@ -20,8 +20,5 @@ fn softmax<n>(scores: [f32; n]) -> [f32; n] {
 
 fn main() {
     [1.0, 2.0, 3.0, 4.0] -> softmax -> probabilities;
-    probabilities[0] -> println;
-    probabilities[1] -> println;
-    probabilities[2] -> println;
     probabilities[3] -> println;
 }

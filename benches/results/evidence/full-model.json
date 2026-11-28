@@ -23,9 +23,9 @@
   "classes": [
     {
       "id": "f32",
-      "label": "f32 class",
+      "label": "f32 math, not like for like",
       "compute": "Mapal as written: f32 activations on the bf16 weights (the default face, ADR-0040 D2 bound); the engines compute in f32 with TF32 off",
-      "chart_note": "Mapal as written (f32 activations on the bf16 weights, within the default face's bound) against the f32-compute engines, TF32 off.",
+      "chart_note": "Not the same precision: Mapal computes in f32 on the model's bf16 weights (half the bytes read per token); the engines compute in f32 on f32 weights, TF32 off.",
       "not_compared": [
         {
           "name": "SGLang",
@@ -39,7 +39,7 @@
     },
     {
       "id": "bf16",
-      "label": "bf16 class",
+      "label": "bf16, like for like",
       "compute": "fold: bf16 | f32 on the three sums of products (bf16 operands, f32 accumulation, ADR-0041), the KV cache stored bf16; norms, softmax, RoPE and the residual stream stay f32. The engines run bf16 end to end.",
       "chart_note": "Mapal with bf16 operands and f32 accumulation on the sums of products and a bf16 KV cache, against the bf16 engines.",
       "not_compared": [

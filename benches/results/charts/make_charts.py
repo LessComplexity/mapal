@@ -8,7 +8,8 @@ Inputs (written by the measurement steps; this script only reads them):
 
 Outputs:
   benches/results/charts/<chart>-light.svg and <chart>-dark.svg  (README.md and docs/performance/results.md
-  pick one per GitHub theme with <picture>): llm-f32, llm-bf16, suite-gpus, suite-groups
+  pick one per GitHub theme with <picture>): llm-f32, llm-bf16, suite-gpus (winners and losers per GPU),
+  suite-groups (counts per family and precision class)
   docs/performance/results.md between `<!-- results-headline:start -->` and `<!-- results-headline:end -->`
   (README.md is never written: it shows the charts only)
 
@@ -26,8 +27,12 @@ import argparse
 import json
 import math
 import re
+import sys
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import suite_charts  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 MATRIX = ROOT / "benches/results/evidence/matrix.json"
@@ -36,6 +41,8 @@ OUT = ROOT / "benches/results/charts"
 RESULTS = ROOT / "docs/performance/results.md"
 HEADLINE_START = "<!-- results-headline:start -->"
 HEADLINE_END = "<!-- results-headline:end -->"
+PROGRAMS_START = "<!-- results-programs:start -->"
+PROGRAMS_END = "<!-- results-programs:end -->"
 
 PART_NAMES = {
     "rtx-5080": "RTX 5080",
@@ -427,182 +434,11 @@ def llm_chart(fm, cid, theme, domain, even):
 
 
 def suite_gpu_chart(matrix, theme):
-    t = theme
-    parts, by, common = suite_rows(matrix)
-    even = matrix["meta"].get("even_threshold", 0.05)
-    data = []
-    for p in parts:
-        rows = [by[p][w] for w in common]
-        data.append((p, geomean([r["ratio"] for r in rows]), verdicts(by[p].values())))
-    ratios = [g for _, g, _ in data if g]
-    m = max(math.log(1.25), max(abs(math.log(g)) for g in ratios) * 1.15)
-    lo, hi = math.exp(-m), math.exp(m)
-    W, pad, label_w, right_w = 920, 28, 120, 230
-    x_lo, x_hi = pad + label_w, W - pad - right_w
-
-    def X(r):
-        return x_lo + (math.log(r) - math.log(lo)) / (math.log(hi) - math.log(lo)) * (x_hi - x_lo)
-
-    title = "Kernel and layer suite: Mapal against the fastest same-precision competitor"
-    desc = "Geometric mean of Mapal time divided by the fastest competitor's time, per GPU: " + "; ".join(
-        f"{part_name(p)} {g:.3f}" for p, g, _ in data
-    )
-    svg = Svg(W, t, title, desc)
-    y = 38
-    svg.text(pad, y, title, 17, t["ink"], 600)
-    y += 22
-    svg.text(
-        pad,
-        y,
-        f"Geomean of Mapal time ÷ the fastest competitor's time over the {len(common)} programs timed on every GPU, "
-        "at the program boundary. Below 1: Mapal faster.",
-        12.5,
-        t["ink2"],
-    )
-    y += 18
-    svg.text(
-        pad,
-        y,
-        "Each program against competitors of its own precision: cuBLAS(Lt), CUTLASS, PyTorch eager / compiled, Triton, "
-        "FlashAttention, FlashInfer, Liger.",
-        12.5,
-        t["ink2"],
-    )
-    y += 26
-    lx = pad
-    for key, label in (("faster", "Mapal faster"), ("even", f"within {even:.0%}"), ("slower", "Mapal slower")):
-        svg.rect(lx, y - 9, 10, 10, t[key], 2)
-        svg.text(lx + 15, y, label, 12, t["ink2"])
-        lx += 30 + 7 * len(label)
-    y += 22
-    svg.text(W - pad, y, "programs faster / even / slower", 12, t["ink2"], anchor="end")
-    y += 10
-    row_h, bar_h = 34, 14
-    top = y
-    ticks = [r for r in (0.5, 0.67, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 2.0) if lo <= r <= hi]
-    bottom = top + row_h * len(data)
-    for r in ticks:
-        svg.line(X(r), top, X(r), bottom, t["base"] if r == 1.0 else t["grid"])
-    for i, (p, g, v) in enumerate(data):
-        yy = top + i * row_h + (row_h - bar_h) / 2
-        cy = yy + bar_h - 2
-        svg.text(pad, cy, part_name(p), 13, t["ink"], 600)
-        key = "even" if abs(g - 1) <= even else ("faster" if g < 1 else "slower")
-        svg.bar(X(1.0), X(g), yy, bar_h, t[key])
-        if g < 1:
-            svg.text(X(g) - 6, cy, f"{g:.3f}", 12, t["ink"], 600, "end", num=True)
-        else:
-            svg.text(X(g) + 6, cy, f"{g:.3f}", 12, t["ink"], 600, num=True)
-        svg.text(W - pad, cy, f"{v['win']} / {v['even']} / {v['loss']}", 12.5, t["ink2"], anchor="end", num=True)
-    y = bottom + 18
-    for r in ticks:
-        svg.text(X(r), y, f"{r:g}", 11, t["muted"], anchor="middle", num=True)
-    y += 18
-    svg.text(X(lo), y, "← Mapal faster", 11.5, t["ink2"])
-    svg.text(X(hi), y, "Mapal slower →", 11.5, t["ink2"], anchor="end")
-    y += 26
-    commits = []
-    for p in parts:
-        cs = sorted({s["commit"] for s in matrix["meta"].get("sources", {}).get(p, [])})
-        commits.append(f"{part_name(p)} {', '.join(cs)}")
-    svg.text(pad, y, f"Builds: {'; '.join(commits)}.", 11, t["muted"])
-    y += 16
-    svg.text(
-        pad,
-        y,
-        f"Data: benches/results/evidence/matrix.json ({matrix['meta'].get('generated', '')}); even = within "
-        f"{even:.0%} or the row's own noise; counts over every row the GPU timed "
-        f"({' / '.join(str(len(by[p])) for p in parts)}).",
-        11,
-        t["muted"],
-    )
-    return svg.render(y + 18)
+    return suite_charts.gpu_chart(sys.modules[__name__], matrix, theme)
 
 
 def suite_groups_chart(matrix, theme):
-    t = theme
-    parts, by, _ = suite_rows(matrix)
-    fams = matrix["meta"].get("families", {})
-    groups = [("All rows", lambda r: True, True)]
-    present_fams = [f for f in fams if any(r["family"] == f for p in parts for r in by[p].values())]
-    for f in present_fams:
-        groups.append((FAMILY_NAMES.get(f, fams[f]), (lambda f: lambda r: r["family"] == f)(f), False))
-    precs = [x for x in PRECISION_ORDER if any(r["precision"] == x for p in parts for r in by[p].values())]
-    precs += sorted({r["precision"] for p in parts for r in by[p].values()} - set(precs))
-    split = len(groups)
-    for x in precs:
-        groups.append((PRECISION_NAMES.get(x, x), (lambda x: lambda r: r["precision"] == x)(x), False))
-
-    W, pad, label_w = 920, 28, 300
-    cell_w = (W - 2 * pad - label_w) / len(parts)
-    row_h = 30
-    title = "Kernel and layer suite by family and by precision"
-    desc = "Geomean of Mapal time divided by the fastest same-precision competitor's time, per group and GPU."
-    svg = Svg(W, t, title, desc)
-    y = 38
-    svg.text(pad, y, title, 17, t["ink"], 600)
-    y += 22
-    svg.text(
-        pad,
-        y,
-        "Geomean of Mapal time ÷ the fastest competitor's time at the row's own precision; below 1 (blue): Mapal "
-        "faster. Rows per GPU in brackets.",
-        12.5,
-        t["ink2"],
-    )
-    y += 30
-    for j, p in enumerate(parts):
-        svg.text(pad + label_w + j * cell_w + cell_w / 2, y, part_name(p), 12.5, t["ink"], 600, "middle")
-    y += 10
-    for gi, (label, pred, strong) in enumerate(groups):
-        if gi == 1 or gi == split:
-            y += 14
-            svg.text(pad, y + 4, "By family" if gi == 1 else "By precision class", 12, t["muted"], 600)
-            y += 12
-        counts = [sum(1 for r in by[p].values() if pred(r)) for p in parts]
-        n = max(counts) if counts else 0
-        svg.text(pad, y + row_h / 2 + 4.5, f"{label} ({n})", 12.5, t["ink"], 700 if strong else 400)
-        for j, p in enumerate(parts):
-            rows = [r["ratio"] for r in by[p].values() if pred(r)]
-            x = pad + label_w + j * cell_w
-            if not rows:
-                svg.rect(x + 1, y + 1, cell_w - 2, row_h - 2, t["mid"], 3)
-                svg.text(x + cell_w / 2, y + row_h / 2 + 4.5, "–", 12, t["muted"], anchor="middle")
-                continue
-            g = geomean(rows)
-            fill = diverging(t, g)
-            svg.rect(x + 1, y + 1, cell_w - 2, row_h - 2, fill, 3)
-            svg.text(
-                x + cell_w / 2,
-                y + row_h / 2 + 4.5,
-                f"{g:.2f}" + ("" if len(rows) == n else f" ({len(rows)})"),
-                12.5,
-                label_on(fill),
-                700 if strong else 500,
-                "middle",
-                num=True,
-            )
-        y += row_h
-    y += 26
-    lx0, lw = pad + label_w, W - 2 * pad - label_w
-    steps = 60
-    for k in range(steps):
-        r = math.exp(math.log(0.5) + (k + 0.5) / steps * (math.log(2.0) - math.log(0.5)))
-        svg.rect(lx0 + k * lw / steps, y, lw / steps + 0.6, 10, diverging(t, r))
-    for r in (0.5, 0.67, 0.8, 1.0, 1.25, 1.5, 2.0):
-        x = lx0 + (math.log(r) - math.log(0.5)) / (math.log(2.0) - math.log(0.5)) * lw
-        svg.text(x, y + 24, f"{r:g}", 11, t["muted"], anchor="middle", num=True)
-    svg.text(pad, y + 9, "Mapal faster ← → slower", 11.5, t["ink2"])
-    y += 46
-    svg.text(
-        pad,
-        y,
-        "A count after a value: that GPU timed fewer rows of the group. fp8-weight rows have no competitor leg yet and "
-        "are left out. Data: benches/results/evidence/matrix.json.",
-        11,
-        t["muted"],
-    )
-    return svg.render(y + 18)
+    return suite_charts.groups_chart(sys.modules[__name__], matrix, theme)
 
 
 # --- the headline tables (docs/performance/results.md) -------------------------------------------------------
@@ -621,16 +457,13 @@ def headline(fm, matrix):
     parts, by, common = suite_rows(matrix)
     notes = []
     lines = [
-        f"**Kernel and layer suite**: Mapal ÷ the fastest competitor at the program's own precision, geomean over the "
-        f"{len(common)} programs timed on every GPU, both sides timed at the program boundary.",
+        f"**Kernel and layer suite**: programs where Mapal is faster, level or slower than the fastest competitor at the "
+        f"program's own precision, of the {len(common)} timed on every GPU, both sides timed at the program boundary. "
+        f"Level: within the row's measured run-to-run variation or {even:.0%}, whichever is larger. No averages.",
         "",
-        "| GPU | Mapal ÷ fastest | programs faster / even / slower |",
-        "| --- | ---: | ---: |",
+        *suite_charts.table_md(sys.modules[__name__], matrix),
+        "",
     ]
-    for p in parts:
-        g = geomean([by[p][w]["ratio"] for w in common])
-        v = verdicts(by[p].values())
-        lines.append(f"| {part_name(p)} | {ratio(g, 3)} | {v['win']} / {v['even']} / {v['loss']} |")
     model = meta["model"].replace("-Instruct", "")
     lines += [
         "",
@@ -667,29 +500,51 @@ def headline(fm, matrix):
                 notes.append(rr["note"])
     lines += [
         "",
-        f"Below 1: Mapal faster; bold: faster by more than {even:.0%}. Type to type: the **f32 class** is the program "
-        "as written (f32 activations on the bf16 weights) against gpt-fast, vLLM, llama.cpp and Hugging Face "
-        "computing in f32 with TF32 off (SGLang has no f32 path and TensorRT-LLM's f32 output is wrong: neither is "
-        "compared); the **bf16 class** (`fold: bf16 | f32`, bf16 KV cache) against gpt-fast, vLLM, SGLang, "
+        f"Below 1: Mapal faster; bold: faster by more than {even:.0%}. The **bf16** rows are like for like. The "
+        "**f32 math** rows are not: Mapal computes in f32 on the model's bf16 weights (half the bytes per token), "
+        "gpt-fast, vLLM, llama.cpp and Hugging Face in f32 on f32 weights with TF32 off (SGLang has no f32 path and TensorRT-LLM's f32 output is wrong: neither is "
+        "compared); **bf16** (`fold: bf16 | f32`, bf16 KV cache) against gpt-fast, vLLM, SGLang, "
         "TensorRT-LLM, llama.cpp and Hugging Face in bf16. llama.cpp in f16 is another 16-bit format and is not "
         "compared." + "".join(" " + n for n in notes),
     ]
     return "\n".join(lines)
 
 
-def update_results(text):
+def update_block(text, start, end, what):
     s = RESULTS.read_text()
     name = RESULTS.relative_to(ROOT)
-    if HEADLINE_START not in s or HEADLINE_END not in s:
-        print(f"{name} has no {HEADLINE_START} … {HEADLINE_END} block; left unchanged")
+    if start not in s or end not in s:
+        print(f"{name} has no {start} … {end} block; left unchanged")
         return
-    pattern = re.compile(re.escape(HEADLINE_START) + r".*?" + re.escape(HEADLINE_END), re.S)
-    new = pattern.sub(lambda _: f"{HEADLINE_START}\n\n{text}\n\n{HEADLINE_END}", s)
+    pattern = re.compile(re.escape(start) + r".*?" + re.escape(end), re.S)
+    new = pattern.sub(lambda _: f"{start}\n\n{text}\n\n{end}", s)
     if new != s:
         RESULTS.write_text(new)
-        print(f"{name}: headline tables updated")
+        print(f"{name}: {what} updated")
     else:
-        print(f"{name}: headline tables unchanged")
+        print(f"{name}: {what} unchanged")
+
+
+def update_results(text):
+    update_block(text, HEADLINE_START, HEADLINE_END, "headline tables")
+
+
+def programs_text(matrix):
+    me = sys.modules[__name__]
+    even = matrix["meta"].get("even_threshold", 0.05)
+    return "\n".join(
+        [
+            "**By family and precision class**: programs faster / level / slower, per GPU.",
+            "",
+            *suite_charts.family_table_md(me, matrix),
+            "",
+            f"**Every program**: Mapal's time ÷ the fastest same-precision competitor's, per GPU. Bold: faster; `≈`: level "
+            f"(within the row's measured variation or {even:.0%}); plain: slower. Leaders and times per row: "
+            "[`matrix.md`](../../benches/results/evidence/matrix.md).",
+            "",
+            *suite_charts.program_table_md(me, matrix),
+        ]
+    )
 
 
 def main():
@@ -714,6 +569,7 @@ def main():
     table = headline(fm, matrix)
     if not args.no_results:
         update_results(table)
+        update_block(programs_text(matrix), PROGRAMS_START, PROGRAMS_END, "program tables")
     else:
         print(table)
 

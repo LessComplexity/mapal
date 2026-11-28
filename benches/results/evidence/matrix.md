@@ -1,6 +1,6 @@
 # Mapal vs the fastest competitor at the same precision
 
-Built 2026-11-26 by `benches/local/matrix.py` from existing results files (command at the end). Cell: ratio Mapal ms / best ms (best leg); **ratio < 1 = Mapal faster**. Bold = win, `≈` = even (|ratio − 1| ≤ max(null, 5 %)), plain = loss; `±n%` = a null above 5 %; `-` = not timed on that part. Decode rows of the LLM family are ms per step (16 steps / 16), every other row ms per program run.
+Built 2026-11-28 by `benches/local/matrix.py` from existing results files (command at the end). Cell: ratio Mapal ms / best ms (best leg); **ratio < 1 = Mapal faster**. Bold = win, `≈` = even (|ratio − 1| ≤ max(null, 5 %)), plain = loss; `±n%` = a null above 5 %; `-` = not timed on that part. Decode rows of the LLM family are ms per step (16 steps / 16), every other row ms per program run.
 
 **Fairness:** f32 rows vs f32 legs, `_tf32` rows vs TF32 legs, `_bf16w` rows (bf16 weights, f32 activations), `_bf16kv` rows (weights and KV cache bf16, f32 compute) and `_bf16` rows (bf16 storage, `: bf16 | f32` products) vs the bf16 legs (bf16 throughout); a bf16-storage row without bf16 legs of its own takes its twin's (`_bf16w`, else the f32 program: the same bf16 computation); `_f8w` rows (fp8 weights, f32 compute) vs fp8 legs, of which none is installed: `(no leg)`, their `_bf16w` twin's bf16 leg is a reference only. The torch bf16 reference of an f32 / tf32 row is never its best; it is listed apart ([bf16 reference](#bf16-real-world-reference)). Torch / gemm_lib legs count only with `within=yes`.
 
@@ -18,25 +18,24 @@ Built 2026-11-26 by `benches/local/matrix.py` from existing results files (comma
 
 ## Overall
 
-| geomean Mapal/best | rtx-5080 | rtx-3090 | a100 | rtx-4090 | h100 |
+| faster / level / slower | rtx-5080 | rtx-3090 | a100 | rtx-4090 | h100 |
 |---|---:|---:|---:|---:|---:|
-| GEMM cells & projections | 0.926 (47) | 1.048 (47) | 1.161 (46) | 0.935 (47) | 1.373 (47) |
-| MLP chains | 0.974 (6) | 1.094 (6) | 1.075 (6) | 0.945 (6) | 1.285 (6) |
-| Attention / softmax / long rows | 0.639 (14) | 0.517 (14) | 0.628 (14) | 0.647 (14) | 0.790 (14) |
-| LLM decode / prefill / block (f32, tf32, bf16 storage) | 0.987 (37) | 0.973 (37) | 1.013 (37) | 1.053 (37) | 0.975 (37) |
-| Conv / FIR / elementwise | 0.493 (7) | 0.695 (7) | 0.944 (7) | 0.646 (7) | 0.805 (7) |
-| Fan-in/out, loops, CPU+GPU | 0.979 (9) | 1.030 (9) | 0.977 (9) | 0.957 (9) | 1.108 (9) |
-| all f32 rows | 0.772 (66) | 0.801 (66) | 0.819 (65) | 0.807 (66) | 0.902 (66) |
-| all tf32 rows | 1.154 (13) | 1.149 (13) | 1.716 (13) | 1.208 (13) | 1.646 (13) |
-| all bf16w rows | 1.559 (9) | 1.463 (9) | 1.575 (9) | 1.634 (9) | 1.581 (9) |
-| all bf16kv rows | 0.971 (7) | 0.935 (7) | 0.919 (7) | 1.097 (7) | 0.896 (7) |
-| all bf16 rows | 0.846 (25) | 1.005 (25) | 1.135 (25) | 0.835 (25) | 1.409 (25) |
+| GEMM cells & projections | 13 / 19 / 15 of 47 | 7 / 17 / 23 of 47 | 14 / 8 / 24 of 46 | 13 / 15 / 19 of 47 | 2 / 5 / 40 of 47 |
+| MLP chains | 1 / 5 / 0 of 6 | 0 / 1 / 5 of 6 | 3 / 0 / 3 of 6 | 4 / 0 / 2 of 6 | 0 / 0 / 6 of 6 |
+| Attention / softmax / long rows | 9 / 5 / 0 of 14 | 9 / 0 / 5 of 14 | 12 / 0 / 2 of 14 | 12 / 2 / 0 of 14 | 5 / 1 / 8 of 14 |
+| LLM decode / prefill / block (f32, tf32, bf16 storage) | 16 / 7 / 14 of 37 | 18 / 5 / 14 of 37 | 18 / 2 / 17 of 37 | 10 / 6 / 21 of 37 | 19 / 1 / 17 of 37 |
+| Conv / FIR / elementwise | 6 / 0 / 1 of 7 | 5 / 0 / 2 of 7 | 4 / 1 / 2 of 7 | 5 / 0 / 2 of 7 | 4 / 0 / 3 of 7 |
+| Fan-in/out, loops, CPU+GPU | 1 / 8 / 0 of 9 | 0 / 7 / 2 of 9 | 6 / 0 / 3 of 9 | 5 / 2 / 2 of 9 | 0 / 1 / 8 of 9 |
+| all f32 rows | 30 / 31 / 5 of 66 | 25 / 20 / 21 of 66 | 41 / 8 / 16 of 65 | 38 / 15 / 13 of 66 | 17 / 5 / 44 of 66 |
+| all tf32 rows | 0 / 3 / 10 of 13 | 0 / 0 / 13 of 13 | 0 / 0 / 13 of 13 | 0 / 1 / 12 of 13 | 0 / 0 / 13 of 13 |
+| all bf16w rows | 1 / 1 / 7 of 9 | 2 / 1 / 6 of 9 | 2 / 0 / 7 of 9 | 0 / 1 / 8 of 9 | 3 / 0 / 6 of 9 |
+| all bf16kv rows | 3 / 3 / 1 of 7 | 3 / 2 / 2 of 7 | 4 / 1 / 2 of 7 | 1 / 1 / 5 of 7 | 5 / 0 / 2 of 7 |
+| all bf16 rows | 12 / 6 / 7 of 25 | 9 / 7 / 9 of 25 | 10 / 2 / 13 of 25 | 10 / 7 / 8 of 25 | 5 / 3 / 17 of 25 |
 | all f8w rows | - | - | - | - | - |
-| **all rows** | 0.878 (120) | 0.922 (120) | 1.006 (119) | 0.912 (120) | 1.101 (120) |
-| rows timed on every part (119) | 0.876 (119) | 0.920 (119) | 1.006 (119) | 0.911 (119) | 1.101 (119) |
-| win / even / loss | 46/44/30 | 39/30/51 | 57/11/51 | 49/25/46 | 30/8/82 |
+| **all rows** | 46 / 44 / 30 of 120 | 39 / 30 / 51 of 120 | 57 / 11 / 51 of 119 | 49 / 25 / 46 of 120 | 30 / 8 / 82 of 120 |
+| rows timed on every part (119) | 46 / 43 / 30 of 119 | 39 / 30 / 50 of 119 | 57 / 11 / 51 of 119 | 49 / 24 / 46 of 119 | 30 / 8 / 81 of 119 |
 
-Geomean cells: value (rows). Parts time different row sets; compare columns on the "every part" row.
+Cells: programs faster / level / slower than the best, of the rows timed. Parts time different row sets; compare columns on the "every part" row.
 
 ## GEMM cells & projections
 
@@ -89,11 +88,10 @@ Geomean cells: value (rows). Parts time different row sets; compare columns on t
 | pj_m2048_n4096_k14336_bf16 | bf16 | 1.07 2.264/2.123 (torch-bf16-compile) | 1.07 3.606/3.381 (triton-bf16) | 1.66 1.821/1.096 (torch-bf16) | 1.03≈ 1.606/1.56 (torch-bf16-compile) | 2.48 0.7928/0.3197 (torch-bf16) |
 | pj_m2048_n4096_k4096_bf16 | bf16 | 1.10 0.6779/0.6175 (torch-bf16) | 1.36 1.315/0.9668 (torch-bf16-compile) | 1.64 0.5977/0.3634 (torch-bf16) | 1.03≈ 0.4751/0.4622 (torch-bf16-compile) | 2.25 0.2506/0.1112 (torch-bf16) |
 | pj_m2048_n6144_k4096_bf16 | bf16 | 1.03≈ 0.9364/0.9095 (torch-bf16-compile) | 1.06 1.486/1.401 (torch-bf16-compile) | 1.48 0.7265/0.4894 (torch-bf16) | 1.03≈ 0.7021/0.679 (torch-bf16-compile) | 2.26 0.3539/0.1566 (torch-bf16) |
-| geomean f32 | | 0.970 (23) | 1.040 (23) | 1.005 (22) | 1.046 (23) | 1.144 (23) |
-| geomean tf32 | | 1.202 (8) | 1.145 (8) | 1.606 (8) | 1.184 (8) | 1.607 (8) |
-| geomean bf16 | | 0.760 (16) | 1.014 (16) | 1.203 (16) | 0.708 (16) | 1.650 (16) |
-| **geomean** | | 0.926 (47) | 1.048 (47) | 1.161 (46) | 0.935 (47) | 1.373 (47) |
-| win / even / loss | | 13/19/15 | 7/17/23 | 14/8/24 | 13/15/19 | 2/5/40 |
+| f32 | | 4 / 14 / 5 of 23 | 2 / 11 / 10 of 23 | 9 / 6 / 7 of 22 | 4 / 9 / 10 of 23 | 2 / 3 / 18 of 23 |
+| tf32 | | 0 / 1 / 7 of 8 | 0 / 0 / 8 of 8 | 0 / 0 / 8 of 8 | 0 / 1 / 7 of 8 | 0 / 0 / 8 of 8 |
+| bf16 | | 9 / 4 / 3 of 16 | 5 / 6 / 5 of 16 | 5 / 2 / 9 of 16 | 9 / 5 / 2 of 16 | 0 / 2 / 14 of 16 |
+| **all** | | 13 / 19 / 15 of 47 | 7 / 17 / 23 of 47 | 14 / 8 / 24 of 46 | 13 / 15 / 19 of 47 | 2 / 5 / 40 of 47 |
 
 ## MLP chains
 
@@ -105,10 +103,9 @@ Geomean cells: value (rows). Parts time different row sets; compare columns on t
 | smlp_4096_256_1024 | f32 | 1.00≈ 0.157/0.157 (chain-lt) | 1.10 0.2566/0.2342 (chain-cutlass) | **0.78** 0.2829/0.3633 (torch-eager) | **0.84** 0.1073/0.1283 (torch-compile) | 1.19 0.1403/0.1175 (chain-lt) |
 | mlp2_2048_tf32 | tf32 | 1.01≈ 1.569/1.549 (torch-compile-ro-tf32) | 1.10 2.6/2.365 (torch-compile-ro-tf32) | 1.41 1.194/0.846 (torch-compile-ro-tf32) | 1.09 1.041/0.9552 (torch-compile-ro-tf32) | 1.53 0.4071/0.2667 (torch-eager-tf32) |
 | mlp_2048_tf32 | tf32 | 1.02≈ 0.7861/0.7697 (torch-eager-tf32) | 1.07 1.281/1.195 (torch-eager-tf32) | 1.62 0.6608/0.4072 (torch-eager-tf32) ±17% | 1.07 0.5114/0.4758 (torch-eager-tf32) | 1.64 0.2144/0.1311 (torch-eager-tf32) ±7% |
-| geomean f32 | | 0.954 (4) | 1.098 (4) | 0.906 (4) | 0.883 (4) | 1.159 (4) |
-| geomean tf32 | | 1.017 (2) | 1.086 (2) | 1.513 (2) | 1.082 (2) | 1.580 (2) |
-| **geomean** | | 0.974 (6) | 1.094 (6) | 1.075 (6) | 0.945 (6) | 1.285 (6) |
-| win / even / loss | | 1/5/0 | 0/1/5 | 3/0/3 | 4/0/2 | 0/0/6 |
+| f32 | | 1 / 3 / 0 of 4 | 0 / 1 / 3 of 4 | 3 / 0 / 1 of 4 | 4 / 0 / 0 of 4 | 0 / 0 / 4 of 4 |
+| tf32 | | 0 / 2 / 0 of 2 | 0 / 0 / 2 of 2 | 0 / 0 / 2 of 2 | 0 / 0 / 2 of 2 | 0 / 0 / 2 of 2 |
+| **all** | | 1 / 5 / 0 of 6 | 0 / 1 / 5 of 6 | 3 / 0 / 3 of 6 | 4 / 0 / 2 of 6 | 0 / 0 / 6 of 6 |
 
 ## Attention / softmax / long rows
 
@@ -128,8 +125,7 @@ Geomean cells: value (rows). Parts time different row sets; compare columns on t
 | rowsum_4096 | f32 | 1.03≈ 3.744/3.624 (chain-gemv) | 1.11 6.072/5.473 (torch-eager) | **0.86** 6.601/7.688 (chain-eager) | 0.97≈ 2.378/2.463 (chain-gemv) | 1.09 2.929/2.694 (torch-eager) |
 | softmax_rows_2048 | f32 | **0.95** 0.4631/0.4899 (torch-compile) | 1.09 0.8421/0.7721 (torch-compile-ro) | **0.87** 0.9406/1.079 (triton) | **0.91** 0.3209/0.3535 (torch-compile) | 1.10 0.4147/0.3759 (chain-fused) |
 | softmax_rows_4096 | f32 | 1.03≈ 3.804/3.682 (torch-compile-ro) | 1.12 6.242/5.597 (torch-compile-cg) | **0.87** 6.753/7.804 (torch-compile-ro) | 0.98≈ 2.448/2.486 (torch-compile-ro) | 1.08 2.955/2.747 (torch-compile) |
-| **geomean** | | 0.639 (14) | 0.517 (14) | 0.628 (14) | 0.647 (14) | 0.790 (14) |
-| win / even / loss | | 9/5/0 | 9/0/5 | 12/0/2 | 12/2/0 | 5/1/8 |
+| **all** | | 9 / 5 / 0 of 14 | 9 / 0 / 5 of 14 | 12 / 0 / 2 of 14 | 12 / 2 / 0 of 14 | 5 / 1 / 8 of 14 |
 
 ## LLM decode / prefill / block (f32, tf32, bf16 storage)
 
@@ -179,13 +175,12 @@ Geomean cells: value (rows). Parts time different row sets; compare columns on t
 | llm_dec_b32_l8192_f8w | f8w | 2.666 (no leg) | 3.091 (no leg) | 2.073 (no leg) | 2.602 (no leg) | 0.8918 (no leg) |
 | llm_dec_b8_l2048_f8w | f8w | 0.2358 (no leg) | 0.7408 (no leg) | 0.3392 (no leg) | 0.2591 (no leg) | 0.1049 (no leg) |
 | llm_dec_b8_l8192_f8w | f8w | 0.7094 (no leg) | 1.289 (no leg) | 0.669 (no leg) | 0.7275 (no leg) | 0.2589 (no leg) |
-| geomean f32 | | 0.625 (10) | 0.663 (10) | 0.637 (10) | 0.639 (10) | 0.559 (10) |
-| geomean tf32 | | 1.131 (2) | 1.123 (2) | 1.924 (2) | 1.169 (2) | 1.621 (2) |
-| geomean bf16w | | 1.559 (9) | 1.463 (9) | 1.575 (9) | 1.634 (9) | 1.581 (9) |
-| geomean bf16kv | | 0.971 (7) | 0.935 (7) | 0.919 (7) | 1.097 (7) | 0.896 (7) |
-| geomean bf16 | | 1.021 (9) | 0.990 (9) | 1.022 (9) | 1.118 (9) | 1.064 (9) |
-| **geomean** | | 0.987 (37) | 0.973 (37) | 1.013 (37) | 1.053 (37) | 0.975 (37) |
-| win / even / loss | | 16/7/14 | 18/5/14 | 18/2/17 | 10/6/21 | 19/1/17 |
+| f32 | | 9 / 1 / 0 of 10 | 9 / 1 / 0 of 10 | 7 / 1 / 2 of 10 | 8 / 2 / 0 of 10 | 6 / 0 / 4 of 10 |
+| tf32 | | 0 / 0 / 2 of 2 | 0 / 0 / 2 of 2 | 0 / 0 / 2 of 2 | 0 / 0 / 2 of 2 | 0 / 0 / 2 of 2 |
+| bf16w | | 1 / 1 / 7 of 9 | 2 / 1 / 6 of 9 | 2 / 0 / 7 of 9 | 0 / 1 / 8 of 9 | 3 / 0 / 6 of 9 |
+| bf16kv | | 3 / 3 / 1 of 7 | 3 / 2 / 2 of 7 | 4 / 1 / 2 of 7 | 1 / 1 / 5 of 7 | 5 / 0 / 2 of 7 |
+| bf16 | | 3 / 2 / 4 of 9 | 4 / 1 / 4 of 9 | 5 / 0 / 4 of 9 | 1 / 2 / 6 of 9 | 5 / 1 / 3 of 9 |
+| **all** | | 16 / 7 / 14 of 37 | 18 / 5 / 14 of 37 | 18 / 2 / 17 of 37 | 10 / 6 / 21 of 37 | 19 / 1 / 17 of 37 |
 
 ## Conv / FIR / elementwise
 
@@ -198,10 +193,9 @@ Geomean cells: value (rows). Parts time different row sets; compare columns on t
 | fir_4194304_16 | f32 | **0.42** 0.04549/0.1083 (torch-eager) | **0.57** 0.06927/0.1225 (torch-eager) | **0.60** 0.06764/0.1133 (torch-eager) | **0.51** 0.03591/0.0698 (torch-eager) | **0.52** 0.03976/0.0758 (torch-eager) |
 | firew_rowsum_2048x2048_16 | f32 | **0.40** 0.05164/0.1294 (torch-compile) | **0.53** 0.09493/0.1787 (torch-compile) | **0.51** 0.08006/0.1573 (torch-eager) | **0.46** 0.0418/0.091 (torch-compile) | **0.43** 0.04401/0.1031 (torch-eager) |
 | convmc_8_64_56_3_tf32 | tf32 | 1.12 0.08025/0.0719 (torch-eager-tf32) | 1.39 0.136/0.0981 (torch-eager-tf32) | 2.98 0.2464/0.0827 (torch-eager-tf32) | 1.89 0.09427/0.05 (torch-eager-tf32) | 2.24 0.1198/0.0534 (torch-eager-tf32) |
-| geomean f32 | | 0.430 (6) | 0.620 (6) | 0.779 (6) | 0.541 (6) | 0.678 (6) |
-| geomean tf32 | | 1.116 (1) | 1.387 (1) | 2.980 (1) | 1.885 (1) | 2.243 (1) |
-| **geomean** | | 0.493 (7) | 0.695 (7) | 0.944 (7) | 0.646 (7) | 0.805 (7) |
-| win / even / loss | | 6/0/1 | 5/0/2 | 4/1/2 | 5/0/2 | 4/0/3 |
+| f32 | | 6 / 0 / 0 of 6 | 5 / 0 / 1 of 6 | 4 / 1 / 1 of 6 | 5 / 0 / 1 of 6 | 4 / 0 / 2 of 6 |
+| tf32 | | 0 / 0 / 1 of 1 | 0 / 0 / 1 of 1 | 0 / 0 / 1 of 1 | 0 / 0 / 1 of 1 | 0 / 0 / 1 of 1 |
+| **all** | | 6 / 0 / 1 of 7 | 5 / 0 / 2 of 7 | 4 / 1 / 2 of 7 | 5 / 0 / 2 of 7 | 4 / 0 / 3 of 7 |
 
 ## Fan-in/out, loops, CPU+GPU
 
@@ -216,8 +210,7 @@ Geomean cells: value (rows). Parts time different row sets; compare columns on t
 | rt_mlp2_1024 | f32 | 0.99≈ 2.554/2.575 (torch-compile) | 1.00≈ 3.959/3.975 (torch-compile-cg) | 1.46 6.619/4.543 (torch-compile-ro) ±7% | 1.09 1.724/1.584 (torch-compile-cg) | 1.03≈ 2.13/2.062 (torch-compile-cg) |
 | rt_mlp2_2048 | f32 | **0.93** 14.66/15.69 (torch-compile-cg) | 0.96≈ 24.6/25.61 (torch-compile-cg) | **0.87** 28.35/32.76 (torch-compile) | **0.92** 9.793/10.61 (torch-compile-cg) | 1.09 12.27/11.27 (torch-compile-cg) |
 | twin_2048 | f32 | 0.97≈ 0.9203/0.9463 (torch-compile) | 1.05≈ 1.562/1.495 (torch-eager) | **0.86** 1.731/2.018 (torch-eager) | **0.91** 0.5947/0.6525 (torch-eager) | 1.11 0.7769/0.698 (torch-eager) |
-| **geomean** | | 0.979 (9) | 1.030 (9) | 0.977 (9) | 0.957 (9) | 1.108 (9) |
-| win / even / loss | | 1/8/0 | 0/7/2 | 6/0/3 | 5/2/2 | 0/1/8 |
+| **all** | | 1 / 8 / 0 of 9 | 0 / 7 / 2 of 9 | 6 / 0 / 3 of 9 | 5 / 2 / 2 of 9 | 0 / 1 / 8 of 9 |
 
 ## bf16 real-world reference
 

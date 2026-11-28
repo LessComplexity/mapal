@@ -1,7 +1,7 @@
 name: Full tests
 
-# The whole suite, the slow generated-program tests included, split four ways per OS so each job
-# stays well inside a runner's time limit. Nightly, and on demand from the Actions tab.
+# The whole suite, the slow generated-program tests included, split eight ways per OS so each job
+# stays inside a runner's time limit (four ways ran 1–4 h a part; one part hit the limit). Nightly, and on demand from the Actions tab.
 
 on:
   schedule:
@@ -18,14 +18,14 @@ concurrency:
 
 jobs:
   test:
-    name: full (${{ matrix.os }}, ${{ matrix.shard }}/4)
+    name: full (${{ matrix.os }}, ${{ matrix.shard }}/8)
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 240
+    timeout-minutes: 340
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -39,8 +39,8 @@ jobs:
       - name: Install clang + lld (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y clang lld
-      - name: Test (shard ${{ matrix.shard }} of 4)
-        run: cargo nextest run --workspace --release --profile full --partition count:${{ matrix.shard }}/4
+      - name: Test (shard ${{ matrix.shard }} of 8)
+        run: cargo nextest run --workspace --release --profile full --partition count:${{ matrix.shard }}/8
         env:
           MAPAL_REQUIRE_CLANG: 1
           MAPAL_LD: ${{ runner.os == 'Linux' && 'lld' || '' }}

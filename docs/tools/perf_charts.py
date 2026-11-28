@@ -1,7 +1,7 @@
 """Charts and lines of the exposition's Performance section, drawn from the repository's own data.
 
-Inputs (read only): benches/results/evidence/matrix.json, benches/results/evidence/full-model.json and the CPU table
-benches/results/evidence/local-rtx-5080/cpu/shapes-fair.json. Drawing primitives and the colour scale come from
+Inputs (read only): benches/results/evidence/matrix.json, benches/results/evidence/full-model.json and the CPU tables
+benches/results/evidence/local-rtx-5080/cpu/shapes-fair.json and numpy-mt.json. Drawing primitives and the colour scale come from
 benches/results/charts/make_charts.py, so these charts look like the repository's own. Standard library only.
 
 Each function returns the page text of one `<!-- exposition:gen ... -->` region (kind=perf, name=...): the SVG in a dark
@@ -14,12 +14,15 @@ import importlib.util
 import json
 import math
 import re
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 _spec = importlib.util.spec_from_file_location("make_charts", ROOT / "benches/results/charts/make_charts.py")
 mc = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(mc)
+sys.path.insert(0, str(ROOT / "benches/results/charts"))
+import suite_charts  # noqa: E402
 
 MATRIX = ROOT / "benches/results/evidence/matrix.json"
 FULL_MODEL = ROOT / "benches/results/evidence/full-model.json"
@@ -90,52 +93,11 @@ def _matrix():
 
 def families(a: dict) -> str:
     m, parts, by, common = _matrix()
-    even = m["meta"].get("even_threshold", 0.05)
 
     def draw(t):
-        W, pad, label_w, row_h = 920, 28, 250, 54
-        cell_w = (W - 2 * pad - label_w) / len(parts)
-        title = "Mapal against the best library or compiler, by kind of problem"
-        n_all = len(common)
-        svg = mc.Svg(W, t, title, "Geomean of Mapal time divided by the fastest same-precision competitor's time, per problem "
-                     "class and GPU, with the number of programs faster, even and slower.")
-        y = 38
-        svg.text(pad, y, title, 17, t["ink"], 600)
-        y += 22
-        svg.text(pad, y, f"Each cell: the geomean of Mapal's time ÷ the fastest competitor's, and below it the programs "
-                 f"faster · even · slower ({n_all} programs timed on every GPU).", 12.5, t["ink2"])
-        y += 30
-        for j, p in enumerate(parts):
-            svg.text(pad + label_w + j * cell_w + cell_w / 2, y, mc.part_name(p), 12.5, t["ink"], 600, "middle")
-        y += 10
-        for fam, label in FAMILIES:
-            n = sum(1 for w in common if by[parts[0]][w]["family"] == fam)
-            svg.text(pad, y + row_h / 2 - 2, label, 13.5, t["ink"], 600)
-            svg.text(pad, y + row_h / 2 + 14, f"{n} programs", 11.5, t["muted"])
-            for j, p in enumerate(parts):
-                rows = [by[p][w] for w in common if by[p][w]["family"] == fam]
-                x = pad + label_w + j * cell_w
-                g = mc.geomean([r["ratio"] for r in rows])
-                fill = mc.diverging(t, g)
-                v = mc.verdicts(rows)
-                svg.rect(x + 1.5, y + 1.5, cell_w - 3, row_h - 3, fill, 5)
-                ink = mc.label_on(fill)
-                svg.text(x + cell_w / 2, y + row_h / 2 - 1, f"{g:.2f}", 16, ink, 700, "middle", num=True)
-                svg.text(x + cell_w / 2, y + row_h / 2 + 15, f"{v['win']} · {v['even']} · {v['loss']}", 11.5, ink, 500, "middle", num=True)
-            y += row_h
-        y += 24
-        lx0, lw = pad + label_w, W - 2 * pad - label_w
-        steps = 60
-        lo, hi = math.log(1 / SPAN), math.log(SPAN)
-        for k in range(steps):
-            r = math.exp(lo + (k + 0.5) / steps * (hi - lo))
-            svg.rect(lx0 + k * lw / steps, y, lw / steps + 0.6, 10, mc.diverging(t, r))
-        for r in (0.5, 0.67, 0.8, 1.0, 1.25, 1.5, 2.0):
-            svg.text(lx0 + (math.log(r) - lo) / (hi - lo) * lw, y + 24, f"{r:g}", 11, t["muted"], anchor="middle", num=True)
-        svg.text(pad, y + 9, "Mapal faster ← → slower", 11.5, t["ink2"])
-        y += 44
-        svg.text(pad, y, f"Even: within {even:.0%} or the run-to-run variation. Data: benches/results/evidence/matrix.json.", 11, t["muted"])
-        return svg.render(y + 18)
+        groups = [(label, (lambda f: lambda r: r["family"] == f)(fam)) for fam, label in FAMILIES]
+        return suite_charts.counts_chart(mc, m, t, groups, "Mapal against the best library or compiler, by kind of problem",
+                                         "problem class", row_h=40, strong_first=False)
 
     return _both("perf-families", draw)
 
@@ -207,70 +169,72 @@ def _num(s: str) -> float:
 
 
 def cpu(a: dict) -> str:
-    """Two fair pairs on one machine: one thread against one thread, whole machine against whole machine."""
+    """Four panels: each bar is Mapal's time / the other's (1 / ratio) with its 95 % interval as a whisker."""
     d = json.loads(CPU_JSON.read_text(encoding="utf-8"))
     mt = json.loads(NUMPY_MT_JSON.read_text(encoding="utf-8"))
-    rows = []
-    for w in d["workloads"]:
-        m1 = min(w["mapal_conf_1t"], w["mapal_fma_1t"])
-        mp = min(w["mapal_conf_par"], w["mapal_fma_par"])
-        cw = min(w["cpp_1t"], w["cpp_mt"])
-        rows.append((w["name"], m1, w["cpp_1t"], w["numpy_1t"], mp, cw))
+    sh = d["workloads"]
+
+    def entry(name, c, who):
+        return (name, 1 / c["ratio"], 1 / c["hi"], 1 / c["lo"], c["verdict"], who, 1 / c["ratio"])
+
+    panels = [
+        ("One thread against careful C++", [entry(w["name"], w["compare"]["one_thread_cpp"], "C++") for w in sh]),
+        ("One thread against NumPy", [entry(w["name"], w["compare"]["one_thread_numpy"], "NumPy") for w in sh]),
+        ("Whole machine (64 threads) against C++", [entry(w["name"], w["compare"]["whole_machine_cpp"], "C++") for w in sh]),
+        ("Whole machine against multi-threaded NumPy (OpenBLAS)", [entry(w["name"], w["compare"], "NumPy") for w in mt["workloads"]]),
+    ]
 
     def draw(t):
-        W, pad, label_w, right_w, row_h = 920, 28, 190, 280, 22
+        W, pad, label_w, right_w, row_h = 920, 28, 190, 190, 22
         ax0, ax1 = pad + label_w, W - pad - right_w
-        lo, hi = math.log(0.04), math.log(2.0)
+        lo, hi = math.log(0.03), math.log(3.0)
 
         def X(r):
-            return ax0 + (math.log(max(0.04, min(2.0, r))) - lo) / (hi - lo) * (ax1 - ax0)
+            return ax0 + (math.log(max(0.03, min(3.0, r))) - lo) / (hi - lo) * (ax1 - ax0)
 
         title = "CPU: Mapal against C++ and NumPy"
-        svg = mc.Svg(W, t, title, "Mapal time divided by C++'s and NumPy's time on one AMD Threadripper 9970X, per workload: "
-                     "one thread against one thread, the whole machine against the whole machine, and against multi-threaded NumPy.")
+        svg = mc.Svg(W, t, title, "Mapal's time divided by the other's, per workload, with the 95 percent interval of each ratio: one thread "
+                     "against careful C++ and against NumPy, the whole machine against C++ and against multi-threaded NumPy.")
         y = 38
         svg.text(pad, y, title, 17, t["ink"], 600)
         y += 22
-        svg.text(pad, y, f"Mapal's time ÷ the other's, log scale; left of 1: Mapal faster. {d['machine']}, {d['date']}.", 12.5, t["ink2"])
+        svg.text(pad, y, "Mapal's time ÷ the other's, log scale; left of 1: Mapal faster. Whiskers: 95 % interval.", 12.5, t["ink2"])
         y += 10
-
-        def panel(y, head, cols):
+        for head, rows in panels:
             y += 22
             svg.text(pad, y, head, 13, t["ink"], 600)
             y += 12
             top = y
-            for name, m, others in cols:
-                svg.text(pad, y + len(others) * row_h / 2 + 4, name, 13, t["ink"])
-                for k, (who, other) in enumerate(others):
-                    r = m / other
-                    cy = y + k * row_h + row_h / 2
-                    col = t["faster"] if r < 0.95 else t["slower"] if r > 1.05 else t["even"]
-                    svg.bar(X(1.0), X(r), cy - 7, 14, col, 3)
-                    msg = f"{1 / r:.3g}× faster" if r < 0.95 else f"{r:.3g}× slower" if r > 1.05 else "level"
-                    svg.text(ax1 + 16, cy + 4, f"vs {who}: {msg}", 12, t["ink"], 500, num=True)
-                    svg.text(ax1 + 172, cy + 4, f"{m:#.3g} vs {other:#.3g} ms", 11, t["muted"], num=True)
-                y += len(others) * row_h + 8
-            for r in (0.05, 0.1, 0.25, 0.5, 1.0):
+            for name, r, rlo, rhi, verdict, who, _ in rows:
+                cy = y + row_h / 2
+                col = t["faster"] if verdict == "faster" else t["slower"] if verdict == "slower" else t["even"]
+                svg.text(pad, cy + 4, name, 13, t["ink"])
+                svg.bar(X(1.0), X(r), cy - 7, 14, col, 3)
+                svg.line(X(rlo), cy, X(rhi), cy, t["ink"], 1.5)
+                svg.line(X(rlo), cy - 4, X(rlo), cy + 4, t["ink"], 1.5)
+                svg.line(X(rhi), cy - 4, X(rhi), cy + 4, t["ink"], 1.5)
+                if verdict == "faster":
+                    msg = f"Mapal {1 / r:.3g}× faster"
+                elif verdict == "slower":
+                    msg = f"{who} {r:.3g}× faster"
+                else:
+                    msg = "no clear difference"
+                svg.text(ax1 + 16, cy + 4, msg, 12, t["muted"] if verdict not in ("faster", "slower") else t["ink"], 500, num=True)
+                y += row_h
+            for r in (0.05, 0.1, 0.25, 0.5, 1.0, 2.0):
                 x = X(r)
-                svg.line(x, top - 4, x, y - 4, t["base"] if r == 1.0 else t["grid"], 1.5 if r == 1.0 else 1)
-                svg.text(x, y + 10, f"{r:g}", 11, t["muted"], anchor="middle", num=True)
-            return y + 16
-
-        y = panel(y, "One thread against one thread", [(n, m1, [("C++", c1), ("NumPy", npy)]) for n, m1, c1, npy, _, _ in rows])
-        y = panel(y + 6, "Whole machine against whole machine (64 threads)",
-                  [(n, mp, [("C++", cw)]) for n, _, _, _, mp, cw in rows])
-        y = panel(y + 6, "Whole machine against NumPy (multi-threaded, OpenBLAS)",
-                  [(w["name"], w["mapal"], [("NumPy", w["numpy_mt"])]) for w in mt["workloads"]])
-        y += 14
-        svg.text(pad, y, f"Each side at its best of 32 or 64 threads; medians of 7 runs; measured {mt['date']}. "
-                 "Data: benches/results/evidence/local-rtx-5080/cpu/numpy-mt.json.", 11, t["muted"])
-        y += 16
-        svg.text(pad, y, "C++ whole machine: the faster of its one-thread and its threaded build (the threaded one starts its threads on every call, "
-                 "which costs more than it saves at 1M elements).", 11, t["muted"])
-        y += 16
-        svg.text(pad, y, "Times: best of 25 for one thread, median of 25 for the whole machine. NumPy runs these on one thread. "
-                 "Data: benches/results/evidence/local-rtx-5080/cpu/shapes-fair.json.", 11, t["muted"])
-        return svg.render(y + 18)
+                svg.line(x, top - 4, x, y + 2, t["base"] if r == 1.0 else t["grid"], 1.5 if r == 1.0 else 1)
+                svg.text(x, y + 16, f"{r:g}", 11, t["muted"], anchor="middle", num=True)
+            y += 24
+        y += 6
+        for line in (
+            "Medians of 31 interleaved runs (21 for multi-threaded NumPy); whiskers are 95 % bootstrap intervals. A side wins only when the interval",
+            "excludes 1 and the Mann-Whitney p < 0.05. C++ is written carefully, built strict and with -ffast-math, the faster one used.",
+            "AMD Threadripper 9970X, 32 cores / 64 threads, 4.5 GHz cap, clang 23.1.5, 2026-11-28. Data: benches/results/evidence/local-rtx-5080/cpu/.",
+        ):
+            svg.text(pad, y, line, 11, t["muted"])
+            y += 16
+        return svg.render(y + 6)
 
     return _both("perf-cpu", draw)
 

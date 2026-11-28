@@ -2,8 +2,11 @@
 # The README "same shapes" table, run LOCALLY on an x86-64 Linux box with clang:
 # benches/shapes/i9_ladder.sh's ladder section (no move-panel sweep), emit + link + run here.
 # Legs per shape: mapal conf (FMA off: --no-contract; since ADR-0040 the flagless default contracts) / fma (--contract), 1t pinned and par whole box;
-# C++ naive 1t pinned / mt whole box; NumPy 1t pinned. Value gate before any timing.
-# Statistic: min for 1t legs, median for par/mt legs (both printed).
+# C++ 1t pinned / mt whole box, each built strict (-ffp-contract=fast) and with -ffast-math — the baselines are
+# written as careful C++ (taps outside outputs, blocked transpose, a thread pool started before the timer);
+# NumPy 1t pinned. Value gate before any timing.
+# Statistic: median of the interleaved runs for every leg; each comparison gets a 95 % bootstrap interval and a
+# Mann–Whitney p-value (benches/local/shapes_summary.py, stats.py) — a verdict only when the interval excludes 1.
 #
 # usage: shapes_local.sh <outdir>      env: CYCLES (25) PAR (64) P1CPU (4) PYTHON TARGET (native)
 set -euo pipefail
@@ -45,8 +48,10 @@ for spec in fir:fir_1048576 conv2d:conv2d_1024 saxpy:saxpy_1048576 \
         clang $CFLAGS "$OUTDIR/ll/${name}_$face.ll" "$RT" -lpthread -ldl -lm -o "$OUTDIR/bin/${name}_$face" 2>/dev/null
     done
 done
-clang++ -std=c++17 -O3 -march=native -ffp-contract=fast "$ROOT/benches/shapes/ladder2_baseline.cpp" -o "$OUTDIR/bin/ladder2_cpp" -pthread
-clang++ -std=c++17 -O3 -march=native -ffp-contract=fast "$ROOT/benches/shapes/shapes_baseline.cpp" -o "$OUTDIR/bin/shapes_cpp" -pthread
+for base in ladder2 shapes; do
+    clang++ -std=c++20 -O3 -march=native -ffp-contract=fast "$ROOT/benches/shapes/${base}_baseline.cpp" -o "$OUTDIR/bin/${base}_cpp" -pthread
+    clang++ -std=c++20 -O3 -march=native -ffast-math "$ROOT/benches/shapes/${base}_baseline.cpp" -o "$OUTDIR/bin/${base}_cpp_fast" -pthread
+done
 
 P1="taskset -c $P1CPU"; PA=""
 NP="env OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 $PYTHON"
@@ -69,6 +74,8 @@ for shape in fir conv2d saxpy reduce transpose gather; do
     for leg in "env MAPAL_PAR=$PAR $B/${shape}_conf" \
                "$P1 env THREADS=1 $B/$cpp $shape 1t 1 $sz" \
                "env THREADS=$PAR $B/$cpp $shape mt 1 $sz" \
+               "$P1 env THREADS=1 $B/${cpp}_fast $shape 1t 1 $sz" \
+               "env THREADS=$PAR $B/${cpp}_fast $shape mt 1 $sz" \
                "$P1 $NP $ROOT/benches/shapes/$py $shape ${pa[*]:-} 1 $sz"; do
         $leg | strip_ms > "$L/.g" || true
         if ! cmp -s "$L/$shape.ref" "$L/.g"; then
@@ -112,36 +119,11 @@ for ((c = 0; c < CYCLES; ++c)); do
         run "L_${shape}_mapal-fma-par"      env MAPAL_PAR=$PAR "$B/${shape}_fma"
         run "L_${shape}_cpp-1t"         $P1 env THREADS=1      "$B/$cpp" "$shape" 1t 1 "$sz"
         run "L_${shape}_cpp-mt"             env THREADS=$PAR   "$B/$cpp" "$shape" mt 1 "$sz"
+        run "L_${shape}_cpp-fast-1t"    $P1 env THREADS=1      "$B/${cpp}_fast" "$shape" 1t 1 "$sz"
+        run "L_${shape}_cpp-fast-mt"        env THREADS=$PAR   "$B/${cpp}_fast" "$shape" mt 1 "$sz"
         run "L_${shape}_numpy-1t"       $P1 $NP "$ROOT/benches/shapes/$py" "$shape" ${pa[@]+"${pa[@]}"} 1 "$sz"
     done
     printf '.' >&2
 done
 echo >&2
-"$PYTHON" - "$L" <<'PY' | tee "$OUTDIR/summary.md"
-import statistics, sys
-from pathlib import Path
-L = Path(sys.argv[1])
-legs = ["mapal-conf-par", "mapal-fma-par", "mapal-conf-1t", "mapal-fma-1t", "cpp-1t", "cpp-mt", "numpy-1t"]
-label = {"fir": "FIR filter, 1M", "conv2d": "conv2d 3x3, 1024²", "saxpy": "saxpy, 1M",
-         "reduce": "sum reduction, 1M", "transpose": "transpose, 1024²", "gather": "gather x[idx[i]], 1M"}
-def stat(shape, leg):
-    f = L / f"L_{shape}_{leg}"
-    if not f.exists(): return None
-    v = [float(x) for x in f.read_text().split()]
-    return (min(v), statistics.median(v), len(v))
-print("ms; par/mt legs: median (min), 1t legs: min (median); n = samples per leg\n")
-print("| workload | " + " | ".join(legs) + " | best Mapal vs C++ mt | vs NumPy 1t |")
-print("| --- |" + " ---: |" * (len(legs) + 2))
-for shape, name in label.items():
-    row, best = [], None
-    for leg in legs:
-        s = stat(shape, leg)
-        if s is None: row.append("–"); continue
-        mn, md, n = s
-        par = leg.endswith("par") or leg.endswith("mt")
-        row.append(f"{md:.4f} ({mn:.4f})" if par else f"{mn:.4f} ({md:.4f})")
-    mp = min(stat(shape, l)[1] for l in ("mapal-conf-par", "mapal-fma-par"))
-    cm = stat(shape, "cpp-mt")[1]; np1 = stat(shape, "numpy-1t")[0]
-    print(f"| {name} | " + " | ".join(row) + f" | {cm/mp:.2f}× | {np1/mp:.2f}× |")
-print(f"\n(ratios: competitor time / best Mapal par median; >1 = Mapal faster)")
-PY
+"$PYTHON" "$ROOT/benches/local/shapes_summary.py" "$L" "$OUTDIR/shapes.json" | tee "$OUTDIR/summary.md"
