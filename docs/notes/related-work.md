@@ -1,7 +1,8 @@
 # Related work — an honest survey
 
 Written: 2026-07-18 · post-review correction (plan.md worker 3).
-Status: **informational note, non-binding.** Trigger: a review found `VISION.md`'s
+Status: **informational note, non-binding.** (`VISION.md`, the early positioning memo this note answers, was removed
+on 2026-11-28; it is in the git history.) Trigger: a review found `VISION.md`'s
 competitive claims misinformed — the O4 "no incumbent makes this claim" cell was
 factually wrong, and the core thesis (one source → many targets via categorical
 semantics) had uncited prior art. Sources below were re-verified by web search on
