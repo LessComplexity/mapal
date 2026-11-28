@@ -126,3 +126,24 @@ The charts and the table above are generated. To refresh them after a run, updat
 [`full-model.json`](../../benches/results/evidence/full-model.json), then run
 `python3 benches/results/charts/make_charts.py`: it redraws the charts and rewrites the tables between the
 `results-headline` markers in this file.
+
+## CPU against multi-threaded NumPy
+
+Whole machine against whole machine (Threadripper 9970X), each side at its best of 32 or 64 threads, medians of 7
+runs, 2026-11-19. Mapal is faster on matrix multiply up to 2048 and on small networks at widths 512 and 2048; level
+at 1024; OpenBLAS is 1.56× faster on the 4096 matrix multiply.
+
+| workload | Mapal (ms) | NumPy (ms) | NumPy ÷ Mapal |
+| --- | --- | --- | --- |
+| matrix multiply 1024² | 0.767 | 0.876 | 1.14× |
+| matrix multiply 2048² | 3.594 | 5.333 | 1.48× |
+| matrix multiply 4096² | 35.85 | 23.0 | 0.64× |
+| 2-layer network, width 512 | 0.444 | 0.498 | 1.12× |
+| 4-layer network, width 512 | 0.873 | 0.955 | 1.09× |
+| 2-layer network, width 1024 | 1.588 | 1.515 | 0.95× |
+| 4-layer network, width 1024 | 3.075 | 2.999 | 0.98× |
+| 2-layer network, width 2048 | 7.270 | 10.62 | 1.46× |
+| 4-layer network, width 2048 | 14.49 | 21.60 | 1.49× |
+
+Data: [`numpy-mt.json`](../../benches/results/evidence/local-rtx-5080/cpu/numpy-mt.json); source
+[`cpu-analysis.md`](../../benches/results/evidence/local-rtx-5080/cpu-analysis.md) §3.

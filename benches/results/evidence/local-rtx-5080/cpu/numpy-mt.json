@@ -1,0 +1,18 @@
+{
+ "source": "benches/results/evidence/local-rtx-5080/cpu-analysis.md section 3, table 'Best of 32 / 64 threads per side (7-rep medians, NumPy warm, ON build)'; matmul-summary.md",
+ "machine": "AMD Ryzen Threadripper 9970X, 32 cores / 64 threads",
+ "date": "2026-11-19",
+ "numpy": "2.5.5 (scipy-openblas)",
+ "stat": "ms; median of 7; each side at its best of 32 or 64 threads",
+ "workloads": [
+  {"name": "matrix multiply 1024²", "mapal": 0.767, "numpy_mt": 0.876},
+  {"name": "matrix multiply 2048²", "mapal": 3.594, "numpy_mt": 5.333},
+  {"name": "matrix multiply 4096²", "mapal": 35.85, "numpy_mt": 23.0},
+  {"name": "2-layer network, width 512", "mapal": 0.444, "numpy_mt": 0.498},
+  {"name": "4-layer network, width 512", "mapal": 0.873, "numpy_mt": 0.955},
+  {"name": "2-layer network, width 1024", "mapal": 1.588, "numpy_mt": 1.515},
+  {"name": "4-layer network, width 1024", "mapal": 3.075, "numpy_mt": 2.999},
+  {"name": "2-layer network, width 2048", "mapal": 7.270, "numpy_mt": 10.62},
+  {"name": "4-layer network, width 2048", "mapal": 14.49, "numpy_mt": 21.60}
+ ]
+}

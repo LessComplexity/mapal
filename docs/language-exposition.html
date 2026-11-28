@@ -1456,14 +1456,14 @@ the 33 flow kernels each carry several steps (130 steps in all)</code></pre></di
 <!-- exposition:gen end -->
   <p>The same suite, all programs: faster than the best on average on three of the five GPUs.</p>
 
-  <h3 class="sub">On CPUs: against C++ and NumPy</h3>
-  <p>One thread against one thread, Mapal is faster than NumPy on all six programs and faster than plain C++ on four, level on saxpy and the gather. The large gaps on the FIR filter and the sum come from Mapal being allowed to reorder a sum within its stated error, so it vectorizes it; C++ and NumPy keep strict order. With the whole machine, Mapal is ahead of C++ on every program.</p>
+  <h3 class="sub">On CPUs: against C++ and NumPy (one thread and many)</h3>
+  <p>One thread against one thread, Mapal is faster than NumPy on all six programs and faster than plain C++ on four, level on saxpy and the gather. The large gaps on the FIR filter and the sum come from Mapal being allowed to reorder a sum within its stated error, so it vectorizes it; C++ and NumPy keep strict order. With the whole machine, Mapal is ahead of C++ on every program. Against NumPy's multi-threaded matrix library on the whole machine, Mapal is faster on matrix multiply up to 2048 and on small networks at widths 512 and 2048; they are level at 1024, and OpenBLAS is 1.56× faster on the 4096 matrix multiply.</p>
 <!-- exposition:gen id=perf-cpu kind=perf name=cpu begin -->
-<div class="chart chart-light"><svg xmlns="http://www.w3.org/2000/svg" width="920" height="716" viewBox="0 0 920 716" role="img" aria-labelledby="perf-cpu-light-t perf-cpu-light-d">
+<div class="chart chart-light"><svg xmlns="http://www.w3.org/2000/svg" width="920" height="1058" viewBox="0 0 920 1058" role="img" aria-labelledby="perf-cpu-light-t perf-cpu-light-d">
 <title id="perf-cpu-light-t">CPU: Mapal against C++ and NumPy</title>
-<desc id="perf-cpu-light-d">Mapal time divided by C++'s and NumPy's time on one AMD Threadripper 9970X, per workload: one thread against one thread, and the whole machine against the whole machine.</desc>
+<desc id="perf-cpu-light-d">Mapal time divided by C++'s and NumPy's time on one AMD Threadripper 9970X, per workload: one thread against one thread, the whole machine against the whole machine, and against multi-threaded NumPy.</desc>
 <style>text { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; } .num { font-variant-numeric: tabular-nums; }</style>
-<rect width="920" height="716" rx="10" fill="#fcfcfb"/>
+<rect width="920" height="1058" rx="10" fill="#fcfcfb"/>
 <text x="28.0" y="38.0" font-size="17" font-weight="600" fill="#0b0b0b" text-anchor="start">CPU: Mapal against C++ and NumPy</text>
 <text x="28.0" y="60.0" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="start">Mapal's time ÷ the other's, log scale; left of 1: Mapal faster. AMD Ryzen Threadripper 9970X, 32 cores / 64 threads, 2026-11-27.</text>
 <text x="28.0" y="92.0" font-size="13" font-weight="600" fill="#0b0b0b" text-anchor="start">One thread against one thread</text>
@@ -1554,14 +1554,62 @@ the 33 flow kernels each carry several steps (130 steps in all)</code></pre></di
 <text x="472.4" y="662.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.5</text>
 <line x1="542.2" y1="468.0" x2="542.2" y2="648.0" stroke="#c3c2b7" stroke-width="1.5"/>
 <text x="542.2" y="662.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1</text>
-<text x="28.0" y="682.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">C++ whole machine: the faster of its one-thread and its threaded build (the threaded one starts its threads on every call, which costs more than it saves at 1M elements).</text>
-<text x="28.0" y="698.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">Times: best of 25 for one thread, median of 25 for the whole machine. NumPy runs these on one thread. Data: benches/results/evidence/local-rtx-5080/cpu/shapes-fair.json.</text>
+<text x="28.0" y="696.0" font-size="13" font-weight="600" fill="#0b0b0b" text-anchor="start">Whole machine against NumPy (multi-threaded, OpenBLAS)</text>
+<text x="28.0" y="723.0" font-size="13" font-weight="400" fill="#0b0b0b" text-anchor="start">matrix multiply 1024²</text>
+<path d="M542.2,712.0 H531.8 A3,3 0 0 0 528.8,715.0 V723.0 A3,3 0 0 0 531.8,726.0 H542.2 Z" fill="#2a78d6"/>
+<text x="628.0" y="723.0" font-size="12" font-weight="500" fill="#0b0b0b" text-anchor="start" class="num">vs NumPy: 1.14× faster</text>
+<text x="784.0" y="723.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start" class="num">0.767 vs 0.876 ms</text>
+<text x="28.0" y="753.0" font-size="13" font-weight="400" fill="#0b0b0b" text-anchor="start">matrix multiply 2048²</text>
+<path d="M542.2,742.0 H505.4 A3,3 0 0 0 502.4,745.0 V753.0 A3,3 0 0 0 505.4,756.0 H542.2 Z" fill="#2a78d6"/>
+<text x="628.0" y="753.0" font-size="12" font-weight="500" fill="#0b0b0b" text-anchor="start" class="num">vs NumPy: 1.48× faster</text>
+<text x="784.0" y="753.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start" class="num">3.59 vs 5.33 ms</text>
+<text x="28.0" y="783.0" font-size="13" font-weight="400" fill="#0b0b0b" text-anchor="start">matrix multiply 4096²</text>
+<path d="M542.2,772.0 H583.9 A3,3 0 0 1 586.9,775.0 V783.0 A3,3 0 0 1 583.9,786.0 H542.2 Z" fill="#e34948"/>
+<text x="628.0" y="783.0" font-size="12" font-weight="500" fill="#0b0b0b" text-anchor="start" class="num">vs NumPy: 1.56× slower</text>
+<text x="784.0" y="783.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start" class="num">35.9 vs 23.0 ms</text>
+<text x="28.0" y="813.0" font-size="13" font-weight="400" fill="#0b0b0b" text-anchor="start">2-layer network, width 512</text>
+<path d="M542.2,802.0 H533.6 A3,3 0 0 0 530.6,805.0 V813.0 A3,3 0 0 0 533.6,816.0 H542.2 Z" fill="#2a78d6"/>
+<text x="628.0" y="813.0" font-size="12" font-weight="500" fill="#0b0b0b" text-anchor="start" class="num">vs NumPy: 1.12× faster</text>
+<text x="784.0" y="813.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start" class="num">0.444 vs 0.498 ms</text>
+<text x="28.0" y="843.0" font-size="13" font-weight="400" fill="#0b0b0b" text-anchor="start">4-layer network, width 512</text>
+<path d="M542.2,832.0 H536.1 A3,3 0 0 0 533.1,835.0 V843.0 A3,3 0 0 0 536.1,846.0 H542.2 Z" fill="#2a78d6"/>
+<text x="628.0" y="843.0" font-size="12" font-weight="500" fill="#0b0b0b" text-anchor="start" class="num">vs NumPy: 1.09× faster</text>
+<text x="784.0" y="843.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start" class="num">0.873 vs 0.955 ms</text>
+<text x="28.0" y="873.0" font-size="13" font-weight="400" fill="#0b0b0b" text-anchor="start">2-layer network, width 1024</text>
+<path d="M542.2,862.0 H543.9 A3,3 0 0 1 546.9,865.0 V873.0 A3,3 0 0 1 543.9,876.0 H542.2 Z" fill="#898781"/>
+<text x="628.0" y="873.0" font-size="12" font-weight="500" fill="#0b0b0b" text-anchor="start" class="num">vs NumPy: level</text>
+<text x="784.0" y="873.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start" class="num">1.59 vs 1.51 ms</text>
+<text x="28.0" y="903.0" font-size="13" font-weight="400" fill="#0b0b0b" text-anchor="start">4-layer network, width 1024</text>
+<path d="M542.2,892.0 H542.2 A2.5204975977933373,2.5204975977933373 0 0 1 544.7,894.5 V903.5 A2.5204975977933373,2.5204975977933373 0 0 1 542.2,906.0 H542.2 Z" fill="#898781"/>
+<text x="628.0" y="903.0" font-size="12" font-weight="500" fill="#0b0b0b" text-anchor="start" class="num">vs NumPy: level</text>
+<text x="784.0" y="903.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start" class="num">3.08 vs 3.00 ms</text>
+<text x="28.0" y="933.0" font-size="13" font-weight="400" fill="#0b0b0b" text-anchor="start">2-layer network, width 2048</text>
+<path d="M542.2,922.0 H507.0 A3,3 0 0 0 504.0,925.0 V933.0 A3,3 0 0 0 507.0,936.0 H542.2 Z" fill="#2a78d6"/>
+<text x="628.0" y="933.0" font-size="12" font-weight="500" fill="#0b0b0b" text-anchor="start" class="num">vs NumPy: 1.46× faster</text>
+<text x="784.0" y="933.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start" class="num">7.27 vs 10.6 ms</text>
+<text x="28.0" y="963.0" font-size="13" font-weight="400" fill="#0b0b0b" text-anchor="start">4-layer network, width 2048</text>
+<path d="M542.2,952.0 H505.0 A3,3 0 0 0 502.0,955.0 V963.0 A3,3 0 0 0 505.0,966.0 H542.2 Z" fill="#2a78d6"/>
+<text x="628.0" y="963.0" font-size="12" font-weight="500" fill="#0b0b0b" text-anchor="start" class="num">vs NumPy: 1.49× faster</text>
+<text x="784.0" y="963.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start" class="num">14.5 vs 21.6 ms</text>
+<line x1="240.5" y1="704.0" x2="240.5" y2="974.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="240.5" y="988.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.05</text>
+<line x1="310.3" y1="704.0" x2="310.3" y2="974.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="310.3" y="988.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.1</text>
+<line x1="402.6" y1="704.0" x2="402.6" y2="974.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="402.6" y="988.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.25</text>
+<line x1="472.4" y1="704.0" x2="472.4" y2="974.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="472.4" y="988.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.5</text>
+<line x1="542.2" y1="704.0" x2="542.2" y2="974.0" stroke="#c3c2b7" stroke-width="1.5"/>
+<text x="542.2" y="988.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1</text>
+<text x="28.0" y="1008.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">Each side at its best of 32 or 64 threads; medians of 7 runs; measured 2026-11-19. Data: benches/results/evidence/local-rtx-5080/cpu/numpy-mt.json.</text>
+<text x="28.0" y="1024.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">C++ whole machine: the faster of its one-thread and its threaded build (the threaded one starts its threads on every call, which costs more than it saves at 1M elements).</text>
+<text x="28.0" y="1040.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">Times: best of 25 for one thread, median of 25 for the whole machine. NumPy runs these on one thread. Data: benches/results/evidence/local-rtx-5080/cpu/shapes-fair.json.</text>
 </svg></div>
-<div class="chart chart-dark"><svg xmlns="http://www.w3.org/2000/svg" width="920" height="716" viewBox="0 0 920 716" role="img" aria-labelledby="perf-cpu-dark-t perf-cpu-dark-d">
+<div class="chart chart-dark"><svg xmlns="http://www.w3.org/2000/svg" width="920" height="1058" viewBox="0 0 920 1058" role="img" aria-labelledby="perf-cpu-dark-t perf-cpu-dark-d">
 <title id="perf-cpu-dark-t">CPU: Mapal against C++ and NumPy</title>
-<desc id="perf-cpu-dark-d">Mapal time divided by C++'s and NumPy's time on one AMD Threadripper 9970X, per workload: one thread against one thread, and the whole machine against the whole machine.</desc>
+<desc id="perf-cpu-dark-d">Mapal time divided by C++'s and NumPy's time on one AMD Threadripper 9970X, per workload: one thread against one thread, the whole machine against the whole machine, and against multi-threaded NumPy.</desc>
 <style>text { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; } .num { font-variant-numeric: tabular-nums; }</style>
-<rect width="920" height="716" rx="10" fill="#1a1a19"/>
+<rect width="920" height="1058" rx="10" fill="#1a1a19"/>
 <text x="28.0" y="38.0" font-size="17" font-weight="600" fill="#f0efec" text-anchor="start">CPU: Mapal against C++ and NumPy</text>
 <text x="28.0" y="60.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">Mapal's time ÷ the other's, log scale; left of 1: Mapal faster. AMD Ryzen Threadripper 9970X, 32 cores / 64 threads, 2026-11-27.</text>
 <text x="28.0" y="92.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">One thread against one thread</text>
@@ -1652,8 +1700,56 @@ the 33 flow kernels each carry several steps (130 steps in all)</code></pre></di
 <text x="472.4" y="662.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.5</text>
 <line x1="542.2" y1="468.0" x2="542.2" y2="648.0" stroke="#383835" stroke-width="1.5"/>
 <text x="542.2" y="662.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1</text>
-<text x="28.0" y="682.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">C++ whole machine: the faster of its one-thread and its threaded build (the threaded one starts its threads on every call, which costs more than it saves at 1M elements).</text>
-<text x="28.0" y="698.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">Times: best of 25 for one thread, median of 25 for the whole machine. NumPy runs these on one thread. Data: benches/results/evidence/local-rtx-5080/cpu/shapes-fair.json.</text>
+<text x="28.0" y="696.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">Whole machine against NumPy (multi-threaded, OpenBLAS)</text>
+<text x="28.0" y="723.0" font-size="13" font-weight="400" fill="#f0efec" text-anchor="start">matrix multiply 1024²</text>
+<path d="M542.2,712.0 H531.8 A3,3 0 0 0 528.8,715.0 V723.0 A3,3 0 0 0 531.8,726.0 H542.2 Z" fill="#3987e5"/>
+<text x="628.0" y="723.0" font-size="12" font-weight="500" fill="#f0efec" text-anchor="start" class="num">vs NumPy: 1.14× faster</text>
+<text x="784.0" y="723.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start" class="num">0.767 vs 0.876 ms</text>
+<text x="28.0" y="753.0" font-size="13" font-weight="400" fill="#f0efec" text-anchor="start">matrix multiply 2048²</text>
+<path d="M542.2,742.0 H505.4 A3,3 0 0 0 502.4,745.0 V753.0 A3,3 0 0 0 505.4,756.0 H542.2 Z" fill="#3987e5"/>
+<text x="628.0" y="753.0" font-size="12" font-weight="500" fill="#f0efec" text-anchor="start" class="num">vs NumPy: 1.48× faster</text>
+<text x="784.0" y="753.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start" class="num">3.59 vs 5.33 ms</text>
+<text x="28.0" y="783.0" font-size="13" font-weight="400" fill="#f0efec" text-anchor="start">matrix multiply 4096²</text>
+<path d="M542.2,772.0 H583.9 A3,3 0 0 1 586.9,775.0 V783.0 A3,3 0 0 1 583.9,786.0 H542.2 Z" fill="#e66767"/>
+<text x="628.0" y="783.0" font-size="12" font-weight="500" fill="#f0efec" text-anchor="start" class="num">vs NumPy: 1.56× slower</text>
+<text x="784.0" y="783.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start" class="num">35.9 vs 23.0 ms</text>
+<text x="28.0" y="813.0" font-size="13" font-weight="400" fill="#f0efec" text-anchor="start">2-layer network, width 512</text>
+<path d="M542.2,802.0 H533.6 A3,3 0 0 0 530.6,805.0 V813.0 A3,3 0 0 0 533.6,816.0 H542.2 Z" fill="#3987e5"/>
+<text x="628.0" y="813.0" font-size="12" font-weight="500" fill="#f0efec" text-anchor="start" class="num">vs NumPy: 1.12× faster</text>
+<text x="784.0" y="813.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start" class="num">0.444 vs 0.498 ms</text>
+<text x="28.0" y="843.0" font-size="13" font-weight="400" fill="#f0efec" text-anchor="start">4-layer network, width 512</text>
+<path d="M542.2,832.0 H536.1 A3,3 0 0 0 533.1,835.0 V843.0 A3,3 0 0 0 536.1,846.0 H542.2 Z" fill="#3987e5"/>
+<text x="628.0" y="843.0" font-size="12" font-weight="500" fill="#f0efec" text-anchor="start" class="num">vs NumPy: 1.09× faster</text>
+<text x="784.0" y="843.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start" class="num">0.873 vs 0.955 ms</text>
+<text x="28.0" y="873.0" font-size="13" font-weight="400" fill="#f0efec" text-anchor="start">2-layer network, width 1024</text>
+<path d="M542.2,862.0 H543.9 A3,3 0 0 1 546.9,865.0 V873.0 A3,3 0 0 1 543.9,876.0 H542.2 Z" fill="#898781"/>
+<text x="628.0" y="873.0" font-size="12" font-weight="500" fill="#f0efec" text-anchor="start" class="num">vs NumPy: level</text>
+<text x="784.0" y="873.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start" class="num">1.59 vs 1.51 ms</text>
+<text x="28.0" y="903.0" font-size="13" font-weight="400" fill="#f0efec" text-anchor="start">4-layer network, width 1024</text>
+<path d="M542.2,892.0 H542.2 A2.5204975977933373,2.5204975977933373 0 0 1 544.7,894.5 V903.5 A2.5204975977933373,2.5204975977933373 0 0 1 542.2,906.0 H542.2 Z" fill="#898781"/>
+<text x="628.0" y="903.0" font-size="12" font-weight="500" fill="#f0efec" text-anchor="start" class="num">vs NumPy: level</text>
+<text x="784.0" y="903.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start" class="num">3.08 vs 3.00 ms</text>
+<text x="28.0" y="933.0" font-size="13" font-weight="400" fill="#f0efec" text-anchor="start">2-layer network, width 2048</text>
+<path d="M542.2,922.0 H507.0 A3,3 0 0 0 504.0,925.0 V933.0 A3,3 0 0 0 507.0,936.0 H542.2 Z" fill="#3987e5"/>
+<text x="628.0" y="933.0" font-size="12" font-weight="500" fill="#f0efec" text-anchor="start" class="num">vs NumPy: 1.46× faster</text>
+<text x="784.0" y="933.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start" class="num">7.27 vs 10.6 ms</text>
+<text x="28.0" y="963.0" font-size="13" font-weight="400" fill="#f0efec" text-anchor="start">4-layer network, width 2048</text>
+<path d="M542.2,952.0 H505.0 A3,3 0 0 0 502.0,955.0 V963.0 A3,3 0 0 0 505.0,966.0 H542.2 Z" fill="#3987e5"/>
+<text x="628.0" y="963.0" font-size="12" font-weight="500" fill="#f0efec" text-anchor="start" class="num">vs NumPy: 1.49× faster</text>
+<text x="784.0" y="963.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start" class="num">14.5 vs 21.6 ms</text>
+<line x1="240.5" y1="704.0" x2="240.5" y2="974.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="240.5" y="988.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.05</text>
+<line x1="310.3" y1="704.0" x2="310.3" y2="974.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="310.3" y="988.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.1</text>
+<line x1="402.6" y1="704.0" x2="402.6" y2="974.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="402.6" y="988.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.25</text>
+<line x1="472.4" y1="704.0" x2="472.4" y2="974.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="472.4" y="988.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">0.5</text>
+<line x1="542.2" y1="704.0" x2="542.2" y2="974.0" stroke="#383835" stroke-width="1.5"/>
+<text x="542.2" y="988.0" font-size="11" font-weight="400" fill="#898781" text-anchor="middle" class="num">1</text>
+<text x="28.0" y="1008.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">Each side at its best of 32 or 64 threads; medians of 7 runs; measured 2026-11-19. Data: benches/results/evidence/local-rtx-5080/cpu/numpy-mt.json.</text>
+<text x="28.0" y="1024.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">C++ whole machine: the faster of its one-thread and its threaded build (the threaded one starts its threads on every call, which costs more than it saves at 1M elements).</text>
+<text x="28.0" y="1040.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">Times: best of 25 for one thread, median of 25 for the whole machine. NumPy runs these on one thread. Data: benches/results/evidence/local-rtx-5080/cpu/shapes-fair.json.</text>
 </svg></div>
 <!-- exposition:gen end -->
 

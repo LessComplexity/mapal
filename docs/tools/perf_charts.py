@@ -24,6 +24,7 @@ _spec.loader.exec_module(mc)
 MATRIX = ROOT / "benches/results/evidence/matrix.json"
 FULL_MODEL = ROOT / "benches/results/evidence/full-model.json"
 CPU_JSON = ROOT / "benches/results/evidence/local-rtx-5080/cpu/shapes-fair.json"
+NUMPY_MT_JSON = ROOT / "benches/results/evidence/local-rtx-5080/cpu/numpy-mt.json"
 
 FAMILIES = [
     ("attn", "Attention and softmax"),
@@ -208,6 +209,7 @@ def _num(s: str) -> float:
 def cpu(a: dict) -> str:
     """Two fair pairs on one machine: one thread against one thread, whole machine against whole machine."""
     d = json.loads(CPU_JSON.read_text(encoding="utf-8"))
+    mt = json.loads(NUMPY_MT_JSON.read_text(encoding="utf-8"))
     rows = []
     for w in d["workloads"]:
         m1 = min(w["mapal_conf_1t"], w["mapal_fma_1t"])
@@ -225,7 +227,7 @@ def cpu(a: dict) -> str:
 
         title = "CPU: Mapal against C++ and NumPy"
         svg = mc.Svg(W, t, title, "Mapal time divided by C++'s and NumPy's time on one AMD Threadripper 9970X, per workload: "
-                     "one thread against one thread, and the whole machine against the whole machine.")
+                     "one thread against one thread, the whole machine against the whole machine, and against multi-threaded NumPy.")
         y = 38
         svg.text(pad, y, title, 17, t["ink"], 600)
         y += 22
@@ -257,7 +259,12 @@ def cpu(a: dict) -> str:
         y = panel(y, "One thread against one thread", [(n, m1, [("C++", c1), ("NumPy", npy)]) for n, m1, c1, npy, _, _ in rows])
         y = panel(y + 6, "Whole machine against whole machine (64 threads)",
                   [(n, mp, [("C++", cw)]) for n, _, _, _, mp, cw in rows])
+        y = panel(y + 6, "Whole machine against NumPy (multi-threaded, OpenBLAS)",
+                  [(w["name"], w["mapal"], [("NumPy", w["numpy_mt"])]) for w in mt["workloads"]])
         y += 14
+        svg.text(pad, y, f"Each side at its best of 32 or 64 threads; medians of 7 runs; measured {mt['date']}. "
+                 "Data: benches/results/evidence/local-rtx-5080/cpu/numpy-mt.json.", 11, t["muted"])
+        y += 16
         svg.text(pad, y, "C++ whole machine: the faster of its one-thread and its threaded build (the threaded one starts its threads on every call, "
                  "which costs more than it saves at 1M elements).", 11, t["muted"])
         y += 16
