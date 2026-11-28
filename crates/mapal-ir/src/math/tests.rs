@@ -228,9 +228,10 @@ fn sin_cos_f64_within_contract() {
         assert!(worst <= 2.5, "{f:?} worst {worst} ulp of libm");
         eprintln!("{f:?} f64 worst {worst:.3} ulp of libm");
         for x in test_args(f, 64) {
+            let (got, t) = (eval_f64(f, x), truth(f, x));
             assert!(
-                within(f, 64, x, eval_f64(f, x), truth(f, x), 2f64.powi(-52)),
-                "{x:e}"
+                within(f, 64, x, got, t, 2f64.powi(-52)),
+                "{f:?}({x:e}) = {got:e}, truth {t:e}"
             );
         }
     }

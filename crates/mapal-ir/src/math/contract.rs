@@ -91,9 +91,22 @@ pub fn special(f: MathFn, bits: u32, x: f64) -> Option<f64> {
     }
 }
 
+/// `6381956970095103·2^797` (Kahan–McDonald's worst cancellation for `f64`): its sine and
+/// cosine, correctly rounded (mpmath at 2,000 bits), as `(fn, x bits, value bits)`.
+const HARD: [(MathFn, u64, u64); 2] = [
+    (MathFn::Sin, 0x7506_ac5b_262c_a1ff, 0x3ff0_0000_0000_0000),
+    (MathFn::Cos, 0x7506_ac5b_262c_a1ff, 0xbc21_4ae7_2e6b_a22f),
+];
+
 /// `f(x)` in `f64` (libm): the truth a width-32 result is checked against
 /// (within `2⁻⁵²` relative of the real value; a width-64 check adds that).
 pub fn truth(f: MathFn, x: f64) -> f64 {
+    // At the hardest argument the platform's libm is not the truth: one whose argument
+    // reduction loses the cancellation is off far beyond the contract (CI's Ubuntu runner
+    // failed here while glibc 2.44 rounds correctly). The correctly rounded values instead.
+    if let Some(&(_, _, v)) = HARD.iter().find(|h| h.0 == f && h.1 == x.to_bits()) {
+        return f64::from_bits(v);
+    }
     match f {
         MathFn::Exp => x.exp(),
         MathFn::Sqrt => x.sqrt(),

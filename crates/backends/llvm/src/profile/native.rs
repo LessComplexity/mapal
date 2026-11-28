@@ -9,7 +9,7 @@ use super::*;
 /// for `sysctlbyname` would be a new dependency to save a process spawn that
 /// happens at most once.
 #[cfg(target_os = "macos")]
-fn sysctl_u64(key: &str) -> Option<u64> {
+pub(super) fn sysctl_u64(key: &str) -> Option<u64> {
     let out = std::process::Command::new("/usr/sbin/sysctl")
         .args(["-n", key])
         .output()
