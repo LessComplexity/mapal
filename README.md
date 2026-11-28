@@ -14,7 +14,7 @@
 
 <br>
 
-**Describe how data flows. Mapal places it where it runs best, on any hardware.**
+**Describe how data flows. Mapal places it where it runs best: CPUs and NVIDIA GPUs today, and new hardware is described, not rewritten for.**
 
 </div>
 
@@ -63,7 +63,8 @@ A whole language model, Llama-3.2-1B, is one readable file:
 - **Describing the flow beats describing control.** Code that spells out the control is tuned for one machine. Code
   that states the flow can be compiled well for each machine.
 - **The compiler knows both sides.** It knows your program (what depends on what) and the hardware (where data can
-  live, what can compute it), and it matches the two. A new chip only needs to be described, not reprogrammed for.
+  live, what can compute it), and it matches the two. A new chip of a kind it already targets only needs its measured
+  properties; a new kind of hardware needs its own backend. Programs never change.
 - **Correct within a stated error.** Results are guaranteed within a precision you can see, not bit for bit, which
   leaves the compiler free to choose the fastest correct way.
 - **Readable code is the target.** If the natural version of a program runs slower, the compiler gets fixed.
